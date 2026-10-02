@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>1.2 Understanding the standard LLM training pipeline · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-04.html">
+<link rel="next" href="page-06.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 5 页 / 共 108 页</span></div>
+<h2 id="h2-understanding-the-standard-llm-training-pipeline"><span class="num">1.2</span>Understanding the standard LLM training pipeline</h2>
+<p>Let’s briefly look at how conventional (nonreasoning) LLMs are typically trained so that we can understand where their limitations lie. This background will also help frame our upcoming discussions on the differences between pattern matching and logical reasoning.</p>
+<p>Before applying any specific reasoning methodology, conventional LLM training is usually structured into two stages: <em>pretraining</em> and <em>post-training</em>, which are illustrated in figure 1.3. Some recent papers also distinguish a <em>mid-training</em> stage between the other two, such as to continue training a model on code, math, or long-context data, but I’ll group that stage under pretraining to keep the terminology simple in this book.</p>
+<figure><a class="zoom" href="assets/figure-1.3.png" tabindex="-1"><img src="assets/figure-1.3.png" alt="" width="1041" height="333" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 1.3</span>Overview of a typical LLM training pipeline. The process begins with a model initialized with random weights, followed by pretraining on large-scale text data to learn language patterns by predicting the next token. Post-training then refines the model through instruction fine-tuning and preference fine-tuning, enabling the LLM to better follow human instructions and align with human preferences.</figcaption></figure>
+<p>In the pretraining stage of a typical LLM training pipeline, LLMs are trained on massive amounts of unlabeled text, often many terabytes of data or trillions of tokens, including books, websites, research articles, and many other sources. The pretraining objective for the LLM is to learn to predict the next word (that is, the next <em>token</em>) in these texts.</p>
+<h3 id="h3-words-and-tokens">Words and tokens</h3>
+<div class="lead">A token is a small unit of text that a language model processes. A token can be a full word, part of a word, or even punctuation, depending on how the text is split by a tokenizer. For example, the sentence “An LLM can be useful.” might be broken into tokens like “An”, “ L”, “LM”, “ can”, “ be”, “ useful”, and “.” by a common tokenizer. These tokens are then converted into numerical IDs that the model can ingest. A tokenizer is not part of the LLM itself, but it is nonetheless a critical component of the LLM text-processing and generation pipeline. We will see how tokenization works in the next chapter.</div>
+<p>LLMs become highly capable when they’re pretrained on massive datasets, which typically involve several terabytes of text (equivalent to trillions of tokens). This training requires thousands of GPUs running for many months and can cost millions of dollars. Here, “capable” means that LLMs begin to generate text that closely resembles human writing. To some extent, pretrained LLMs also begin to exhibit so-called <em>emergent properties</em>, which means they can perform tasks that they were not explicitly trained to do, including translation and code generation.</p>
+<p>These pretrained models serve as base models for the post-training stage, which uses two key techniques: <em>supervised fine-tuning</em> (often abbreviated as <em>SFT</em> in the literature and also known as <em>instruction tuning</em>) and <em>preference tuning</em> to teach LLMs to respond to user queries.</p>
+<p>As shown in figure 1.4, instruction tuning improves an LLM’s capabilities for personal-assistance tasks such as question answering, summarizing, translating text, and more. The preference-tuning stage then refines these capabilities. As the term implies, preference tuning helps tailor responses to user preferences. Some readers may be familiar with the term reinforcement learning with human feedback (RLHF), which is a specific technique for implementing preference tuning.</p>
+<p>In short, we can think of pretraining as “raw language prediction” (via next-token prediction) that gives the LLM some basic properties and capabilities to produce coherent texts. The post-training stage then improves the task understanding of LLMs via instruction tuning and refines the LLM to create answers with preferred stylistic choices via preference tuning.</p>
+<p>It is worth noting that even an instruction-tuned model is not yet a “chatbot.” A chat interface adds another layer that guides the model’s responses in an interactive, multi-turn setting. This typically involves a system prompt, conversation history management, and other orchestration (an example of this is implemented in appendix G).</p>
+<figure><a class="zoom" href="assets/figure-1.4.png" tabindex="-1"><img src="assets/figure-1.4.png" alt="" width="1141" height="837" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 1.4</span>Example responses from a language model at different training stages. The prompt asks for a summary of the relationship between sleep and health. The pretrained LLM produces a relevant but unfocused answer without directly following the instructions. The instruction-tuned LLM generates a concise, accurate summary aligned with the prompt. The preference-tuned LLM further improves the response by using a friendly tone and engaging language, making the answer more relatable and user centered.</figcaption></figure>
+<aside><span class="tag">Note</span>These pretraining and post-training stages are covered in my book Build a Large Language Model (From Scratch), published by Manning (http://mng.bz/orYv). The book you are reading now does not require detailed knowledge of those stages. Here, we will load a model that has already undergone the expensive pretraining and post-training stages so that we can focus on the methodology specific to reasoning models.</aside>
+<nav class="pager"><a class="prev" href="page-04.html" rel="prev"><span class="dir">上一页</span><span class="t">1.1 Defining reasoning in the context of LLMs</span></a><a class="next" href="page-06.html" rel="next"><span class="dir">下一页</span><span class="t">1.3 Improving LLM reasoning with training and inference techniques</span></a></nav>
+</main>
+</body>
+</html>

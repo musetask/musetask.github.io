@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>8.7 Implementing the training loop for distillation · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-78.html">
+<link rel="next" href="page-80.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 79 页 / 共 108 页</span></div>
+<h2 id="h2-implementing-the-training-loop-for-distillation"><span class="num">8.7</span>Implementing the training loop for distillation</h2>
+<p>With the dataset prepared and the loss computation in place, we can now implement the training loop for distillation. This stage is highlighted in figure 8.14.</p>
+<figure><a class="zoom" href="assets/figure-8.14.png" tabindex="-1"><img src="assets/figure-8.14.png" alt="" width="1142" height="629" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 8.14</span>With the dataset preparation and loss computation complete, we can now turn to the training loop for distillation.</figcaption></figure>
+<p>The training loop we’ll use here is very similar to the one in chapter 6. The main difference is that here we’ll revisit the same training set multiple times across epochs and optimize the cross-entropy distillation loss instead of the GRPO objective (GRPO loss) used in RLVR. The detailed steps are shown in figure 8.15.</p>
+<figure><a class="zoom" href="assets/figure-8.15.png" tabindex="-1"><img src="assets/figure-8.15.png" alt="" width="1022" height="965" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 8.15</span>The distillation training loop. In each epoch, the training examples are shuffled, the student model computes a cross-entropy loss for each example, gradients are backpropagated, and the model weights are updated. The validation loss is reported at certain intervals to track progress.</figcaption></figure>
+<p>The following <code>train_distillation</code> function implements the loop shown in figure 8.15. It shuffles the training examples at the start of each epoch, computes the loss for each example, applies an optimizer step, optionally clips large gradients, and periodically evaluates on the validation set. The metrics are also written to a CSV file so we can inspect the learning curves later.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">import</span> time
+<span class="tok-kw">def</span> train_distillation(
+    model,
+    train_examples,
+    val_examples,
+    device,
+    epochs=<span class="tok-fn">2</span>,
+    lr=<span class="tok-fn">5e-6</span>,
+    grad_clip_norm=<span class="tok-kw">None</span>,
+    seed=<span class="tok-fn">123</span>,
+    log_every=<span class="tok-fn">50</span>,
+    checkpoint_dir=<span class="tok-st">"checkpoints"</span>,
+    csv_log_path=<span class="tok-kw">None</span>,
+):
+    optimizer = torch.optim.AdamW<span class="tok-kw">(</span>model.parameters<span class="tok-kw">()</span>, lr=lr<span class="tok-kw">)</span>
+    model.train<span class="tok-kw">()</span>
+    total_steps = epochs * len<span class="tok-kw">(</span>train_examples<span class="tok-kw">)</span>
+    global_step = <span class="tok-fn">0</span>
+    rng = random.Random<span class="tok-kw">(</span>seed<span class="tok-kw">)</span>
+    <span class="tok-kw">if</span> csv_log_path <span class="tok-kw">is</span> <span class="tok-kw">None</span>:
+        timestamp = time.strftime<span class="tok-kw">(</span><span class="tok-st">"%Y%m</span>%d<span class="tok-st">_%H%M%S"</span><span class="tok-kw">)</span>
+        csv_log_path = <span class="tok-kw">f</span><span class="tok-st">"train_distill_metrics_</span>{timestamp}<span class="tok-st">.csv"</span>
+    csv_log_path = Path<span class="tok-kw">(</span>csv_log_path<span class="tok-kw">)</span>
+    <span class="tok-kw">for</span> epoch <span class="tok-kw">in</span> range<span class="tok-kw">(</span><span class="tok-fn">1</span>, epochs + <span class="tok-fn">1</span><span class="tok-kw">)</span>:
+        epoch_examples = list<span class="tok-kw">(</span>train_examples<span class="tok-kw">)</span>
+        rng.shuffle<span class="tok-kw">(</span>epoch_examples<span class="tok-kw">)</span>
+        <span class="tok-kw">for</span> example <span class="tok-kw">in</span> epoch_examples:
+            global_step += <span class="tok-fn">1</span>
+            optimizer.zero_grad<span class="tok-kw">()</span>
+            loss = compute_example_loss<span class="tok-kw">(</span>model, example, device<span class="tok-kw">)</span>
+            loss.backward<span class="tok-kw">()</span>
+            <span class="tok-kw">if</span> grad_clip_norm <span class="tok-kw">is</span> <span class="tok-kw">not</span> <span class="tok-kw">None</span>:
+                torch.nn.utils.clip_grad_norm_<span class="tok-kw">(</span>
+                    model.parameters<span class="tok-kw">()</span>, grad_clip_norm
+                <span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 8.13</span>Implementing the distillation training loop</figcaption></figure>
+<pre><code class="language-python">            optimizer.step<span class="tok-kw">()</span>
+            <span class="tok-kw">if</span> log_every <span class="tok-kw">and</span> global_step % log_every == <span class="tok-fn">0</span>:
+                val_loss = evaluate_examples<span class="tok-kw">(</span>
+                    model=model,
+                    examples=val_examples,
+                    device=device,
+                <span class="tok-kw">)</span>
+                model.train<span class="tok-kw">()</span>
+                print<span class="tok-kw">(</span>
+                    <span class="tok-kw">f</span><span class="tok-st">"[Epoch </span>{epoch}<span class="tok-st">/</span>{epochs} <span class="tok-st">"</span>
+                    <span class="tok-kw">f</span><span class="tok-st">"Step </span>{global_step}<span class="tok-st">/</span>{total_steps}<span class="tok-st">] "</span>
+                    <span class="tok-kw">f</span><span class="tok-st">"train_loss=</span>{loss.item<span class="tok-kw">()</span>:.4f} <span class="tok-st">"</span>
+                    <span class="tok-kw">f</span><span class="tok-st">"val_loss=</span>{val_loss:.4f}<span class="tok-st">"</span>
+                <span class="tok-kw">)</span>
+                append_csv_metrics<span class="tok-kw">(</span>
+                    csv_log_path=csv_log_path,
+                    epoch_idx=epoch,
+                    total_steps=global_step,
+                    train_loss=loss.item<span class="tok-kw">()</span>,
+                    val_loss=val_loss,
+                <span class="tok-kw">)</span>
+        ckpt_path = save_checkpoint<span class="tok-kw">(</span>
+            model=model,
+            checkpoint_dir=checkpoint_dir,
+            step=global_step,
+            suffix=<span class="tok-kw">f</span><span class="tok-st">"epoch</span>{epoch}<span class="tok-st">"</span>,
+        <span class="tok-kw">)</span>
+        print<span class="tok-kw">(f</span><span class="tok-st">"Saved checkpoint to </span>{ckpt_path}<span class="tok-st">"</span><span class="tok-kw">)</span>
+    <span class="tok-kw">return</span> model
+<span class="tok-kw">def</span> save_checkpoint(model, checkpoint_dir, step, suffix=<span class="tok-st">""</span>):
+    checkpoint_dir = Path<span class="tok-kw">(</span>checkpoint_dir<span class="tok-kw">)</span>
+    checkpoint_dir.mkdir<span class="tok-kw">(</span>parents=<span class="tok-kw">True</span>, exist_ok=<span class="tok-kw">True)</span>
+    suffix = <span class="tok-kw">f</span><span class="tok-st">"-</span>{suffix}<span class="tok-st">"</span> <span class="tok-kw">if</span> suffix <span class="tok-kw">else</span> <span class="tok-st">""</span>
+    ckpt_path = (
+        checkpoint_dir /
+        <span class="tok-kw">f</span><span class="tok-st">"qwen3-0.6B-distill-step</span>{step:05d}{suffix}<span class="tok-st">.pth"</span>
+    )
+    torch.save<span class="tok-kw">(</span>model.state_dict<span class="tok-kw">()</span>, ckpt_path<span class="tok-kw">)</span>
+    <span class="tok-kw">return</span> ckpt_path
+<span class="tok-kw">def</span> append_csv_metrics(
+    csv_log_path,
+    epoch_idx,
+    total_steps,
+    train_loss,
+    val_loss,
+):
+    <span class="tok-kw">if</span> <span class="tok-kw">not</span> csv_log_path.exists<span class="tok-kw">()</span>:
+        csv_log_path.write_text<span class="tok-kw">(</span>
+            <span class="tok-st">"epoch,total_steps,train_loss,val_loss</span>\n<span class="tok-st">"</span>,
+            encoding=<span class="tok-st">"utf-8"</span>,
+        <span class="tok-kw">)</span>
+    <span class="tok-kw">with</span> csv_log_path.open<span class="tok-kw">(</span><span class="tok-st">"a"</span>, encoding=<span class="tok-st">"utf-8"</span><span class="tok-kw">)</span> <span class="tok-kw">as</span> f:
+        f.write<span class="tok-kw">(</span>
+            <span class="tok-kw">f</span><span class="tok-st">"</span>{epoch_idx}<span class="tok-st">,</span>{total_steps}<span class="tok-st">,</span>{train_loss:.6f}<span class="tok-st">,"</span>
+            <span class="tok-kw">f</span><span class="tok-st">"</span>{val_loss:.6f}\n<span class="tok-st">"</span>
+        <span class="tok-kw">)</span></code></pre>
+<p>With a maximum sequence length of 2,048, the full training run requires about 15 GB of GPU memory. If this is too high for your hardware, you can lower the resource requirements by filtering out longer sequences earlier in the notebook, such as by changing </p>
+<pre><code class="language-python">max_len from 2048 to 1024 or 512 in the filter_examples_by_max_len step in listing 8.6.</code></pre>
+<p>Let’s execute a short training run.</p>
+<figure class="listing"><pre><code class="language-python">torch.manual_seed<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 8.14</span>Training the model</figcaption></figure>
+<pre><code class="language-python">train_distillation<span class="tok-kw">(</span>
+    model,
+    train_examples=train_examples<span class="tok-kw">[</span>:<span class="tok-fn">10</span><span class="tok-kw">]</span>,
+    val_examples=val_examples<span class="tok-kw">[</span>:<span class="tok-fn">10</span><span class="tok-kw">]</span>,
+    device=device,
+    epochs=<span class="tok-fn">2</span>,
+    lr=<span class="tok-fn">5e-6</span>,
+    grad_clip_norm=<span class="tok-fn">1.0</span>,</code></pre>
+<pre><code class="language-python">    seed=<span class="tok-fn">123</span>,
+    log_every=<span class="tok-fn">5</span>,
+    csv_log_path=<span class="tok-st">"train_distill_metrics.csv"</span>,
+<span class="tok-kw">)</span></code></pre>
+<p>Let’s briefly talk about the settings before we inspect the results. We are keeping the training run intentionally short. For instance, we use only the first 10 training examples and 10 validation examples, and we train for just 2 epochs. This is purely to keep the notebook run lightweight and fast enough for experimentation. For a real distillation run, we would of course train on many more examples, ideally, the whole training set.</p>
+<p>The learning rate (<code>lr=5e-6</code>) is in a reasonable range for fine-tuning a pretrained model and worked well for this setup, as reflected in the loss curves discussed shortly.</p>
+<p>The gradient clipping setting (<code>grad_clip_norm=1.0</code>) is the same as in chapter 6 and helps prevent unstable updates when a particular example produces unusually large gradients.</p>
+<p>The <code>log_every=5</code> setting means that validation loss is measured every 5 training steps. Since this demo uses only a handful of examples, this produces frequent progress updates so that we can quickly verify that the training loop behaves as expected. In a larger run, we would usually increase this interval to reduce evaluation overhead.</p>
+<p>Finally, the <code>csv_log_path="train_distill_metrics.csv"</code> argument stores the training and validation losses in a CSV file so that we can inspect and plot them later.</p>
+<p>The main goal of this run is not to achieve the best possible reasoning performance, but to confirm that the distillation pipeline works from end to end. Once that is established, we can move on to larger runs and inspect the resulting learning curves and checkpoints in more detail.</p>
+<p>Let’s now take a brief look at the run’s output:</p>
+<pre><code class="language-python">[Epoch 1/2 Step 5/20] train_loss=0.9648 val_loss=0.9082
+[Epoch 1/2 Step 10/20] train_loss=0.9844 val_loss=0.8871
+Saved checkpoint to checkpoints/qwen3-0.6B-distill-step00010-epoch1.pth
+[Epoch 2/2 Step 15/20] train_loss=0.8008 val_loss=0.8707
+[Epoch 2/2 Step 20/20] train_loss=0.7148 val_loss=0.8586
+Saved checkpoint to checkpoints/qwen3-0.6B-distill-step00020-epoch2.pth</code></pre>
+<p>Even though this is only a tiny demonstration run, the output already shows the expected overall behavior. Both the training loss and the validation loss decrease over time, which indicates that the student model is becoming better at matching the teacher-generated target sequences. The validation loss is especially useful here because it is computed on held-out examples and therefore provides a cleaner signal that the improvement is not limited to the training samples alone.</p>
+<p>We can also see that checkpoints are saved at the end of each epoch. This is useful because it lets us resume training later or evaluate intermediate versions of the distilled model using the MATH-500 test set.</p>
+<nav class="pager"><a class="prev" href="page-78.html" rel="prev"><span class="dir">上一页</span><span class="t">8.6 Computing the training and validation losses</span></a><a class="next" href="page-80.html" rel="next"><span class="dir">下一页</span><span class="t">8.8 Evaluating the distilled model</span></a></nav>
+</main>
+</body>
+</html>

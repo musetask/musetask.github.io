@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>3.8 Loading the evaluation dataset · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-25.html">
+<link rel="next" href="page-27.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 26 页 / 共 108 页</span></div>
+<h2 id="h2-loading-the-evaluation-dataset"><span class="num">3.8</span>Loading the evaluation dataset</h2>
+<p>As you have seen so far in this chapter, implementing a robust verification pipeline can be tedious. Fortunately, we now have all the pieces in place, from answer extraction to grading, and we’re ready to evaluate the LLM on a benchmark dataset. As shown in figure 3.9, we’ll use the MATH-500 dataset (<a href="https://huggingface.co/datasets/HuggingFaceH4/MATH-500">https://huggingface.co/datasets/HuggingFaceH4/MATH-500</a>), a widely used benchmark for reasoning models. It is a curated collection of 500 problems sampled from the original MATH dataset.</p>
+<figure><a class="zoom" href="assets/figure-3.9.png" tabindex="-1"><img src="assets/figure-3.9.png" alt="" width="1142" height="807" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 3.9</span>Loading the evaluation dataset. We completed steps 2-6 (generate, extract, normalize, verify, and grade answers) in the previous sections; the two remaining steps are to load the full dataset (step 7) and apply the same procedure across all the problems to evaluate the model (step 8).</figcaption></figure>
+<p>Using MATH-500 is a practical choice for three reasons. First, MATH-500 is large enough to be meaningful but still small enough to keep repeated evaluations throughout the book manageable, whereas running the full MATH dataset each time would be much slower. Second, in later chapters we’ll use a non-overlapping training subset derived from the original MATH dataset, so keeping MATH-500 as a held-out evaluation set gives us a clean reference point. Third, MATH-500 is a common benchmark dataset in the reasoning-model literature, which makes the results in this book easier to compare with prior work. I also prefer MATH-500 over simpler datasets such as GSM8K because it is more challenging for modern reasoning models and it better matches the kind of multistep symbolic verification pipeline we are building in this chapter.</p>
+<p>We’ll load the MATH-500 dataset using the following code.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">import</span> json
+<span class="tok-kw">import</span> requests
+<span class="tok-kw">def</span> load_math500_test(local_path=<span class="tok-st">"math500_test.json"</span>, save_copy=<span class="tok-kw">True</span>):
+    local_path = Path<span class="tok-kw">(</span>local_path<span class="tok-kw">)</span>
+    url = (
+        <span class="tok-st">"https://raw.githubusercontent.com/rasbt/reasoning-from-scratch/"</span>
+        <span class="tok-st">"main/ch03/01_main-chapter-code/math500_test.json"</span>
+    )
+    <span class="tok-kw">if</span> local_path.exists<span class="tok-kw">()</span>:
+        <span class="tok-kw">with</span> local_path.open<span class="tok-kw">(</span><span class="tok-st">"r"</span>, encoding=<span class="tok-st">"utf-8"</span><span class="tok-kw">)</span> <span class="tok-kw">as</span> f:
+            data = json.load<span class="tok-kw">(</span>f<span class="tok-kw">)</span>
+    <span class="tok-kw">else</span>:
+        r = requests.get<span class="tok-kw">(</span>url, timeout=<span class="tok-fn">30</span><span class="tok-kw">)</span>
+        r.raise_for_status<span class="tok-kw">()</span>
+        data = r.json<span class="tok-kw">()</span>
+        <span class="tok-kw">if</span> save_copy: <span class="tok-cm"># Saves a local copy</span>
+            <span class="tok-kw">with</span> local_path.open<span class="tok-kw">(</span><span class="tok-st">"w"</span>, encoding=<span class="tok-st">"utf-8"</span><span class="tok-kw">)</span> <span class="tok-kw">as</span> f:
+                json.dump<span class="tok-kw">(</span>data, f, indent=<span class="tok-fn">2</span><span class="tok-kw">)</span>
+    <span class="tok-kw">return</span> data
+math_data = load_math500_test<span class="tok-kw">()</span>
+print<span class="tok-kw">(</span><span class="tok-st">"Number of entries:"</span>, len<span class="tok-kw">(</span>math_data<span class="tok-kw">))</span></code></pre><figcaption><span class="lbl">Listing 3.12</span>Loading the MATH-500 dataset</figcaption></figure>
+<p>This prints the following result:</p>
+<pre><code class="language-python">Number of entries: 500</code></pre>
+<h3 id="h3-loading-the-dataset-from-hugging-face-model-hub">Loading the dataset from Hugging Face Model Hub</h3>
+<div class="lead">The MATH-500 dataset split was originally proposed in the PRM800K repository (https://github.com/openai/prm800k/tree/main?tab=readme-ov-file#math-splits), </div>
+<div class="lead">and it is also available on the Hugging Face Hub (https://huggingface.co/datasets/HuggingFaceH4/MATH-500). The code we use in this chapter loads a copy from the code repository so you can ensure reproducibility if the external sources change. If you prefer to download the dataset directly from Hugging Face, you can use the following optional code. Note that this requires the <code>datasets</code> library, which can be </div>
+<pre><code class="language-python">installed via pip install datasets or uv add datasets:
+<span class="tok-kw">from</span> datasets <span class="tok-kw">import</span> load_dataset
+dset = load_dataset<span class="tok-kw">(</span><span class="tok-st">"HuggingFaceH4/MATH-500"</span>, split=<span class="tok-st">"test"</span><span class="tok-kw">)</span></code></pre>
+<p>Before we implement the model evaluation pipeline in the next section, let’s take a closer look at the structure of the dataset by printing its first entry (we’ll use the built-in <code>pprint</code> library for nicer formatting):</p>
+<pre><code class="language-python"><span class="tok-kw">from</span> pprint <span class="tok-kw">import</span> pprint
+pprint<span class="tok-kw">(</span>math_data<span class="tok-kw">[</span><span class="tok-fn">0</span><span class="tok-kw">])</span></code></pre>
+<p>This produces the following output:</p>
+<pre><code class="language-javascript">{<span class="tok-st">'answer'</span>: <span class="tok-st">'</span>\\<span class="tok-st">left( 3, </span>\\<span class="tok-st">frac{</span>\\<span class="tok-st">pi}{2} </span>\\<span class="tok-st">right)'</span>,
+ <span class="tok-st">'level'</span>: <span class="tok-fn">2</span>,
+ <span class="tok-st">'problem'</span>: <span class="tok-st">'Convert the point $(0,3)$ in rectangular coordinates to polar '</span>
+            <span class="tok-st">'coordinates. Enter your answer in the form $(r,</span>\\<span class="tok-st">theta),$ where '</span>
+            <span class="tok-st">'$r &gt; 0$ and $0 </span>\\<span class="tok-st">le </span>\\<span class="tok-st">theta &lt; 2 </span>\\<span class="tok-st">pi.$'</span>,
+ <span class="tok-st">'solution'</span>: <span class="tok-st">'We have that $r = </span>\\<span class="tok-st">sqrt{0^2 + 3^2} = 3.$ Also, if we draw the '</span>
+             <span class="tok-st">'line connecting the origin and $(0,3),$ this line makes an</span>
+<span class="tok-st">angle '</span>
+             <span class="tok-st">'of $</span>\\<span class="tok-st">frac{</span>\\<span class="tok-st">pi}{2}$ with the positive $x$-axis.</span>\n<span class="tok-st">'</span>
+             <span class="tok-st">'</span>\n<span class="tok-st">'</span>
+             <span class="tok-st">'[asy]</span>\n<span class="tok-st">'</span>
+             <span class="tok-st">'unitsize(0.8 cm);</span>\n<span class="tok-st">'</span>
+             <span class="tok-st">'</span>\n<span class="tok-st">'</span>
+             <span class="tok-st">'draw((-0.5,0)--(3.5,0));</span>\n<span class="tok-st">'</span>
+             <span class="tok-st">'draw((0,-0.5)--(0,3.5));</span>\n<span class="tok-st">'</span>
+             <span class="tok-st">'draw(arc((0,0),3,0,90),red,Arrow(6));</span>\n<span class="tok-st">'</span>
+             <span class="tok-st">'</span>\n<span class="tok-st">'</span>
+             <span class="tok-st">'dot((0,3), red);</span>\n<span class="tok-st">'</span>
+             <span class="tok-st">'label("$(0,3)$", (0,3), W);</span>\n<span class="tok-st">'</span>
+             <span class="tok-st">'dot((3,0), red);</span>\n<span class="tok-st">'</span>
+             <span class="tok-st">'[/asy]</span>\n<span class="tok-st">'</span>
+             <span class="tok-st">'</span>\n<span class="tok-st">'</span>
+             <span class="tok-st">'Therefore, the polar coordinates are $</span>\\<span class="tok-st">boxed{</span>\\<span class="tok-st">left( 3, '</span>
+             <span class="tok-st">'</span>\\<span class="tok-st">frac{</span>\\<span class="tok-st">pi}{2} </span>\\<span class="tok-st">right)}.$'</span>,
+ <span class="tok-st">'subject'</span>: <span class="tok-st">'Precalculus'</span>,
+ <span class="tok-st">'unique_id'</span>: <span class="tok-st">'test/precalculus/807.json'</span>}</code></pre>
+<p>As you can see, the dataset entry is formatted as a Python dictionary with keys and values, sorted in alphabetical order. These are the relevant keys:</p>
+<ul><li><code>problem</code>: The math question or problem for the LLM to solve</li></ul>
+<ul><li><code>answer</code>: The correct (ground truth) answer we want to compare the LLM answer against</li></ul>
+<ul><li><code>solution</code>: A worked-out, step-by-step explanation of the problem (not used in this chapter, but useful for training or analysis)</li></ul>
+<p>Now that we have a pretrained LLM, evaluation functions, and a benchmark dataset to work with, we can evaluate the model.</p>
+<h2 id="h2-evaluating-the-model"><span class="num">3.9</span>Evaluating the model</h2>
+<p>In this section, we’ll put the LLM text generation and evaluation tools from steps 2–6 in figure 3.10 into practice and apply them to the MATH-500 dataset (step 8), which we loaded in the previous section. This full pipeline will be important in future chapters because it will be the main way we’ll measure progress when we compare prompting methods and training-based improvements.</p>
+<figure><a class="zoom" href="assets/figure-3.10.png" tabindex="-1"><img src="assets/figure-3.10.png" alt="" width="1143" height="817" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 3.10</span>The complete evaluation pipeline for the MATH-500 dataset. After loading the dataset (step 7), steps 2–6 are applied systematically across all problems to obtain the final model evaluation (step 8).</figcaption></figure>
+<p>As you may recall from section 3.4, our answer-checking pipeline expects the model to return the answer in boxed form, which is a common convention when evaluating reasoning models on math problems. To increase the likelihood that the model adheres to this format, we can format the prompt as follows.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">def</span> render_prompt(prompt):
+    template = (
+        <span class="tok-st">"You are a helpful math assistant.</span>\n<span class="tok-st">"</span>
+        <span class="tok-st">"Answer the question and write the final result on a new line as:</span>\n<span class="tok-st">"</span>
+        <span class="tok-st">"</span>\\<span class="tok-st">boxed</span>{ANSWER}\n\n<span class="tok-st">"</span>
+        <span class="tok-kw">f</span><span class="tok-st">"Question:</span>\n{prompt}\n\n<span class="tok-st">Answer:"</span>
+    )
+    <span class="tok-kw">return</span> template</code></pre><figcaption><span class="lbl">Listing 3.13</span>Function to render a prompt template for math evaluation</figcaption></figure>
+<p>Let’s now apply this prompt template to the example prompt introduced in section 3.2 and shown again here:</p>
+<pre><code class="language-python">prompt = (
+    <span class="tok-kw">r</span><span class="tok-st">"If $a+b=3$ and $ab=\tfrac{13}{6}$, "</span>
+    <span class="tok-kw">r</span><span class="tok-st">"what is the value of $a^2+b^2$?"</span>
+)
+prompt_fmt = render_prompt<span class="tok-kw">(</span>prompt<span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>prompt_fmt<span class="tok-kw">)</span></code></pre>
+<p>The formatted prompt is now as follows:</p>
+<pre><code class="language-javascript">You are a helpful math assistant.
+Answer the question and write the final result on a new line as:
+\boxed{ANSWER}
+Question:
+If $a+b=3$ and $ab=\tfrac{13}{6}$, what is the value of $a^2+b^2$?
+Answer:</code></pre>
+<p>Next, we’ll pass the prompt to the text generation wrapper function we defined in listing 3.3 to recap the text generation process before we construct the model evaluation function:</p>
+<pre><code class="language-python">generated_text = generate_text_stream_concat<span class="tok-kw">(</span>
+    model, tokenizer, prompt_fmt, device,
+    max_new_tokens=<span class="tok-fn">2048</span>,
+    verbose=<span class="tok-kw">True</span>
+<span class="tok-kw">)</span></code></pre>
+<p>Using this prompt example, the model responds with a relatively brief answer:<code>"\boxed{10}"</code>. (Note that the generated response may differ depending on whether you run the code on a CPU, CUDA, or MPS device.)</p>
+<p>While brevity can speed up generation by reducing the number of tokens, the response is incorrect. In section 3.3, by contrast, without a prompt template, the model produced a longer response, which led to the correct answer, 14/3.</p>
+<p>Whether the prompt template is well suited to a given model and task needs to be determined on a larger set of examples, such as the MATH-500 dataset, before we can draw any conclusions.</p>
+<nav class="pager"><a class="prev" href="page-25.html" rel="prev"><span class="dir">上一页</span><span class="t">3.7 Grading answers</span></a><a class="next" href="page-27.html" rel="next"><span class="dir">下一页</span><span class="t">Prompt template choices</span></a></nav>
+</main>
+</body>
+</html>

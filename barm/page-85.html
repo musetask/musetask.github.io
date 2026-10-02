@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>B.1 Chapter 2 · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-84.html">
+<link rel="next" href="page-86.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 85 页 / 共 108 页</span></div>
+<h2 id="h2-chapter-2"><span class="num">B.1</span>Chapter 2</h2>
+<h3 id="h3-exercise-2-1-encoding-unknown-words-2">Exercise 2.1: Encoding unknown words</h3>
+<p>We can use a prompt similar to “Hello, Ardwarklethyrx. Haus und Garten.”, which contains a made-up word (<code>"Ardwarklethyrx"</code>) and three words in a non-English language (German):</p>
+<pre><code class="language-python">prompt = <span class="tok-st">"Hello, Ardwarklethyrx. Haus und Garten."</span>
+input_token_ids_list = tokenizer.encode<span class="tok-kw">(</span>prompt<span class="tok-kw">)</span>
+<span class="tok-kw">for</span> i <span class="tok-kw">in</span> input_token_ids_list:
+    print<span class="tok-kw">(f</span><span class="tok-st">"</span>{[i]}<span class="tok-st"> --&gt; </span>{tokenizer.decode<span class="tok-kw">(</span>[i]<span class="tok-kw">)</span>}<span class="tok-st">"</span><span class="tok-kw">)</span></code></pre>
+<p>The output is:</p>
+<pre><code class="language-python">[9707] --&gt; Hello
+[11] --&gt; ,
+[1644] --&gt; Ar
+[29406] --&gt; dw
+[838] --&gt; ark
+[273] --&gt; le
+[339] --&gt; th
+[10920] --&gt; yr</code></pre>
+<pre><code class="language-python">[87] --&gt; x
+[13] --&gt; .
+[47375] --&gt; Haus
+[2030] --&gt; und
+[93912] --&gt; Garten
+[13] --&gt; .</code></pre>
+<p>As you can see, unknown words are broken into smaller subwords or even single tokens; this allows the tokenizer and LLM to handle any input.</p>
+<p>German words are not broken down into characters or even subwords here, suggesting that the tokenizer has seen German texts during training. This also suggests that the LLM was likely trained on German texts too and should be able to handle at least some non-English languages well.</p>
+<h3 id="h3-exercise-2-2-rerun-code-on-non-cpu-devices">Exercise 2.2: Rerun code on non-CPU devices</h3>
+<p>We can simply delete the line <code>device = torch.device("cpu")</code> in listing 2.1 and then rerun the rest of the code in chapter 2 as is. Reference numbers for the hardware I used to run the code are provided in table 2.1 at the end of chapter 2.</p>
+<h2 id="h2-chapter-3"><span class="num">B.2</span>Chapter 3</h2>
+<h3 id="h3-exercise-3-1-adding-more-test-cases-2">Exercise 3.1: Adding more test cases</h3>
+<p>There are endlessly many test cases we can add. This is a selection of some interesting ones:</p>
+<pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.ch03 <span class="tok-kw">import</span> (
+    run_demos_table
+)
+more_tests = [
+    (<span class="tok-st">"check_17"</span>, <span class="tok-st">"[1, 2]"</span>, <span class="tok-st">"(1, 2)"</span>, <span class="tok-kw">True</span>),
+    (<span class="tok-st">"check_18"</span>, <span class="tok-st">"1e-3"</span>, <span class="tok-st">"0.001"</span>, <span class="tok-kw">True</span>),
+    (<span class="tok-st">"check_19"</span>, <span class="tok-st">"(-3)^2"</span>, <span class="tok-st">"9"</span>, <span class="tok-kw">True</span>),
+    (<span class="tok-st">"check_20"</span>, <span class="tok-st">"−1"</span>, <span class="tok-st">"-1"</span>, <span class="tok-kw">True</span>),
+]
+run_demos_table<span class="tok-kw">(</span>more_tests<span class="tok-kw">)</span></code></pre>
+<p>The output follows:</p>
+<pre><code class="language-python">Test | Expect | Got | Status
+check_17 | True | True | PASS
+check_18 | True | True | PASS
+check_19 | True | True | PASS
+check_20 | True | False | FAIL</code></pre>
+<p>As you can see, the tests pass in all cases except for <code>check_20</code>, which swaps the regular minus sign with a Unicode version of a minus sign that looks indistinguishable to the human eye (depending on the font or editor you are using). We could fix this test case by adding one of the following lines anywhere in the <code>normalize_text</code> function:</p>
+<pre><code class="language-python">text = text.replace<span class="tok-kw">(</span><span class="tok-st">"−"</span>, <span class="tok-st">"-"</span><span class="tok-kw">)</span></code></pre>
+<p>or</p>
+<pre><code class="language-python">text = text.replace<span class="tok-kw">(</span><span class="tok-st">"</span>\u2212<span class="tok-st">"</span>, <span class="tok-st">"-"</span><span class="tok-kw">)</span></code></pre>
+<p>Here is another interesting test:</p>
+<pre><code class="language-python">extra_tests_1 = [
+    (<span class="tok-st">"check_21"</span>, <span class="tok-st">"Text around answer 3."</span>, <span class="tok-st">"3"</span>, <span class="tok-kw">True</span>)
+]</code></pre>
+<p>You can run it with the following code:</p>
+<pre><code class="language-python">run_demos_table<span class="tok-kw">(</span>extra_tests_1<span class="tok-kw">)</span></code></pre>
+<p>But it fails the test:</p>
+<pre><code class="language-python">Test | Expect | Got | Status
+check_21 | True | False | FAIL
+Passed 0/1</code></pre>
+<p>While it may seem that the code cannot handle cases that contain text, this is actually a poorly designed test. In practice, the <code>run_demos_table</code> function is intended specifically to test the <code>grade_answer</code> function; nothing more, nothing less.</p>
+<p>The <code>grade_answer</code> function would never receive the entire answer in this text form because the answer would have been extracted from the text before being passed to it. If we want to test text answers, we need to call the test as follows:</p>
+<pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.ch03 <span class="tok-kw">import</span> (
+    extract_final_candidate
+)
+extra_tests_2 = [
+    (<span class="tok-st">"check_21"</span>,
+     extract_final_candidate<span class="tok-kw">(</span><span class="tok-st">"Text around answer 3."</span><span class="tok-kw">)</span>,
+     <span class="tok-st">"3"</span>, <span class="tok-kw">True</span>)
+]
+run_demos_table<span class="tok-kw">(</span>extra_tests_2<span class="tok-kw">)</span></code></pre>
+<p>As you can see from the output, it now passes the test:</p>
+<pre><code class="language-python">Test | Expect | Got | Status
+check_21 | True | True | PASS
+Passed 1/1</code></pre>
+<h3 id="h3-exercise-3-2-calculating-the-average-response-length-2">Exercise 3.2: Calculating the average response length</h3>
+<p>There are two options for calculating the average response length. The first is to modify the <code>evaluate_math500_stream</code> function (listing 3.13) by adding the following lines:</p>
+<pre><code class="language-python"><span class="tok-cm"># ...</span>
+<span class="tok-cm"># below `num_correct = 0`</span>
+total_len = <span class="tok-fn">0</span>
+<span class="tok-cm"># ...</span>
+<span class="tok-cm"># inside for i, row in enumerate(math_data, start=1):</span>
+<span class="tok-cm"># anywhere below `gen_text = ...`</span>
+total_len += len<span class="tok-kw">(</span>tokenizer.encode<span class="tok-kw">(</span>gen_text<span class="tok-kw">))</span>
+<span class="tok-cm"># ...</span>
+<span class="tok-cm"># anywhere at the bottom before the return statement</span>
+avg_len = total_len / num_examples
+print<span class="tok-kw">(f</span><span class="tok-st">"Average length: </span>{avg_len:.2f}<span class="tok-st"> tokens"</span><span class="tok-kw">)</span></code></pre>
+<p>Alternatively, the second option is to calculate the response lengths from the <code>.jsonl</code> files created when we ran the <code>evaluate_math500_stream</code> function in the main chapter. This way, we avoid having to rerun the evaluation.</p>
+<p>First, we load the <code>.jsonl</code> file as follows:</p>
+<pre><code class="language-python"><span class="tok-kw">import</span> json
+<span class="tok-kw">from</span> pathlib <span class="tok-kw">import</span> Path
+WHICH_MODEL = <span class="tok-st">"base"</span>
+dev_name = <span class="tok-st">"mps"</span>
+local_path = Path<span class="tok-kw">(f</span><span class="tok-st">"math500-</span>{dev_name}<span class="tok-st">.jsonl"</span><span class="tok-kw">)</span>
+<span class="tok-kw">if</span> <span class="tok-kw">not</span> local_path.exists<span class="tok-kw">()</span>:
+    <span class="tok-kw">raise</span> FileNotFoundError<span class="tok-kw">(</span>
+        <span class="tok-kw">f</span><span class="tok-st">"</span>{local_path}<span class="tok-st"> not found. Run ch03_main.ipynb to create it."</span>
+    <span class="tok-kw">)</span>
+results = []
+<span class="tok-kw">with</span> open<span class="tok-kw">(</span>local_path, <span class="tok-st">"r"</span><span class="tok-kw">)</span> <span class="tok-kw">as</span> f:
+    <span class="tok-kw">for</span> line <span class="tok-kw">in</span> f:
+        <span class="tok-kw">if</span> line.strip<span class="tok-kw">()</span>:
+            results.append<span class="tok-kw">(</span>json.loads<span class="tok-kw">(</span>line<span class="tok-kw">))</span>
+print<span class="tok-kw">(</span><span class="tok-st">"Number of entries:"</span>, len<span class="tok-kw">(</span>results<span class="tok-kw">))</span></code></pre>
+<p>Let’s print the dictionary keys to get a better idea of how the <code>results</code> dataset is structured:</p>
+<pre><code class="language-python">print<span class="tok-kw">(</span>results<span class="tok-kw">[</span><span class="tok-fn">0</span><span class="tok-kw">]</span>.keys<span class="tok-kw">())</span></code></pre>
+<p>This prints the following:</p>
+<pre><code class="language-python">dict_keys<span class="tok-kw">(</span>[<span class="tok-st">'index'</span>, <span class="tok-st">'problem'</span>, <span class="tok-st">'gtruth_answer'</span>, <span class="tok-st">'generated_text'</span>,
+<span class="tok-st">'extracted'</span>, <span class="tok-st">'correct'</span>]<span class="tok-kw">)</span></code></pre>
+<p>Each entry has multiple keys, but we are interested only in the <code>generated_text</code> key, which contains the model’s full answer. </p>
+<p>Next, we need to load the tokenizer so we can tokenize the answer text before calculating the number of tokens. This is similar to the code we used in listing 3.1:</p>
+<pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.qwen3 <span class="tok-kw">import</span> (
+    download_qwen3_small,
+    Qwen3Tokenizer
+)
+<span class="tok-kw">if</span> WHICH_MODEL == <span class="tok-st">"base"</span>:
+    download_qwen3_small<span class="tok-kw">(</span>
+        kind=<span class="tok-st">"base"</span>, tokenizer_only=<span class="tok-kw">True</span>, out_dir=<span class="tok-st">"qwen3"</span>
+    <span class="tok-kw">)</span>
+    tokenizer_path = Path<span class="tok-kw">(</span><span class="tok-st">"qwen3"</span><span class="tok-kw">)</span> / <span class="tok-st">"tokenizer-base.json"</span>
+    tokenizer = Qwen3Tokenizer<span class="tok-kw">(</span>tokenizer_file_path=tokenizer_path<span class="tok-kw">)</span>
+<span class="tok-kw">elif</span> WHICH_MODEL == <span class="tok-st">"reasoning"</span>:
+    download_qwen3_small<span class="tok-kw">(</span>
+        kind=<span class="tok-st">"reasoning"</span>, tokenizer_only=<span class="tok-kw">True</span>, out_dir=<span class="tok-st">"qwen3"</span>
+    <span class="tok-kw">)</span>
+    tokenizer_path = Path<span class="tok-kw">(</span><span class="tok-st">"qwen3"</span><span class="tok-kw">)</span> / <span class="tok-st">"tokenizer-reasoning.json"</span>
+    tokenizer = Qwen3Tokenizer<span class="tok-kw">(</span>
+        tokenizer_file_path=tokenizer_path,
+        apply_chat_template=<span class="tok-kw">True</span>,
+        add_generation_prompt=<span class="tok-kw">True</span>,
+        add_thinking=<span class="tok-kw">True</span>,
+    <span class="tok-kw">)</span></code></pre>
+<p>Now we can calculate the average length as follows, which is similar to how we could have modified the <code>evaluate_math500_stream</code> function:</p>
+<pre><code class="language-python">total_len = <span class="tok-fn">0</span>
+<span class="tok-kw">for</span> item <span class="tok-kw">in</span> results:
+    num_tokens = len<span class="tok-kw">(</span>tokenizer.encode<span class="tok-kw">(</span>item<span class="tok-kw">[</span><span class="tok-st">"generated_text"</span><span class="tok-kw">]))</span>
+    total_len += num_tokens
+avg_len = total_len / len<span class="tok-kw">(</span>results<span class="tok-kw">)</span>
+print<span class="tok-kw">(f</span><span class="tok-st">"Average length: </span>{avg_len:.2f}<span class="tok-st"> tokens"</span><span class="tok-kw">)</span></code></pre>
+<p>The resulting average length is as follows:</p>
+<pre><code class="language-python">Average length: 98.00 tokens</code></pre>
+<p>Table B.1 lists the average lengths for the different models and subsets.</p>
+<div class="tw"><table><caption><span class="lbl">Table B.1</span>Average number of tokens on MATH-500</caption><thead><tr><th>Model</th><th>Device</th><th>Average length</th><th>MATH-500 size</th></tr></thead><tbody><tr><td>Base</td><td>CPU</td><td>97.30</td><td>10</td></tr><tr><td>Base</td><td>CUDA</td><td>96.74</td><td>500</td></tr><tr><td>Reasoning</td><td>CPU</td><td>891.80</td><td>10</td></tr><tr><td>Reasoning</td><td>CUDA</td><td>1361.21</td><td>500</td></tr></tbody></table></div>
+<p>As you can see from the results in table B.1, and as expected, the reasoning model generates much longer responses (in this case, approximately 10 times longer).</p>
+<nav class="pager"><a class="prev" href="page-84.html" rel="prev"><span class="dir">上一页</span><span class="t">A.6 Chapter 6: Training reasoning models with reinforcement learning</span></a><a class="next" href="page-86.html" rel="next"><span class="dir">下一页</span><span class="t">Exercise 3.3: Extending or changing the evaluation dataset</span></a></nav>
+</main>
+</body>
+</html>

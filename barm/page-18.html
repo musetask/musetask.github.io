@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>2.9 Faster inference via PyTorch model compilation · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-17.html">
+<link rel="next" href="page-19.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 18 页 / 共 108 页</span></div>
+<h2 id="h2-faster-inference-via-pytorch-model-compilation"><span class="num">2.9</span>Faster inference via PyTorch model compilation</h2>
+<p>In the previous section, we covered KV caching as a technique to improve runtime efficiency as shown in the overview in figure 2.17.</p>
+<figure><a class="zoom" href="assets/figure-2.17.png" tabindex="-1"><img src="assets/figure-2.17.png" alt="" width="1143" height="559" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 2.17</span>An overview of the four key stages in developing a reasoning model in this book. This section builds on pretrained LLM and the basic text generation function we coded earlier, including KV caching, and adds model compilation to speed up the execution speed even further.</figcaption></figure>
+<p>As shown in figure 2.17, in this remaining section of this chapter, we will apply another technique that can substantially speed up model inference: model compilation using <code>torch.compile</code>. In simple terms, <code>torch.compile</code> analyzes the model’s internal computation graph and tries to turn groups of operations into more optimized kernels, which reduces Python overhead and other execution inefficiencies. This can improve runtime performance during text generation, especially when we call the same model code repeatedly in a loop.</p>
+<p>That will matter later when we run larger evaluations and more elaborate reasoning workflows, where even modest per-step speedups can save substantial total runtime. We can compile the model as follows:</p>
+<pre><code class="language-bash">major, minor = map<span class="tok-kw">(</span>int, torch.__version__.split<span class="tok-kw">(</span><span class="tok-st">"."</span><span class="tok-kw">)</span>[:<span class="tok-fn">2</span>]<span class="tok-kw">)</span>
+<span class="tok-kw">if</span> (major, minor) &gt;= (<span class="tok-fn">2</span>, <span class="tok-fn">8</span>):
+    <span class="tok-cm"># This avoids retriggering model recompilations</span>
+    <span class="tok-cm"># in PyTorch 2.8 and newer</span>
+    <span class="tok-cm"># if the model contains code like self.pos = self.pos + 1</span>
+    torch._dynamo.config.allow_unspec_int_on_nn_module = <span class="tok-kw">True</span>
+model_compiled = torch.compile<span class="tok-kw">(</span>model<span class="tok-kw">)</span></code></pre>
+<p>If you are using a Mac with Apple Silicon and encounter an <code>InductorError</code>, please make sure to use PyTorch 2.9 or newer.</p>
+<p>It is worth noting that the first execution using the compiled model may be slower than usual due to the initial compilation and optimization steps. To better measure the performance improvement, we will repeat the text generation process multiple times.</p>
+<p>To begin, we will test this using the noncached version of the generation function. The code in listing 2.5 is similar to what we used before except that we run it three times in a row. The code execution may take a few minutes to finish, depending on the system.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">for</span> i <span class="tok-kw">in</span> range<span class="tok-kw">(</span><span class="tok-fn">3</span><span class="tok-kw">)</span>:</code></pre><figcaption><span class="lbl">Listing 2.5</span>Generating text with the compiled model</figcaption></figure>
+<pre><code class="language-python">    start_time = time.time<span class="tok-kw">()</span>
+    generated_ids = []
+    <span class="tok-kw">for</span> token <span class="tok-kw">in</span> generate_text_basic_stream<span class="tok-kw">(</span>
+        model=model_compiled,
+        token_ids=input_token_ids_tensor,
+        max_new_tokens=max_new_tokens,
+        eos_token_id=tokenizer.eos_token_id
+    <span class="tok-kw">)</span>:
+        token_id = token.squeeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>.tolist<span class="tok-kw">()</span>
+        print<span class="tok-kw">(</span>
+            tokenizer.decode<span class="tok-kw">(</span>token_id<span class="tok-kw">)</span>,
+            end=<span class="tok-st">""</span>,
+            flush=<span class="tok-kw">True</span>
+        <span class="tok-kw">)</span>
+        next_token_id = token.squeeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>
+        generated_ids.append<span class="tok-kw">(</span>next_token_id<span class="tok-kw">)</span>
+    end_time = time.time<span class="tok-kw">()</span></code></pre>
+<pre><code class="language-python">    <span class="tok-kw">if</span> i == <span class="tok-fn">0</span>:
+        print<span class="tok-kw">(</span><span class="tok-st">"</span>\n\n<span class="tok-st">Warm-up run"</span><span class="tok-kw">)</span>
+    <span class="tok-kw">else</span>:
+        print<span class="tok-kw">(f</span><span class="tok-st">"</span>\n\n<span class="tok-st">Timed run </span>{i}<span class="tok-st">:"</span><span class="tok-kw">)</span>
+    output_token_ids_tensor = torch.cat<span class="tok-kw">(</span>generated_ids, dim=<span class="tok-fn">0</span><span class="tok-kw">)</span>
+    generate_stats<span class="tok-kw">(</span>output_token_ids_tensor, tokenizer, start_time, end_time<span class="tok-kw">)</span>
+    print<span class="tok-kw">(f</span><span class="tok-st">"</span>\n{<span class="tok-fn">30</span>*<span class="tok-st">'-'</span>}\n<span class="tok-st">"</span><span class="tok-kw">)</span></code></pre>
+<p>The output is as follows:</p>
+<pre><code class="language-python"> Large language models are artificial intelligence systems that can
+understand, generate, and process human language, enabling them to</code></pre>
+<pre><code class="language-python">perform a wide range of tasks, from answering questions to writing
+articles, and even creating creative content.
+Warm-up run
+Time: 11.68 sec
+3 tokens/sec
+------------------------------
+ Large language models are artificial intelligence systems that can
+understand, generate, and process human language, enabling them to
+perform a wide range of tasks, from answering questions to writing
+articles, and even creating creative content.
+Timed run 1:
+Time: 6.78 sec
+6 tokens/sec
+------------------------------
+ Large language models are artificial intelligence systems that can
+understand, generate, and process human language, enabling them to
+perform a wide range of tasks, from answering questions to writing
+articles, and even creating creative content.
+Timed run 2:
+Time: 6.80 sec
+6 tokens/sec
+------------------------------</code></pre>
+<p>As we can see from the results, the compiled model achieves a slight improvement in speed, with around 6 tokens per second compared to the previous 5 tokens per second.</p>
+<p>Next, let’s see how the KV cache version performs in comparison, using the same code as before except for swapping <code>generate_text_basic_stream</code> with <code>generate_text_ </code></p>
+<pre><code class="language-python">basic_stream_cache.</code></pre>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">for</span> i <span class="tok-kw">in</span> range<span class="tok-kw">(</span><span class="tok-fn">3</span><span class="tok-kw">)</span>:
+    start_time = time.time<span class="tok-kw">()</span>
+    generated_ids = []
+    <span class="tok-kw">for</span> token <span class="tok-kw">in</span> generate_text_basic_stream_cache<span class="tok-kw">(</span>
+        model=model_compiled,
+        token_ids=input_token_ids_tensor,
+        max_new_tokens=max_new_tokens,
+        eos_token_id=tokenizer.eos_token_id
+    <span class="tok-kw">)</span>:
+        token_id = token.squeeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>.tolist<span class="tok-kw">()</span>
+        print<span class="tok-kw">(</span>
+            tokenizer.decode<span class="tok-kw">(</span>token_id<span class="tok-kw">)</span>,
+            end=<span class="tok-st">""</span>,
+            flush=<span class="tok-kw">True</span>
+        <span class="tok-kw">)</span>
+        next_token_id = token.squeeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>
+        generated_ids.append<span class="tok-kw">(</span>next_token_id<span class="tok-kw">)</span>
+    end_time = time.time<span class="tok-kw">()</span>
+    <span class="tok-kw">if</span> i == <span class="tok-fn">0</span>:
+        print<span class="tok-kw">(</span><span class="tok-st">"</span>\n\n<span class="tok-st">Warm-up run"</span><span class="tok-kw">)</span>
+    <span class="tok-kw">else</span>:
+        print<span class="tok-kw">(f</span><span class="tok-st">"</span>\n\n<span class="tok-st">Timed run </span>{i}<span class="tok-st">:"</span><span class="tok-kw">)</span>
+    output_token_ids_tensor = torch.cat<span class="tok-kw">(</span>generated_ids, dim=<span class="tok-fn">0</span><span class="tok-kw">)</span>
+    generate_stats<span class="tok-kw">(</span>
+        output_token_ids_tensor, tokenizer, start_time, end_time
+    <span class="tok-kw">)</span>
+    print<span class="tok-kw">(f</span><span class="tok-st">"</span>\n{<span class="tok-fn">30</span>*<span class="tok-st">'-'</span>}\n<span class="tok-st">"</span><span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 2.6</span>Generating text with the compiled model using a KV cache</figcaption></figure>
+<p>The output is as follows:</p>
+<pre><code class="language-python"> Large language models are artificial intelligence systems that can
+understand, generate, and process human language, enabling them to
+perform a wide range of tasks, from answering questions to writing
+articles, and even creating creative content.
+Warm-up run
+Time: 8.07 sec
+5 tokens/sec
+------------------------------
+ Large language models are artificial intelligence systems that can
+understand, generate, and process human language, enabling them to
+perform a wide range of tasks, from answering questions to writing
+articles, and even creating creative content.
+Timed run 1:
+Time: 0.60 sec
+68 tokens/sec
+------------------------------
+ Large language models are artificial intelligence systems that can
+understand, generate, and process human language, enabling them to
+perform a wide range of tasks, from answering questions to writing</code></pre>
+<pre><code class="language-python">articles, and even creating creative content.
+Timed run 2:
+Time: 0.60 sec
+68 tokens/sec
+------------------------------</code></pre>
+<p>As we can see based on the outputs, the model generation speed improved from 29 tokens per second for the uncompiled model with KV cache to 68 tokens per second when the same model is compiled (on a Mac Mini M4 CPU), which is more than a two-fold speed-up.</p>
+<p>If you don’t see any improvement, try running <code>torch.compile</code> with the <code>"max-autotune"</code> mode instead of the default settings. For instance, replace</p>
+<pre><code class="language-python">model = torch.compile<span class="tok-kw">(</span>model<span class="tok-kw">)</span></code></pre>
+<p>with</p>
+<pre><code class="language-python">model = torch.compile<span class="tok-kw">(</span>model, mode=<span class="tok-st">"max-autotune"</span><span class="tok-kw">)</span></code></pre>
+<nav class="pager"><a class="prev" href="page-17.html" rel="prev"><span class="dir">上一页</span><span class="t">Text generation and inference terminology</span></a><a class="next" href="page-19.html" rel="next"><span class="dir">下一页</span><span class="t">Exercise 2.2: Rerunning code on non-CPU devices</span></a></nav>
+</main>
+</body>
+</html>

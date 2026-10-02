@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>数学推导详解 · 4.6 多项式抽样 · Build a Reasoning Model</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">数学推导详解 · 4.6 抽样</span>
+<a class="nav" href="page-35.html">原文</a>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">对应原文第 35 页 · 第 4 章 Improving reasoning with inference-time scaling</span></div>
+
+<h1>4.6 多项式抽样：\(P(x_i) = p_i\) 与「0.40 是 0.10 的 4 倍」</h1>
+
+<div class="lead">
+<a href="page-34-detail.html">4.4 的推导</a>只走到了 softmax + temperature，<b>从分布到「抽一个」这一步是空的</b>。原文在这里直接说「0.40 的 token 是 0.10 的 4 倍」，却没给推导。这一页把这一步补上：抽样本身的定义、那句 4 倍怎么来的、<code>torch.multinomial</code> 的确切语义，以及 1,000 次抽样的实验数字能不能被理论值预测。
+</div>
+
+<h2 class="deriv">一、定义：多项式（分类）抽样</h2>
+
+<p>设词表 \(V\) 上有一个已归一化的概率分布 \(\mathbf{p} = (p_1, \dots, p_{|V|})\)，满足 \(p_i \ge 0\) 且 \(\sum_i p_i = 1\)。<b>多项式抽样</b>（分类抽样，categorical sampling）就是：随机取一个类别 \(I\)，使得</p>
+
+\[
+\Pr(I = i) = p_i, \qquad i = 1,\dots,|V|
+\]
+
+<p>注意这里<b>没有任何额外结构</b>——不需要排序、不需要累积质量、不需要 top-p。这一步的数学内容极简，<b>所有的复杂度都在前一步：<code>p</code> 本身是怎么算出来的</b>（那才是 4.4 温度缩放和 4.5 top-p 过滤的内容）。</p>
+
+<h3>1.1 与「贪心解码」在数学上的区别</h3>
+
+\[
+I_{\text{greedy}} = \arg\max_i p_i \quad(\text{确定性，} \Pr(I) \text{ 是 } \delta\text{ 分布}), \qquad
+I_{\text{sample}} \sim \text{Categorical}(\mathbf{p}) \quad(\text{随机，} \Pr(I=i) = p_i)
+\]
+
+<div class="warn">
+<span class="tag">温度为 0 时「温度」这个旋钮就失效了</span>
+<p>贪心解码只看<b>排名</b>，完全不看分值。所以只要 <code>temperature = 0</code>，<code>z / 0</code> 无论怎么定义都不影响输出——<b>温度缩放彻底不起作用</b>。这正是 listing 4.8 里要写 <code>if temperature is None or temperature == 0.0: next_token = torch.argmax(...)</code> 走单独分支的原因。</p>
+</div>
+
+<h2 class="deriv">二、「0.40 是 0.10 的 4 倍」这句话的推导</h2>
+
+<p>原文说：<i>a token with probability 0.40 is four times as likely to appear as one with probability 0.10, but both remain possible outcomes</i>。这句话有两个可检验的数学含义。</p>
+
+<h3>2.1 含义一：长期频率之比</h3>
+
+<p>做 \(n\) 次独立抽样，token \(i\) 出现次数为 \(N_i\)。由弱大数定律：</p>
+
+\[
+\frac{N_i}{n} \xrightarrow[n \to \infty]{\text{几乎必然}} p_i
+\]
+
+<p>于是：</p>
+
+\[
+\frac{N_{0.40}}{N_{0.10}} \xrightarrow[n \to \infty]{} \frac{0.40}{0.10} = 4
+\]
+
+<p>这才是「4 倍」的严格含义：<b>不是「一次抽样里更容易被选中」这种无法量化的说法，而是长期出现次数的比例</b>。</p>
+
+<h3>2.2 含义二：单次抽样的比值没有意义</h3>
+
+<p>「4 倍容易」这个说法容易被误解成「一次抽到前者的概率是后者的 4 倍」——这当然是对的（\(0.40/0.10 = 4\)），但<b>概率比 ≠ 可能性</b>。用原文给的三个候选做具体演示：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>token</th><th>概率</th><th>1,000 次抽样的期望次数</th><th>标准差</th></tr></thead>
+<tbody>
+<tr><td>"Berlin"</td><td>0.70</td><td>700</td><td>14.5</td></tr>
+<tr><td>"Munich"</td><td>0.20</td><td>200</td><td>12.6</td></tr>
+<tr><td>"Hamburg"</td><td>0.10</td><td>100</td><td>9.5</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>（单个 token 的出现次数服从二项分布 \(N_i \sim \text{Binomial}(1000, p_i)\)，\(\mathrm{Var} = np(1-p)\)。）</p>
+
+<p>结论：<b>三个 token 全部都会出现</b>，只是次数不同。Hamburg 出现 0 次的概率是</p>
+
+\[
+(1 - 0.10)^{1000} = 0.9^{1000} \approx e^{1000 \ln 0.9} = e^{-105.36} \approx 1.7\times 10^{-46}
+\]
+
+<p>——约等于不可能。「但 both remain possible outcomes」不是修辞，是字面上的意思。</p>
+
+<h2 class="deriv">三、怎么实现一次抽样</h2>
+
+<h3>3.1 逆 CDF 法（累积分布反演）</h3>
+
+<p>把概率排序，令 \(F_k = \sum_{i\le k} p_i\)（\(F_{|V|} = 1\)，即 CDF）。抽一个 \(u \sim \text{Uniform}(0,1)\)，返回</p>
+
+\[
+I = \min\{k : F_k > u\}
+\]
+
+<p>验证：对任意 \(i\)，</p>
+
+\[
+\Pr(I = i) = \Pr(F_{i-1} \le u < F_i) = F_i - F_{i-1} = p_i \quad\blacksquare
+\]
+
+<p>干净利落。<b>注意这个推导用到了 \(\text{Uniform}(0,1)\) 与 CDF 的关系</b>——这正是 <a href="page-36-detail.html">4.5 节里 <code>torch.cumsum</code> 那个技巧</a>的理论依据，也是为什么 top-p 只需要一次 <code>cumsum</code>。</p>
+
+<h3>3.2 Gumbel-max 法（softmax 的另一种用法）</h3>
+
+<p>还有一个等价且优雅的实现。若 \(g_i \overset{\text{iid}}{\sim} \text{Gumbel}(0,1)\)，则</p>
+
+\[
+I = \arg\max_i \big(\log p_i + g_i\big)
+\]
+
+<p>同样满足 \(\Pr(I = i) = p_i\)（Gumbel-max trick）。由于 \(g_i = -\log(-\log u_i)\)，这等价于把随机数 \(u_i\) 代入逆 CDF。<b>这个式子在实践中极重要：</b>温度缩放的 \(p_i = e^{z_i/T}/\sum_j e^{z_j/T}\) 代入后，\(\log p_i = z_i/T + \text{const}\)，于是</p>
+
+\[
+I = \arg\max_i \left(\frac{z_i}{T} + g_i\right)
+\]
+
+<div class="key">
+<span class="tag">这才是「logits → 采样」最紧凑的写法</span>
+<p>取对数把 softmax 消掉了，<b>整个采样退化成「加噪声后的 argmax」</b>。对照来看：</p>
+<ul>
+<li>\(T \to 0\)：\(\frac{z_i}{T}\) 爆炸，噪声被淹没 → 退化为 <code>argmax</code>（贪心）。</li>
+<li>\(T \to \infty\)：只剩噪声 → 均匀随机（\(1/|V|\)）。</li>
+</ul>
+<p>这正是 <a href="page-34-detail.html">4.4 推导页</a>里那两个极限的另一个证明角度——从采样算子本身看，而不是从概率比看。</p>
+</div>
+
+<h2 class="deriv">四、<code>torch.multinomial</code> 的确切语义</h2>
+
+<pre><code>next_token = torch.multinomial(probas.cpu(), num_samples=1)</code></pre>
+
+<div class="tw">
+<table>
+<thead><tr><th>行为</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td>输入要求</td><td>非负、<b>不需要</b>归一化到 1（内部自己会归一化）</td></tr>
+<tr><td><code>num_samples</code> &gt; 1</td><td><b>有放回</b>（with replacement）：<code>k</code> 个样本相互独立，都服从同一个 \(\mathbf{p}\)</td></tr>
+<tr><td><code>replacement=False</code></td><td>无放回抽 <code>k</code> 个<b>不同</b>类别（此时 <code>k</code> 不能超过非零类别的个数）</td></tr>
+<tr><td>返回</td><td>形状 <code>[batch, num_samples]</code> 的 <b>token id</b>，不是概率</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>所以「多项式抽样」这个名词要小心：<b>它不是在描述「抽 \(k\) 个」的分布</b>（那是多项分布 \(\text{Multinomial}(n,\mathbf{p})\)），而是在描述<b>抽一个</b>的机制。抽 \(n\) 次的计数向量才服从多项分布：</p>
+
+\[
+(N_1, N_2, \dots, N_{|V|}) \sim \text{Multinomial}\!\left(n;\ p_1, \dots, p_{|V|}\right)
+\]
+
+<pre><code><span class="tok-fn">print</span>(<span class="tok-st">"Sampled token:"</span>, torch.multinomial(next_token_probas.cpu(), num_samples=<span class="tok-nu">1</span>))</code></pre>
+
+<div class="eq-note">
+<b>为什么必须 <code>.cpu()</code>：</b>原文把抽样放在 CPU 上并说明原因——<code>torch.multinomial()</code> 在 CUDA 和 MPS 上的实现与 CPU 不一致，作者在 PyTorch 2.9 上观察到 <code>num_samples</code> 较大时甚至会崩溃。<b>抽样是整个流程里唯一一个「不可复现就是 bug」的环节</b>，放在 CPU 是为了让 <code>torch.manual_seed(123)</code> 真正生效。
+</div>
+
+<h2 class="deriv">五、原文实验的定量检验</h2>
+
+<h3>5.1 温度 5.0：为什么「没有一个 token 出现超过 2 次」</h3>
+
+<p>在这个温度下 " Berlin" 的概率是 <b>0.0003</b>（<a href="page-34-detail.html">4.4 推导页</a>算过）。抽 1,000 次，它出现 \(N\) 次满足 \(N \sim \text{Binomial}(1000, 0.0003)\)，均值 \(\lambda = 0.3\)：</p>
+
+\[
+\Pr(N \le 2) \approx e^{-\lambda}\left(1 + \lambda + \frac{\lambda^2}{2}\right)
+= e^{-0.3}(1 + 0.3 + 0.045) = 0.9964
+\]
+
+<div class="key">
+<span class="tag">这就是原文实验结果的解释</span>
+<p><b>99.6% 的概率下 " Berlin" 出现不超过 2 次</b>——而这正是原文列出的结果：每个 token 都是 <code>2x</code>、<code>2x</code>。输出里一堆无意义的 token（<code>' represent'</code>、<code>' Inf'</code>、<code>' beside'</code>）也同样如此：它们的概率都很小，各自被抽中 1~2 次后，剩下的次数被其它长尾 token 分掉。</p>
+<p>所以 <code>count_samples</code> 的输出<b>不是「采样不准」</b>，而是 <b>T = 5.0 把分布压得太平</b>之后的忠实结果。</p>
+</div>
+
+<h3>5.2 温度 0.35：435 次与理论值一致吗</h3>
+
+<p>原文说 <code>probas_lowT[0, 19846]</code> 约等于 <b>42%</b>，而 1,000 次抽到 435 次。检验：</p>
+
+\[
+\hat{p} = \frac{435}{1000} = 0.435, \qquad
+\sigma = \sqrt{\frac{p(1-p)}{n}} = \sqrt{\frac{0.42 \times 0.58}{1000}} = 0.0156
+\]
+
+\[
+z = \frac{0.435 - 0.42}{0.0156} = +0.96
+\]
+
+<p><b>0.96 个标准差，完全在预期范围内。</b>实验和理论对得上。</p>
+
+<p>其余 token 同样符合：' ______' 209 次、' ____' 169 次、' __' 158 次、Munich 和 Hamburg 各 3 次。把 7 个主要 token 的经验频率代回熵公式（见 <a href="page-65-detail.html">7.3 推导</a>）：</p>
+
+\[
+H = -\sum_i \hat{p}_i \log \hat{p}_i \approx 1.3884 \ \text{nats} = 2.0031 \ \text{bits}
+\]
+
+<p>也就是说 1,000 次抽样的结果里有约 <b>2 个比特</b>的不确定性。这个数可以直接读作「模型在这个位置有多确定」——也正是 7.3 节里用熵做训练崩溃早期信号的那个量。</p>
+
+<div class="key">
+<span class="tag">T = 0.35 和 T = 5.0 的本质差别只有一个</span>
+<p>温度缩放 <a href="page-34-detail.html">把概率比变成了 \(e^{\Delta/T}\)</a>。当 \(T\) 从 5 降到 0.35（14 倍），任何一对 token 的概率比都被<b>指数放大 14 倍</b>。于是原本平坦的长尾被压缩，采样结果从「一堆噪声」变成「' Berlin' 为主 + 几个合理的城市名 + 几个来自 quiz 模板的下划线」。</p>
+<p>注意 T = 0.35 < 0.8（self-consistency 用的值），这符合预期：<b>这一节是在演示「温度确实在起作用」，不是推荐这个值</b>。原文在「Choosing temperature settings」里给的经验区间是 <b>0.3–0.8</b>。</p>
+</div>
+
+<h2 class="deriv">六、这一节与 self-consistency 的因果关系</h2>
+
+<ol class="steps">
+<li><b>4.6 的抽样</b>提供随机性。单次结果仍然是错的（原文跑出 \(\boxed{x = \frac{90}{7}}\)，正确答案是 83）。</li>
+<li><b>4.4 的温度</b>控制随机性的<b>大小</b>。T → 0 就没有随机性，self-consistency 退化为单次生成。</li>
+<li><b>4.5 的 top-p</b>清理长尾，防止随机性把输出带偏到完全无关的 token。</li>
+<li><b>多数投票</b>把「单次会错」变成「多数会对」。这是第 4 章 self-consistency 的全部机制。</li>
+</ol>
+
+<div class="eq-note">
+<b>为什么不是温度越大越好：</b>投票的准确率取决于「正确答案在 \(N\) 次采样中的票数占比」。温度过低 → \(N\) 个答案完全一样，占比退化为 1/1（若答案错则必错）；温度过高 → \(N\) 个答案都是噪声，占比接近均匀，投票 ≈ 随机猜。<b>最优温度让占比在「略高于 1/2」和「远高于 1/2」之间</b>——这正是 0.8 这类经验值的来源。
+</div>
+
+<nav class="deriv-nav">
+<a href="page-36-detail.html"><span class="dir">详解</span>下一页：4.5 top-p 过滤</a>
+<a href="page-34-detail.html"><span class="dir">详解</span>上一页：4.4 温度缩放与 softmax</a>
+<a href="page-35.html"><span class="dir">原文</span>4.6 多项式抽样</a>
+</nav>
+
+</main>
+
+<script defer src="assets/katex/katex.min.js"></script>
+<script defer src="assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>F.5 Judging responses with other LLMs · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-102.html">
+<link rel="next" href="page-104.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 103 页 / 共 108 页</span></div>
+<h2 id="h2-judging-responses-with-other-llms"><span class="num">F.5</span>Judging responses with other LLMs</h2>
+<p>In the early days, LLMs were evaluated using statistical and heuristics-based methods, including a measure called <em>BLEU</em>, which crudely measures how well generated text matches reference text. The problem with such metrics is that they require exact word matches and don’t account for synonyms, word substitutions, and so on.</p>
+<p>One solution to this problem, if we want to judge the written answer text as a whole, is to use relative rankings and leaderboard-based approaches, as discussed in the previous section. But a downside of leaderboards is the subjective nature of preference-based comparisons because they involve human feedback, and there are the challenges of collecting that feedback.</p>
+<p>A related method is to use another LLM with a predefined grading <em>rubric</em> (that is, an evaluation guide) to compare an LLM’s response with a reference response and judge the response quality based on that rubric, as illustrated in figure F.6.</p>
+<figure><a class="zoom" href="assets/figure-F.6.png" tabindex="-1"><img src="assets/figure-F.6.png" alt="" width="1143" height="1077" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure F.6</span>Example of an LLM-judge evaluation. The model to be evaluated generates an answer, which is then scored by a separate judge LLM according to a rubric and a provided reference answer.</figcaption></figure>
+<p>In practice, the judge-based approach shown in figure F.6 works well when the judge LLM is strong. Common setups use leading proprietary LLMs via API, though specialized judge models also exist (see appendix A for references). One reason judges work so well is that evaluating an answer is often easier than generating one.</p>
+<p>To implement a judge-based model evaluation programmatically in Python, we could load one of the Qwen3 models (discussed in appendix D) and prompt it with a grading rubric and the model answer we want to evaluate. Alternatively, we can use other LLMs through an API, such as the ChatGPT or Ollama API. </p>
+<p>In the remainder of this section, we’ll implement the judge-based evaluation shown in figure F.6 using the Ollama API in Python. Specifically, we will use the 20-billion-parameter gpt-oss open-weight model by OpenAI because it offers a good balance between capability and efficiency. For more information about gpt-oss, please see my “From GPT-2 to gpt-oss: Analyzing the Architectural Advances” article at <a href="https://magazine.sebastianraschka.com/p/from-gpt-2-to-gpt-oss-analyzing-the">https://magazine.sebastianraschka.com/p/from-gpt-2-to-gpt-oss-analyzing-the</a>.</p>
+<h3 id="h3-implementing-the-llm-as-a-judge-approach-in-ollama"><span class="num">F.5.1</span>Implementing the LLM-as-a-judge approach in Ollama</h3>
+<p>Ollama (<a href="https://ollama.com">https://ollama.com</a>) is an efficient open source application for running LLMs on a laptop. It serves as a wrapper around the open source llama.cpp library (<a href="https://github.com/ggerganov/llama.cpp">https://github.com/ggerganov/llama.cpp</a>), which implements LLMs in pure C/C++ for maximum efficiency. However, Ollama is only a tool for generating text with LLMs (inference); it does not support training or fine-tuning LLMs.</p>
+<p>To execute the following code, install Ollama by visiting <a href="https://ollama.com">https://ollama.com</a> and follow the instructions for your operating system:</p>
+<ul><li>For macOS and Windows users: Open the downloaded Ollama application. If prompted to install command-line support, select “Yes.”</li></ul>
+<ul><li>For Linux users: Use the installation command available on the Ollama website.</li></ul>
+<p>Before implementing the model evaluation code, let’s first download the gpt-oss model and verify that Ollama is functioning correctly from the command-line terminal. Execute the following command on the command line (not in a Python session):</p>
+<pre><code class="language-python">ollama run gpt-oss:20b</code></pre>
+<p>The first time you execute this command, the 20-billion-parameter gpt-oss model, which takes up 14 GB of storage space, will automatically be downloaded. The output is as follows:</p>
+<pre><code class="language-bash">$ ollama run gpt-oss:20b
+pulling manifest
+pulling b112e727c6f1: 100% ▕██████████████████████▏ 13 GB
+pulling fa6710a93d78: 100% ▕██████████████████████▏ 7.2 KB
+pulling f60356777647: 100% ▕██████████████████████▏ 11 KB
+pulling d8ba2f9a17b3: 100% ▕██████████████████████▏ 18 B
+pulling 55c108d8e936: 100% ▕██████████████████████▏ 489 B
+verifying sha256 digest
+writing manifest
+removing unused layers
+success</code></pre>
+<h3 id="h3-alternative-ollama-models">Alternative Ollama models</h3>
+<div class="lead">Note that the <code>gpt-oss:20b</code> in the <code>ollama</code> <code>run</code> <code>gpt-oss:20b</code> command refers to the 20-billion-parameter gpt-oss model. Using Ollama with the <code>gpt-oss:20b</code> model requires approximately 13 GB of RAM. If your machine does not have enough RAM, you can try a smaller model, such as the 4-billion-parameter <code>qwen3:4b</code> model via <code>ollama</code> <code>run qwen3:4b</code>, which requires only around 4 GB of RAM. For more powerful computers, you can also use the larger 120-billion-parameter gpt-oss model by replacing <code>gpt-oss:20b</code> with <code>gpt-oss:120b</code>. But keep in mind that this model requires significantly more computational resources.</div>
+<p>Once the model download is complete, you will be presented with a command-line interface that allows you to interact with the model. For example, try asking the model, </p>
+<pre><code class="language-python">"What is 1+2?":
+&gt;&gt;&gt; What is 1+2?
+Thinking...
+User asks: "What is 1+2?" This is simple: answer 3. Provide explanation?
+Possibly ask for simple
+arithmetic. Provide answer: 3.
+...done thinking.
+1 + 2 = **3**</code></pre>
+<p>You can end this Ollama session using the input <code>/bye</code>.</p>
+<p>In the remainder of this section, we’ll use the Ollama API. This approach requires that Ollama is running in the background. There are three options for doing this:</p>
+<ul><li>Run the <code>ollama</code> <code>serve</code> command in the terminal (recommended). This runs the Ollama backend as a server, usually on <code>http: //localhost: 11434</code>. Note that it doesn’t load a model until it’s called through the API (later in this section).</li></ul>
+<ul><li>Run the <code>ollama</code> <code>run</code> <code>gpt-oss:20b</code> command, as you did earlier, but keep it open and don’t exit the session via <code>/bye</code>. As discussed earlier, this opens a minimal convenience wrapper around a local Ollama server. Behind the scenes, it uses the same server API as <code>ollama</code> <code>serve</code>.</li></ul>
+<ul><li>Open the Ollama desktop app to run the same backend automatically, which provides a graphical interface on top, as shown earlier in figure F.6.</li></ul>
+<h3 id="h3-ollama-server-ip-address">Ollama server IP address</h3>
+<div class="lead">Ollama runs locally on your machine by starting a local server-like process. When you run <code>ollama serve</code> in the terminal, you may encounter an error message saying <code>Error: </code></div>
+<pre><code class="language-python">listen tcp 127.0.0.1:11434: bind: address already in use.</code></pre>
+<div class="lead">If that’s the case, try using the command <code>OLLAMA_HOST=127.0.0.1:11435</code> <code>ollama serve</code> (and if this address is also in use, increment the numbers by one until you find an address that isn’t in use).</div>
+<p>The following code verifies that the Ollama session is running properly. </p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">import</span> psutil
+<span class="tok-kw">def</span> check_if_running(process_name):
+    running = <span class="tok-kw">False</span>
+    <span class="tok-kw">for</span> proc <span class="tok-kw">in</span> psutil.process_iter<span class="tok-kw">(</span>["name"]<span class="tok-kw">)</span>:
+        <span class="tok-kw">if</span> process_name <span class="tok-kw">in</span> proc.info<span class="tok-kw">[</span>"name"<span class="tok-kw">]</span>:
+            running = <span class="tok-kw">True</span>
+            <span class="tok-kw">break</span>
+    <span class="tok-kw">return</span> running
+ollama_running = check_if_running<span class="tok-kw">(</span>"ollama"<span class="tok-kw">)</span>
+<span class="tok-kw">if</span> <span class="tok-kw">not</span> ollama_running:
+    <span class="tok-kw">raise</span> RuntimeError<span class="tok-kw">(</span>
+        "Ollama <span class="tok-kw">not</span> running. Launch ollama before proceeding."
+    <span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>"Ollama running:", check_if_running<span class="tok-kw">(</span>"ollama"<span class="tok-kw">))</span></code></pre><figcaption><span class="lbl">Listing F.5</span>Checking Ollama is running</figcaption></figure>
+<p>Ensure that the output from executing the previous code displays <code>Ollama</code> <code>running: True</code>. If it shows <code>False</code>, verify that the <code>ollama</code> <code>serve</code> command or the Ollama application is running.</p>
+<p>In the remainder of this appendix, we’ll interact with the local gpt-oss model through the Ollama REST API using Python. The following <code>query_model</code> function shows how to use the API.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">import</span> json
+<span class="tok-kw">import</span> requests
+<span class="tok-kw">def</span> query_model(
+    prompt,
+    model="gpt-oss:20b",
+    url="http://localhost:<span class="tok-fn">11434</span>/api/chat"
+):
+    data = {</code></pre><figcaption><span class="lbl">Listing F.6</span>Querying a local Ollama model</figcaption></figure>
+<pre><code class="language-python">        "model": model,</code></pre>
+<pre><code class="language-python">        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "options": {</code></pre>
+<pre><code class="language-python">            "seed": <span class="tok-fn">123</span>,</code></pre>
+<pre><code class="language-python">            "temperature": <span class="tok-fn">0</span>,
+            "num_ctx": <span class="tok-fn">2048</span>
+        }
+    }</code></pre>
+<pre><code class="language-python">    <span class="tok-kw">with</span> requests.post<span class="tok-kw">(</span>url, json=data, stream=<span class="tok-kw">True</span>, timeout=<span class="tok-fn">30</span><span class="tok-kw">)</span> <span class="tok-kw">as</span> r:
+        r.raise_for_status<span class="tok-kw">()</span>
+        response_data = ""
+        <span class="tok-kw">for</span> line <span class="tok-kw">in</span> r.iter_lines<span class="tok-kw">(</span>decode_unicode=<span class="tok-kw">True)</span>:
+            <span class="tok-kw">if</span> <span class="tok-kw">not</span> line:
+                <span class="tok-kw">continue</span>
+            response_json = json.loads<span class="tok-kw">(</span>line<span class="tok-kw">)</span>
+            <span class="tok-kw">if</span> "message" <span class="tok-kw">in</span> response_json:
+                response_data += response_json<span class="tok-kw">[</span>"message"<span class="tok-kw">]</span>["content"]
+    <span class="tok-kw">return</span> response_data</code></pre>
+<pre><code class="language-python">    <span class="tok-kw">return</span> response_data</code></pre>
+<p>Here’s an example of how to use the <code>query_model</code> function from listing F.6:</p>
+<pre><code class="language-python">ollama_model = "gpt-oss:20b"
+result = query_model<span class="tok-kw">(</span>"What <span class="tok-kw">is</span> <span class="tok-fn">1</span>+<span class="tok-fn">2</span>?", ollama_model<span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>result<span class="tok-kw">)</span></code></pre>
+<p>The resulting response is <code>"3"</code>. (It differs from what we’d get if we ran <code>ollama</code> <code>run</code> or the Ollama application due to different default settings.)</p>
+<nav class="pager"><a class="prev" href="page-102.html" rel="prev"><span class="dir">上一页</span><span class="t">F.4 Comparing models using preferences and leaderboards</span></a><a class="next" href="page-104.html" rel="next"><span class="dir">下一页</span><span class="t">F.5.2 Evaluating responses with a grading rubric</span></a></nav>
+</main>
+</body>
+</html>

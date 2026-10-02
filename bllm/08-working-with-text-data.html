@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="generator" content="pdf2html2.py">
+<title>Working with text data · Build a Large Language Model (From Scratch)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f5f8f'/%3E%3Cpath d='M9 8h9a4.5 4.5 0 0 1 0 9H9zm0 9h9a4.5 4.5 0 0 1 0 9H9z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<script>(function(){try{var t=localStorage.getItem('pdf2html-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn" href="index.html" title="Contents">&#9776;</a>
+  <a class="brand" href="index.html">Working with text data</a>
+  <button class="btn" id="themeToggle" aria-label="Toggle dark mode">&#9788;</button>
+</header>
+<main id="main">
+<details class="toc"><summary>本章目录</summary><ul><li class="l2"><a href="#this-chapter-covers-2">This chapter covers</a></li><li class="l2"><a href="#understanding-word-embeddings">2.1 Understanding word embeddings</a></li><li class="l2"><a href="#tokenizing-text">2.2 Tokenizing text</a></li><li class="l2"><a href="#converting-tokens-into-token-ids">2.3 Converting tokens into token IDs</a></li><li class="l2"><a href="#adding-special-context-tokens">2.4 Adding special context tokens</a></li><li class="l2"><a href="#byte-pair-encoding">2.5 Byte pair encoding</a></li><li class="l3"><a href="#exercise-2-1-byte-pair-encoding-of-unknown-words">Exercise 2.1 Byte pair encoding of unknown words</a></li><li class="l2"><a href="#data-sampling-with-a-sliding-window">2.6 Data sampling with a sliding window</a></li><li class="l3"><a href="#exercise-2-2-data-loaders-with-different-strides-and-context-sizes">Exercise 2.2 Data loaders with different strides and context sizes</a></li><li class="l2"><a href="#creating-token-embeddings">2.7 Creating token embeddings</a></li><li class="l2"><a href="#encoding-word-positions">2.8 Encoding word positions</a></li><li class="l2"><a href="#summary-2">Summary</a></li></ul></details><h1 id="working-with-text-data">Working with text data<a class="anchor" href="#working-with-text-data">#</a></h1>
+<h2 id="this-chapter-covers-2">This chapter covers<a class="anchor" href="#this-chapter-covers-2">#</a></h2>
+<p>So far, we’ve covered the general structure of large language models (LLMs) and learned that they are pretrained on vast amounts of text. Specifically, our focus was on decoder-only LLMs based on the transformer architecture, which underlies the models used in ChatGPT and other popular GPT-like LLMs.</p>
+<p> During the pretraining stage, LLMs process text one word at a time. Training LLMs with millions to billions of parameters using a next-word prediction task yields models with impressive capabilities. These models can then be further finetuned to follow general instructions or perform specific target tasks. But before we can implement and train LLMs, we need to prepare the training dataset, as illustrated in figure 2.1.</p>
+<p><strong>17</strong></p>
+<div class="pdfpage" data-page="39">PDF p. 39</div>
+<figure><img src="assets/fig-0018.png" alt="" loading="lazy"><figcaption>Figure 2.1 The three main stages of coding an LLM. This chapter focuses on step 1 of stage 1: implementing the  data sample pipeline.</figcaption></figure>
+<p>You’ll learn how to prepare input text for training LLMs. This involves splitting text into individual word and subword tokens, which can then be encoded into vector representations for the LLM. You’ll also learn about advanced tokenization schemes like byte pair encoding, which is utilized in popular LLMs like GPT. Lastly, we’ll implement a sampling and data-loading strategy to produce the input-output pairs necessary for training LLMs.</p>
+<h2 id="understanding-word-embeddings">2.1 Understanding word embeddings<a class="anchor" href="#understanding-word-embeddings">#</a></h2>
+<p>Deep neural network models, including LLMs, cannot process raw text directly. Since text is categorical, it isn’t compatible with the mathematical operations used to implement and train neural networks. Therefore, we need a way to represent words as continuous-valued vectors. </p>
+<aside class="callout note"><p class="lab">NOTE</p><p>Readers unfamiliar with vectors and tensors in a computational context can learn more in appendix A, section A.2.2.</p></aside>
+<p>The concept of converting data into a vector format is often referred to as <em>embedding</em>. Using a specific neural network layer or another pretrained neural network model, we can embed different data types—for example, video, audio, and text, as illustrated in figure 2.2. However, it’s important to note that different data formats require distinct embedding models. For example, an embedding model designed for text would not be suitable for embedding audio or video data.</p>
+<div class="pdfpage" data-page="40">PDF p. 40</div>
+<figure><img src="assets/fig-0019.png" alt="" loading="lazy"><figcaption>Figure 2.2 Deep learning models cannot process data formats like video, audio, and text in their raw  form. Thus, we use an embedding model to transform this raw data into a dense vector representation  that deep learning architectures can easily understand and process. Specifically, this figure illustrates  the process of converting raw data into a three-dimensional numerical vector.</figcaption></figure>
+<p>At its core, an embedding is a mapping from discrete objects, such as words, images, or even entire documents, to points in a continuous vector space—the primary purpose of embeddings is to convert nonnumeric data into a format that neural networks can process.</p>
+<p> While word embeddings are the most common form of text embedding, there are also embeddings for sentences, paragraphs, or whole documents. Sentence or paragraph embeddings are popular choices for<em> retrieval-augmented generation.</em> Retrievalaugmented generation combines generation (like producing text) with retrieval (like searching an external knowledge base) to pull relevant information when generating text, which is a technique that is beyond the scope of this book. Since our goal is to train GPT-like LLMs, which learn to generate text one word at a time, we will focus on word embeddings.</p>
+<p> Several algorithms and frameworks have been developed to generate word embeddings. One of the earlier and most popular examples is the <em>Word2Vec</em> approach. Word2Vec trained neural network architecture to generate word embeddings by predicting the context of a word given the target word or vice versa. The main idea behind Word2Vec is that words that appear in similar contexts tend to have similar meanings. Consequently, when projected into two-dimensional word embeddings for visualization purposes, similar terms are clustered together, as shown in figure 2.3.</p>
+<p> Word embeddings can have varying dimensions, from one to thousands. A higher dimensionality might capture more nuanced relationships but at the cost of computational efficiency.</p>
+<div class="pdfpage" data-page="41">PDF p. 41</div>
+<figure><img src="assets/fig-0020.png" alt="" loading="lazy"><figcaption>Figure 2.3 If word embeddings are two-dimensional, we can plot them in a twodimensional scatterplot for visualization purposes as shown here. When using word  embedding techniques, such as Word2Vec, words corresponding to similar concepts  often appear close to each other in the embedding space. For instance, different types  of birds appear closer to each other in the embedding space than in countries and cities.</figcaption></figure>
+<p>While we can use pretrained models such as Word2Vec to generate embeddings for machine learning models, LLMs commonly produce their own embeddings that are part of the input layer and are updated during training. The advantage of optimizing the embeddings as part of the LLM training instead of using Word2Vec is that the embeddings are optimized to the specific task and data at hand. We will implement such embedding layers later in this chapter. (LLMs can also create contextualized output embeddings, as we discuss in chapter 3.)</p>
+<p> Unfortunately, high-dimensional embeddings present a challenge for visualization because our sensory perception and common graphical representations are inherently limited to three dimensions or fewer, which is why figure 2.3 shows twodimensional embeddings in a two-dimensional scatterplot. However, when working with LLMs, we typically use embeddings with a much higher dimensionality. For both GPT-2 and GPT-3, the embedding size (often referred to as the dimensionality of the model’s hidden states) varies based on the specific model variant and size. It is a tradeoff between performance and efficiency. The smallest GPT-2 models (117M and 125M parameters) use an embedding size of 768 dimensions to provide concrete examples. The largest GPT-3 model (175B parameters) uses an embedding size of 12,288 dimensions. </p>
+<p> Next, we will walk through the required steps for preparing the embeddings used by an LLM, which include splitting text into words, converting words into tokens, and turning tokens into embedding vectors.</p>
+<div class="pdfpage" data-page="42">PDF p. 42</div>
+<figure><img src="assets/fig-0021.png" alt="" loading="lazy"><figcaption>Figure 2.4 A view of the text processing steps in the context of an LLM. Here, we split an  input text into individual tokens, which are either words or special characters, such as  punctuation characters.</figcaption></figure>
+<h2 id="tokenizing-text">2.2 Tokenizing text<a class="anchor" href="#tokenizing-text">#</a></h2>
+<p>Let’s discuss how we split input text into individual tokens, a required preprocessing step for creating embeddings for an LLM. These tokens are either individual words or special characters, including punctuation characters, as shown in figure 2.4.</p>
+<p>The text we will tokenize for LLM training is “The Verdict,” a short story by Edith Wharton, which has been released into the public domain and is thus permitted to be used for LLM training tasks. The text is available on Wikisource at <a href="https://en.wikisource" rel="noopener">https://en.wikisource</a> .org/wiki/The_Verdict, and you can copy and paste it into a text file, which I copied</p>
+<p>into a text file <code>"the-verdict.txt".</code></p>
+<p> Alternatively, you can find this <code>"the-verdict.txt"</code> file in this book’s GitHub repository at <a href="https://mng.bz/Adng" rel="noopener">https://mng.bz/Adng</a>. You can download the file with the following Python code:</p>
+<div class="pdfpage" data-page="43">PDF p. 43</div>
+<p class="listing-title"><span class="no">Listing 2.1</span><span class="tl">Reading in a short story as text sample into Python</span></p>
+<div class="codeblock"><pre><code><span class="t-kw">import</span> urllib.request
+url <span class="t-op">=</span> (<span class="t-str">"https://raw.githubusercontent.com/rasbt/"</span>
+ <span class="t-str">"LLMs-from-scratch/main/ch02/01_main-chapter-code/"</span>
+ <span class="t-str">"the-verdict.txt"</span>)
+file_path <span class="t-op">=</span> <span class="t-str">"the-verdict.txt"</span>
+urllib.request.<span class="t-fn">urlretrieve</span>(url, file_path)</code></pre></div>
+<p>Next, we can load the <code>the-verdict.txt</code> file using Python’s standard file reading utilities. </p>
+<div class="codeblock"><pre><code><span class="t-kw">with</span> <span class="t-bi">open</span>(<span class="t-str">"the-verdict.txt"</span>, <span class="t-str">"r"</span>, encoding<span class="t-op">=</span><span class="t-str">"utf-8"</span>) <span class="t-kw">as</span> f:
+ raw_text <span class="t-op">=</span> f.<span class="t-fn">read</span>()
+<span class="t-bi">print</span>(<span class="t-str">"Total number of character:"</span>, <span class="t-bi">len</span>(raw_text))
+<span class="t-bi">print</span>(raw_text[:<span class="t-num">99</span>])</code></pre></div>
+<p>The print command prints the total number of characters followed by the first 100 characters of this file for illustration purposes:</p>
+<div class="codeblock"><pre><code>Total number of character: <span class="t-num">20479</span>
+I HAD always thought Jack Gisburn rather a cheap genius<span class="t-op">--</span>though a good fellow
+enough<span class="t-op">--</span>so it was no</code></pre></div>
+<p>Our goal is to tokenize this 20,479-character short story into individual words and special characters that we can then turn into embeddings for LLM training.</p>
+<aside class="callout note"><p class="lab">NOTE</p><p>It’s common to process millions of articles and hundreds of thousands of books—many gigabytes of text—when working with LLMs. However, for educational purposes, it’s sufficient to work with smaller text samples like a single book to illustrate the main ideas behind the text processing steps and to make it possible to run it in a reasonable time on consumer hardware.</p></aside>
+<p>How can we best split this text to obtain a list of tokens? For this, we go on a small excursion and use Python’s regular expression library <code>re</code> for illustration purposes. (You don’t have to learn or memorize any regular expression syntax since we will later transition to a prebuilt tokenizer.)</p>
+<p> Using some simple example text, we can use the <code>re.split</code> command with the following syntax to split a text on whitespace characters:</p>
+<div class="codeblock"><pre><code><span class="t-kw">import</span> re
+text <span class="t-op">=</span> <span class="t-str">"Hello, world. This, is a test."</span>
+result <span class="t-op">=</span> re.<span class="t-fn">split</span>(r<span class="t-str">'(\s)'</span>, text)
+<span class="t-bi">print</span>(result)</code></pre></div>
+<p>The result is a list of individual words, whitespaces, and punctuation characters:</p>
+<div class="codeblock"><pre><code>[<span class="t-str">'Hello,'</span>, <span class="t-str">' '</span>, <span class="t-str">'world.'</span>, <span class="t-str">' '</span>, <span class="t-str">'This,'</span>, <span class="t-str">' '</span>, <span class="t-str">'is'</span>, <span class="t-str">' '</span>, <span class="t-str">'a'</span>, <span class="t-str">' '</span>, <span class="t-str">'test.'</span>]</code></pre></div>
+<div class="pdfpage" data-page="44">PDF p. 44</div>
+<p>This simple tokenization scheme mostly works for separating the example text into individual words; however, some words are still connected to punctuation characters that we want to have as separate list entries. We also refrain from making all text lowercase because capitalization helps LLMs distinguish between proper nouns and common nouns, understand sentence structure, and learn to generate text with proper capitalization.</p>
+<p> Let’s modify the regular expression splits on whitespaces (<code>\s</code>), commas, and periods (<code>[,.]</code>):</p>
+<div class="codeblock"><pre><code>result <span class="t-op">=</span> re.<span class="t-fn">split</span>(r<span class="t-str">'([,.]|\s)'</span>, text)
+<span class="t-bi">print</span>(result)</code></pre></div>
+<p>We can see that the words and punctuation characters are now separate list entries just as we wanted:</p>
+<div class="codeblock"><pre><code>[<span class="t-str">'Hello'</span>, <span class="t-str">','</span>, <span class="t-str">''</span>, <span class="t-str">' '</span>, <span class="t-str">'world'</span>, <span class="t-str">'.'</span>, <span class="t-str">''</span>, <span class="t-str">' '</span>, <span class="t-str">'This'</span>, <span class="t-str">','</span>, <span class="t-str">''</span>, <span class="t-str">' '</span>, <span class="t-str">'is'</span>,
+<span class="t-str">' '</span>, <span class="t-str">'a'</span>, <span class="t-str">' '</span>, <span class="t-str">'test'</span>, <span class="t-str">'.'</span>, <span class="t-str">''</span>]</code></pre></div>
+<p>A small remaining problem is that the list still includes whitespace characters. Optionally, we can remove these redundant characters safely as follows:</p>
+<div class="codeblock"><pre><code>result <span class="t-op">=</span> [item <span class="t-kw">for</span> item <span class="t-kw">in</span> result <span class="t-kw">if</span> item.<span class="t-fn">strip</span>()]
+<span class="t-bi">print</span>(result)</code></pre></div>
+<p>The resulting whitespace-free output looks like as follows:</p>
+<p><code>['Hello', ',', 'world', '.', 'This', ',', 'is', 'a', 'test', '.']</code></p>
+<aside class="callout note"><p class="lab">NOTE</p><p>When developing a simple tokenizer, whether we should encode whitespaces as separate characters or just remove them depends on our application and its requirements. Removing whitespaces reduces the memory and computing requirements. However, keeping whitespaces can be useful if we train models that are sensitive to the exact structure of the text (for example, Python code, which is sensitive to indentation and spacing). Here, we remove whitespaces for simplicity and brevity of the tokenized outputs. Later, we will switch to a tokenization scheme that includes whitespaces.</p></aside>
+<p>The tokenization scheme we devised here works well on the simple sample text. Let’s modify it a bit further so that it can also handle other types of punctuation, such as question marks, quotation marks, and the double-dashes we have seen earlier in the first 100 characters of Edith Wharton’s short story, along with additional special characters:</p>
+<div class="codeblock"><pre><code>text <span class="t-op">=</span> <span class="t-str">"Hello, world. Is this-- a test?"</span>
+result <span class="t-op">=</span> re.<span class="t-fn">split</span>(r<span class="t-str">'([,.:;?_!"()\']|--|\s)'</span>, text)
+result <span class="t-op">=</span> [item.<span class="t-fn">strip</span>() <span class="t-kw">for</span> item <span class="t-kw">in</span> result <span class="t-kw">if</span> item.<span class="t-fn">strip</span>()]
+<span class="t-bi">print</span>(result)</code></pre></div>
+<div class="pdfpage" data-page="45">PDF p. 45</div>
+<figure><img src="assets/fig-0022.png" alt="" loading="lazy"><figcaption>Figure 2.5 The tokenization scheme we implemented so far splits  text into individual words and punctuation characters. In this specific  example, the sample text gets split into 10 individual tokens.</figcaption></figure>
+<p>The resulting output is:</p>
+<p><code>['Hello', ',', 'world', '.', 'Is', 'this', '--', 'a', 'test', '?']</code></p>
+<p>As we can see based on the results summarized in figure 2.5, our tokenization scheme can now handle the various special characters in the text successfully.</p>
+<p>Now that we have a basic tokenizer working, let’s apply it to Edith Wharton’s entire short story:</p>
+<div class="codeblock"><pre><code>preprocessed <span class="t-op">=</span> re.<span class="t-fn">split</span>(r<span class="t-str">'([,.:;?_!"()\']|--|\s)'</span>, raw_text)
+preprocessed <span class="t-op">=</span> [item.<span class="t-fn">strip</span>() <span class="t-kw">for</span> item <span class="t-kw">in</span> preprocessed <span class="t-kw">if</span> item.<span class="t-fn">strip</span>()]
+<span class="t-bi">print</span>(<span class="t-bi">len</span>(preprocessed))</code></pre></div>
+<p>This print statement outputs <code>4690</code>, which is the number of tokens in this text (without whitespaces). Let’s print the first 30 tokens for a quick visual check:</p>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(preprocessed[:<span class="t-num">30</span>])</code></pre></div>
+<p>The resulting output shows that our tokenizer appears to be handling the text well since all words and special characters are neatly separated:</p>
+<div class="codeblock"><pre><code>[<span class="t-str">'I'</span>, <span class="t-str">'HAD'</span>, <span class="t-str">'always'</span>, <span class="t-str">'thought'</span>, <span class="t-str">'Jack'</span>, <span class="t-str">'Gisburn'</span>, <span class="t-str">'rather'</span>, <span class="t-str">'a'</span>,
+<span class="t-str">'cheap'</span>, <span class="t-str">'genius'</span>, <span class="t-str">'--'</span>, <span class="t-str">'though'</span>, <span class="t-str">'a'</span>, <span class="t-str">'good'</span>, <span class="t-str">'fellow'</span>, <span class="t-str">'enough'</span>,
+<span class="t-str">'--'</span>, <span class="t-str">'so'</span>, <span class="t-str">'it'</span>, <span class="t-str">'was'</span>, <span class="t-str">'no'</span>, <span class="t-str">'great'</span>, <span class="t-str">'surprise'</span>, <span class="t-str">'to'</span>, <span class="t-str">'me'</span>, <span class="t-str">'to'</span>,
+<span class="t-str">'hear'</span>, <span class="t-str">'that'</span>, <span class="t-str">','</span>, <span class="t-str">'in'</span>]</code></pre></div>
+<h2 id="converting-tokens-into-token-ids">2.3 Converting tokens into token IDs<a class="anchor" href="#converting-tokens-into-token-ids">#</a></h2>
+<p>Next, let’s convert these tokens from a Python string to an integer representation to produce the token IDs. This conversion is an intermediate step before converting the token IDs into embedding vectors.</p>
+<p> To map the previously generated tokens into token IDs, we have to build a vocabulary first. This vocabulary defines how we map each unique word and special character to a unique integer, as shown in figure 2.6.</p>
+<div class="pdfpage" data-page="46">PDF p. 46</div>
+<figure><img src="assets/fig-0023.png" alt="" loading="lazy"><figcaption>Figure 2.6 We build a vocabulary by tokenizing the entire text in a training dataset into individual  tokens. These individual tokens are then sorted alphabetically, and duplicate tokens are removed.  The unique tokens are then aggregated into a vocabulary that defines a mapping from each unique  token to a unique integer value. The depicted vocabulary is purposefully small and contains no  punctuation or special characters for simplicity.</figcaption></figure>
+<p class="listing-title"><span class="no">Listing 2.2</span><span class="tl">Creating a vocabulary</span></p>
+<p>Now that we have tokenized Edith Wharton’s short story and assigned it to a Python variable called <code>preprocessed</code>, let’s create a list of all unique tokens and sort them alphabetically to determine the vocabulary size:</p>
+<div class="codeblock"><pre><code>all_words <span class="t-op">=</span> <span class="t-bi">sorted</span>(<span class="t-bi">set</span>(preprocessed))
+vocab_size <span class="t-op">=</span> <span class="t-bi">len</span>(all_words)
+<span class="t-bi">print</span>(vocab_size)</code></pre></div>
+<p>After determining that the vocabulary size is 1,130 via this code, we create the vocabulary and print its first 51 entries for illustration purposes.</p>
+<div class="codeblock"><pre><code>vocab <span class="t-op">=</span> {token:integer <span class="t-kw">for</span> integer,token <span class="t-kw">in</span> <span class="t-bi">enumerate</span>(all_words)}
+<span class="t-kw">for</span> i, item <span class="t-kw">in</span> <span class="t-bi">enumerate</span>(vocab.<span class="t-fn">items</span>()):
+ <span class="t-bi">print</span>(item)
+ <span class="t-kw">if</span> i <span class="t-op">&gt;=</span> <span class="t-num">50</span>:
+ <span class="t-kw">break</span></code></pre></div>
+<div class="pdfpage" data-page="47">PDF p. 47</div>
+<figure><img src="assets/fig-0024.png" alt="" loading="lazy"><figcaption>Figure 2.7 Starting with a new text sample, we tokenize the text and use the vocabulary to convert  the text tokens into token IDs. The vocabulary is built from the entire training set and can be applied  to the training set itself and any new text samples. The depicted vocabulary contains no punctuation  or special characters for simplicity.</figcaption></figure>
+<p>The output is</p>
+<div class="codeblock"><pre><code>(<span class="t-str">'!'</span>, <span class="t-num">0</span>)
+(<span class="t-str">'"'</span>, <span class="t-num">1</span>)
+(<span class="t-str">"'"</span>, <span class="t-num">2</span>)
+...
+(<span class="t-str">'Her'</span>, <span class="t-num">49</span>)
+(<span class="t-str">'Hermia'</span>, <span class="t-num">50</span>)</code></pre></div>
+<p>As we can see, the dictionary contains individual tokens associated with unique integer labels. Our next goal is to apply this vocabulary to convert new text into token IDs (figure 2.7).</p>
+<p>When we want to convert the outputs of an LLM from numbers back into text, we need a way to turn token IDs into text. For this, we can create an inverse version of the vocabulary that maps token IDs back to the corresponding text tokens. </p>
+<div class="pdfpage" data-page="48">PDF p. 48</div>
+<figure><img src="assets/fig-0025.png" alt="" loading="lazy"></figure>
+<p class="listing-title"><span class="no">Listing 2.3</span><span class="tl">Implementing a simple text tokenizer</span></p>
+<figure><img src="assets/fig-0026.png" alt="" loading="lazy"></figure>
+<p> Let’s implement a complete tokenizer class in Python with an <code>encode</code> method that splits text into tokens and carries out the string-to-integer mapping to produce token IDs via the vocabulary. In addition, we’ll implement a <code>decode</code> method that carries out the reverse integer-to-string mapping to convert the token IDs back into text. The following listing shows the code for this tokenizer implementation.</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 3 条</summary><ul><li>vocabulary that mapsCreates an inverse</li><li>Stores the vocabulary as a class attribute for access in the encode and decode methods token IDs back to the original text tokens</li><li>Processes input text into token IDs</li></ul></details><pre><code><span class="t-kw">class</span> SimpleTokenizerV1:
+ <span class="t-kw">def</span> <span class="t-fn">__init__</span>(<span class="t-kw">self</span>, vocab):
+ <span class="t-kw">self</span>.str_to_int <span class="t-op">=</span> vocab
+ <span class="t-kw">self</span>.int_to_str <span class="t-op">=</span> {i:s <span class="t-kw">for</span> s,i <span class="t-kw">in</span> vocab.<span class="t-fn">items</span>()}
+  <span class="t-kw">def</span> <span class="t-fn">encode</span>(<span class="t-kw">self</span>, text):
+ preprocessed <span class="t-op">=</span> re.<span class="t-fn">split</span>(r<span class="t-str">'([,.?_!"()\']|--|\s)'</span>, text)
+ preprocessed <span class="t-op">=</span> [
+ item.<span class="t-fn">strip</span>() <span class="t-kw">for</span> item <span class="t-kw">in</span> preprocessed <span class="t-kw">if</span> item.<span class="t-fn">strip</span>()
+ ]
+ ids <span class="t-op">=</span> [<span class="t-kw">self</span>.str_to_int[s] <span class="t-kw">for</span> s <span class="t-kw">in</span> preprocessed]
+ <span class="t-kw">return</span> ids</code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 2 条</summary><ul><li>Converts token IDs back into text</li><li>Removes spaces before the specified punctuation</li></ul></details><pre><code>  <span class="t-kw">def</span> <span class="t-fn">decode</span>(<span class="t-kw">self</span>, ids):
+ text <span class="t-op">=</span> <span class="t-str">" "</span>.<span class="t-fn">join</span>([<span class="t-kw">self</span>.int_to_str[i] <span class="t-kw">for</span> i <span class="t-kw">in</span> ids])
+  text <span class="t-op">=</span> re.<span class="t-fn">sub</span>(r<span class="t-str">'\s+([,.?!"()\'])'</span>, r<span class="t-str">'\1'</span>, text)
+ <span class="t-kw">return</span> text</code></pre></div>
+<p>Using the <code>SimpleTokenizerV1</code> Python class, we can now instantiate new tokenizer objects via an existing vocabulary, which we can then use to encode and decode text, as illustrated in figure 2.8.</p>
+<p> Let’s instantiate a new tokenizer object from the <code>SimpleTokenizerV1</code> class and tokenize a passage from Edith Wharton’s short story to try it out in practice:</p>
+<div class="codeblock"><pre><code>tokenizer <span class="t-op">=</span> <span class="t-fn">SimpleTokenizerV1</span>(vocab)
+text <span class="t-op">=</span> <span class="t-str">""""It's the last he painted, you know,"
+ Mrs. Gisburn said with pardonable pride."""</span>
+ids <span class="t-op">=</span> tokenizer.<span class="t-fn">encode</span>(text)
+<span class="t-bi">print</span>(ids)</code></pre></div>
+<p>The preceding code prints the following token IDs:</p>
+<div class="codeblock"><pre><code>[<span class="t-num">1</span>, <span class="t-num">56</span>, <span class="t-num">2</span>, <span class="t-num">850</span>, <span class="t-num">988</span>, <span class="t-num">602</span>, <span class="t-num">533</span>, <span class="t-num">746</span>, <span class="t-num">5</span>, <span class="t-num">1126</span>, <span class="t-num">596</span>, <span class="t-num">5</span>, <span class="t-num">1</span>, <span class="t-num">67</span>, <span class="t-num">7</span>, <span class="t-num">38</span>, <span class="t-num">851</span>, <span class="t-num">1108</span>,
+<span class="t-num">754</span>, <span class="t-num">793</span>, <span class="t-num">7</span>]</code></pre></div>
+<p>Next, let’s see whether we can turn these token IDs back into text using the decode method:</p>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(tokenizer.<span class="t-fn">decode</span>(ids))</code></pre></div>
+<div class="pdfpage" data-page="49">PDF p. 49</div>
+<figure><img src="assets/fig-0027.png" alt="" loading="lazy"><figcaption>Figure 2.8 Tokenizer implementations share two common methods: an encode method and a decode  method. The encode method takes in the sample text, splits it into individual tokens, and converts the  tokens into token IDs via the vocabulary. The decode method takes in token IDs, converts them back  into text tokens, and concatenates the text tokens into natural text.</figcaption></figure>
+<p>This outputs:</p>
+<div class="codeblock"><pre><code><span class="t-str">'" It\' s the last he painted, you know," Mrs. Gisburn said with</span>
+pardonable pride.<span class="t-str">'</span></code></pre></div>
+<p>Based on this output, we can see that the decode method successfully converted the token IDs back into the original text.</p>
+<p> So far, so good. We implemented a tokenizer capable of tokenizing and detokenizing text based on a snippet from the training set. Let’s now apply it to a new text sample not contained in the training set:</p>
+<div class="codeblock"><pre><code>text <span class="t-op">=</span> <span class="t-str">"Hello, do you like tea?"</span>
+<span class="t-bi">print</span>(tokenizer.<span class="t-fn">encode</span>(text))</code></pre></div>
+<p>Executing this code will result in the following error:</p>
+<div class="codeblock"><pre><code><span class="t-bi">KeyError</span>: <span class="t-str">'Hello'</span></code></pre></div>
+<p>The problem is that the word “Hello” was not used in the “The Verdict” short story. Hence, it is not contained in the vocabulary. This highlights the need to consider large and diverse training sets to extend the vocabulary when working on LLMs.</p>
+<div class="pdfpage" data-page="50">PDF p. 50</div>
+<figure><img src="assets/fig-0028.png" alt="" loading="lazy"><figcaption>Figure 2.9 We add special tokens to a vocabulary to deal with certain contexts. For instance,  we add an &lt;|unk|&gt; token to represent new and unknown words that were not part of the training  data and thus not part of the existing vocabulary. Furthermore, we add an &lt;|endoftext|&gt;  token that we can use to separate two unrelated text sources. </figcaption></figure>
+<p> Next, we will test the tokenizer further on text that contains unknown words and discuss additional special tokens that can be used to provide further context for an LLM during training.</p>
+<h2 id="adding-special-context-tokens">2.4 Adding special context tokens<a class="anchor" href="#adding-special-context-tokens">#</a></h2>
+<p>We need to modify the tokenizer to handle unknown words. We also need to address the usage and addition of special context tokens that can enhance a model’s understanding of context or other relevant information in the text. These special tokens can include markers for unknown words and document boundaries, for example. In particular, we will modify the vocabulary and tokenizer, <code>SimpleTokenizerV2</code>, to support two new tokens, <code>&lt;|unk|&gt;</code> and <code>&lt;|endoftext|&gt;</code>, as illustrated in figure 2.9.</p>
+<p>We can modify the tokenizer to use an <code>&lt;|unk|&gt;</code> token if it encounters a word that is not part of the vocabulary. Furthermore, we add a token between unrelated texts. For example, when training GPT-like LLMs on multiple independent documents or books, it is common to insert a token before each document or book that follows a previous text source, as illustrated in figure 2.10. This helps the LLM understand that although these text sources are concatenated for training, they are, in fact, unrelated.</p>
+<div class="pdfpage" data-page="51">PDF p. 51</div>
+<figure><img src="assets/fig-0029.png" alt="" loading="lazy"><figcaption>Figure 2.10 When working with multiple independent text source, we add &lt;|endoftext|&gt;  tokens between these texts. These &lt;|endoftext|&gt; tokens act as markers, signaling the  start or end of a particular segment, allowing for more effective processing and understanding  by the LLM.</figcaption></figure>
+<p>Let’s now modify the vocabulary to include these two special tokens, <code>&lt;unk&gt;</code> and <code>&lt;|endoftext|&gt;</code>, by adding them to our list of all unique words:</p>
+<div class="codeblock"><pre><code>all_tokens <span class="t-op">=</span> <span class="t-bi">sorted</span>(<span class="t-bi">list</span>(<span class="t-bi">set</span>(preprocessed)))
+all_tokens.<span class="t-fn">extend</span>([<span class="t-str">"&lt;|endoftext|&gt;"</span>, <span class="t-str">"&lt;|unk|&gt;"</span>])
+vocab <span class="t-op">=</span> {token:integer <span class="t-kw">for</span> integer,token <span class="t-kw">in</span> <span class="t-bi">enumerate</span>(all_tokens)}
+<span class="t-bi">print</span>(<span class="t-bi">len</span>(vocab.<span class="t-fn">items</span>()))</code></pre></div>
+<p>Based on the output of this print statement, the new vocabulary size is 1,132 (the previous vocabulary size was 1,130).</p>
+<p> As an additional quick check, let’s print the last five entries of the updated vocabulary:</p>
+<div class="codeblock"><pre><code><span class="t-kw">for</span> i, item <span class="t-kw">in</span> <span class="t-bi">enumerate</span>(<span class="t-bi">list</span>(vocab.<span class="t-fn">items</span>())[<span class="t-op">-</span><span class="t-num">5</span>:]):
+ <span class="t-bi">print</span>(item)</code></pre></div>
+<p>The code prints</p>
+<div class="codeblock"><pre><code>(<span class="t-str">'younger'</span>, <span class="t-num">1127</span>)
+(<span class="t-str">'your'</span>, <span class="t-num">1128</span>)
+(<span class="t-str">'yourself'</span>, <span class="t-num">1129</span>)
+(<span class="t-str">'&lt;|endoftext|&gt;'</span>, <span class="t-num">1130</span>)
+(<span class="t-str">'&lt;|unk|&gt;'</span>, <span class="t-num">1131</span>)</code></pre></div>
+<div class="pdfpage" data-page="52">PDF p. 52</div>
+<p class="listing-title"><span class="no">Listing 2.4</span><span class="tl">A simple text tokenizer that handles unknown words</span></p>
+<p>Based on the code output, we can confirm that the two new special tokens were indeed successfully incorporated into the vocabulary. Next, we adjust the tokenizer from code listing 2.3 accordingly as shown in the following listing.</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 3 条</summary><ul><li>Replaces</li><li>unknown words by &lt;|unk|&gt; tokens</li><li>Replaces spaces before the specified</li></ul></details><pre><code><span class="t-kw">class</span> SimpleTokenizerV2:
+ <span class="t-kw">def</span> <span class="t-fn">__init__</span>(<span class="t-kw">self</span>, vocab):
+ <span class="t-kw">self</span>.str_to_int <span class="t-op">=</span> vocab
+ <span class="t-kw">self</span>.int_to_str <span class="t-op">=</span> { i:s <span class="t-kw">for</span> s,i <span class="t-kw">in</span> vocab.<span class="t-fn">items</span>()}
+  <span class="t-kw">def</span> <span class="t-fn">encode</span>(<span class="t-kw">self</span>, text):
+ preprocessed <span class="t-op">=</span> re.<span class="t-fn">split</span>(r<span class="t-str">'([,.:;?_!"()\']|--|\s)'</span>, text)
+ preprocessed <span class="t-op">=</span> [
+ item.<span class="t-fn">strip</span>() <span class="t-kw">for</span> item <span class="t-kw">in</span> preprocessed <span class="t-kw">if</span> item.<span class="t-fn">strip</span>()
+ ]
+ preprocessed <span class="t-op">=</span> [item <span class="t-kw">if</span> item <span class="t-kw">in</span> <span class="t-kw">self</span>.str_to_int
+ <span class="t-kw">else</span> <span class="t-str">"&lt;|unk|&gt;"</span> <span class="t-kw">for</span> item <span class="t-kw">in</span> preprocessed]
+ ids <span class="t-op">=</span> [<span class="t-kw">self</span>.str_to_int[s] <span class="t-kw">for</span> s <span class="t-kw">in</span> preprocessed]
+ <span class="t-kw">return</span> ids
+
+ <span class="t-kw">def</span> <span class="t-fn">decode</span>(<span class="t-kw">self</span>, ids):
+ text <span class="t-op">=</span> <span class="t-str">" "</span>.<span class="t-fn">join</span>([<span class="t-kw">self</span>.int_to_str[i] <span class="t-kw">for</span> i <span class="t-kw">in</span> ids])
+ text <span class="t-op">=</span> re.<span class="t-fn">sub</span>(r<span class="t-str">'\s+([,.:;?!"()\'])'</span>, r<span class="t-str">'\1'</span>, text) punctuations
+ <span class="t-kw">return</span> text</code></pre></div>
+<p>Compared to the <code>SimpleTokenizerV1</code> we implemented in listing 2.3, the new <code>Simple-</code> <code>TokenizerV2</code> replaces unknown words with <code>&lt;|unk|&gt;</code> tokens. </p>
+<p> Let’s now try this new tokenizer out in practice. For this, we will use a simple text sample that we concatenate from two independent and unrelated sentences:</p>
+<div class="codeblock"><pre><code>text1 <span class="t-op">=</span> <span class="t-str">"Hello, do you like tea?"</span>
+text2 <span class="t-op">=</span> <span class="t-str">"In the sunlit terraces of the palace."</span>
+text <span class="t-op">=</span> <span class="t-str">" &lt;|endoftext|&gt; "</span>.<span class="t-fn">join</span>((text1, text2))
+<span class="t-bi">print</span>(text)</code></pre></div>
+<p>The output is</p>
+<div class="codeblock"><pre><code>Hello, do you like tea? <span class="t-op">&lt;|</span>endoftext<span class="t-op">|&gt;</span> In the sunlit terraces of
+the palace.</code></pre></div>
+<p>Next, let’s tokenize the sample text using the <code>SimpleTokenizerV2</code> on the vocab we previously created in listing 2.2:</p>
+<div class="codeblock"><pre><code>tokenizer <span class="t-op">=</span> <span class="t-fn">SimpleTokenizerV2</span>(vocab)
+<span class="t-bi">print</span>(tokenizer.<span class="t-fn">encode</span>(text))</code></pre></div>
+<div class="pdfpage" data-page="53">PDF p. 53</div>
+<ul><li> <code>[BOS]</code> <em>(beginning of sequence)</em>—This token marks the start of a text. It signifies to the LLM where a piece of content begins.</li><li> <code>[EOS]</code> <em>(end of sequence)</em>—This token is positioned at the end of a text and is especially useful when concatenating multiple unrelated texts, similar to <code>&lt;|endoftext|&gt;</code>. For instance, when combining two different Wikipedia articles or books, the <code>[EOS]</code> token indicates where one ends and the next begins.</li><li> <code>[PAD]</code> <em>(padding)</em>—When training LLMs with batch sizes larger than one, the batch might contain texts of varying lengths. To ensure all texts have the same length, the shorter texts are extended or “padded” using the <code>[PAD]</code> token, up to the length of the longest text in the batch. The tokenizer used for GPT models does not need any of these tokens; it only uses an <code>&lt;|endoftext|&gt;</code> token for simplicity. <code>&lt;|endoftext|&gt;</code> is analogous to the <code>[EOS]</code> token. <code>&lt;|endoftext|&gt;</code> is also used for padding. However, as we’ll explore in subsequent chapters, when training on batched inputs, we typically use a mask, meaning we don’t attend to padded tokens. Thus, the specific token chosen for padding becomes inconsequential.  Moreover, the tokenizer used for GPT models also doesn’t use an <code>&lt;|unk|&gt;</code> token for out-of-vocabulary words. Instead, GPT models use a <em>byte pair encoding</em> tokenizer, which breaks words down into subword units, which we will discuss next.</li></ul>
+<p>This prints the following token IDs:</p>
+<p><code>[1131, 5, 355, 1126, 628, 975, 10, 1130, 55, 988, 956, 984, 722, 988, 1131, 7]</code></p>
+<p>We can see that the list of token IDs contains <code>1130</code> for the <code>&lt;|endoftext|&gt;</code> separator token as well as two <code>1131</code> tokens, which are used for unknown words. </p>
+<p> Let’s detokenize the text for a quick sanity check:</p>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(tokenizer.<span class="t-fn">decode</span>(tokenizer.<span class="t-fn">encode</span>(text)))</code></pre></div>
+<p>The output is</p>
+<div class="codeblock"><pre><code><span class="t-op">&lt;|</span>unk<span class="t-op">|&gt;</span>, do you like tea? <span class="t-op">&lt;|</span>endoftext<span class="t-op">|&gt;</span> In the sunlit terraces of
+the <span class="t-op">&lt;|</span>unk<span class="t-op">|&gt;</span>.</code></pre></div>
+<p>Based on comparing this detokenized text with the original input text, we know that the training dataset, Edith Wharton’s short story “The Verdict,” does not contain the words “Hello” and “palace.”</p>
+<p> Depending on the LLM, some researchers also consider additional special tokens such as the following:</p>
+<div class="pdfpage" data-page="54">PDF p. 54</div>
+<h2 id="byte-pair-encoding">2.5 Byte pair encoding<a class="anchor" href="#byte-pair-encoding">#</a></h2>
+<p>Let’s look at a more sophisticated tokenization scheme based on a concept called byte pair encoding (BPE). The BPE tokenizer was used to train LLMs such as GPT-2, GPT-3, and the original model used in ChatGPT.</p>
+<p> Since implementing BPE can be relatively complicated, we will use an existing Python open source library called <em>tiktoken</em> (<a href="https://github.com/openai/tiktoken" rel="noopener">https://github.com/openai/tiktoken</a>), which implements the BPE algorithm very efficiently based on source code in Rust. Similar to other Python libraries, we can install the tiktoken library via Python’s <code>pip</code> installer from the terminal:</p>
+<div class="codeblock"><pre><code>pip install <span class="t-bi">tiktoken</span></code></pre></div>
+<p>The code we will use is based on tiktoken 0.7.0. You can use the following code to check the version you currently have installed:</p>
+<div class="codeblock"><pre><code><span class="t-kw">from</span> importlib.metadata <span class="t-kw">import</span> version
+<span class="t-kw">import</span> <span class="t-bi">tiktoken</span>
+<span class="t-bi">print</span>(<span class="t-str">"tiktoken version:"</span>, <span class="t-fn">version</span>(<span class="t-str">"tiktoken"</span>))</code></pre></div>
+<p>Once installed, we can instantiate the BPE tokenizer from tiktoken as follows:</p>
+<div class="codeblock"><pre><code>tokenizer <span class="t-op">=</span> <span class="t-bi">tiktoken</span>.<span class="t-fn">get_encoding</span>(<span class="t-str">"gpt2"</span>)</code></pre></div>
+<p>The usage of this tokenizer is similar to the <code>SimpleTokenizerV2</code> we implemented previously via an <code>encode</code> method:</p>
+<div class="codeblock"><pre><code>text <span class="t-op">=</span> (
+ <span class="t-str">"Hello, do you like tea? &lt;|endoftext|&gt; In the sunlit terraces"</span>
+ <span class="t-str">"of someunknownPlace."</span>
+)
+integers <span class="t-op">=</span> tokenizer.<span class="t-fn">encode</span>(text, allowed_special<span class="t-op">=</span>{<span class="t-str">"&lt;|endoftext|&gt;"</span>})
+<span class="t-bi">print</span>(integers)</code></pre></div>
+<p>The code prints the following token IDs: </p>
+<div class="codeblock"><pre><code>[<span class="t-num">15496</span>, <span class="t-num">11</span>, <span class="t-num">466</span>, <span class="t-num">345</span>, <span class="t-num">588</span>, <span class="t-num">8887</span>, <span class="t-num">30</span>, <span class="t-num">220</span>, <span class="t-num">50256</span>, <span class="t-num">554</span>, <span class="t-num">262</span>, <span class="t-num">4252</span>, <span class="t-num">18250</span>,
+ <span class="t-num">8812</span>, <span class="t-num">2114</span>, <span class="t-num">286</span>, <span class="t-num">617</span>, <span class="t-num">34680</span>, <span class="t-num">27271</span>, <span class="t-num">13</span>]</code></pre></div>
+<p>We can then convert the token IDs back into text using the decode method, similar to</p>
+<div class="codeblock"><pre><code>our SimpleTokenizerV2:
+strings <span class="t-op">=</span> tokenizer.<span class="t-fn">decode</span>(integers)
+<span class="t-bi">print</span>(strings)</code></pre></div>
+<p>The code prints</p>
+<div class="codeblock"><pre><code>Hello, do you like tea? <span class="t-op">&lt;|</span>endoftext<span class="t-op">|&gt;</span> In the sunlit terraces of
+ someunknownPlace.</code></pre></div>
+<div class="pdfpage" data-page="55">PDF p. 55</div>
+<figure><img src="assets/fig-0030.png" alt="" loading="lazy"><figcaption>Figure 2.11 BPE tokenizers </figcaption></figure>
+<p>We can make two noteworthy observations based on the token IDs and decoded text. First, the <code>&lt;|endoftext|&gt;</code> token is assigned a relatively large token ID, namely, <code>50256</code>. In fact, the BPE tokenizer, which was used to train models such as GPT-2, GPT-3, and the original model used in ChatGPT, has a total vocabulary size of 50,257, with <code>&lt;|endoftext|&gt;</code> being assigned the largest token ID.</p>
+<p> Second, the BPE tokenizer encodes and decodes unknown words, such as <code>someunknownPlace</code>, correctly. The BPE tokenizer can handle any unknown word. How does it achieve this without using <code>&lt;|unk|&gt;</code> tokens?</p>
+<p> The algorithm underlying BPE breaks down words that aren’t in its predefined vocabulary into smaller subword units or even individual characters, enabling it to handle out-of-vocabulary words. So, thanks to the BPE algorithm, if the tokenizer encounters an unfamiliar word during tokenization, it can represent it as a sequence of subword tokens or characters, as illustrated in figure 2.11.</p>
+<aside class="sidenote">Unknown words are tokenized into individual characters or subwords.</aside>
+<div class="plainbox"><p>"Akwirw</p><p>ier "</p></div>
+<p class="caption">break down unknown words  into subwords and individual  characters. This way, a BPE  tokenizer can parse any word  and doesn’t need to replace  unknown words with special  tokens, such as &lt;|unk|&gt;.</p>
+<p>The ability to break down unknown words into individual characters ensures that the tokenizer and, consequently, the LLM that is trained with it can process any text, even if it contains words that were not present in its training data.</p>
+<h3 id="exercise-2-1-byte-pair-encoding-of-unknown-words">Exercise 2.1 Byte pair encoding of unknown words <a class="anchor" href="#exercise-2-1-byte-pair-encoding-of-unknown-words">#</a></h3>
+<div class="plainbox"><p>Try the BPE tokenizer from the tiktoken library on the unknown words “Akwirw ier” and</p><p>print the individual token IDs. Then, call the <code>decode</code> function on each of the resulting</p><p>integers in this list to reproduce the mapping shown in figure 2.11. Lastly, call the</p><p>decode method on the token IDs to check whether it can reconstruct the original</p><p>input, “Akwirw ier.”</p></div>
+<p>A detailed discussion and implementation of BPE is out of the scope of this book, but in short, it builds its vocabulary by iteratively merging frequent characters into subwords and frequent subwords into words. For example, BPE starts with adding all individual single characters to its vocabulary (“a,” “b,” etc.). In the next stage, it merges character combinations that frequently occur together into subwords. For example, “d” and “e” may be merged into the subword “de,” which is common in many English</p>
+<div class="pdfpage" data-page="56">PDF p. 56</div>
+<figure><img src="assets/fig-0031.png" alt="" loading="lazy"><figcaption>Figure 2.12 Given a text sample, extract input blocks as subsamples that serve as  input to the LLM, and the LLM’s prediction task during training is to predict the next  word that follows the input block. During training, we mask out all words that are past  the target. Note that the text shown in this figure must undergo tokenization before  the LLM can process it; however, this figure omits the tokenization step for clarity.</figcaption></figure>
+<p>words like “define,” “depend,” “made,” and “hidden.” The merges are determined by a frequency cutoff.</p>
+<h2 id="data-sampling-with-a-sliding-window">2.6 Data sampling with a sliding window<a class="anchor" href="#data-sampling-with-a-sliding-window">#</a></h2>
+<p>The next step in creating the embeddings for the LLM is to generate the input–target pairs required for training an LLM. What do these input–target pairs look like? As we already learned, LLMs are pretrained by predicting the next word in a text, as depicted in figure 2.12.</p>
+<p>Let’s implement a data loader that fetches the input–target pairs in figure 2.12 from the training dataset using a sliding window approach. To get started, we will tokenize the whole “The Verdict” short story using the BPE tokenizer:</p>
+<div class="codeblock"><pre><code><span class="t-kw">with</span> <span class="t-bi">open</span>(<span class="t-str">"the-verdict.txt"</span>, <span class="t-str">"r"</span>, encoding<span class="t-op">=</span><span class="t-str">"utf-8"</span>) <span class="t-kw">as</span> f:
+ raw_text <span class="t-op">=</span> f.<span class="t-fn">read</span>()
+enc_text <span class="t-op">=</span> tokenizer.<span class="t-fn">encode</span>(raw_text)
+<span class="t-bi">print</span>(<span class="t-bi">len</span>(enc_text))</code></pre></div>
+<p>Executing this code will return <code>5145</code>, the total number of tokens in the training set, after applying the BPE tokenizer.</p>
+<p> Next, we remove the first 50 tokens from the dataset for demonstration purposes, as it results in a slightly more interesting text passage in the next steps:</p>
+<div class="codeblock"><pre><code>enc_sample <span class="t-op">=</span> enc_text[<span class="t-num">50</span>:]</code></pre></div>
+<div class="pdfpage" data-page="57">PDF p. 57</div>
+<p>One of the easiest and most intuitive ways to create the input–target pairs for the nextword prediction task is to create two variables, <code>x</code> and <code>y</code>, where <code>x</code> contains the input tokens and <code>y</code> contains the targets, which are the inputs shifted by 1:</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>The context size determines how many tokens are included in the input.</li></ul></details><pre><code>context_size <span class="t-op">=</span> <span class="t-num">4</span>
+x <span class="t-op">=</span> enc_sample[:context_size]
+y <span class="t-op">=</span> enc_sample[<span class="t-num">1</span>:context_size<span class="t-op">+</span><span class="t-num">1</span>]
+<span class="t-bi">print</span>(f<span class="t-str">"x: {x}"</span>)
+<span class="t-bi">print</span>(f<span class="t-str">"y: {y}"</span>)</code></pre></div>
+<p>Running the previous code prints the following output:</p>
+<div class="codeblock"><pre><code>x: [<span class="t-num">290</span>, <span class="t-num">4920</span>, <span class="t-num">2241</span>, <span class="t-num">287</span>]
+y: [<span class="t-num">4920</span>, <span class="t-num">2241</span>, <span class="t-num">287</span>, <span class="t-num">257</span>]</code></pre></div>
+<p>By processing the inputs along with the targets, which are the inputs shifted by one position, we can create the next-word prediction tasks (see figure 2.12), as follows:</p>
+<div class="codeblock"><pre><code><span class="t-kw">for</span> i <span class="t-kw">in</span> <span class="t-bi">range</span>(<span class="t-num">1</span>, context_size<span class="t-op">+</span><span class="t-num">1</span>):
+ context <span class="t-op">=</span> enc_sample[:i]
+ desired <span class="t-op">=</span> enc_sample[i]
+ <span class="t-bi">print</span>(context, <span class="t-str">"----&gt;"</span>, desired)</code></pre></div>
+<p>The code prints</p>
+<div class="codeblock"><pre><code>[<span class="t-num">290</span>] <span class="t-op">----&gt;</span> <span class="t-num">4920</span>
+[<span class="t-num">290</span>, <span class="t-num">4920</span>] <span class="t-op">----&gt;</span> <span class="t-num">2241</span>
+[<span class="t-num">290</span>, <span class="t-num">4920</span>, <span class="t-num">2241</span>] <span class="t-op">----&gt;</span> <span class="t-num">287</span>
+[<span class="t-num">290</span>, <span class="t-num">4920</span>, <span class="t-num">2241</span>, <span class="t-num">287</span>] <span class="t-op">----&gt;</span> <span class="t-num">257</span></code></pre></div>
+<p>Everything left of the arrow (<code>----&gt;</code>) refers to the input an LLM would receive, and the token ID on the right side of the arrow represents the target token ID that the LLM is supposed to predict. Let’s repeat the previous code but convert the token IDs into text:</p>
+<div class="codeblock"><pre><code><span class="t-kw">for</span> i <span class="t-kw">in</span> <span class="t-bi">range</span>(<span class="t-num">1</span>, context_size<span class="t-op">+</span><span class="t-num">1</span>):
+ context <span class="t-op">=</span> enc_sample[:i]
+ desired <span class="t-op">=</span> enc_sample[i]
+ <span class="t-bi">print</span>(tokenizer.<span class="t-fn">decode</span>(context), <span class="t-str">"----&gt;"</span>, tokenizer.<span class="t-fn">decode</span>([desired]))</code></pre></div>
+<p>The following outputs show how the input and outputs look in text format:</p>
+<div class="codeblock"><pre><code> <span class="t-kw">and</span> <span class="t-op">----&gt;</span> established
+ <span class="t-kw">and</span> established <span class="t-op">----&gt;</span> himself
+ <span class="t-kw">and</span> established himself <span class="t-op">----&gt;</span> <span class="t-kw">in</span>
+ <span class="t-kw">and</span> established himself <span class="t-kw">in</span> <span class="t-op">----&gt;</span> a</code></pre></div>
+<p>We’ve now created the input–target pairs that we can use for LLM training.</p>
+<p> There’s only one more task before we can turn the tokens into embeddings: implementing an efficient data loader that iterates over the input dataset and returns the</p>
+<div class="pdfpage" data-page="58">PDF p. 58</div>
+<div class="tablewrap"><table><tr><td>LLM to predict, as depicted in figure 2.13. While the figure shows the tokens in stringformat for illustration purposes, the code implementation will operate on token IDs</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr><tr><td>directly since the <code>encode</code> method of the BPE tokenizer performs both tokenizationand conversion into token IDs as a single step.</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr><tr><td><strong>Sample text</strong></td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr><tr><td>&nbsp;</td><td>"In the heart of the city stood the old library, a relic from a bygone era. Its</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr><tr><td>&nbsp;</td><td>stone walls bore the marks of time, and ivy clung tightly to its facade …"<code>x = tensor([[ "In", "the", "heart", "of" ],</code></td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr><tr><td><strong>Tensor</strong><strong>containing</strong><strong>the inputs</strong></td><td>&nbsp;</td><td><code>[ "the" , "city", "stood", "the" ],</code><code>[ "old", "library", ",", "a" ],</code><code>[</code><code> </code><code>…</code></td><td>&nbsp;</td><td><code>]])</code></td><td>&nbsp;</td></tr><tr><td><strong>Tensor</strong><strong>containing</strong><strong>the targets</strong></td><td><code>y = tensor([[ "the", "heart", "of", "the" ],</code></td><td><code>[ "city", "stood", "the", "old" ],</code><code>[ "library",</code><code> </code><code>“,",</code><code>[</code><code> </code><code>…</code></td><td><code>“a",</code></td><td><code>“relic"],</code></td><td><code>]])</code></td></tr></table></div>
+<p class="listing-title"><span class="no">Listing 2.5</span><span class="tl">A dataset for batched inputs and targets</span></p>
+<p>inputs and targets as PyTorch tensors, which can be thought of as multidimensional arrays. In particular, we are interested in returning two tensors: an input tensor containing the text that the LLM sees and a target tensor that includes the targets for the</p>
+<p class="caption">Figure 2.13 To implement efficient data loaders, we collect the inputs in a tensor, x, where each row  represents one input context. A second tensor, y, contains the corresponding prediction targets (next  words), which are created by shifting the input by one position.</p>
+<aside class="callout note"><p class="lab">NOTE</p><p>For the efficient data loader implementation, we will use PyTorch’s built-in <code>Dataset</code> and <code>DataLoader</code> classes. For additional information and guidance on installing PyTorch, please see section A.2.1.3 in appendix A.</p></aside>
+<p>The code for the dataset class is shown in the following listing.</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>Tokenizes the entire text</li></ul></details><pre><code><span class="t-kw">import</span> <span class="t-bi">torch</span>
+<span class="t-kw">from</span> <span class="t-bi">torch</span>.utils.data <span class="t-kw">import</span> Dataset, DataLoader
+<span class="t-kw">class</span> <span class="t-fn">GPTDatasetV1</span>(Dataset):
+ <span class="t-kw">def</span> <span class="t-fn">__init__</span>(<span class="t-kw">self</span>, txt, tokenizer, max_length, stride):
+ <span class="t-kw">self</span>.input_ids <span class="t-op">=</span> []
+ <span class="t-kw">self</span>.target_ids <span class="t-op">=</span> []
+ token_ids <span class="t-op">=</span> tokenizer.<span class="t-fn">encode</span>(txt)</code></pre></div>
+<div class="pdfpage" data-page="59">PDF p. 59</div>
+<p class="listing-title"><span class="no">Listing 2.6</span><span class="tl">A data loader to generate batches with input-with pairs</span></p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 2 条</summary><ul><li>Returns a single row from the dataset Uses a sliding window to chunk the book into overlapping sequences of max_length</li><li>Returns the total number of rows in the dataset</li></ul></details><pre><code> <span class="t-kw">for</span> i <span class="t-kw">in</span> <span class="t-bi">range</span>(<span class="t-num">0</span>, <span class="t-bi">len</span>(token_ids) <span class="t-op">-</span> max_length, stride):
+ input_chunk <span class="t-op">=</span> token_ids[i:i <span class="t-op">+</span> max_length]
+ target_chunk <span class="t-op">=</span> token_ids[i <span class="t-op">+</span> <span class="t-num">1</span>: i <span class="t-op">+</span> max_length <span class="t-op">+</span> <span class="t-num">1</span>]
+ <span class="t-kw">self</span>.input_ids.<span class="t-fn">append</span>(<span class="t-bi">torch</span>.<span class="t-fn">tensor</span>(input_chunk))
+ <span class="t-kw">self</span>.target_ids.<span class="t-fn">append</span>(<span class="t-bi">torch</span>.<span class="t-fn">tensor</span>(target_chunk))
+ <span class="t-kw">def</span> <span class="t-fn">__len__</span>(<span class="t-kw">self</span>):
+ <span class="t-kw">return</span> <span class="t-bi">len</span>(<span class="t-kw">self</span>.input_ids)
+ <span class="t-kw">def</span> <span class="t-fn">__getitem__</span>(<span class="t-kw">self</span>, idx):
+ <span class="t-kw">return</span> <span class="t-kw">self</span>.input_ids[idx], <span class="t-kw">self</span>.target_ids[idx]</code></pre></div>
+<p>The <code>GPTDatasetV1</code> class is based on the PyTorch <code>Dataset</code> class and defines how individual rows are fetched from the dataset, where each row consists of a number of token IDs (based on a <code>max_length</code>) assigned to an <code>input_chunk</code> tensor. The <code>target_</code> <code>chunk</code> tensor contains the corresponding targets. I recommend reading on to see what the data returned from this dataset looks like when we combine the dataset with a PyTorch <code>DataLoader</code>—this will bring additional intuition and clarity.</p>
+<aside class="callout note"><p class="lab">NOTE</p><p>If you are new to the structure of PyTorch <code>Dataset</code> classes, such as shown in listing 2.5, refer to section A.6 in appendix A, which explains the general structure and usage of PyTorch <code>Dataset</code> and <code>DataLoader</code> classes.</p></aside>
+<p>The following code uses the <code>GPTDatasetV1</code> to load the inputs in batches via a PyTorch</p>
+<div class="codeblock"><pre><code>DataLoader.</code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 4 条</summary><ul><li>Initializes the tokenizer</li><li>Creates dataset</li><li>drop_last=True drops the last batch if it is shorter than the specified batch_size to prevent loss spikes during training.</li><li>The number of CPU processes to use for preprocessing</li></ul></details><pre><code><span class="t-kw">def</span> <span class="t-fn">create_dataloader_v1</span>(txt, batch_size<span class="t-op">=</span><span class="t-num">4</span>, max_length<span class="t-op">=</span><span class="t-num">256</span>,
+ stride<span class="t-op">=</span><span class="t-num">128</span>, shuffle<span class="t-op">=</span><span class="t-kw">True</span>, drop_last<span class="t-op">=</span><span class="t-kw">True</span>,
+ num_workers<span class="t-op">=</span><span class="t-num">0</span>):
+ tokenizer <span class="t-op">=</span> <span class="t-bi">tiktoken</span>.<span class="t-fn">get_encoding</span>(<span class="t-str">"gpt2"</span>)
+ dataset <span class="t-op">=</span> <span class="t-fn">GPTDatasetV1</span>(txt, tokenizer, max_length, stride)
+ dataloader <span class="t-op">=</span> <span class="t-fn">DataLoader</span>(
+ dataset,
+ batch_size<span class="t-op">=</span>batch_size,
+ shuffle<span class="t-op">=</span>shuffle,
+ drop_last<span class="t-op">=</span>drop_last,
+ num_workers<span class="t-op">=</span>num_workers
+ )
+ <span class="t-kw">return</span> dataloader</code></pre></div>
+<div class="pdfpage" data-page="60">PDF p. 60</div>
+<p>Let’s test the <code>dataloader</code> with a batch size of 1 for an LLM with a context size of 4 to develop an intuition of how the <code>GPTDatasetV1</code> class from listing 2.5 and the <code>create_</code> <code>dataloader_v1</code> function from listing 2.6 work together:</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>Converts dataloader into a Python iterator to fetch the next entry via Python’s built-in next() function</li></ul></details><pre><code><span class="t-kw">with</span> <span class="t-bi">open</span>(<span class="t-str">"the-verdict.txt"</span>, <span class="t-str">"r"</span>, encoding<span class="t-op">=</span><span class="t-str">"utf-8"</span>) <span class="t-kw">as</span> f:
+ raw_text <span class="t-op">=</span> f.<span class="t-fn">read</span>()
+dataloader <span class="t-op">=</span> <span class="t-fn">create_dataloader_v1</span>(
+ raw_text, batch_size<span class="t-op">=</span><span class="t-num">1</span>, max_length<span class="t-op">=</span><span class="t-num">4</span>, stride<span class="t-op">=</span><span class="t-num">1</span>, shuffle<span class="t-op">=</span><span class="t-kw">False</span>)
+data_iter <span class="t-op">=</span> <span class="t-fn">iter</span>(dataloader)
+first_batch <span class="t-op">=</span> <span class="t-bi">next</span>(data_iter)
+<span class="t-bi">print</span>(first_batch)</code></pre></div>
+<p>Executing the preceding code prints the following:</p>
+<div class="codeblock"><pre><code>[<span class="t-fn">tensor</span>([[ <span class="t-num">40</span>, <span class="t-num">367</span>, <span class="t-num">2885</span>, <span class="t-num">1464</span>]]), <span class="t-fn">tensor</span>([[ <span class="t-num">367</span>, <span class="t-num">2885</span>, <span class="t-num">1464</span>, <span class="t-num">1807</span>]])]</code></pre></div>
+<p>The <code>first_batch</code> variable contains two tensors: the first tensor stores the input token IDs, and the second tensor stores the target token IDs. Since the <code>max_length</code> is set to 4, each of the two tensors contains four token IDs. Note that an input size of 4 is quite small and only chosen for simplicity. It is common to train LLMs with input sizes of at least 256.</p>
+<p> To understand the meaning of <code>stride=1</code>, let’s fetch another batch from this dataset:</p>
+<div class="codeblock"><pre><code>second_batch <span class="t-op">=</span> <span class="t-bi">next</span>(data_iter)
+<span class="t-bi">print</span>(second_batch)</code></pre></div>
+<p>The second batch has the following contents:</p>
+<div class="codeblock"><pre><code>[<span class="t-fn">tensor</span>([[ <span class="t-num">367</span>, <span class="t-num">2885</span>, <span class="t-num">1464</span>, <span class="t-num">1807</span>]]), <span class="t-fn">tensor</span>([[<span class="t-num">2885</span>, <span class="t-num">1464</span>, <span class="t-num">1807</span>, <span class="t-num">3619</span>]])]</code></pre></div>
+<p>If we compare the first and second batches, we can see that the second batch’s token IDs are shifted by one position (for example, the second ID in the first batch’s input is 367, which is the first ID of the second batch’s input). The <code>stride</code> setting dictates the number of positions the inputs shift across batches, emulating a sliding window approach, as demonstrated in figure 2.14.</p>
+<h3 id="exercise-2-2-data-loaders-with-different-strides-and-context-sizes">Exercise 2.2 Data loaders with different strides and context sizes<a class="anchor" href="#exercise-2-2-data-loaders-with-different-strides-and-context-sizes">#</a></h3>
+<div class="plainbox"><p>To develop more intuition for how the data loader works, try to run it with different</p></div>
+<div class="codeblock"><pre><code>settings such <span class="t-kw">as</span> max_length<span class="t-op">=</span><span class="t-num">2</span> <span class="t-kw">and</span> stride<span class="t-op">=</span><span class="t-num">2</span>, <span class="t-kw">and</span> max_length<span class="t-op">=</span><span class="t-num">8</span> <span class="t-kw">and</span> stride<span class="t-op">=</span><span class="t-num">2.</span></code></pre></div>
+<p>Batch sizes of 1, such as we have sampled from the data loader so far, are useful for illustration purposes. If you have previous experience with deep learning, you may know that small batch sizes require less memory during training but lead to more</p>
+<div class="pdfpage" data-page="61">PDF p. 61</div>
+<figure><img src="assets/fig-0032.png" alt="" loading="lazy"><figcaption>Figure 2.14 When creating multiple batches from the input dataset, we slide an  input window across the text. If the stride is set to 1, we shift the input window by  one position when creating the next batch. If we set the stride equal to the input  window size, we can prevent overlaps between the batches.</figcaption></figure>
+<p>noisy model updates. Just like in regular deep learning, the batch size is a tradeoff and a hyperparameter to experiment with when training LLMs.</p>
+<p> Let’s look briefly at how we can use the data loader to sample with a batch size greater than 1:</p>
+<div class="codeblock"><pre><code>dataloader <span class="t-op">=</span> <span class="t-fn">create_dataloader_v1</span>(
+ raw_text, batch_size<span class="t-op">=</span><span class="t-num">8</span>, max_length<span class="t-op">=</span><span class="t-num">4</span>, stride<span class="t-op">=</span><span class="t-num">4</span>,
+ shuffle<span class="t-op">=</span><span class="t-kw">False</span>
+)
+data_iter <span class="t-op">=</span> <span class="t-fn">iter</span>(dataloader)
+inputs, targets <span class="t-op">=</span> <span class="t-bi">next</span>(data_iter)
+<span class="t-bi">print</span>(<span class="t-str">"Inputs:\n"</span>, inputs)
+<span class="t-bi">print</span>(<span class="t-str">"\nTargets:\n"</span>, targets)</code></pre></div>
+<p>This prints</p>
+<div class="codeblock"><pre><code>Inputs:
+ <span class="t-fn">tensor</span>([[ <span class="t-num">40</span>, <span class="t-num">367</span>, <span class="t-num">2885</span>, <span class="t-num">1464</span>],
+ [ <span class="t-num">1807</span>, <span class="t-num">3619</span>, <span class="t-num">402</span>, <span class="t-num">271</span>],
+ [<span class="t-num">10899</span>, <span class="t-num">2138</span>, <span class="t-num">257</span>, <span class="t-num">7026</span>],
+ [<span class="t-num">15632</span>, <span class="t-num">438</span>, <span class="t-num">2016</span>, <span class="t-num">257</span>],
+ [ <span class="t-num">922</span>, <span class="t-num">5891</span>, <span class="t-num">1576</span>, <span class="t-num">438</span>],
+ [ <span class="t-num">568</span>, <span class="t-num">340</span>, <span class="t-num">373</span>, <span class="t-num">645</span>],</code></pre></div>
+<div class="pdfpage" data-page="62">PDF p. 62</div>
+<figure><img src="assets/fig-0033.png" alt="" loading="lazy"><figcaption>Figure 2.15 Preparation involves tokenizing text, converting text tokens to token IDs, and  converting token IDs into embedding vectors. Here, we consider the previously created token  IDs to create the token embedding vectors.</figcaption></figure>
+<div class="codeblock"><pre><code> [ <span class="t-num">1049</span>, <span class="t-num">5975</span>, <span class="t-num">284</span>, <span class="t-num">502</span>],
+ [ <span class="t-num">284</span>, <span class="t-num">3285</span>, <span class="t-num">326</span>, <span class="t-num">11</span>]])
+Targets:
+ <span class="t-fn">tensor</span>([[ <span class="t-num">367</span>, <span class="t-num">2885</span>, <span class="t-num">1464</span>, <span class="t-num">1807</span>],
+ [ <span class="t-num">3619</span>, <span class="t-num">402</span>, <span class="t-num">271</span>, <span class="t-num">10899</span>],
+ [ <span class="t-num">2138</span>, <span class="t-num">257</span>, <span class="t-num">7026</span>, <span class="t-num">15632</span>],
+ [ <span class="t-num">438</span>, <span class="t-num">2016</span>, <span class="t-num">257</span>, <span class="t-num">922</span>],
+ [ <span class="t-num">5891</span>, <span class="t-num">1576</span>, <span class="t-num">438</span>, <span class="t-num">568</span>],
+ [ <span class="t-num">340</span>, <span class="t-num">373</span>, <span class="t-num">645</span>, <span class="t-num">1049</span>],
+ [ <span class="t-num">5975</span>, <span class="t-num">284</span>, <span class="t-num">502</span>, <span class="t-num">284</span>],
+ [ <span class="t-num">3285</span>, <span class="t-num">326</span>, <span class="t-num">11</span>, <span class="t-num">287</span>]])</code></pre></div>
+<p>Note that we increase the stride to 4 to utilize the data set fully (we don’t skip a single word). This avoids any overlap between the batches since more overlap could lead to increased overfitting.</p>
+<h2 id="creating-token-embeddings">2.7 Creating token embeddings<a class="anchor" href="#creating-token-embeddings">#</a></h2>
+<p>The last step in preparing the input text for LLM training is to convert the token IDs into embedding vectors, as shown in figure 2.15. As a preliminary step, we must initialize</p>
+<div class="pdfpage" data-page="63">PDF p. 63</div>
+<p>these embedding weights with random values. This initialization serves as the starting point for the LLM’s learning process. In chapter 5, we will optimize the embedding weights as part of the LLM training.</p>
+<p> A continuous vector representation, or embedding, is necessary since GPT-like LLMs are deep neural networks trained with the backpropagation algorithm. </p>
+<aside class="callout note"><p class="lab">NOTE</p><p>If you are unfamiliar with how neural networks are trained with backpropagation, please read section B.4 in appendix A.</p></aside>
+<p>Let’s see how the token ID to embedding vector conversion works with a hands-on example. Suppose we have the following four input tokens with IDs 2, 3, 5, and 1:</p>
+<div class="codeblock"><pre><code>input_ids <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>([<span class="t-num">2</span>, <span class="t-num">3</span>, <span class="t-num">5</span>, <span class="t-num">1</span>])</code></pre></div>
+<p>For the sake of simplicity, suppose we have a small vocabulary of only 6 words (instead of the 50,257 words in the BPE tokenizer vocabulary), and we want to create embeddings of size 3 (in GPT-3, the embedding size is 12,288 dimensions):</p>
+<div class="codeblock"><pre><code>vocab_size <span class="t-op">=</span> <span class="t-num">6</span>
+output_dim <span class="t-op">=</span> <span class="t-num">3</span></code></pre></div>
+<p>Using the <code>vocab_size</code> and <code>output_dim</code>, we can instantiate an embedding layer in PyTorch, setting the random seed to <code>123</code> for reproducibility purposes:</p>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)
+embedding_layer <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-bi">nn</span>.<span class="t-fn">Embedding</span>(vocab_size, output_dim)
+<span class="t-bi">print</span>(embedding_layer.weight)</code></pre></div>
+<p>The print statement prints the embedding layer’s underlying weight matrix:</p>
+<div class="codeblock"><pre><code>Parameter containing:
+<span class="t-fn">tensor</span>([[ <span class="t-num">0.3374</span>, <span class="t-op">-</span><span class="t-num">0.1778</span>, <span class="t-op">-</span><span class="t-num">0.1690</span>],
+ [ <span class="t-num">0.9178</span>, <span class="t-num">1.5810</span>, <span class="t-num">1.3010</span>],
+ [ <span class="t-num">1.2753</span>, <span class="t-op">-</span><span class="t-num">0.2010</span>, <span class="t-op">-</span><span class="t-num">0.1606</span>],
+ [<span class="t-op">-</span><span class="t-num">0.4015</span>, <span class="t-num">0.9666</span>, <span class="t-op">-</span><span class="t-num">1.1481</span>],
+ [<span class="t-op">-</span><span class="t-num">1.1589</span>, <span class="t-num">0.3255</span>, <span class="t-op">-</span><span class="t-num">0.6315</span>],
+ [<span class="t-op">-</span><span class="t-num">2.8400</span>, <span class="t-op">-</span><span class="t-num">0.7849</span>, <span class="t-op">-</span><span class="t-num">1.4096</span>]], requires_grad<span class="t-op">=</span><span class="t-kw">True</span>)</code></pre></div>
+<p>The weight matrix of the embedding layer contains small, random values. These values are optimized during LLM training as part of the LLM optimization itself. Moreover, we can see that the weight matrix has six rows and three columns. There is one row for each of the six possible tokens in the vocabulary, and there is one column for each of the three embedding dimensions.</p>
+<p> Now, let’s apply it to a token ID to obtain the embedding vector: </p>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(<span class="t-fn">embedding_layer</span>(<span class="t-bi">torch</span>.<span class="t-fn">tensor</span>([<span class="t-num">3</span>])))</code></pre></div>
+<div class="pdfpage" data-page="64">PDF p. 64</div>
+<p>The returned embedding vector is</p>
+<p><code>tensor([[-0.4015, 0.9666, -1.1481]], grad_fn=&lt;EmbeddingBackward0&gt;)</code></p>
+<p>If we compare the embedding vector for token ID 3 to the previous embedding matrix, we see that it is identical to the fourth row (Python starts with a zero index, so it’s the row corresponding to index 3). In other words, the embedding layer is essentially a lookup operation that retrieves rows from the embedding layer’s weight matrix via a token ID.</p>
+<aside class="callout note"><p class="lab">NOTE</p><p>For those who are familiar with one-hot encoding, the embedding layer approach described here is essentially just a more efficient way of implementing one-hot encoding followed by matrix multiplication in a fully connected layer, which is illustrated in the supplementary code on GitHub at <a href="https://mng.bz/ZEB5" rel="noopener">https://mng.bz/ZEB5</a>. Because the embedding layer is just a more efficient implementation equivalent to the one-hot encoding and matrix-multiplication approach, it can be seen as a neural network layer that can be optimized via backpropagation.</p></aside>
+<p>We’ve seen how to convert a single token ID into a three-dimensional embedding vector. Let’s now apply that to all four input IDs (<code>torch.tensor([2,</code> <code>3,</code> <code>5,</code> <code>1])</code>):</p>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(<span class="t-fn">embedding_layer</span>(input_ids))</code></pre></div>
+<p>The print output reveals that this results in a 4 × 3 matrix:</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[ <span class="t-num">1.2753</span>, <span class="t-op">-</span><span class="t-num">0.2010</span>, <span class="t-op">-</span><span class="t-num">0.1606</span>],
+ [<span class="t-op">-</span><span class="t-num">0.4015</span>, <span class="t-num">0.9666</span>, <span class="t-op">-</span><span class="t-num">1.1481</span>],
+ [<span class="t-op">-</span><span class="t-num">2.8400</span>, <span class="t-op">-</span><span class="t-num">0.7849</span>, <span class="t-op">-</span><span class="t-num">1.4096</span>],
+ [ <span class="t-num">0.9178</span>, <span class="t-num">1.5810</span>, <span class="t-num">1.3010</span>]], grad_fn<span class="t-op">=&lt;</span>EmbeddingBackward0<span class="t-op">&gt;</span>)</code></pre></div>
+<p>Each row in this output matrix is obtained via a lookup operation from the embedding weight matrix, as illustrated in figure 2.16.</p>
+<p> Having now created embedding vectors from token IDs, next we’ll add a small modification to these embedding vectors to encode positional information about a token within a text.</p>
+<h2 id="encoding-word-positions">2.8 Encoding word positions<a class="anchor" href="#encoding-word-positions">#</a></h2>
+<p>In principle, token embeddings are a suitable input for an LLM. However, a minor shortcoming of LLMs is that their self-attention mechanism (see chapter 3) doesn’t have a notion of position or order for the tokens within a sequence. The way the previously introduced embedding layer works is that the same token ID always gets mapped to the same vector representation, regardless of where the token ID is positioned in the input sequence, as shown in figure 2.17.</p>
+<div class="pdfpage" data-page="65">PDF p. 65</div>
+<figure><img src="assets/fig-0035.png" alt="" loading="lazy"></figure>
+<figure><img src="assets/fig-0034.png" alt="" loading="lazy"><figcaption>Figure 2.17 The embedding layer converts a token ID into the same vector  representation regardless of where it is located in the input sequence. For  example, the token ID 5, whether it’s in the first or fourth position in the  token ID input vector, will result in the same embedding vector.</figcaption></figure>
+<div class="pdfpage" data-page="66">PDF p. 66</div>
+<figure><img src="assets/fig-0036.png" alt="" loading="lazy"><figcaption>Figure 2.18 Positional embeddings are added to the token embedding vector to create the  input embeddings for an LLM. The positional vectors have the same dimension as the original  token embeddings. The token embeddings are shown with value 1 for simplicity.</figcaption></figure>
+<p>In principle, the deterministic, position-independent embedding of the token ID is good for reproducibility purposes. However, since the self-attention mechanism of LLMs itself is also position-agnostic, it is helpful to inject additional position information into the LLM.</p>
+<p> To achieve this, we can use two broad categories of position-aware embeddings: relative positional embeddings and absolute positional embeddings. Absolute positional embeddings are directly associated with specific positions in a sequence. For each position in the input sequence, a unique embedding is added to the token’s embedding to convey its exact location. For instance, the first token will have a specific positional embedding, the second token another distinct embedding, and so on, as illustrated in figure 2.18.</p>
+<div class="plainbox"><p>+</p><p>+</p><p>+</p><p>+</p></div>
+<p>Instead of focusing on the absolute position of a token, the emphasis of relative positional embeddings is on the relative position or distance between tokens. This means the model learns the relationships in terms of “how far apart” rather than “at which exact position.” The advantage here is that the model can generalize better to sequences of varying lengths, even if it hasn’t seen such lengths during training.</p>
+<p> Both types of positional embeddings aim to augment the capacity of LLMs to understand the order and relationships between tokens, ensuring more accurate and context-aware predictions. The choice between them often depends on the specific application and the nature of the data being processed.</p>
+<p> OpenAI’s GPT models use absolute positional embeddings that are optimized during the training process rather than being fixed or predefined like the positional encodings in the original transformer model. This optimization process is part of the model training itself. For now, let’s create the initial positional embeddings to create the LLM inputs.</p>
+<div class="pdfpage" data-page="67">PDF p. 67</div>
+<p> Previously, we focused on very small embedding sizes for simplicity. Now, let’s consider more realistic and useful embedding sizes and encode the input tokens into a 256-dimensional vector representation, which is smaller than what the original GPT-3 model used (in GPT-3, the embedding size is 12,288 dimensions) but still reasonable for experimentation. Furthermore, we assume that the token IDs were created by the BPE tokenizer we implemented earlier, which has a vocabulary size of 50,257:</p>
+<div class="codeblock"><pre><code>vocab_size <span class="t-op">=</span> <span class="t-num">50257</span>
+output_dim <span class="t-op">=</span> <span class="t-num">256</span>
+token_embedding_layer <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-bi">nn</span>.<span class="t-fn">Embedding</span>(vocab_size, output_dim)</code></pre></div>
+<p>Using the previous <code>token_embedding_layer</code>, if we sample data from the data loader, we embed each token in each batch into a 256-dimensional vector. If we have a batch size of 8 with four tokens each, the result will be an 8 × 4 × 256 tensor.</p>
+<p> Let’s instantiate the data loader (see section 2.6) first:</p>
+<div class="codeblock"><pre><code>max_length <span class="t-op">=</span> <span class="t-num">4</span>
+dataloader <span class="t-op">=</span> <span class="t-fn">create_dataloader_v1</span>(
+ raw_text, batch_size<span class="t-op">=</span><span class="t-num">8</span>, max_length<span class="t-op">=</span>max_length,
+ stride<span class="t-op">=</span>max_length, shuffle<span class="t-op">=</span><span class="t-kw">False</span>
+)
+data_iter <span class="t-op">=</span> <span class="t-fn">iter</span>(dataloader)
+inputs, targets <span class="t-op">=</span> <span class="t-bi">next</span>(data_iter)
+<span class="t-bi">print</span>(<span class="t-str">"Token IDs:\n"</span>, inputs)
+<span class="t-bi">print</span>(<span class="t-str">"\nInputs shape:\n"</span>, inputs.shape)</code></pre></div>
+<p>This code prints</p>
+<div class="codeblock"><pre><code>Token IDs:
+ <span class="t-fn">tensor</span>([[ <span class="t-num">40</span>, <span class="t-num">367</span>, <span class="t-num">2885</span>, <span class="t-num">1464</span>],
+ [ <span class="t-num">1807</span>, <span class="t-num">3619</span>, <span class="t-num">402</span>, <span class="t-num">271</span>],
+ [<span class="t-num">10899</span>, <span class="t-num">2138</span>, <span class="t-num">257</span>, <span class="t-num">7026</span>],
+ [<span class="t-num">15632</span>, <span class="t-num">438</span>, <span class="t-num">2016</span>, <span class="t-num">257</span>],
+ [ <span class="t-num">922</span>, <span class="t-num">5891</span>, <span class="t-num">1576</span>, <span class="t-num">438</span>],
+ [ <span class="t-num">568</span>, <span class="t-num">340</span>, <span class="t-num">373</span>, <span class="t-num">645</span>],
+ [ <span class="t-num">1049</span>, <span class="t-num">5975</span>, <span class="t-num">284</span>, <span class="t-num">502</span>],
+ [ <span class="t-num">284</span>, <span class="t-num">3285</span>, <span class="t-num">326</span>, <span class="t-num">11</span>]])
+Inputs shape:
+ <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">8</span>, <span class="t-num">4</span>])</code></pre></div>
+<p>As we can see, the token ID tensor is 8 × 4 dimensional, meaning that the data batch consists of eight text samples with four tokens each.</p>
+<p> Let’s now use the embedding layer to embed these token IDs into 256-dimensional vectors:</p>
+<div class="codeblock"><pre><code>token_embeddings <span class="t-op">=</span> <span class="t-fn">token_embedding_layer</span>(inputs)
+<span class="t-bi">print</span>(token_embeddings.shape)</code></pre></div>
+<div class="pdfpage" data-page="68">PDF p. 68</div>
+<p>The print function call returns</p>
+<p><code>torch.Size([8, 4, 256])</code></p>
+<p>The 8 × 4 × 256–dimensional tensor output shows that each token ID is now embedded as a 256-dimensional vector.</p>
+<p> For a GPT model’s absolute embedding approach, we just need to create another embedding layer that has the same embedding dimension as the <code>token_embedding_</code></p>
+<div class="codeblock"><pre><code>layer:
+context_length <span class="t-op">=</span> max_length
+pos_embedding_layer <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-bi">nn</span>.<span class="t-fn">Embedding</span>(context_length, output_dim)
+pos_embeddings <span class="t-op">=</span> <span class="t-fn">pos_embedding_layer</span>(<span class="t-bi">torch</span>.<span class="t-fn">arange</span>(context_length))
+<span class="t-bi">print</span>(pos_embeddings.shape)</code></pre></div>
+<p>The input to the <code>pos_embeddings</code> is usually a placeholder vector <code>torch.arange(con</code><code>text_length)</code>, which contains a sequence of numbers 0, 1, ..., up to the maximum input length –1. The <code>context_length</code> is a variable that represents the supported input size of the LLM. Here, we choose it similar to the maximum length of the input text. In practice, input text can be longer than the supported context length, in which case we have to truncate the text.</p>
+<p> The output of the print statement is</p>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">4</span>, <span class="t-num">256</span>])</code></pre></div>
+<p>As we can see, the positional embedding tensor consists of four 256-dimensional vectors. We can now add these directly to the token embeddings, where PyTorch will add the 4 × 256–dimensional <code>pos_embeddings</code> tensor to each 4 × 256–dimensional token embedding tensor in each of the eight batches:</p>
+<div class="codeblock"><pre><code>input_embeddings <span class="t-op">=</span> token_embeddings <span class="t-op">+</span> pos_embeddings
+<span class="t-bi">print</span>(input_embeddings.shape)</code></pre></div>
+<p>The print output is</p>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">8</span>, <span class="t-num">4</span>, <span class="t-num">256</span>])</code></pre></div>
+<p>The <code>input_embeddings</code> we created, as summarized in figure 2.19, are the embedded input examples that can now be processed by the main LLM modules, which we will begin implementing in the next chapter.</p>
+<div class="pdfpage" data-page="69">PDF p. 69</div>
+<figure><img src="assets/fig-0037.png" alt="" loading="lazy"></figure>
+<ul><li>  LLMs require textual data to be converted into numerical vectors, known as embeddings, since they can’t process raw text. Embeddings transform discrete data (like words or images) into continuous vector spaces, making them compatible with neural network operations. </li><li>  As the first step, raw text is broken into tokens, which can be words or characters. Then, the tokens are converted into integer representations, termed token IDs.</li><li>  Special tokens, such as <code>&lt;|unk|&gt;</code> and <code>&lt;|endoftext|&gt;</code>, can be added to enhance the model’s understanding and handle various contexts, such as unknown words or marking the boundary between unrelated texts.</li></ul>
+<div class="plainbox"><p><sub>decoder-only</sub><sup>GPT-like</sup></p></div>
+<aside class="sidenote">The input embedding pipeline</aside>
+<div class="plainbox"><p><strong>transformer</strong></p></div>
+<div class="plainbox"><p>+</p></div>
+<p class="caption">Figure 2.19 As part of the input processing pipeline, input text is first broken  up into individual tokens. These tokens are then converted into token IDs using a  vocabulary. The token IDs are converted into embedding vectors to which positional  embeddings of a similar size are added, resulting in input embeddings that are used  as input for the main LLM layers.</p>
+<h2 id="summary-2">Summary<a class="anchor" href="#summary-2">#</a></h2>
+<div class="pdfpage" data-page="70">PDF p. 70</div>
+<ul><li>  The byte pair encoding (BPE) tokenizer used for LLMs like GPT-2 and GPT-3 can efficiently handle unknown words by breaking them down into subword units or individual characters.</li><li>  We use a sliding window approach on tokenized data to generate input–target pairs for LLM training.</li><li>  Embedding layers in PyTorch function as a lookup operation, retrieving vectors corresponding to token IDs. The resulting embedding vectors provide continuous representations of tokens, which is crucial for training deep learning models like LLMs. </li><li>  While token embeddings provide consistent vector representations for each token, they lack a sense of the token’s position in a sequence. To rectify this, two main types of positional embeddings exist: absolute and relative. OpenAI’s GPT models utilize absolute positional embeddings, which are added to the token embedding vectors and are optimized during the model training.</li></ul>
+<div class="pdfpage" data-page="71">PDF p. 71</div>
+<ul><li>  The reasons for using attention mechanisms in  neural networks</li><li>  A basic self-attention framework, progressing to  an enhanced self-attention mechanism </li><li>  A causal attention module that allows LLMs to  generate one token at a time</li><li>  Masking randomly selected attention weights with  dropout to reduce overfitting</li><li>  Stacking multiple causal attention modules into a  multi-head attention module</li></ul><div class="colophon"><p>由 <code>pdf2html2.py</code> 从 <code>bllm2.pdf</code> 转换。插图为原书矢量图按区域渲染的截图，代码块带语法高亮，连字符断词已按全书词表还原。</p></div>
+</main>
+<nav class="chapnav" aria-label="Chapter navigation"><div class="chapnav-inner">
+<a class="prev" href="07-understanding-large-language-models.html"><span class="lbl">上一章</span><span class="nm">Understanding large language models</span></a><a class="next" href="09-coding-attention-mechanisms.html"><span class="lbl">下一章</span><span class="nm">Coding attention mechanisms</span></a>
+</div></nav>
+<script src="app.js"></script>
+</body>
+</html>

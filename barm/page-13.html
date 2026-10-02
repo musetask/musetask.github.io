@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>2.5 Loading pretrained models · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-12.html">
+<link rel="next" href="page-14.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 13 页 / 共 108 页</span></div>
+<h2 id="h2-loading-pretrained-models"><span class="num">2.5</span>Loading pretrained models</h2>
+<p>In the previous section, we loaded and familiarized ourselves with the tokenizer, which prepares the input data for an LLM and converts LLM outputs back into human-readable text. In this section, we’ll load the LLM itself with its pretrained weights, as shown in figure 2.7. Once this base model is in place, the following chapters will build directly on it by evaluating it, prompting it in different ways, and eventually training it into a stronger reasoning model.</p>
+<figure><a class="zoom" href="assets/figure-2.7.png" tabindex="-1"><img src="assets/figure-2.7.png" alt="" width="1143" height="420" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 2.7</span>An overview of the four key stages in developing a reasoning model in this book. This section focuses on loading a pretrained LLM in stage 1.</figcaption></figure>
+<p>This book uses Qwen3 0.6B as its pretrained base model. The “0.6B” in the name indicates that the model contains approximately 0.6 billion weight parameters.</p>
+<p>Why use Qwen3? After carefully evaluating several open-weight base models, I chose Qwen3 0.6B for the following reasons:</p>
+<ul><li>For this book, we want a small yet capable open-weight model (open-weight models are models whose trained weights are publicly downloadable) that can run on consumer hardware.</li></ul>
+<ul><li>Qwen3 offers both a base model (the focus of our reasoning model development) and an official reasoning variant that we can use as a reference for evaluation purposes.</li></ul>
+<aside><span class="tag">Note</span>The canonical spelling of “Qwen3” does not include whitespace, whereas, for example, “Llama 3” does.</aside>
+<p>In the spirit of building things “from scratch,” this book uses a custom reimplementation of Qwen3 that I wrote in pure PyTorch and that is entirely independent of external LLM libraries. The emphasis of this reimplementation is on code readability and tweakability in case you want to modify it later for your own experiments. Despite being built from scratch, this implementation remains fully compatible with the original pretrained Qwen3 model weights.</p>
+<p>This book does not cover the Qwen3 code implementation in depth. That topic alone would fill a separate book, similar to my <em>Build a Large Language Model (From Scratch)</em> book. Instead, this book focuses on implementing reasoning methods on top of a base model, in this case, Qwen3. If you’re interested in more details about Qwen3 and the model code, see appendix C.</p>
+<aside><span class="tag">Note</span>This reimplemented Qwen3 LLM runs entirely locally, just like any other neural network implemented in PyTorch. There are no server-side components or external API calls involved. All model usage happens on your own machine, and your data stays on your device. If you are concerned about privacy, the setup we are using ensures full control over both the LLM inputs and outputs.</aside>
+<p>Before we load the model, we can specify the device we are going to use, namely, a CPU or GPU. The code in the following listing automatically selects the best available device.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">def</span> get_device(enable_tensor_cores=<span class="tok-kw">True</span>):
+    <span class="tok-kw">if</span> torch.cuda.is_available<span class="tok-kw">()</span>:
+        device = torch.device<span class="tok-kw">(</span><span class="tok-st">"cuda"</span><span class="tok-kw">)</span>
+        print<span class="tok-kw">(</span><span class="tok-st">"Using NVIDIA CUDA GPU"</span><span class="tok-kw">)</span>
+        <span class="tok-kw">if</span> enable_tensor_cores:
+            major, minor = map<span class="tok-kw">(</span>int, torch.__version__.split<span class="tok-kw">(</span><span class="tok-st">"."</span><span class="tok-kw">)</span>[:<span class="tok-fn">2</span>]<span class="tok-kw">)</span>
+            <span class="tok-kw">if</span> (major, minor) &gt;= (<span class="tok-fn">2</span>, <span class="tok-fn">9</span>):
+                torch.backends.cuda.matmul.fp32_precision = <span class="tok-st">"tf32"</span>
+                torch.backends.cudnn.conv.fp32_precision = <span class="tok-st">"tf32"</span>
+            <span class="tok-kw">else</span>:
+                torch.backends.cuda.matmul.allow_tf32 = <span class="tok-kw">True</span>
+                torch.backends.cudnn.allow_tf32 = <span class="tok-kw">True</span>
+    <span class="tok-kw">elif</span> torch.backends.mps.is_available<span class="tok-kw">()</span>:
+        device = torch.device<span class="tok-kw">(</span><span class="tok-st">"mps"</span><span class="tok-kw">)</span>
+        print<span class="tok-kw">(</span><span class="tok-st">"Using Apple Silicon GPU (MPS)"</span><span class="tok-kw">)</span>
+    <span class="tok-kw">elif</span> torch.xpu.is_available<span class="tok-kw">()</span>:
+        device = torch.device<span class="tok-kw">(</span><span class="tok-st">"xpu"</span><span class="tok-kw">)</span>
+        print<span class="tok-kw">(</span><span class="tok-st">"Using Intel GPU"</span><span class="tok-kw">)</span>
+    <span class="tok-kw">else</span>:
+        device = torch.device<span class="tok-kw">(</span><span class="tok-st">"cpu"</span><span class="tok-kw">)</span>
+        print<span class="tok-kw">(</span><span class="tok-st">"Using CPU"</span><span class="tok-kw">)</span>
+    <span class="tok-kw">return</span> device</code></pre><figcaption><span class="lbl">Listing 2.1</span>Get the device automatically</figcaption></figure>
+<p>Note that if you have a modern NVIDIA GPU (based on the Ampere architecture or newer), the <code>get_device()</code> function automatically enables Tensor Cores for faster matrix multiplications when <code>enable_tensor_cores=True</code>. This can slightly change floating-point rounding, but it does not noticeably affect results in this book, and the speed advantage on newer cards is worth it. On non-NVIDIA devices, these settings are ignored.</p>
+<p>Using the code from listing 2.1, we can obtain the device as follows:</p>
+<pre><code class="language-python">device = get_device<span class="tok-kw">()</span></code></pre>
+<p>While GPUs generally provide substantial speed and performance gains, it can be helpful to run the remaining code in this chapter on the CPU for compatibility and debugging. You can temporarily override the automatic selection by explicitly setting the device:</p>
+<pre><code class="language-python">device = torch.device<span class="tok-kw">(</span><span class="tok-st">"cpu"</span><span class="tok-kw">)</span></code></pre>
+<p>After you’ve finished the chapter and verified that the code works properly on the CPU, you can remove or comment out the manual override and rerun the code. If your system has a GPU, you should then see better performance.</p>
+<aside><span class="tag">Note</span>The code in the remainder of this chapter was executed on a Mac Mini with an Apple M4 CPU. Performance comparisons with the Apple Silicon M4 GPU and the NVIDIA H100 GPU are included at the end of the chapter.</aside>
+<p>Before we load the model and put it onto the selected <code>device</code>, we first need to download the weights for Qwen3 0.6B. These files are required to initialize the pretrained model correctly. In the previous section, we called the <code>download_qwen3_small()</code> function with <code>tokenizer_only=True</code> to download only the tokenizer files. Here, we’ll use the same function but set <code>tokenizer_only=False</code> so that the model weights are downloaded as well:</p>
+<pre><code class="language-python">download_qwen3_small<span class="tok-kw">(</span>kind=<span class="tok-st">"base"</span>, tokenizer_only=<span class="tok-kw">False</span>, out_dir=<span class="tok-st">"qwen3"</span><span class="tok-kw">)</span></code></pre>
+<p>The output is as follows:</p>
+<pre><code class="language-python">qwen3-0.6B-base.pth: 100% (1433 MiB / 1433 MiB)
+✓ qwen3/tokenizer-base.json already up-to-date</code></pre>
+<p>(There is a checkmark next to the tokenizer because we already downloaded it in the previous section.)</p>
+<p>Now that we’ve downloaded the model weights, we can instantiate a <code>Qwen3Model</code> class and load the pretrained weights via PyTorch’s <code>load_state_dict</code> method:</p>
+<pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.qwen3 <span class="tok-kw">import</span> Qwen3Model, QWEN_CONFIG_06_B
+model_path = Path<span class="tok-kw">(</span><span class="tok-st">"qwen3"</span><span class="tok-kw">)</span> / <span class="tok-st">"qwen3-0.6B-base.pth"</span>
+model = Qwen3Model<span class="tok-kw">(</span>QWEN_CONFIG_06_B<span class="tok-kw">)</span>
+model.load_state_dict<span class="tok-kw">(</span>torch.load<span class="tok-kw">(</span>model_path<span class="tok-kw">))</span>
+model.to<span class="tok-kw">(</span>device<span class="tok-kw">)</span></code></pre>
+<p>Note that if the device setting is <code>"cpu"</code>, the <code>model.to(device)</code> operation is skipped because the model already resides in CPU memory by default.</p>
+<p>After executing the preceding code, you should see the following output. (If you are not running the code in an interactive environment like a Jupyter notebook, you will have to run <code>print(model)</code> to see the output.)</p>
+<pre><code class="language-python">Qwen3Model(
+  (tok_emb): Embedding(151936, 1024)
+  (trf_blocks): ModuleList(
+    (0-27): 28 x TransformerBlock(
+      (att): GroupedQueryAttention(
+        (W_query): Linear(in_features=1024, out_features=2048, bias=False)
+        (W_key): Linear(in_features=1024, out_features=1024, bias=False)
+        (W_value): Linear(in_features=1024, out_features=1024, bias=False)
+        (out_proj): Linear(in_features=2048, out_features=1024, bias=False)
+        (q_norm): RMSNorm()
+        (k_norm): RMSNorm()
+      )
+      (ff): FeedForward(
+        (fc1): Linear(in_features=1024, out_features=3072, bias=False)
+        (fc2): Linear(in_features=1024, out_features=3072, bias=False)
+        (fc3): Linear(in_features=3072, out_features=1024, bias=False)
+      )
+      (norm1): RMSNorm()
+      (norm2): RMSNorm()
+    )
+  )
+  (final_norm): RMSNorm()
+  (out_head): Linear(in_features=1024, out_features=151936, bias=False)
+)</code></pre>
+<p>This output is a summary of the Qwen3 0.6B base model architecture, as printed by PyTorch. It highlights the model’s core components: an embedding layer, a stack of 28 transformer blocks, and a final linear projection head. Each transformer block includes a grouped-query attention mechanism and a multilayer feed-forward network, along with normalization layers throughout.</p>
+<p>These components are also illustrated in figure 2.8 for readers familiar with LLM architectures, but a detailed understanding of this architecture is not required for this </p>
+<figure><a class="zoom" href="assets/figure-2.8.png" tabindex="-1"><img src="assets/figure-2.8.png" alt="" width="1050" height="1308" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 2.8</span>Overview of the Qwen3 0.6B model architecture, as instantiated earlier. Input text is tokenized and passed through an embedding layer, followed by 28 repeated transformer blocks. Each block contains grouped-query attention, feed-forward layers, and RMS normalization. The model ends with a final normalization and linear output layer. Arrows show the data flow through the model.</figcaption></figure>
+<p>book. Since we are not modifying the base model itself, but rather building reasoning methods on top of it, you can safely treat the architecture as a black box for now. If you’re interested, you can find more information on these components, such as RMSNorm, in appendix C.</p>
+<p>We have now loaded a pretrained model that should be capable of generating coherent text. In the next section, we’ll code a text generation function that feeds tokenized data into the model and returns the output in a human-readable format.</p>
+<nav class="pager"><a class="prev" href="page-12.html" rel="prev"><span class="dir">上一页</span><span class="t">2.4 Preparing input texts for LLMs</span></a><a class="next" href="page-14.html" rel="next"><span class="dir">下一页</span><span class="t">2.6 Understanding the sequential LLM text generation process</span></a></nav>
+</main>
+</body>
+</html>

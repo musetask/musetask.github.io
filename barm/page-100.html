@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>F.2 Evaluating answer-choice accuracy · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-99.html">
+<link rel="next" href="page-101.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 100 页 / 共 108 页</span></div>
+<h2 id="h2-evaluating-answer-choice-accuracy"><span class="num">F.2</span>Evaluating answer-choice accuracy</h2>
+<p>Historically, one of the most widely used evaluation methods has been multiple-choice benchmarks such as <em>MMLU</em> (short for Massive Multitask Language Understanding, <a href="https://huggingface.co/datasets/cais/mmlu">https://huggingface.co/datasets/cais/mmlu</a>). </p>
+<p>Figure F.2 shows a single example from the MMLU dataset. The complete MMLU dataset consists of 57 subjects (from high school math to biology) and about 16 thousand multiple-choice questions in total. Performance is measured in terms of accuracy (the fraction of correctly answered questions); for example, the score would be 87.5% if 14,000 out of 16,000 questions are answered correctly.</p>
+<figure><a class="zoom" href="assets/figure-F.1.png" tabindex="-1"><img src="assets/figure-F.1.png" alt="" width="1143" height="613" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure F.1</span>A model of the topics covered in this book, with a focus on the two broad evaluation categories covered in this appendix: benchmark-based evaluation and judgment-based evaluation LLM-generated answer text (“prediction”) Compare the given LLM solution to the A pretrained LLM that can LLM prediction. follow basic instructions and generate text “How many ways are there to put 4 Input text from distinguishable balls into 2 indistinguishable the MMLU dataset boxes? A. 7 B. 11 The correct answer from C. 16 the MMLU dataset (not D. 8 Answer: “ shown to the LLM)</figcaption></figure>
+<figure><a class="zoom" href="assets/figure-F.2.png" tabindex="-1"><img src="assets/figure-F.2.png" alt="" width="1092" height="614" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure F.2</span>Evaluating an LLM on MMLU by comparing its multiple-choice prediction with the correct answer from the dataset</figcaption></figure>
+<p>Multiple-choice benchmarks, such as MMLU, test an LLM’s knowledge recall in a straightforward, quantifiable way similar to standardized tests, many school exams, or theoretical driving tests.</p>
+<p>Note that figure F.2 shows a simplified version of multiple-choice evaluation, where the model’s predicted answer letter is compared directly to the correct one. Other popular methods use log-probability scoring (log probabilities are discussed in more detail in chapter 4).</p>
+<p>The following subsections illustrate how the MMLU scoring shown in figure F.2 can be implemented in code. End-to-end MMLU scripts, including the different scoring variants, will be provided as bonus materials in this book’s code repository.</p>
+<h3 id="h3-loading-the-model"><span class="num">F.2.1</span>Loading the model</h3>
+<p>Before we can evaluate the model on MMLU, we have to load the pretrained model. The following code is identical to listing 3.1.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">from</span> pathlib <span class="tok-kw">import</span> Path
+<span class="tok-kw">import</span> torch
+<span class="tok-kw">from</span> reasoning_from_scratch.ch02 <span class="tok-kw">import</span> get_device
+<span class="tok-kw">from</span> reasoning_from_scratch.qwen3 <span class="tok-kw">import</span> (
+    download_qwen3_small, Qwen3Tokenizer,
+    Qwen3Model, QWEN_CONFIG_06_B
+)
+device = get_device<span class="tok-kw">()</span>
+torch.set_float32_matmul_precision<span class="tok-kw">(</span>"high"<span class="tok-kw">)</span>
+<span class="tok-cm"># device = "cpu"</span></code></pre><figcaption><span class="lbl">Listing F.1</span>Loading a pretrained model</figcaption></figure>
+<pre><code class="language-python">WHICH_MODEL = "base"</code></pre>
+<pre><code class="language-python"><span class="tok-kw">if</span> WHICH_MODEL == "base":</code></pre>
+<pre><code class="language-python">    download_qwen3_small<span class="tok-kw">(</span>
+        kind="base", tokenizer_only=<span class="tok-kw">False</span>, out_dir="qwen3"
+    <span class="tok-kw">)</span>
+    tokenizer_path = Path<span class="tok-kw">(</span>"qwen3"<span class="tok-kw">)</span> / "tokenizer-base.json"
+    model_path = Path<span class="tok-kw">(</span>"qwen3"<span class="tok-kw">)</span> / "qwen3-<span class="tok-fn">0.</span>6B-base.pth"
+    tokenizer = Qwen3Tokenizer<span class="tok-kw">(</span>tokenizer_file_path=tokenizer_path<span class="tok-kw">)</span>
+<span class="tok-kw">elif</span> WHICH_MODEL == "reasoning":
+    download_qwen3_small<span class="tok-kw">(</span>
+        kind="reasoning", tokenizer_only=<span class="tok-kw">False</span>, out_dir="qwen3"
+    <span class="tok-kw">)</span>
+    tokenizer_path = Path<span class="tok-kw">(</span>"qwen3"<span class="tok-kw">)</span> / "tokenizer-reasoning.json"
+    model_path = Path<span class="tok-kw">(</span>"qwen3"<span class="tok-kw">)</span> / "qwen3-<span class="tok-fn">0.</span>6B-reasoning.pth"
+    tokenizer = Qwen3Tokenizer<span class="tok-kw">(</span>
+        tokenizer_file_path=tokenizer_path,
+        apply_chat_template=<span class="tok-kw">True</span>,
+        add_generation_prompt=<span class="tok-kw">True</span>,
+        add_thinking=<span class="tok-kw">True</span>,
+    <span class="tok-kw">)</span></code></pre>
+<pre><code class="language-python"><span class="tok-kw">else</span>:
+    <span class="tok-kw">raise</span> ValueError<span class="tok-kw">(</span>f"Invalid choice: WHICH_MODEL={WHICH_MODEL}"<span class="tok-kw">)</span>
+model = Qwen3Model<span class="tok-kw">(</span>QWEN_CONFIG_06_B<span class="tok-kw">)</span>
+model.load_state_dict<span class="tok-kw">(</span>torch.load<span class="tok-kw">(</span>model_path<span class="tok-kw">))</span>
+model.to<span class="tok-kw">(</span>device<span class="tok-kw">)</span>
+USE_COMPILE = <span class="tok-kw">False</span>
+<span class="tok-kw">if</span> USE_COMPILE:
+  torch._dynamo.config.allow_unspec_int_on_nn_module = <span class="tok-kw">True</span>
+  model = torch.compile<span class="tok-kw">(</span>model<span class="tok-kw">)</span></code></pre>
+<h3 id="h3-checking-the-generated-answer-letter"><span class="num">F.2.2</span>Checking the generated answer letter</h3>
+<p>Now we’ll implement the simplest and perhaps most intuitive MMLU scoring method, which relies on checking whether a generated multiple-choice answer letter matches the correct answer. This is similar to what was illustrated in figure F.2.</p>
+<p>We will work with an example from the MMLU dataset:</p>
+<pre><code class="language-javascript">example = {
+    "question": (
+        "How many ways are there to put <span class="tok-fn">4</span> distinguishable"
+        " balls into <span class="tok-fn">2</span> indistinguishable boxes?"
+    ),
+    "choices": ["<span class="tok-fn">7</span>", "<span class="tok-fn">11</span>", "<span class="tok-fn">16</span>", "<span class="tok-fn">8</span>"],
+    "answer": "D",
+}</code></pre>
+<p>Next, we’ll define a function to format the LLM prompts.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">def</span> format_prompt(example):
+    <span class="tok-kw">return</span> (
+        f"{example<span class="tok-kw">[</span>'question'<span class="tok-kw">]</span>}\n"
+        f"A. {example<span class="tok-kw">[</span>'choices'<span class="tok-kw">]</span>[<span class="tok-fn">0</span>]}\n"
+        f"B. {example<span class="tok-kw">[</span>'choices'<span class="tok-kw">]</span>[<span class="tok-fn">1</span>]}\n"
+        f"C. {example<span class="tok-kw">[</span>'choices'<span class="tok-kw">]</span>[<span class="tok-fn">2</span>]}\n"
+        f"D. {example<span class="tok-kw">[</span>'choices'<span class="tok-kw">]</span>[<span class="tok-fn">3</span>]}\n"
+        "Answer: "
+    )</code></pre><figcaption><span class="lbl">Listing F.2</span>Formatting the LLM prompt</figcaption></figure>
+<p>Let’s execute the function on the MMLU example to get an idea of what the formatted LLM input looks like:</p>
+<pre><code class="language-python">prompt = format_prompt<span class="tok-kw">(</span>example<span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>prompt<span class="tok-kw">)</span></code></pre>
+<p>The output is as follows:</p>
+<pre><code class="language-python">How many ways are there to put 4 distinguishable balls into 2
+indistinguishable boxes?</code></pre>
+<pre><code class="language-python">A. 7
+B. 11
+C. 16
+D. 8
+Answer:</code></pre>
+<p>The preceding model prompt provides the model with a list of answer choices, and it ends with an <code>"Answer: "</code> text that encourages the model to generate the correct answer.</p>
+<p>While this is not strictly necessary, it can sometimes be helpful to provide additional questions along with the correct answers as input so that the model can observe how it is expected to solve the task. (For example, cases where five examples are provided are known as 5-shot MMLU.) However, for current generations of LLMs, in which even the base models are quite capable, this is not required.</p>
+<h3 id="h3-loading-different-mmlu-samples">Loading different MMLU samples</h3>
+<div class="lead">You can load examples from the MMLU dataset directly from the <code>datasets</code> library (which can be installed with <code>pip install datasets</code> or <code>uv add datasets</code>):</div>
+<pre><code class="language-python"><span class="tok-kw">from</span> datasets <span class="tok-kw">import</span> load_dataset
+configs = get_dataset_config_names<span class="tok-kw">(</span>"cais/mmlu"<span class="tok-kw">)</span>
+dataset = load_dataset<span class="tok-kw">(</span>"cais/mmlu", "high_school_mathematics"<span class="tok-kw">)</span>
+example = dataset<span class="tok-kw">[</span>"test"<span class="tok-kw">]</span>[<span class="tok-fn">0</span>]
+print<span class="tok-kw">(</span>example<span class="tok-kw">)</span></code></pre>
+<div class="lead">Here we used the <code>"high_school_mathematics"</code> subset. To get a list of the other subsets, use the following code:</div>
+<pre><code class="language-python"><span class="tok-kw">from</span> datasets <span class="tok-kw">import</span> get_dataset_config_names
+subsets = get_dataset_config_names<span class="tok-kw">(</span>"cais/mmlu"<span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>subsets<span class="tok-kw">)</span></code></pre>
+<p>Next, we’ll tokenize the prompt and wrap it in a PyTorch tensor object as input to the LLM (similar to what we did in chapter 2):</p>
+<pre><code class="language-python">prompt_ids = tokenizer.encode<span class="tok-kw">(</span>prompt<span class="tok-kw">)</span>
+prompt_fmt = torch.tensor<span class="tok-kw">(</span>prompt_ids, device=device<span class="tok-kw">)</span>.unsqueeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span></code></pre>
+<p>Now we’ll define the main scoring function, which generates a few tokens (eight by default) and extracts the first instance of the letter A, B, C, or D that the model prints.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.ch02 <span class="tok-kw">import</span> (
+    generate_text_basic_stream_cache
+)
+<span class="tok-kw">def</span> predict_choice(
+    model, tokenizer, prompt_fmt, max_new_tokens=<span class="tok-fn">8</span>
+):
+    pred = <span class="tok-kw">None</span>
+    <span class="tok-kw">for</span> t <span class="tok-kw">in</span> generate_text_basic_stream_cache<span class="tok-kw">(</span>
+        model=model,
+        token_ids=prompt_fmt,
+        max_new_tokens=max_new_tokens,
+        eos_token_id=tokenizer.eos_token_id,
+    <span class="tok-kw">)</span>:
+        answer = tokenizer.decode<span class="tok-kw">(</span>t.squeeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>.tolist<span class="tok-kw">())</span>
+        <span class="tok-kw">for</span> letter <span class="tok-kw">in</span> answer:
+            letter = letter.upper<span class="tok-kw">()</span>
+            <span class="tok-kw">if</span> letter <span class="tok-kw">in</span> "ABCD":
+                pred = letter
+                <span class="tok-kw">break</span>
+        <span class="tok-kw">if</span> pred:
+            <span class="tok-kw">break</span>
+    <span class="tok-kw">return</span> pred</code></pre><figcaption><span class="lbl">Listing F.3</span>Extracting the generated letter</figcaption></figure>
+<p>We can now check the generated letter using the function from listing F.3:</p>
+<pre><code class="language-python">pred1 = predict_choice<span class="tok-kw">(</span>model, tokenizer, prompt_fmt<span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>
+    f"Generated letter: {pred1}\n"
+    f"Correct? {pred1 == example<span class="tok-kw">[</span>'answer'<span class="tok-kw">]</span>}"
+<span class="tok-kw">)</span></code></pre>
+<p>This is the result:</p>
+<pre><code class="language-python">Generated letter: C
+Correct? False</code></pre>
+<p>As you can see, the generated answer is incorrect (<code>False</code>) in this case.</p>
+<nav class="pager"><a class="prev" href="page-99.html" rel="prev"><span class="dir">上一页</span><span class="t">E.5 Chapter 4: Batched self-consistency sampling</span></a><a class="next" href="page-101.html" rel="next"><span class="dir">下一页</span><span class="t">Multiple-choice answer formats</span></a></nav>
+</main>
+</body>
+</html>

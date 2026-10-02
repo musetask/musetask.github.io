@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>F.4 Comparing models using preferences and leaderboards · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/detail.css">
+<link rel="prev" href="page-101.html">
+<link rel="next" href="page-103.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 102 页 / 共 108 页</span></div>
+<aside class="detail-link"><span class="tag">补充材料</span>本节 Elo 评级的完整数学推导（公式来源、6 场比赛的逐场手算、k 值与顺序效应）在 <a href="page-102-detail.html"><b>F.4 Elo 评级</b></a>。全部推导页的索引见 <a href="math-detail.html">math-detail.html</a>。</aside>
+<h2 id="h2-comparing-models-using-preferences-and-leaderboards"><span class="num">F.4</span>Comparing models using preferences and leaderboards</h2>
+<p>So far, we’ve covered two methods that offer easily quantifiable metrics such as model accuracy. But none of the methods discussed so far evaluate LLMs in a more holistic way, including the style of the responses. In this section, as illustrated in figure F.4, we’ll discuss a judgment-based method: LLM leaderboards.</p>
+<figure><a class="zoom" href="assets/figure-F.4.png" tabindex="-1"><img src="assets/figure-F.4.png" alt="" width="1143" height="689" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure F.4</span>A model of the topics covered in this book, with a focus on the judgment- and benchmark-based evaluation methods covered in this appendix. Having already covered benchmark-based approaches in the previous sections (multiple choice and verifiers), we’ll now introduce judgment-based approaches for measuring LLM performance, with this section focusing on leaderboards.</figcaption></figure>
+<p>The leaderboard method is a judgment-based approach in which models are ranked not by accuracy values or other fixed benchmark scores but by user (or another LLM’s) preferences regarding their outputs. A popular leaderboard is <em>Arena</em> (formerly Chatbot Arena, <a href="https://arena.ai/leaderboard/text">https://arena.ai/leaderboard/text</a>), where users compare responses from two models, either user-selected or anonymous, and vote for the one they prefer, as shown in figure F.5.</p>
+<figure><a class="zoom" href="assets/figure-F.5.png" tabindex="-1"><img src="assets/figure-F.5.png" alt="" width="1143" height="865" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure F.5</span>Example of a judgment-based leaderboard interface (Arena). Two LLMs are given the same prompt, their responses are shown side by side, and users vote for their preferred answer.</figcaption></figure>
+<p>These preference votes, which are collected as shown in figure F.5, are then aggregated across all users into a leaderboard that ranks different models by user preference. In the remainder of this section, we’ll implement a simple example of a leaderboard.</p>
+<p>Let’s consider users prompting different LLMs in a setup similar to figure F.5. The following list represents pairwise votes where the first model is the winner:</p>
+<pre><code class="language-python">votes = [
+    ("GPT-<span class="tok-fn">5</span>", "Claude-<span class="tok-fn">3</span>"),
+    ("GPT-<span class="tok-fn">5</span>", "Llama-<span class="tok-fn">4</span>"),
+    ("Claude-<span class="tok-fn">3</span>", "Llama-<span class="tok-fn">3</span>"),
+    ("Llama-<span class="tok-fn">4</span>", "Llama-<span class="tok-fn">3</span>"),
+    ("Claude-<span class="tok-fn">3</span>", "Llama-<span class="tok-fn">3</span>"),
+    ("GPT-<span class="tok-fn">5</span>", "Llama-<span class="tok-fn">3</span>"),
+]</code></pre>
+<p>In this list, each tuple in the votes list represents a pairwise preference between two models, written as <code>(winner,</code> <code>loser)</code>. So <code>("GPT-5",</code> <code>"Claude-3")</code> means that a user preferred GPT-5’s answer over a Claude-3 model answer.</p>
+<p>In the remainder of this section, we’ll turn the votes list into a leaderboard. We’ll use the popular Elo rating system, which was originally developed for ranking chess players. Each model will start with a baseline score. Then, after each comparison and preference vote, the model’s rating will be updated. If a user prefers the current model over a highly ranked model, the current model will receive a relatively large rating update and move higher in the leaderboard. Conversely, if the current model wins against a low-ranked model, its rating increases only a little. (If the current model loses, it is updated in a similar way, but ranking points are subtracted instead of added.)</p>
+<p>The following listing shows the code to turn these pairwise rankings into a leaderboard.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">def</span> elo_ratings(vote_pairs, k_factor=<span class="tok-fn">32</span>, initial_rating=<span class="tok-fn">1000</span>):
+    ratings = {
+        model: initial_rating
+        <span class="tok-kw">for</span> pair <span class="tok-kw">in</span> vote_pairs
+        <span class="tok-kw">for</span> model <span class="tok-kw">in</span> pair
+    }
+    <span class="tok-kw">for</span> winner, loser <span class="tok-kw">in</span> vote_pairs:</code></pre><figcaption><span class="lbl">Listing F.4</span>Constructing a leaderboard</figcaption></figure>
+<pre><code class="language-python">        expected_winner = <span class="tok-fn">1.0</span> / (
+            <span class="tok-fn">1.0</span> + <span class="tok-fn">10</span> ** ((ratings<span class="tok-kw">[</span>loser<span class="tok-kw">]</span> - ratings<span class="tok-kw">[</span>winner<span class="tok-kw">]</span>) / <span class="tok-fn">400.0</span>)
+        )
+        ratings<span class="tok-kw">[</span>winner<span class="tok-kw">]</span> = (
+            ratings<span class="tok-kw">[</span>winner<span class="tok-kw">]</span> + k_factor * (<span class="tok-fn">1</span> - expected_winner)
+        )
+        ratings<span class="tok-kw">[</span>loser<span class="tok-kw">]</span> = (
+            ratings<span class="tok-kw">[</span>loser<span class="tok-kw">]</span> + k_factor * (<span class="tok-fn">0</span> - (<span class="tok-fn">1</span> - expected_winner))
+        )
+    <span class="tok-kw">return</span> ratings</code></pre>
+<p>The <code>elo_ratings</code> function in listing F.4 takes <code>votes</code> as input and turns it into a leaderboard, as follows:</p>
+<pre><code class="language-python">ratings = elo_ratings<span class="tok-kw">(</span>votes, k_factor=<span class="tok-fn">32</span>, initial_rating=<span class="tok-fn">1000</span><span class="tok-kw">)</span>
+<span class="tok-kw">for</span> model <span class="tok-kw">in</span> sorted<span class="tok-kw">(</span>ratings, key=ratings.get, reverse=<span class="tok-kw">True)</span>:
+    print<span class="tok-kw">(</span>f"{model:8s} : {ratings<span class="tok-kw">[</span>model<span class="tok-kw">]</span>:.1f}"<span class="tok-kw">)</span></code></pre>
+<p>This results in the following leaderboard ranking, where the higher the score is, the better:</p>
+<pre><code class="language-python">GPT-5 : 1043.7
+Claude-3 : 1015.2
+Llama-4 : 1000.7
+Llama-3 : 940.4</code></pre>
+<p>So how does this work? For each pair, we compute the expected score of the winner using the following formula:</p>
+<pre><code class="language-python">expected_winner = <span class="tok-fn">1</span> / (<span class="tok-fn">1</span> + <span class="tok-fn">10</span> ** ((rating_loser - rating_winner) / <span class="tok-fn">400</span>))</code></pre>
+<p>The <code>expected_winner</code> value is the model’s predicted chance to win in a no-draw setting based on the current ratings. It determines how large the rating update is.</p>
+<p>Each model starts at <code>initial_rating = 1000</code>. If the winner and loser’s ratings are equal, we have <code>expected_winner = 0.5</code>, which indicates an even match. In this case, the updates are as follows:</p>
+<pre><code class="language-python">rating_winner + k_factor * (1 - 0.5) = rating_winner + 16
+rating_loser + k_factor * (0 - (1 - 0.5)) = rating_loser - 16</code></pre>
+<p>If a heavy favorite (a model with a high rating) wins, we have <code>expected_winner ≈ 1</code>. The favorite gains only a small amount and the loser loses only a little:</p>
+<pre><code class="language-python">rating_winner + 32 * (1 - 0.99) = rating_winner + 0.32
+rating_loser + 32 * (0 - (1 - 0.99)) = rating_loser - 0.32</code></pre>
+<p>But if an underdog (a model with a low rating) wins, we have <code>expected_winner ≈ 0</code>, and the winner gets almost the full <code>k_factor</code> points, while the loser loses about the same number of points:</p>
+<pre><code class="language-python">rating_winner + 32 * (1 - 0.01) = rating_winner + 31.68
+rating_loser + 32 * (0 - (1 - 0.01)) = rating_loser - 31.68</code></pre>
+<h3 id="h3-order-matters">Order matters</h3>
+<div class="lead">The Elo approach updates ratings after each match (model comparisons), so later results build on ratings that have already been updated. This means the same set </div>
+<div class="lead">of outcomes, when presented in a different order, can end with slightly different final scores. This effect is usually mild, but it can happen, especially when an upset happens earlier rather than later. To reduce this order effect, we can shuffle the <code>votes</code> pairs, run the <code>elo_ratings</code> function multiple times, and average the resulting ratings.</div>
+<p>Leaderboard approaches such as the one described here provide a more dynamic view of model quality than static benchmark scores. But the results can be influenced by user demographics, prompt selection, and voting biases. Benchmarks and leaderboards can also be gamed, and users may select responses based on style rather than correctness. Finally, compared to automated benchmark harnesses, leaderboards do not provide instant feedback on newly developed variants, which makes them harder to use during active model development.</p>
+<h3 id="h3-other-ranking-methods">Other ranking methods</h3>
+<div class="lead">Arena originally used the Elo method described in this section, but it has recently transitioned to a statistical approach based on the Bradley–Terry model. The main advantage of the Bradley–Terry model is that, because it is statistically grounded, it allows for the construction of confidence intervals to express uncertainty in the rankings. In contrast to Elo ratings, the Bradley–Terry model also estimates all ratings jointly using a statistical fit over the entire dataset, which makes it immune to order effects. To keep the reported scores in a familiar range, the Bradley–Terry model is fitted to produce values comparable to Elo. Even though the leaderboard no longer officially uses Elo ratings, the term “Elo” remains widely used by LLM researchers and practitioners when comparing models. A code example showing the Elo rating is included in this book’s bonus materials at https://github.com/rasbt/reasoning-from-scratch/tree/main/chF/03_leaderboards.</div>
+<nav class="pager"><a class="prev" href="page-101.html" rel="prev"><span class="dir">上一页</span><span class="t">Multiple-choice answer formats</span></a><a class="next" href="page-103.html" rel="next"><span class="dir">下一页</span><span class="t">F.5 Judging responses with other LLMs</span></a></nav>
+</main>
+</body>
+</html>

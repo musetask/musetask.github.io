@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>Generating text with a pretrained LLM · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-08.html">
+<link rel="next" href="page-10.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 9 页 / 共 108 页</span></div>
+<h1 id="h1-generating-text-with-a-pretrained-llm">Generating text with a pretrained LLM</h1>
+<p class="summary">This chapter covers</p>
+<ul><li>Setting up the code environment for working with LLMs</li><li>Using a tokenizer to prepare input text for an LLM</li><li>The step-by-step process of generating text with a pretrained LLM</li><li>Caching and compilation techniques for speeding up LLM text generation</li></ul>
+<p>In the previous chapter, we discussed the difference between <em>conventional large language models</em> (LLMs) and <em>reasoning models</em>. We also introduced several techniques that can improve the reasoning capabilities of LLMs. These techniques are usually applied on top of a conventional (base) LLM.</p>
+<p>In this chapter, we’ll lay the groundwork for the upcoming chapters by loading a pretrained base model, as shown in figure 2.1. Previously, we discussed how reasoning methods are often added after the usual post-training stages. But starting from a base model makes it easier to see which capabilities come from the reasoning methods themselves. The conventional LLM in this chapter is a nonreasoning LLM, and more specifically, a pretrained base model rather than an instruction- or preference-tuned assistant.</p>
+<figure><a class="zoom" href="assets/figure-2.1.png" tabindex="-1"><img src="assets/figure-2.1.png" alt="" width="1142" height="639" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 2.1</span>The four main stages of developing a reasoning model. This chapter focuses on stage 1: loading a conventional LLM and implementing the text generation functionality.</figcaption></figure>
+<p>In addition to setting up the coding environment and loading a pretrained LLM, you will learn how to use a <em>tokenizer</em> to prepare text input for the model. As shown in figure 2.1, you will also implement a text generation function, enabling practical use of the LLM to generate text. This functionality will be used and improved on in later chapters.</p>
+<h2 id="h2-introducing-llms-for-text-generation"><span class="num">2.1</span>Introducing LLMs for text generation</h2>
+<p>The LLM we’ll use in this chapter is a base model that has undergone only pretraining, but it will already be capable of generating coherent text and, in some cases, of following basic instructions. Figure 2.2 summarizes the components of an LLM text generation pipeline, and we’ll discuss and implement these steps in more detail later in this chapter.</p>
+<aside><span class="tag">Note</span>By convention, diagrams involving neural networks such as LLMs are drawn and read vertically from bottom (inputs) to top (outputs). Arrows indicate the flow of information upward through the model.</aside>
+<figure><a class="zoom" href="assets/figure-2.2.png" tabindex="-1"><img src="assets/figure-2.2.png" alt="" width="993" height="473" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 2.2</span>An overview of an LLM generating a response (output text) given a user query (input text)</figcaption></figure>
+<p>If you have not coded an LLM or used LLMs programmatically before, this chapter will teach you how the text generation process works. We won’t go deep into the internals of an LLM, such as the attention mechanism and other architectural components; this is the topic of my other book, <em>Build a Large Language Model (From Scratch)</em>. Understanding those internals is not required for this book; if you are curious, you can learn about them afterwards. This chapter will also be helpful if you have already read my other book, since it adds new material on speeding up inference and other practical optimizations.</p>
+<p>Before we begin implementing the components shown in figure 2.2, including input preparation, loading the LLM, and generating text, we first need to set up our coding environment. </p>
+<nav class="pager"><a class="prev" href="page-08.html" rel="prev"><span class="dir">上一页</span><span class="t">1.6 Why build reasoning models from scratch?</span></a><a class="next" href="page-10.html" rel="next"><span class="dir">下一页</span><span class="t">2.2 Setting up the coding environment</span></a></nav>
+</main>
+</body>
+</html>

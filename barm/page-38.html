@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>4.6 Improving response accuracy with self-consistency · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-37.html">
+<link rel="next" href="page-39.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 38 页 / 共 108 页</span></div>
+<h2 id="h2-improving-response-accuracy-with-self-consistency"><span class="num">4.6</span>Improving response accuracy with self-consistency</h2>
+<p>Now that we’ve coded the temperature scaling and top-<em>p</em> filtering, we are ready to implement our second inference-time-scaling technique in this chapter: self-consistency sampling.</p>
+<p>The idea behind self-consistency sampling was introduced in the Google Research paper “Self-Consistency Improves Chain-of-Thought Reasoning in Language Models<em>”</em> </p>
+<p>(<a href="https://arxiv.org/abs/2203.1117">https://arxiv.org/abs/2203.1117</a>). Despite the fancy name, self-consistency sampling is essentially a form of majority voting: we use temperature scaling and top-<em>p</em> filtering to generate multiple answers, and then we select the most frequent one, as shown in figure 4.17.</p>
+<figure><a class="zoom" href="assets/figure-4.17.png" tabindex="-1"><img src="assets/figure-4.17.png" alt="" width="1142" height="691" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 4.17</span>The self-consistency sampling method generates multiple responses from the LLM and selects the most frequent answer, improving answer accuracy through majority voting.</figcaption></figure>
+<p>The self-consistency sampling technique shown in figure 4.17 counts as an inference-time-scaling technique because we don’t update the model itself, and we expend more compute resources to improve response accuracy.</p>
+<p>To build our voting-based inference-time pipeline, we’ll reuse the generation code from chapter 2, the answer extraction logic from chapter 3, and the sampling controls from this chapter. Thanks to the <code>generate_text_stream_concat_flex</code> function, the self-consistency code implementation is relatively straightforward. The main procedure can be summarized in three steps, as illustrated in figure 4.18.</p>
+<p>To implement the three steps illustrated in figure 4.18, we simply call <code>generate_text_stream_concat_flex</code> repeatedly to generate multiple answers and reuse the <code>extract_final_candidate</code> function from chapter 3. The only new code is to implement the majority voting based on answer frequency.</p>
+<figure><a class="zoom" href="assets/figure-4.18.png" tabindex="-1"><img src="assets/figure-4.18.png" alt="" width="1143" height="689" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 4.18</span>The three main steps for implementing self-consistency sampling. First, we generate multiple answers for the same prompt using a temperature greater than zero and top-p filtering. Second, we extract the final boxed answer from each generated solution. Third, we select the most frequently extracted answer as the final prediction.</figcaption></figure>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.ch03 <span class="tok-kw">import</span> extract_final_candidate
+<span class="tok-kw">from</span> collections <span class="tok-kw">import</span> Counter
+<span class="tok-kw">def</span> self_consistency_vote(
+    model, tokenizer, prompt, device,
+    num_samples=<span class="tok-fn">10</span>, temperature=<span class="tok-fn">0.8</span>, top_p=<span class="tok-fn">0.9</span>, max_new_tokens=<span class="tok-fn">2048</span>,
+    show_progress=<span class="tok-kw">True</span>, show_long_answer=<span class="tok-kw">False</span>, seed=<span class="tok-kw">None</span>,
+):
+    full_answers, short_answers = [], []
+    <span class="tok-kw">for</span> i <span class="tok-kw">in</span> range<span class="tok-kw">(</span>num_samples<span class="tok-kw">)</span>:
+        <span class="tok-kw">if</span> seed <span class="tok-kw">is</span> <span class="tok-kw">not</span> <span class="tok-kw">None</span>:
+            torch.manual_seed<span class="tok-kw">(</span>seed + i + <span class="tok-fn">1</span><span class="tok-kw">)</span>
+        answer = generate_text_stream_concat_flex<span class="tok-kw">(</span>
+            model=model, tokenizer=tokenizer, prompt=prompt, device=device,
+            max_new_tokens=max_new_tokens, verbose=show_long_answer,
+            generate_func=generate_text_top_p_stream_cache,
+            temperature=temperature, top_p=top_p,
+        <span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 4.17</span>Text generation with top-p filtering</figcaption></figure>
+<pre><code class="language-python">        short = extract_final_candidate<span class="tok-kw">(</span>
+            answer, fallback="number_then_full"
+        <span class="tok-kw">)</span>
+        full_answers.append<span class="tok-kw">(</span>answer<span class="tok-kw">)</span>
+        short_answers.append<span class="tok-kw">(</span>short<span class="tok-kw">)</span>
+        <span class="tok-kw">if</span> show_progress:
+            print<span class="tok-kw">(</span>f"[Sample {i+<span class="tok-fn">1</span>}/{num_samples}] → {short!r}"<span class="tok-kw">)</span>
+    counts = Counter<span class="tok-kw">(</span>short_answers<span class="tok-kw">)</span>
+    groups = {s: [] <span class="tok-kw">for</span> s <span class="tok-kw">in</span> counts}
+    <span class="tok-kw">for</span> idx, s <span class="tok-kw">in</span> enumerate<span class="tok-kw">(</span>short_answers<span class="tok-kw">)</span>:
+        groups<span class="tok-kw">[</span>s<span class="tok-kw">]</span>.append<span class="tok-kw">(</span>idx<span class="tok-kw">)</span>
+    mc = counts.most_common<span class="tok-kw">()</span>
+    <span class="tok-kw">if</span> <span class="tok-kw">not</span> mc:
+        majority_winners, final_answer = [], <span class="tok-kw">None</span>
+    <span class="tok-kw">else</span>:
+        top_freq = mc<span class="tok-kw">[</span><span class="tok-fn">0</span><span class="tok-kw">]</span>[<span class="tok-fn">1</span>]
+        majority_winners = [s <span class="tok-kw">for</span> s, f <span class="tok-kw">in</span> mc <span class="tok-kw">if</span> f == top_freq]
+        final_answer = mc<span class="tok-kw">[</span><span class="tok-fn">0</span><span class="tok-kw">]</span>[<span class="tok-fn">0</span>] <span class="tok-kw">if</span> len<span class="tok-kw">(</span>majority_winners<span class="tok-kw">)</span> == <span class="tok-fn">1</span> <span class="tok-kw">else</span> <span class="tok-kw">None</span>
+    <span class="tok-kw">return</span> {
+        "full_answers": full_answers,
+        "short_answers": short_answers,
+        "counts": dict<span class="tok-kw">(</span>counts<span class="tok-kw">)</span>,
+        "groups": groups,
+        "majority_winners": majority_winners,
+        "final_answer": final_answer,
+    }</code></pre>
+<p>In short, the self-consistency method in listing 4.17 does the following:</p>
+<p>1 Samples multiple answers with temperature greater than 0 and top-<em>p</em></p>
+<p>2 Extracts the final boxed answer from each response</p>
+<p>3 Chooses the most frequent final answer</p>
+<p>Note that in our implementation, we use a <code>for</code> loop to generate these answers sequentially. In practice, it’s also common to generate the answers on different devices so the sampling can be parallelized.</p>
+<p>Furthermore, in the preceding code, we set the random seed for each round individually:</p>
+<pre><code class="language-python">        <span class="tok-kw">if</span> seed <span class="tok-kw">is</span> <span class="tok-kw">not</span> <span class="tok-kw">None</span>:
+            torch.manual_seed<span class="tok-kw">(</span>seed + i + <span class="tok-fn">1</span><span class="tok-kw">)</span></code></pre>
+<p>Technically, this is not necessary; setting the random seed once should be sufficient to generate diverse samples. This explicit seeding is useful if we want to rerun some of the rounds individually.</p>
+<p>Let’s try this function and see what we get:</p>
+<pre><code class="language-python">results = self_consistency_vote<span class="tok-kw">(</span>
+    model,
+    tokenizer,
+    prompt,
+    device=device,
+    num_samples=<span class="tok-fn">5</span>,
+    temperature=<span class="tok-fn">0.8</span>,
+    top_p=<span class="tok-fn">0.9</span>,
+    max_new_tokens=<span class="tok-fn">2048</span>,
+    seed=<span class="tok-fn">123</span>,
+    show_progress=<span class="tok-kw">True</span>,
+<span class="tok-kw">)</span></code></pre>
+<p>The printed results are as follows:</p>
+<pre><code class="language-python">[Sample 1/5] → '83'
+[Sample 2/5] → '22'
+[Sample 3/5] → '54'
+[Sample 4/5] → '83'
+[Sample 5/5] → '61'</code></pre>
+<p>Since 83 is the most frequent answer, the final answer is 83 (we can access this number programmatically via <code>results["final_answer"]</code>). If you want to read the explanation and full answer, you can access one of the correct solutions returning 83; for example, </p>
+<pre><code class="language-python">print(results["full_answers"][0]) prints the following:
+To find the value of x, let's solve the equation step by step.
+1. **Given Equation:**
+   \[
+   \frac{1}{2} \times (3x - 9) = x + 37
+   \]
+# ...
+**Final Answer:**
+\[
+\boxed{83}
+\]</code></pre>
+<p>With this self-consistency approach, we were finally able to generate the correct answer. (Note that the results may vary when running the code on an <code>"mps"</code> or <code>"cuda"</code> device.)</p>
+<p>The <code>self_consistency_vote</code> function does not currently handle ties, so if multiple samples have the same frequency, it returns <code>None</code> as the final answer. In the next chapter, we’ll implement a scoring method to calculate the confidence of a given answer, which can be used as a tiebreaker.</p>
+<h3 id="h3-exercise-4-3-using-self-consistency-sampling-on-math-500">Exercise 4.3: Using self-consistency sampling on MATH-500</h3>
+<div class="lead">Modify the <code>evaluate_math500_stream</code> function from listing 3.15 to evaluate whether self-consistency sampling improves the MATH-500 accuracy of the base model. Use a sample size of 3 and set both temperature and top-p to 0.9.</div>
+<div class="lead">As part of this exercise, implement tiebreaking so that ties are resolved by the first answer appearing in the sample list. For example, if the sample answers are 13, 15, 13, 15, 16, the selected answer should be 13. Note that you don’t have to modify <code>self_consistency_vote</code> itself to implement this tiebreaking rule; you can work with the <code>results</code> dictionary returned by the function instead.</div>
+<h3 id="h3-exercise-4-4-early-stopping-in-self-consistency-sampling">Exercise 4.4: Early stopping in self-consistency sampling</h3>
+<div class="lead">To improve computational efficiency, implement an early-stopping version of self-consistency that ends the sampling once more than half of the answers agree.</div>
+<nav class="pager"><a class="prev" href="page-37.html" rel="prev"><span class="dir">上一页</span><span class="t">4.5.2 Adding a top-p filter to the text generation function</span></a><a class="next" href="page-39.html" rel="next"><span class="dir">下一页</span><span class="t">Choosing temperature and top-p settings</span></a></nav>
+</main>
+</body>
+</html>

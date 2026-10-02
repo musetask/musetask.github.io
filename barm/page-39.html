@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>Choosing temperature and top-p settings · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-38.html">
+<link rel="next" href="page-40.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 39 页 / 共 108 页</span></div>
+<h3 id="h3-choosing-temperature-and-top-p-settings">Choosing temperature and top-p settings</h3>
+<div class="lead">We’ve already discussed temperature, but the practical question is how much randomness we should introduce for self-consistency sampling. Our goal is not to make the model as random as possible, but to generate answers that are diverse enough for majority voting to help, while still keeping most samples sensible. In practice, temperature values around 0.5 to 0.9 and top-p values around 0.7 to 0.9 are reasonable starting points. As a rule of thumb, if all long answers look nearly identical, it’s a good idea to gently increase the temperature or the top-p value to encourage more diversity. If the long answers start to look off or nonsensical, the settings are likely too aggressive and should be reduced, usually by lowering the temperature first. Here, a “long” answer refers to the full answer before extracting the final boxed result. You can inspect the long answers in the results dictionary returned by the <code>self_consistency_vote</code> function or run the function with the <code>show_long_answer=True</code> setting.</div>
+<p>You may recall that the paper describing this technique was titled “Self-Consistency </p>
+<p>Improves Chain-of-Thought Reasoning in Language Models.” How does the “chain-of-thought reasoning” aspect factor into this? Chain-of-thought reasoning here simply refers to the chain-of-thought prompting we introduced earlier in this chapter, when we modified the prompt via <code>"\n\n</code> <code>Explain</code> <code>step</code> <code>by</code> <code>step."</code> so that the LLM generates longer responses.</p>
+<p>Let’s combine chain-of-thought prompting with self-consistency sampling:</p>
+<pre><code class="language-python">results = self_consistency_vote<span class="tok-kw">(</span>
+    model,
+    tokenizer,
+    prompt + "\n\nExplain step by step.",
+    device=device,
+    num_samples=<span class="tok-fn">5</span>,
+    temperature=<span class="tok-fn">0.8</span>,
+    top_p=<span class="tok-fn">0.9</span>,
+    max_new_tokens=<span class="tok-fn">2048</span>,
+    seed=<span class="tok-fn">123</span>,
+    show_progress=<span class="tok-kw">True</span>,
+<span class="tok-kw">)</span></code></pre>
+<p>In this case, all five answers are 83 (correct), likely because the question is relatively simple for the LLM when using chains of thought. It would be more interesting to see how well the model performs on the entire MATH-500 dataset. The results from various experiments are shown in table 4.1.</p>
+<div class="tw"><table><caption><span class="lbl">Table 4.1</span>MATH-500 task accuracy for different methods</caption><thead><tr><th></th><th>Method</th><th>Model</th><th>Accuracy</th><th>Time</th></tr></thead><tbody><tr><td>1</td><td>Baseline (chapter 3), greedy decoding</td><td>Base</td><td>15.2%</td><td>10.1 min</td></tr><tr><td>2</td><td>Baseline (chapter 3), greedy decoding</td><td>Reasoning</td><td>48.2%</td><td>182.1 min</td></tr><tr><td>3</td><td>Chain-of-thought prompting (CoT)</td><td>Base</td><td>40.6%</td><td>84.5 min</td></tr><tr><td>4</td><td>Temperature and top-p (Top-p)</td><td>Base</td><td>17.8%</td><td>30.7 min</td></tr><tr><td>5</td><td>Top-p + self-consistency (n=3)</td><td>Base</td><td>29.6%</td><td>97.6 min</td></tr><tr><td>6</td><td>Top-p + self-consistency (n=5)</td><td>Base</td><td>27.8%</td><td>116.8 min</td></tr><tr><td>7</td><td>Top-p + self-consistency (n=10)</td><td>Base</td><td>31.6%</td><td>300.4 min</td></tr><tr><td>8</td><td>Top-p + CoT</td><td>Base</td><td>33.4%</td><td>129.2 min</td></tr><tr><td>9</td><td>Self-consistency (n=3) + Top-p + CoT</td><td>Base</td><td>42.2%</td><td>211.6 min</td></tr><tr><td>10</td><td>Self-consistency (n=5) + Top-p + CoT</td><td>Base</td><td>48.0%</td><td>452.9 min</td></tr><tr><td>11</td><td>Self-consistency (n=10) + Top-p + CoT</td><td>Base</td><td>52.0%</td><td>862.6 min</td></tr><tr><td>12</td><td>Self-consistency (n=3) + Top-p + CoT</td><td>Reasoning</td><td>55.2%</td><td>544.4 min</td></tr></tbody></table></div>
+<p>For brevity, methods labeled “Top-<em>p</em>” in table 4.1 use both temperature scaling and top-<em>p</em> sampling. The accuracy values shown in the table were computed on all 500 samples in the MATH-500 test set using a <code>"cuda"</code> GPU (DGX Spark). </p>
+<p>Let’s go through the results one by one. The <em>n</em> = 3 abbreviation means that we used a sample size of 3 for self-consistency sampling. Rows 1 and 2 show the results of the base and reasoning variants using the code from chapter 3; that is, we used the text generation function without temperature scaling or top-<em>p</em> filtering. This text generation function simply selects the token with the highest score at each step (greedy decoding). We can see that the reasoning variant has approximately three times the accuracy but also a substantially longer running time, since it generates more tokens.</p>
+<p>In row 3, we see the results for the chain-of-thought prompting approach using the<code>"\n\nExplain</code> <code>step</code> <code>by</code> <code>step." </code>prompt modification. As you can see, this boosts the base model’s accuracy from approximately 15% to 40%.</p>
+<p>Row 4 shows what happens when we add temperature scaling and top-<em>p</em> sampling to the base model. (All experiments involving temperature scaling and top-<em>p</em> sampling in table 4.1 used a setting of 0.9 for both.) The accuracy over the base model in row 1 improves only moderately, from 15.2% to 17.8%. This is expected because temperature scaling and top-<em>p</em> sampling merely help us control sampling diversity but are not inference-time-scaling techniques themselves. We can also see that the running time increased from 10.1 min to 30.7 min. This is not due to sampling code overhead, but rather because the model now generates longer responses in some cases.</p>
+<p>Rows 5–7 show the self-consistency scaling results. Increasing the number of samples from 3 to 10 further improves accuracy to 31.6%, but it also significantly increases the running time. In this case, there is almost no accuracy advantage to using 10 instead of 3 samples.</p>
+<p>Row 8 shows temperature scaling and top-<em>p</em> sampling combined with chain-of-thought prompting. In this case, sampling makes the chain-of-thought results worse (33.4% compared to 40.6% in row 3). Combining chain-of-thought prompting with self-consistency improves accuracy to 52% with a sample size of 10, but it also substantially increases the running time to a staggering 862.6 minutes.</p>
+<p>In practice, if you have access to multiple GPUs, the different samples in self-consistency sampling can be computed in parallel rather than sequentially. This would still use the same amount of compute, but it could be spread across GPUs to generate the results faster.</p>
+<p>Lastly, in row 12, we can see that the reasoning variant also benefits from self-consistency sampling, increasing its accuracy from 48.2% in row 2 to 55.2%. Again, this comes with increased running time.</p>
+<p>The takeaway is that the results in table 4.1 highlight the tradeoff in inference-time scaling: better accuracy for more compute.</p>
+<p>One major downside of the self-consistency sampling approach in this chapter is that it relies on a final boxed answer that we can extract for majority voting. This method is trickier to apply to problems that don’t have numeric or short final answers.</p>
+<p>In the next chapter, as illustrated in figure 4.19, we will implement a different and more versatile inference-time-scaling method called <em>self-refinement</em>, in which the model iteratively improves its own answers.</p>
+<nav class="pager"><a class="prev" href="page-38.html" rel="prev"><span class="dir">上一页</span><span class="t">4.6 Improving response accuracy with self-consistency</span></a><a class="next" href="page-40.html" rel="next"><span class="dir">下一页</span><span class="t">Choosing temperature and top-p settings</span></a></nav>
+</main>
+</body>
+</html>

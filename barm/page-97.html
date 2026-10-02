@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>E.2 Running batched generation · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-96.html">
+<link rel="next" href="page-98.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 97 页 / 共 108 页</span></div>
+<h2 id="h2-running-batched-generation"><span class="num">E.2</span>Running batched generation</h2>
+<p>The main technical obstacle in batching is that prompts usually have different lengths. One math problem may tokenize to 40 tokens while another may tokenize to 120 tokens, but PyTorch tensors still have to be rectangular. So if we want to run several prompts together, we need a way to pad shorter rows and keep track of which positions are real tokens and which are just padding tokens.</p>
+<p>Padding tokens are placeholder tokens that are added to a prompt to make it a certain length. For example, to extend a three-token prompt <code>"3 + 3"</code> to a five-token prompt, we may add two additional padding tokens to the right or the left: <code>"&lt;pad&gt;&lt;pad&gt; 3 + 3"</code>. (In practice, it doesn’t matter which token we use as a padding token; it’s common to use an end-of-sequence token like <code>&lt;eos&gt;</code> or <code>&lt;|endoftext|&gt;</code>.)</p>
+<p>Conceptually, padding and keeping track of padded positions make batched generation more complicated than single-prompt generation. In the book, we used the <code>Qwen3Model</code> class from <code>reasoning_from_scratch.qwen3</code>, which is the plain single-example implementation explained in appendix C.</p>
+<p>For batched generation, the book’s supplementary materials therefore include a </p>
+<pre><code class="language-python">separate Qwen3Model class in reasoning_from_scratch.qwen3_batched. It can be used as</code></pre>
+<p>a drop-in replacement, and it adds the bookkeeping needed for padding-aware execution in batching.</p>
+<p>Let’s look at a single-sequence example that looks very similar to the code we used earlier in book. In the following listing, we apply it to two very small prompts, but we still run them one after the other.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">import</span> torch
+<span class="tok-kw">from</span> reasoning_from_scratch.ch02 <span class="tok-kw">import</span> (
+    get_device,
+    generate_text_basic_stream_cache,
+)
+<span class="tok-kw">from</span> reasoning_from_scratch.ch03 <span class="tok-kw">import</span> (
+    load_model_and_tokenizer,
+    render_prompt,
+)
+device = get_device<span class="tok-kw">()</span>
+model, tokenizer = load_model_and_tokenizer<span class="tok-kw">(</span>
+    which_model="base",
+    device=device,
+    use_compile=<span class="tok-kw">False</span>,
+<span class="tok-kw">)</span>
+<span class="tok-kw">for</span> problem <span class="tok-kw">in</span> ["<span class="tok-fn">2</span>+<span class="tok-fn">2</span>?", "<span class="tok-fn">3</span>+<span class="tok-fn">3</span>=<span class="tok-fn">6</span>?"]:
+    prompt = render_prompt<span class="tok-kw">(</span>problem<span class="tok-kw">)</span>
+    input_ids = torch.tensor<span class="tok-kw">(</span>
+        tokenizer.encode<span class="tok-kw">(</span>prompt<span class="tok-kw">)</span>,
+        dtype=torch.long,
+        device=device,
+    <span class="tok-kw">)</span>.unsqueeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>
+    <span class="tok-kw">for</span> token <span class="tok-kw">in</span> generate_text_basic_stream_cache<span class="tok-kw">(</span>
+        model=model,
+        token_ids=input_ids,
+        max_new_tokens=<span class="tok-fn">32</span>,
+        eos_token_id=tokenizer.eos_token_id,
+    <span class="tok-kw">)</span>:
+        next_token_id = token.squeeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>
+        print<span class="tok-kw">(</span>tokenizer.decode<span class="tok-kw">(</span>next_token_id.tolist<span class="tok-kw">())</span>, end="", flush=<span class="tok-kw">True)</span></code></pre><figcaption><span class="lbl">Listing E.1</span>Single-example generation</figcaption></figure>
+<pre><code class="language-python">    print<span class="tok-kw">()</span></code></pre>
+<p>This is the resulting output:</p>
+<pre><code class="language-python"> \boxed{4}
+ \boxed{6}</code></pre>
+<p>The code in listing E.1 is still ordinary single-example generation. We render the prompt, tokenize it, add a batch dimension of size 1, and then stream the generated tokens as they arrive. This is conceptually simple, which is why we used this style in the book.</p>
+<p>Listing E.2 shows the corresponding batched version. The overall workflow is similar, but now we switch to <code>reasoning_from_scratch.qwen3_batched</code>, tokenize both prompts up front, left-pad them to the same length, and generate them together.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.qwen3_batched <span class="tok-kw">import</span> (
+    generate_text_basic_batched_cache,
+    load_model_and_tokenizer,
+)
+model, tokenizer = load_model_and_tokenizer<span class="tok-kw">(</span>
+    which_model="base",
+    device=device,
+    use_compile=<span class="tok-kw">False</span>,
+<span class="tok-kw">)</span>
+problems = ["<span class="tok-fn">2</span>+<span class="tok-fn">2</span>?", "<span class="tok-fn">3</span>+<span class="tok-fn">3</span>=<span class="tok-fn">6</span>?"]
+prompts = [render_prompt<span class="tok-kw">(</span>problem<span class="tok-kw">)</span> <span class="tok-kw">for</span> problem <span class="tok-kw">in</span> problems]
+tokenized = [tokenizer.encode<span class="tok-kw">(</span>p<span class="tok-kw">)</span> <span class="tok-kw">for</span> p <span class="tok-kw">in</span> prompts]
+pad_id = tokenizer.pad_token_id
+max_len = max<span class="tok-kw">(</span>len<span class="tok-kw">(</span>t<span class="tok-kw">)</span> <span class="tok-kw">for</span> t <span class="tok-kw">in</span> tokenized<span class="tok-kw">)</span>
+left_padded = [
+    [pad_id] * (max_len - len<span class="tok-kw">(</span>t<span class="tok-kw">)</span>) + t
+    <span class="tok-kw">for</span> t <span class="tok-kw">in</span> tokenized
+]
+input_ids = torch.tensor<span class="tok-kw">(</span>left_padded, dtype=torch.long, device=device<span class="tok-kw">)</span>
+generated = generate_text_basic_batched_cache<span class="tok-kw">(</span>
+    model=model,
+    token_ids=input_ids,
+    max_new_tokens=<span class="tok-fn">32</span>,
+    eos_token_id=tokenizer.eos_token_id,
+    pad_id=pad_id,</code></pre><figcaption><span class="lbl">Listing E.2</span>Batched generation</figcaption></figure>
+<pre><code class="language-python"><span class="tok-kw">)</span></code></pre>
+<pre><code class="language-python"><span class="tok-kw">for</span> row <span class="tok-kw">in</span> generated:
+    eos_pos = (row == tokenizer.eos_token_id).nonzero<span class="tok-kw">(</span>as_tuple=<span class="tok-kw">True)</span>[<span class="tok-fn">0</span>]
+    <span class="tok-kw">if</span> len<span class="tok-kw">(</span>eos_pos<span class="tok-kw">)</span> &gt; <span class="tok-fn">0</span>:
+        row = row<span class="tok-kw">[</span>:eos_pos<span class="tok-kw">[</span><span class="tok-fn">0</span><span class="tok-kw">]]</span>
+    print<span class="tok-kw">(</span>tokenizer.decode<span class="tok-kw">(</span>row.tolist<span class="tok-kw">()))</span></code></pre>
+<p>The results are the same as before, but this time they are produced in parallel:</p>
+<pre><code class="language-python"> \boxed{4}
+ \boxed{6}</code></pre>
+<p>In this example, we used the nonstreaming batched helper, so we need to wait until the whole batch is finished before decoding and printing the results. That keeps the example simple and makes it easier to see the role of the padding before we dig into the internal masking logic.</p>
+<p>There is also a more optimized variant of the text generation function, <code>generate_ text_basic_batched_cache_stop</code>, which removes finished rows from the active compute batch instead of carrying them along until the longest row finishes. In contrast, the <code>generate_text_basic_batched_cache</code> we used in listing E.2 keeps every row in the active batch for every decode step.</p>
+<p>In <code>generate_text_basic_batched_cache</code>, once a row has emitted EOS, the implementation forces that row to keep producing EOS so that the batch shape stays aligned, even though the row is already finished from the perspective of the final decoded output. The difference between these two functions is illustrated in figure E.2. Note that Qwen3 uses <code>&lt;|endoftext|&gt;</code> as the EOS token for the base model, but figure E.2 labels it simply as <code>&lt;eos&gt;</code> for visual compactness.</p>
+<p>The next section goes into a bit more detail about how the padding is handled internally.</p>
+<nav class="pager"><a class="prev" href="page-96.html" rel="prev"><span class="dir">上一页</span><span class="t">D.4 Loading a larger reasoning variant</span></a><a class="next" href="page-98.html" rel="next"><span class="dir">下一页</span><span class="t">E.3 Padding and attention masks</span></a></nav>
+</main>
+</body>
+</html>

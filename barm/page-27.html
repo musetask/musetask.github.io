@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>Prompt template choices · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-26.html">
+<link rel="next" href="page-28.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 27 页 / 共 108 页</span></div>
+<h3 id="h3-prompt-template-choices">Prompt template choices</h3>
+<div class="lead">The prompt template in listing 3.13 is used here to show how you can implement a model evaluation pipeline with answers that are automatically checked for correctness. The chosen template encourages short outputs, which will let you work through this chapter efficiently on a first read. Afterward, I recommend revisiting the chapter’s examples with alternative settings to optimize accuracy on the official Qwen3 reasoning model variant used here as a reference model. As it turns out, using no prompt template boosts the base model’s performance by 50%, but it reduces the reasoning model’s accuracy by 40%. Additionally, we can experiment with alternative prompt templates. For instance, the standard prompt commonly used for the MATH-500 benchmark is a variant of listing 3.13 that swaps “Question:” for “Problem:”. This seemingly minor change improves the base model’s accuracy by approximately 20%, likely because it better matches the memorized training data (assuming the MATH-500 test set was included in the training corpus). While the base model benefits from this change, the reasoning model variant’s accuracy drops by 30%. Earlier, I mentioned that answer extraction is a simple, mechanical task that can be solved with deterministic code rather than by employing another LLM for answer extraction. Based on the change in accuracy across different prompting templates, it looks like our extraction method may not be reliable. This is not necessarily the case. Also, it’s not necessarily the case that the LLM generates misformatted answers. It may simply be incorrect, and switching to another LLM for extraction would not solve that. Smaller base models are often quite sensitive to prompt phrasing. In the next chapter, you’ll see that this becomes even more apparent once we introduce additional prompt variations.</div>
+<p>Before we implement the final model evaluation function, let’s test our model evaluation pipeline from end to end on a smaller example using the following demo function.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">def</span> mini_eval_demo(model, tokenizer, device):
+    ex = {
+        <span class="tok-st">"problem"</span>: <span class="tok-st">"Compute 1/2 + 1/6."</span>,
+        <span class="tok-st">"answer"</span>: <span class="tok-st">"2/3"</span>
+    }
+    prompt = render_prompt<span class="tok-kw">(</span>ex<span class="tok-kw">[</span><span class="tok-st">"problem"</span><span class="tok-kw">])</span></code></pre><figcaption><span class="lbl">Listing 3.14</span>Demo function to run the evaluation pipeline</figcaption></figure>
+<pre><code class="language-python">    gen_text = generate_text_stream_concat<span class="tok-kw">(</span>
+        model, tokenizer, prompt, device,
+        max_new_tokens=<span class="tok-fn">64</span>,
+    <span class="tok-kw">)</span>
+    pred_answer = extract_final_candidate<span class="tok-kw">(</span>gen_text<span class="tok-kw">)</span>
+    is_correct = grade_answer<span class="tok-kw">(</span>
+        pred_answer, ex<span class="tok-kw">[</span><span class="tok-st">"answer"</span><span class="tok-kw">]</span>
+    <span class="tok-kw">)</span>
+    print<span class="tok-kw">(f</span><span class="tok-st">"Device: </span>{device}<span class="tok-st">"</span><span class="tok-kw">)</span>
+    print<span class="tok-kw">(f</span><span class="tok-st">"Prediction: </span>{pred_answer}<span class="tok-st">"</span><span class="tok-kw">)</span>
+    print<span class="tok-kw">(f</span><span class="tok-st">"Ground truth: </span>{ex<span class="tok-kw">[</span><span class="tok-st">'answer'</span><span class="tok-kw">]</span>}<span class="tok-st">"</span><span class="tok-kw">)</span>
+    print<span class="tok-kw">(f</span><span class="tok-st">"Correct: </span>{is_correct}<span class="tok-st">"</span><span class="tok-kw">)</span></code></pre>
+<p>This <code>mini_eval_demo</code> function combines all the aspects we have covered so far in this chapter:</p>
+<p>1 Applying a prompt template</p>
+<p>2 Feeding the formatted prompt to the LLM to generate an answer</p>
+<p>3 Extracting and normalizing the answer</p>
+<p>4 Grading the answer</p>
+<p>The <code>mini_eval_demo</code> function essentially connects the evaluation components into a small function that we can use to test the code before building our final evaluation pipeline for the MATH-500 dataset. The code starts with a toy example (<code>ex</code>), renders the problem into the prompt template (<code>prompt</code>), and streams a response from the model (<code>generate_text_stream_concat</code>). It then parses the model output into a final candidate answer (<code>pred_answer</code>) and grades it against the ground truth with <code>grade_ answer</code>. Lastly, it prints the results for us to evaluate.</p>
+<p>Calling the <code>mini_eval_demo(model,</code> <code>tokenizer,</code> <code>device)</code> function results in the following output:</p>
+<pre><code class="language-python">Device: mps
+Prediction: 1/3
+Ground truth: 2/3
+Correct: False</code></pre>
+<p>You can see that the generated answer (<code>"1/3"</code>) was correctly extracted, but it doesn’t match the correct answer (<code>"2/3"</code>), so the check returns <code>False</code>. (Note that your results may differ depending on whether you run the code on a CPU, CUDA, or MPS device.)</p>
+<p>Now that we have tested our workflow on a simple example, let’s implement it on the MATH-500 dataset.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">import</span> time
+<span class="tok-kw">def</span> eta_progress_message(
+    processed,
+    total,
+    start_time,
+    show_eta=<span class="tok-kw">False</span>,
+    label=<span class="tok-st">"Progress"</span>,
+):
+    progress = <span class="tok-kw">f</span><span class="tok-st">"</span>{label}<span class="tok-st">: </span>{processed}<span class="tok-st">/</span>{total}<span class="tok-st">"</span>
+    pad_width = len<span class="tok-kw">(f</span><span class="tok-st">"</span>{label}<span class="tok-st">: </span>{total}<span class="tok-st">/</span>{total}<span class="tok-st"> | ETA: 00h 00m 00s"</span><span class="tok-kw">)</span>
+    <span class="tok-kw">if</span> <span class="tok-kw">not</span> show_eta <span class="tok-kw">or</span> processed &lt;= <span class="tok-fn">0</span>:
+        <span class="tok-kw">return</span> progress.ljust<span class="tok-kw">(</span>pad_width<span class="tok-kw">)</span>
+    elapsed = time.time<span class="tok-kw">()</span> - start_time
+    <span class="tok-kw">if</span> elapsed &lt;= <span class="tok-fn">0</span>:
+        <span class="tok-kw">return</span> progress.ljust<span class="tok-kw">(</span>pad_width<span class="tok-kw">)</span>
+    remaining = max<span class="tok-kw">(</span>total - processed, <span class="tok-fn">0</span><span class="tok-kw">)</span>
+    <span class="tok-kw">if</span> processed:
+        avg_time = elapsed / processed
+        eta_seconds = avg_time * remaining
+    <span class="tok-kw">else</span>:
+        eta_seconds = <span class="tok-fn">0</span>
+    eta_seconds = max<span class="tok-kw">(</span>int<span class="tok-kw">(</span>round<span class="tok-kw">(</span>eta_seconds<span class="tok-kw">))</span>, <span class="tok-fn">0</span><span class="tok-kw">)</span>
+    minutes, rem_seconds = divmod<span class="tok-kw">(</span>eta_seconds, <span class="tok-fn">60</span><span class="tok-kw">)</span>
+    hours, minutes = divmod<span class="tok-kw">(</span>minutes, <span class="tok-fn">60</span><span class="tok-kw">)</span>
+    <span class="tok-kw">if</span> hours:
+        eta = <span class="tok-kw">f</span><span class="tok-st">"</span>{hours}<span class="tok-st">h </span>{minutes:02d}<span class="tok-st">m </span>{rem_seconds:02d}<span class="tok-st">s"</span>
+    <span class="tok-kw">elif</span> minutes:
+        eta = <span class="tok-kw">f</span><span class="tok-st">"</span>{minutes:02d}<span class="tok-st">m </span>{rem_seconds:02d}<span class="tok-st">s"</span>
+    <span class="tok-kw">else</span>:
+        eta = <span class="tok-kw">f</span><span class="tok-st">"</span>{rem_seconds:02d}<span class="tok-st">s"</span>
+    message = <span class="tok-kw">f</span><span class="tok-st">"</span>{progress}<span class="tok-st"> | ETA: </span>{eta}<span class="tok-st">"</span>
+    <span class="tok-kw">return</span> message.ljust<span class="tok-kw">(</span>pad_width<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 3.15</span>End-to-end model evaluation pipeline for MATH-500 dataset</figcaption></figure>
+<pre><code class="language-python"><span class="tok-kw">def</span> evaluate_math500_stream(
+    model,
+    tokenizer,
+    device,
+    math_data,
+    out_path=<span class="tok-kw">None</span>,
+    max_new_tokens=<span class="tok-fn">512</span>,
+    verbose=<span class="tok-kw">False</span>,
+):
+    <span class="tok-kw">if</span> out_path <span class="tok-kw">is</span> <span class="tok-kw">None</span>:
+        dev_name = str<span class="tok-kw">(</span>device<span class="tok-kw">)</span>.replace<span class="tok-kw">(</span><span class="tok-st">":"</span>, <span class="tok-st">"-"</span><span class="tok-kw">)</span>
+        out_path = Path<span class="tok-kw">(f</span><span class="tok-st">"math500-</span>{dev_name}<span class="tok-st">.jsonl"</span><span class="tok-kw">)</span>
+    num_examples = len<span class="tok-kw">(</span>math_data<span class="tok-kw">)</span>
+    num_correct = <span class="tok-fn">0</span>
+    start_time = time.time<span class="tok-kw">()</span>
+    <span class="tok-kw">with</span> open<span class="tok-kw">(</span>out_path, <span class="tok-st">"w"</span>, encoding=<span class="tok-st">"utf-8"</span><span class="tok-kw">)</span> <span class="tok-kw">as</span> f:
+        <span class="tok-kw">for</span> i, row <span class="tok-kw">in</span> enumerate<span class="tok-kw">(</span>math_data, start=<span class="tok-fn">1</span><span class="tok-kw">)</span>:
+            prompt = render_prompt<span class="tok-kw">(</span>row<span class="tok-kw">[</span><span class="tok-st">"problem"</span><span class="tok-kw">])</span>
+            gen_text = generate_text_stream_concat<span class="tok-kw">(</span>
+                model, tokenizer, prompt, device,
+                max_new_tokens=max_new_tokens,
+                verbose=verbose,
+            <span class="tok-kw">)</span>
+            extracted = extract_final_candidate<span class="tok-kw">(</span>
+                gen_text
+            <span class="tok-kw">)</span>
+            is_correct = grade_answer<span class="tok-kw">(</span>
+                extracted, row<span class="tok-kw">[</span><span class="tok-st">"answer"</span><span class="tok-kw">]</span>
+            <span class="tok-kw">)</span>
+            num_correct += int<span class="tok-kw">(</span>is_correct<span class="tok-kw">)</span>
+            record = {
+                <span class="tok-st">"index"</span>: i,
+                <span class="tok-st">"problem"</span>: row<span class="tok-kw">[</span><span class="tok-st">"problem"</span><span class="tok-kw">]</span>,
+                <span class="tok-st">"gtruth_answer"</span>: row<span class="tok-kw">[</span><span class="tok-st">"answer"</span><span class="tok-kw">]</span>,
+                <span class="tok-st">"generated_text"</span>: gen_text,
+                <span class="tok-st">"extracted"</span>: extracted,
+                <span class="tok-st">"correct"</span>: bool<span class="tok-kw">(</span>is_correct<span class="tok-kw">)</span>,
+            }
+            f.write<span class="tok-kw">(</span>json.dumps<span class="tok-kw">(</span>record, ensure_ascii=<span class="tok-kw">False)</span> + <span class="tok-st">"</span>\n<span class="tok-st">"</span><span class="tok-kw">)</span>
+            progress_msg = eta_progress_message<span class="tok-kw">(</span>
+                processed=i,
+                total=num_examples,
+                start_time=start_time,
+                show_eta=<span class="tok-kw">True</span>,
+                label=<span class="tok-st">"MATH-500"</span>,
+            <span class="tok-kw">)</span>
+            print<span class="tok-kw">(</span>progress_msg, end=<span class="tok-st">"</span>\r<span class="tok-st">"</span>, flush=<span class="tok-kw">True)</span>
+            <span class="tok-kw">if</span> verbose:
+                print<span class="tok-kw">(</span>
+                    <span class="tok-kw">f</span><span class="tok-st">"</span>\n\n{<span class="tok-st">'='</span>*<span class="tok-fn">50</span>}\n{progress_msg}\n<span class="tok-st">"</span>
+                    <span class="tok-kw">f</span><span class="tok-st">"</span>{<span class="tok-st">'='</span>*<span class="tok-fn">50</span>}\n<span class="tok-st">Extracted: </span>{extracted}\n<span class="tok-st">"</span>
+                    <span class="tok-kw">f</span><span class="tok-st">"Expected: </span>{row<span class="tok-kw">[</span><span class="tok-st">'answer'</span><span class="tok-kw">]</span>}\n<span class="tok-st">"</span>
+                    <span class="tok-kw">f</span><span class="tok-st">"Correct so far: </span>{num_correct}\n{<span class="tok-st">'-'</span>*<span class="tok-fn">50</span>}<span class="tok-st">"</span>
+                <span class="tok-kw">)</span>
+    seconds_elapsed = time.time<span class="tok-kw">()</span> - start_time
+    acc = num_correct / num_examples <span class="tok-kw">if</span> num_examples <span class="tok-kw">else</span> <span class="tok-fn">0.0</span>
+    print<span class="tok-kw">(f</span><span class="tok-st">"</span>\n<span class="tok-st">Accuracy: </span>{acc*<span class="tok-fn">100</span>:.1f}<span class="tok-st">% (</span>{num_correct}<span class="tok-st">/</span>{num_examples}<span class="tok-st">)"</span><span class="tok-kw">)</span>
+    print<span class="tok-kw">(f</span><span class="tok-st">"Total time: </span>{seconds_elapsed/<span class="tok-fn">60</span>:.1f}<span class="tok-st"> min"</span><span class="tok-kw">)</span>
+    print<span class="tok-kw">(f</span><span class="tok-st">"Logs written to: </span>{out_path}<span class="tok-st">"</span><span class="tok-kw">)</span>
+    <span class="tok-kw">return</span> num_correct, num_examples, acc</code></pre>
+<p>The <code>evaluate_math500_stream</code> function in listing 3.15 uses the same main steps as the smaller demo function from listing 3.14: for each problem, it renders the prompt, streams a model response, extracts the answer candidate, and grades it against the reference answer.</p>
+<p>In addition to iterating over a dataset with multiple entries, it adds a few extra bells and whistles. For instance, it saves the generated responses to a JSON file in a Python dictionary-like format for record keeping and closer inspection.</p>
+<p>Let’s now run this function on a subset: the first 10 examples of MATH-500. This takes about 0.7 minutes on a Mac Mini with an M4 chip. (Evaluating the reasoning model variant takes about 7 minutes because it generates longer responses.)</p>
+<pre><code class="language-python">print<span class="tok-kw">(</span><span class="tok-st">"Model:"</span>, WHICH_MODEL<span class="tok-kw">)</span>
+print<span class="tok-kw">(</span><span class="tok-st">"Device:"</span>, device<span class="tok-kw">)</span>
+num_correct, num_examples, acc = evaluate_math500_stream<span class="tok-kw">(</span>
+    model, tokenizer, device,
+    math_data=math_data<span class="tok-kw">[</span>:<span class="tok-fn">10</span><span class="tok-kw">]</span>,
+    max_new_tokens=<span class="tok-fn">2048</span>,
+    verbose=<span class="tok-kw">False</span></code></pre>
+<pre><code class="language-python"><span class="tok-kw">)</span></code></pre>
+<p>In the preceding code example, we set <code>max_new_tokens</code> to a generous 2,048 because the reasoning model variant, by design, tends to generate much longer responses, and we don’t want to cut it off prematurely. This leads to much longer evaluation times, and it may appear that generation is stuck. Optionally, you could set <code>verbose=True</code> to see the response being generated live, token by token.</p>
+<p>The result of running <code>evaluate_math500_stream</code> is as follows:</p>
+<pre><code class="language-python">Model: base
+Device: mps
+MATH-500: 10/10 | ETA: 00s
+Accuracy: 30.0% (3/10)
+Total time: 0.4 min</code></pre>
+<p>(As usual, the results may differ depending on whether you execute the code on a CPU, CUDA, or MPS device.)</p>
+<p>As you can see, the model achieves a relatively low accuracy of 30%. We can open the <code>math500_base-mps.jsonl</code> file in a text editor to analyze the results together with the generated response. For instance, the answers have been successfully extracted in all cases, but they are simply wrong, which indicates that the model does not have very strong math-problem-solving capabilities (yet). This is expected because it is merely a base model.</p>
+<nav class="pager"><a class="prev" href="page-26.html" rel="prev"><span class="dir">上一页</span><span class="t">3.8 Loading the evaluation dataset</span></a><a class="next" href="page-28.html" rel="next"><span class="dir">下一页</span><span class="t">Loading the .jsonl file programmatically</span></a></nav>
+</main>
+</body>
+</html>

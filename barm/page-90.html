@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>B.7 Chapter 8 · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-89.html">
+<link rel="next" href="page-91.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 90 页 / 共 108 页</span></div>
+<h2 id="h2-chapter-8"><span class="num">B.7</span>Chapter 8</h2>
+<h3 id="h3-exercise-8-1-training-and-validation-set-lengths-2">Exercise 8.1: Training and validation set lengths</h3>
+<p>To calculate the training and validation answer length statistics, you can add the following commands at the end of listing 8.7 in section 8.4.3, following the partitioning:</p>
+<pre><code class="language-bash">compute_length<span class="tok-kw">(</span>train_examples<span class="tok-kw">)</span>
+<span class="tok-cm"># Prints</span>
+<span class="tok-cm"># Average: 1180 tokens</span>
+<span class="tok-cm"># Shortest: 236 tokens (index 5730)</span>
+<span class="tok-cm"># Longest: 2048 tokens (index 1319)</span></code></pre>
+<p>As you can see, the average token length (1180 versus 1106) is fairly similar, and the datasets should be relatively balanced.</p>
+<p>As a bonus, we can plot histograms to visualize the distributions:</p>
+<pre><code class="language-python"><span class="tok-kw">import</span> matplotlib.pyplot <span class="tok-kw">as</span> plt
+train_lengths = [len<span class="tok-kw">(</span>ex<span class="tok-kw">[</span><span class="tok-st">"token_ids"</span><span class="tok-kw">])</span> <span class="tok-kw">for</span> ex <span class="tok-kw">in</span> train_examples]
+val_lengths = [len<span class="tok-kw">(</span>ex<span class="tok-kw">[</span><span class="tok-st">"token_ids"</span><span class="tok-kw">])</span> <span class="tok-kw">for</span> ex <span class="tok-kw">in</span> val_examples]
+<span class="tok-cm"># Normalize counts because the validation split is much smaller</span>
+bins = range<span class="tok-kw">(</span><span class="tok-fn">0</span>, max<span class="tok-kw">(</span>train_lengths + val_lengths<span class="tok-kw">)</span> + <span class="tok-fn">64</span>, <span class="tok-fn">64</span><span class="tok-kw">)</span>
+fig, ax = plt.subplots<span class="tok-kw">(</span>figsize=(<span class="tok-fn">7</span>, <span class="tok-fn">4</span>)<span class="tok-kw">)</span>
+ax.hist<span class="tok-kw">(</span>train_lengths, bins=bins, density=<span class="tok-kw">True</span>, alpha=<span class="tok-fn">0.6</span>, label=<span class="tok-st">"Train"</span><span class="tok-kw">)</span>
+ax.hist<span class="tok-kw">(</span>val_lengths, bins=bins, density=<span class="tok-kw">True</span>, alpha=<span class="tok-fn">0.6</span>, label=<span class="tok-st">"Validation"</span><span class="tok-kw">)</span>
+ax.set_xlabel<span class="tok-kw">(</span><span class="tok-st">"Token length"</span><span class="tok-kw">)</span>
+ax.set_ylabel<span class="tok-kw">(</span><span class="tok-st">"Density"</span><span class="tok-kw">)</span>
+ax.legend<span class="tok-kw">()</span>
+plt.tight_layout<span class="tok-kw">()</span>
+plt.show<span class="tok-kw">()</span></code></pre>
+<p>The resulting plot is shown in figure B.3.</p>
+<p>There are far fewer validation samples, which is why the validation histogram seems a bit jagged, but as you can see, it still provides good coverage of the distribution.</p>
+<h3 id="h3-exercise-8-2-distilling-without-think-tokens-2">Exercise 8.2: Distilling without &lt;think&gt; tokens</h3>
+<p>We can replicate the runs without <code>&lt;think&gt;&lt;/think&gt;</code> tokens in the script execution command:</p>
+<pre><code class="language-python">uv run distill.py \
+--data_path deepseek-r1-math-train.json \
+--validation_size 25 \
+--epochs 3 \
+--lr 1e-5 \
+--max_seq_len 2048 \
+--grad_clip 1.0</code></pre>
+<figure><a class="zoom" href="assets/figure-B.3.png" tabindex="-1"><img src="assets/figure-B.3.png" alt="" width="1020" height="568" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure B.3</span>Distribution of training and validation set lengths</figcaption></figure>
+<p>For the evaluation, we can use the <code>base</code> instead of <code>reasoning</code> model:</p>
+<pre><code class="language-python">uv run evaluate_math500.py \
+--dataset_size 500 \
+--which_model base \
+--max_new_tokens 4096 \
+--checkpoint_path \
+run_11/checkpoints/distill/qwen3-0.6B-distill-step05746-epoch1.pth</code></pre>
+<p>The results are shown in table B.6, where the new results (without <code>&lt;think&gt;</code> tokens) are shown first, with the corresponding think-token results (from the chapter) in parentheses.</p>
+<div class="tw"><table><caption><span class="lbl">Table B.6</span>MATH-500 task accuracy with and without &lt;think&gt; tokens</caption><thead><tr><th></th><th>Method</th><th>Epoch</th><th>Final validation loss</th><th>MATH-500 accuracy</th></tr></thead><tbody><tr><td>1</td><td>Base Qwen3 0.6B (chapter 3)</td><td>-</td><td>-</td><td>15.2%</td></tr><tr><td>2</td><td>Reasoning Qwen3 0.6B (chapter 3)</td><td>-</td><td>-</td><td>48.2%</td></tr><tr><td>3</td><td>DeepSeek-R1</td><td></td><td>0.5436 (0.5404)</td><td>31.8% (30.6%)</td></tr><tr><td>4</td><td>DeepSeek-R1</td><td></td><td>0.5349 (0.5339)</td><td>31.8% (32.4%)</td></tr><tr><td>5</td><td>DeepSeek-R1</td><td>3</td><td>0.5343 (0.5306)</td><td>30.2% (33.6%)</td></tr><tr><td>6</td><td>Qwen3 235B-A22B</td><td>1</td><td>0.4043 (0.3130)</td><td>44.8% (45.0%)</td></tr><tr><td>7</td><td>Qwen3 235B-A22B</td><td>2</td><td>0.3963 (0.3087)</td><td>39.4% (43.8%)</td></tr><tr><td>8</td><td>Qwen3 235B-A22B</td><td>3</td><td>0.3948 (0.3078)</td><td>39.8% (44.2%)</td></tr></tbody></table></div>
+<p>Interestingly, the Qwen3 model has a lower validation loss when <code>&lt;think&gt;&lt;/think&gt;</code> tokens are omitted, but this doesn’t translate into better modeling performance. The omission of <code>&lt;think&gt;</code> makes the results slightly worse in almost all cases.</p>
+<h1 id="h1-appendix-c-qwen3-llm-source-code">appendix C Qwen3 LLM source code</h1>
+<p>Although this is a “from scratch<em>”</em> book, that part of the title refers to the reasoning techniques, not to the LLM itself. Implementing an LLM entirely from scratch would require a separate book, such as my <em>Build </em>a<em> Large Language Model (From Scratch)</em>, also available from Manning (<a href="http://mng.bz/orYv">http://mng.bz/orYv</a>).</p>
+<p>If you’re interested in the Qwen3 implementation used in this book, this appendix lists the source code for the <code>Qwen3Model</code> model that I implemented and that we import from the book’s <code>reasoning_from_scratch</code> Python package:</p>
+<pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.qwen3 <span class="tok-kw">import</span> Qwen3Model, Qwen3Tokenizer</code></pre>
+<p>As shown in figure C.1, the Qwen3 architecture is very similar to GPT-2, which I cover in my <em>Build A Large Language Model (From Scratch)</em> book. While familiarity with GPT-2 is not required for this book, this appendix includes comparisons to GPT-2 for readers who are familiar with it. In fact, I wrote the Qwen3 implementation by porting the GPT-2 model from my other book, piece by piece, into the Qwen3 architecture so that it follows similar style conventions and is easier to read.</p>
+<p>As shown in figure C.1, Qwen3 (released in 2025) and GPT-2 (released in 2019) are broadly similar in that they are both based on the decoder submodule of the original Transformer architecture. But some design choices have evolved since 2019. Note that most of the design choices found in Qwen3 are not unique to Qwen3 but are found in many other contemporary LLMs, as I discussed in “The Big LLM </p>
+<pre><code class="language-python">Sample output text
+Sample output text</code></pre>
+<pre><code class="language-python">Sample input text
+Sample input text</code></pre>
+<figure><a class="zoom" href="assets/figure-C.1.png" tabindex="-1"><img src="assets/figure-C.1.png" alt="" width="1142" height="1226" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure C.1</span>Architectural comparison between Qwen3 and GPT-2. Both models process text through embedding layers and stacked transformer blocks, but they differ in certain design choices.</figcaption></figure>
+<p>Architecture Comparison” (<a href="https://magazine.sebastianraschka.com/p/the-big-llm-architecture-comparison">https://magazine.sebastianraschka.com/p/the-big-llm-architecture-comparison</a>).</p>
+<p>If you’re new to LLMs and want to understand how these architectures are implemented, I recommend starting with GPT-2. Its design is simpler to implement, which makes it an easier entry point before exploring more modern variations.</p>
+<p>Since this book does not focus on architecture implementations, the rest of this appendix provides only a brief overview of Qwen3’s code.</p>
+<nav class="pager"><a class="prev" href="page-89.html" rel="prev"><span class="dir">上一页</span><span class="t">B.5 Chapter 6</span></a><a class="next" href="page-91.html" rel="next"><span class="dir">下一页</span><span class="t">C.1 RMSNorm</span></a></nav>
+</main>
+</body>
+</html>

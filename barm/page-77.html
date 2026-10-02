@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>8.4.3 Filtering and splitting the dataset · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-76.html">
+<link rel="next" href="page-78.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 77 页 / 共 108 页</span></div>
+<h3 id="h3-filtering-and-splitting-the-dataset"><span class="num">8.4.3</span>Filtering and splitting the dataset</h3>
+<p>Once the examples are tokenized, we still need to filter long sequences and split the dataset into <em>training</em> and <em>validation</em> subsets. This step is highlighted in figure 8.10.</p>
+<figure><a class="zoom" href="assets/figure-8.10.png" tabindex="-1"><img src="assets/figure-8.10.png" alt="" width="810" height="403" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 8.10</span>After tokenization, we filter out long sequences and split the remaining examples into training and validation subsets.</figcaption></figure>
+<p>After tokenization, it’s useful to inspect the sequence lengths. This tells us how long the examples are on average, which samples are extreme outliers, and how aggressive our filtering needs to be. We can then remove examples above the chosen maximum length, shuffle the remaining data with a fixed random seed, and split off a small validation set.</p>
+<p>Let’s begin by analyzing the sequence lengths.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">def</span> compute_length(examples, answer_only=<span class="tok-kw">False</span>):
+    lengths = []
+    <span class="tok-kw">for</span> ex <span class="tok-kw">in</span> examples:
+        total = len<span class="tok-kw">(</span>ex<span class="tok-kw">[</span><span class="tok-st">"token_ids"</span><span class="tok-kw">])</span>
+        length = total - ex<span class="tok-kw">[</span><span class="tok-st">"prompt_len"</span><span class="tok-kw">]</span> <span class="tok-kw">if</span> answer_only <span class="tok-kw">else</span> total
+        lengths.append<span class="tok-kw">(</span>length<span class="tok-kw">)</span>
+    avg_len = round<span class="tok-kw">(</span>sum<span class="tok-kw">(</span>lengths<span class="tok-kw">)</span> / len<span class="tok-kw">(</span>lengths<span class="tok-kw">))</span>
+    shortest_len = min<span class="tok-kw">(</span>lengths<span class="tok-kw">)</span>
+    longest_len = max<span class="tok-kw">(</span>lengths<span class="tok-kw">)</span>
+    shortest_idx = lengths.index<span class="tok-kw">(</span>shortest_len<span class="tok-kw">)</span>
+    longest_idx = lengths.index<span class="tok-kw">(</span>longest_len<span class="tok-kw">)</span>
+    print<span class="tok-kw">(f</span><span class="tok-st">"Average: </span>{avg_len}<span class="tok-st"> tokens"</span><span class="tok-kw">)</span>
+    print<span class="tok-kw">(f</span><span class="tok-st">"Shortest: </span>{shortest_len}<span class="tok-st"> tokens (index </span>{shortest_idx}<span class="tok-st">)"</span><span class="tok-kw">)</span>
+    print<span class="tok-kw">(f</span><span class="tok-st">"Longest: </span>{longest_len}<span class="tok-st"> tokens (index </span>{longest_idx}<span class="tok-st">)"</span><span class="tok-kw">)</span>
+compute_length<span class="tok-kw">(</span>examples<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 8.5</span>Computing lengths and filtering long examples</figcaption></figure>
+<p>This is the resulting output:</p>
+<pre><code class="language-python">Average: 2946 tokens
+Shortest: 236 tokens (index 10846)
+Longest: 42005 tokens (index 2529)</code></pre>
+<p>As you can see, the average response length is 2,946 tokens, which is typical for reasoning models. There are outliers, though. For instance, the longest answer is 42,005 tokens, which is excessive. The index positions (<code>index</code> <code>10846</code> and <code>index</code> <code>2529</code>) denote the positions of the shortest and longest examples in the dataset, respectively, in case we want to inspect them.</p>
+<p>To keep the computational costs reasonable for this distillation example, we’ll filter the dataset to include only entries of up to 2,048 tokens using the code in listing 8.6. In practice, controlling sequence length is one of the main steps that makes distillation feasible on smaller hardware.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">def</span> filter_examples_by_max_len(examples, max_len=<span class="tok-fn">2048</span>):
+    filtered_examples = [
+        s <span class="tok-kw">for</span> s <span class="tok-kw">in</span> examples
+        <span class="tok-kw">if</span> len<span class="tok-kw">(</span>s<span class="tok-kw">[</span><span class="tok-st">"token_ids"</span><span class="tok-kw">])</span> &lt;= max_len
+    ]
+    print<span class="tok-kw">(</span><span class="tok-st">"Original:"</span>, len<span class="tok-kw">(</span>examples<span class="tok-kw">))</span>
+    print<span class="tok-kw">(</span><span class="tok-st">"Filtered:"</span>, len<span class="tok-kw">(</span>filtered_examples<span class="tok-kw">))</span>
+    print<span class="tok-kw">(</span><span class="tok-st">"Removed:"</span>, len<span class="tok-kw">(</span>examples<span class="tok-kw">)</span> - len<span class="tok-kw">(</span>filtered_examples<span class="tok-kw">))</span></code></pre><figcaption><span class="lbl">Listing 8.6</span>Filtering long examples</figcaption></figure>
+<pre><code class="language-python">    <span class="tok-kw">return</span> filtered_examples</code></pre>
+<pre><code class="language-python">filtered_examples = filter_examples_by_max_len<span class="tok-kw">(</span>examples, max_len=<span class="tok-fn">2048</span><span class="tok-kw">)</span></code></pre>
+<p>The filtering code in listing 8.6 removes 5,305 training examples:</p>
+<pre><code class="language-python">Original: 12000
+Filtered: 6695
+Removed: 5305</code></pre>
+<p>Let’s compute the dataset lengths on this new subset:</p>
+<pre><code class="language-python">compute_length<span class="tok-kw">(</span>filtered_examples<span class="tok-kw">)</span></code></pre>
+<p>As you can see, the average token length is now down to 1,180 tokens, and none of the formatted training examples exceed 2,048 tokens:</p>
+<pre><code class="language-python">Average: 1180 tokens
+Shortest: 236 tokens (index 5971)
+Longest: 2048 tokens (index 5587)</code></pre>
+<p>Lastly, we’ll split the dataset into training and validation sets, where the latter are used for quick evaluations throughout the training run.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">import</span> random
+rng = random.Random<span class="tok-kw">(</span><span class="tok-fn">123</span><span class="tok-kw">)</span>
+rng.shuffle<span class="tok-kw">(</span>filtered_examples<span class="tok-kw">)</span>
+train_examples = filtered_examples<span class="tok-kw">[</span><span class="tok-fn">25</span>:<span class="tok-kw">]</span>
+val_examples = filtered_examples<span class="tok-kw">[</span>:<span class="tok-fn">25</span><span class="tok-kw">]</span>
+print<span class="tok-kw">(</span><span class="tok-st">"Number of train examples:"</span>, len<span class="tok-kw">(</span>train_examples<span class="tok-kw">))</span>
+print<span class="tok-kw">(</span><span class="tok-st">"Number of validation examples:"</span>, len<span class="tok-kw">(</span>val_examples<span class="tok-kw">))</span></code></pre><figcaption><span class="lbl">Listing 8.7</span>Partitioning into training and validation sets</figcaption></figure>
+<p>The resulting numbers of training and validation examples are as follows:</p>
+<pre><code class="language-python">Number of train examples: 6670
+Number of validation examples: 25</code></pre>
+<p>We are keeping the validation set purposefully small so that we don’t unnecessarily slow down the training loop. In addition, after training is completed, we will use the 500 samples from the MATH-500 set to evaluate the model’s performance.</p>
+<h3 id="h3-exercise-8-1-training-and-validation-set-lengths">Exercise 8.1: Training and validation set lengths</h3>
+<pre><code class="language-python">Apply the compute_length function to the new train_examples and val_examples</code></pre>
+<div class="lead">partitions to check whether they are balanced by sample length.</div>
+<h2 id="h2-loading-a-pretrained-model-4"><span class="num">8.5</span>Loading a pretrained model</h2>
+<p>With the dataset preparation complete, we can turn to the actual distillation training. We’ll begin by loading the pretrained Qwen3 base model, as shown in figure 8.11.</p>
+<figure><a class="zoom" href="assets/figure-8.11.png" tabindex="-1"><img src="assets/figure-8.11.png" alt="" width="1142" height="629" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 8.11</span>With the dataset preparation complete, we begin the distillation training by loading the pretrained Qwen3 base model.</figcaption></figure>
+<p>We’ll start with the pretrained Qwen3 base model, not from an RL-trained model, because distillation itself is the training stage we want to study here. This keeps our setup clean and makes it easier to attribute any improvement to the distilled reasoning traces. It also mirrors a common practical setup in which a general base model is adapted using teacher-generated data.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">import</span> torch
+<span class="tok-kw">from</span> reasoning_from_scratch.ch02 <span class="tok-kw">import</span> get_device</code></pre><figcaption><span class="lbl">Listing 8.8</span>Loading the Qwen3 base model for distillation</figcaption></figure>
+<pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.ch03 <span class="tok-kw">import</span> (
+    load_model_and_tokenizer,
+)
+device = get_device<span class="tok-kw">()</span>
+model, _ = load_model_and_tokenizer<span class="tok-kw">(</span>
+    which_model=<span class="tok-st">"base"</span>,
+    device=device,
+    use_compile=<span class="tok-kw">False</span>,
+<span class="tok-kw">)</span></code></pre>
+<p>We can ignore the loaded base tokenizer in listing 8.8 because we’ll be using the tokenizer with <code>&lt;think&gt;&lt;/think&gt;</code> token support that we loaded in section 8.4.1.</p>
+<nav class="pager"><a class="prev" href="page-76.html" rel="prev"><span class="dir">上一页</span><span class="t">8.4 Building training examples</span></a><a class="next" href="page-78.html" rel="next"><span class="dir">下一页</span><span class="t">8.6 Computing the training and validation losses</span></a></nav>
+</main>
+</body>
+</html>

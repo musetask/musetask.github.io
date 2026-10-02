@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>G.6 The multi-turn interface · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-105.html">
+<link rel="next" href="page-107.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 106 页 / 共 108 页</span></div>
+<h2 id="h2-the-multi-turn-interface"><span class="num">G.6</span>The multi-turn interface</h2>
+<p>The second script, <code>qwen3_chat_interface_multiturn.py</code>, extends the basic Chainlit interface so that the model can condition on earlier turns in the same conversation. The following subsections explain what multi-turn means in practice, how the script implements it, and when it is appropriate to use.</p>
+<h3 id="h3-what-multi-turn-means"><span class="num">G.6.1</span>What multi-turn means</h3>
+<p>In a single-turn setup, the model only sees the current input. For illustration purposes, suppose the interaction looks like this:</p>
+<pre><code class="language-python">User: What is 1 + 1?
+Assistant: 2
+User: What did I just ask?</code></pre>
+<p>In the regular single-turn script, when the model receives the second message, <code>"What </code></p>
+<pre><code class="language-python">did I just ask?", it might respond with "I don't know what you are asking". The earlier</code></pre>
+<p>question and answer are visible in the browser, but they are not included in the model input, so the model does not truly have conversational memory.</p>
+<p>In a multi-turn setup (<code>qwen3_chat_interface_multiturn.py</code>), we explicitly include, or more specifically <em>prepend</em>, the earlier messages in the prompt, similar to what ChatGPT and other chat assistants do. In this case, the model might answer the ques</p>
+<pre><code class="language-python">tion "What did I just ask?" with "You asked me what 1+1 is".</code></pre>
+<h3 id="h3-the-multi-turn-variant"><span class="num">G.6.2</span>The multi-turn variant</h3>
+<p>The multi-turn script begins in the same way as the regular version, but it adds two helper functions and uses the stored session history during generation.</p>
+<p>The first helper, in the following listing, turns the stored message history into the Qwen chat format we require.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">def</span> build_prompt_from_history(history, add_assistant_header=<span class="tok-kw">True</span>):
+    parts = []
+    <span class="tok-kw">for</span> m <span class="tok-kw">in</span> history:
+        role = m<span class="tok-kw">[</span>"role"<span class="tok-kw">]</span>
+        content = m<span class="tok-kw">[</span>"content"<span class="tok-kw">]</span>
+        parts.append<span class="tok-kw">(</span>f"&lt;|im_start|&gt;{role}\n{content}&lt;|im_end|&gt;\n")
+    <span class="tok-kw">if</span> add_assistant_header:
+        parts.append<span class="tok-kw">(</span>"&lt;|im_start|&gt;assistant\n")
+    <span class="tok-kw">return</span> "".join<span class="tok-kw">(</span>parts<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing G.3</span>Building a prompt from conversation history</figcaption></figure>
+<p>The <code>build_prompt_from_history</code> function in the preceding listing serializes the message list into the chat-template style that the Qwen reasoning model expects. Conceptually, the resulting prompt looks like this:</p>
+<pre><code class="language-python">&lt;|im_start|&gt;system
+You are a helpful assistant.&lt;|im_end|&gt;
+&lt;|im_start|&gt;user
+What is 1 + 1?&lt;|im_end|&gt;
+&lt;|im_start|&gt;assistant
+2&lt;|im_end|&gt;
+&lt;|im_start|&gt;user
+What did I just ask?&lt;|im_end|&gt;
+&lt;|im_start|&gt;assistant</code></pre>
+<p>The model then continues generating from that final assistant header.</p>
+<p>The second helper, shown next, trims the messages if they exceed the context length, since multi-turn conversations can grow very long.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">def</span> trim_input_tensor(input_ids_tensor, context_len, max_new_tokens):
+    <span class="tok-kw">assert</span> max_new_tokens &lt; context_len
+    keep_len = max<span class="tok-kw">(</span><span class="tok-fn">1</span>, context_len - max_new_tokens<span class="tok-kw">)</span>
+    <span class="tok-kw">if</span> input_ids_tensor.shape<span class="tok-kw">[</span><span class="tok-fn">1</span><span class="tok-kw">]</span> &gt; keep_len:
+        input_ids_tensor = input_ids_tensor<span class="tok-kw">[</span>:, -keep_len:<span class="tok-kw">]</span>
+    <span class="tok-kw">return</span> input_ids_tensor</code></pre><figcaption><span class="lbl">Listing G.4</span>Trimming the prompt to fit the context window</figcaption></figure>
+<p>This <code>trim_input_tensor</code> helper function ensures that enough room remains in the context window for the new tokens. If the conversation becomes too long, the oldest tokens are discarded first via left truncation. (Other, more sophisticated options also exist, such as summarizing the previous context, but that isn’t implemented here for the sake of simplicity.)</p>
+<h3 id="h3-how-the-multi-turn-script-uses-history"><span class="num">G.6.3</span>How the multi-turn script uses history</h3>
+<p>The multi-turn behavior appears inside the message handler. At the beginning of each turn, the script retrieves the current session history and appends the new user message:</p>
+<pre><code class="language-python">history = chainlit.user_session.get<span class="tok-kw">(</span>"history"<span class="tok-kw">)</span>
+history.append<span class="tok-kw">(</span>{"role": "user", "content": message.content}<span class="tok-kw">)</span></code></pre>
+<p>It then builds the full prompt from that history, tokenizes it, optionally trims it, and streams the answer in the same way as before. At the end of generation, it stores the model reply back into the same history list:</p>
+<pre><code class="language-python">history.append<span class="tok-kw">(</span>{"role": "assistant", "content": out_msg.content}<span class="tok-kw">)</span>
+chainlit.user_session.set<span class="tok-kw">(</span>"history", history<span class="tok-kw">)</span></code></pre>
+<p>This is the multi-turn script’s core difference from the single-turn script. The multi-turn version does not merely display a chat transcript in the browser; it feeds the earlier turns back into the model so future responses can condition on them.</p>
+<p>The launch command is analogous to the single-turn case:</p>
+<pre><code class="language-python">uv run chainlit run chG/01_main-chapter-code/qwen3_chat_interface_multiturn.py</code></pre>
+<p>Operationally, the script behaves just like the regular Chainlit interface, as shown in figure G.3. The only difference is in how the prompt is constructed internally.</p>
+<p>The second response in figure G.3 indicates that the model remembers the first question through the provided context.</p>
+<h3 id="h3-recommendations"><span class="num">G.6.4</span>Recommendations</h3>
+<p>The multi-turn Chainlit script is intended for the official Qwen3 reasoning variant. It is not a good fit for the chapter 8 distillation checkpoints, for example, because the distillation checkpoints were trained on prompt-response style supervision rather than on persistent multi-turn chat histories. They were not trained to continue a conversation over several turns in the same way as the official reasoning checkpoint.</p>
+<p>As a consequence, the multi-turn script should not be expected to work reliably with the distillation checkpoints. I recommend you use them as follows:</p>
+<ul><li>Use the single-turn Chainlit script for quick interactive tests, including custom checkpoints for chapters 6, 7, and 8.</li></ul>
+<ul><li>Use the multi-turn Chainlit script with the official reasoning checkpoint when you want conversation memory.</li></ul>
+<figure><a class="zoom" href="assets/figure-G.3.png" tabindex="-1"><img src="assets/figure-G.3.png" alt="" width="1021" height="1161" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure G.3</span>Example response in the Chainlit interface with multiple prompts and responses</figcaption></figure>
+<h1 id="h1-index">index</h1>
+<h3 id="h3-a">A</h3>
+<p>advantages, preparing learning signals from rollouts </p>
+<p>via 201</p>
+<p>advantage tracking 234</p>
+<p>answer-only loss 289</p>
+<p>autoregressive 4</p>
+<p>reasoning 4</p>
+<p>text generation 34</p>
+<h3 id="h3-b">B</h3>
+<p>batched training 220</p>
+<p>benchmark-based evaluation 59</p>
+<p>BPE (byte pair encoding) 28</p>
+<h3 id="h3-c">C</h3>
+<p>chatbot interfaces 35</p>
+<p>checkpoints, saved model checkpoints, loading and </p>
+<p>evaluating 220–223</p>
+<p>clipped policy ratios</p>
+<p>computing 243–247</p>
+<p>stabilizing sequence-level GRPO using 242–248</p>
+<p>training with 247</p>
+<p>computation graph 207</p>
+<p>conditional probabilities 151</p>
+<p>conventional LLMs (large language models) 18</p>
+<p>CoT (chain-of-thought) 3</p>
+<p>prompting 100–103</p>
+<h3 id="h3-d">D</h3>
+<p>datasets</p>
+<p>generating for reasoning distillation 271</p>
+<p>library 83</p>
+<p>distillation 9, 267</p>
+<p>hard and soft 268–271</p>
+<p>knowledge 9</p>
+<p>overview of 268–271</p>
+<p>training loops for 291–296</p>
+<p>loss 286</p>
+<p>distilling reasoning models</p>
+<p>evaluating distilled model 296–300</p>
+<p>training examples 276–285</p>
+<p>dtype 39</p>
+<h3 id="h3-e">E</h3>
+<p>emergent properties 6</p>
+<p>encode method 28</p>
+<p>entropy tracking 236–240</p>
+<p>evaluating reasoning models 84</p>
+<p>building math verifiers 58</p>
+<p>extracting final answer box 66–71</p>
+<p>implementing wrapper for easier text </p>
+<p>generation 65</p>
+<p>loading pretrained model to generate text 61–64</p>
+<p>evaluation, loading evaluation dataset 81–84</p>
+<p>evaluation accuracy, calculating 232</p>
+<p>extracted answers, normalizing 71–74</p>
+<h3 id="h3-f">F</h3>
+<p>format reward, adding explicit 256–266</p>
+<p>more modifications, tips, and tricks 264–266</p>
+<p>training model to emit &lt;think&gt; tokens 261–264</p>
+<p>using &lt;think&gt; tokens 257–261</p>
+<p>full forward pass 14</p>
+<nav class="pager"><a class="prev" href="page-105.html" rel="prev"><span class="dir">上一页</span><span class="t">G.3 Downloading the scripts</span></a><a class="next" href="page-107.html" rel="next"><span class="dir">下一页</span><span class="t">G</span></a></nav>
+</main>
+</body>
+</html>

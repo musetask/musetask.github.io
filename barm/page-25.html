@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>3.7 Grading answers · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-24.html">
+<link rel="next" href="page-26.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 25 页 / 共 108 页</span></div>
+<h2 id="h2-grading-answers"><span class="num">3.7</span>Grading answers</h2>
+<p>Now we’ll build on the previous section’s mathematical equality-checking function to implement a robust grading function that can also handle tuple-like expressions, such as correctly comparing <code>"(14/3,</code> <code>2/3)"</code> and <code>"(14/3,</code> <code>4/6)"</code>.</p>
+<p>First, we’ll implement a Python helper function that splits such tuple-like expressions into individual subparts.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">def</span> split_into_parts(text):
+    result = [text]</code></pre><figcaption><span class="lbl">Listing 3.9</span>A helper function to split tuple-like expressions</figcaption></figure>
+<pre><code class="language-python">    <span class="tok-kw">if</span> text:
+        <span class="tok-kw">if</span> (
+            len<span class="tok-kw">(</span>text<span class="tok-kw">)</span> &gt;= <span class="tok-fn">2</span>
+            <span class="tok-kw">and</span> text<span class="tok-kw">[</span><span class="tok-fn">0</span><span class="tok-kw">]</span> <span class="tok-kw">in</span> <span class="tok-st">"(["</span> <span class="tok-kw">and</span> text<span class="tok-kw">[</span>-<span class="tok-fn">1</span><span class="tok-kw">]</span> <span class="tok-kw">in</span> <span class="tok-st">")]"</span>
+            <span class="tok-kw">and</span> <span class="tok-st">","</span> <span class="tok-kw">in</span> text<span class="tok-kw">[</span><span class="tok-fn">1</span>:-<span class="tok-fn">1</span><span class="tok-kw">]</span>
+        ):
+            items = [p.strip<span class="tok-kw">()</span> <span class="tok-kw">for</span> p <span class="tok-kw">in</span> text<span class="tok-kw">[</span><span class="tok-fn">1</span>:-<span class="tok-fn">1</span><span class="tok-kw">]</span>.split<span class="tok-kw">(</span><span class="tok-st">","</span><span class="tok-kw">)</span>]
+            <span class="tok-kw">if</span> all<span class="tok-kw">(</span>items<span class="tok-kw">)</span>:
+                result = items
+    <span class="tok-kw">else</span>:
+        result = []
+    <span class="tok-kw">return</span> result</code></pre>
+<p>The preceding <code>split_into_parts</code> function helps us handle answers with multiple components. If the input looks like a tuple or list, such as <code>(a,</code> <code>b)</code> or <code>[a,</code> <code>b]</code>, it splits the content on the commas and returns the individual pieces. (If the string is empty, it simply returns an empty list.) In essence, this function breaks down multipart answers into smaller parts that can be checked one by one.</p>
+<p>Before we implement the grading function, let’s take <code>split_into_parts</code> for a test drive on the tuple-like expression from earlier:</p>
+<pre><code class="language-python">split_into_parts<span class="tok-kw">(</span>normalize_text<span class="tok-kw">(r</span><span class="tok-st">"(14/3, 2/3)"</span><span class="tok-kw">))</span></code></pre>
+<p>This returns <code>['14/3',</code> <code>'2/3']</code>, as desired.</p>
+<p>Now, we can implement the <code>grade_answer</code> function (listing 3.10), which splits tuple-like expressions (if present) into subparts and then uses the <code>equality_check</code> function from the previous section to compare a generated answer to a reference (ground truth) answer.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">def</span> grade_answer(pred_text, gt_text):
+    result = <span class="tok-kw">False</span>
+    <span class="tok-kw">if</span> pred_text <span class="tok-kw">is</span> <span class="tok-kw">not</span> <span class="tok-kw">None</span> <span class="tok-kw">and</span> gt_text <span class="tok-kw">is</span> <span class="tok-kw">not</span> <span class="tok-kw">None</span>:
+        gt_parts = split_into_parts<span class="tok-kw">(</span>
+            normalize_text<span class="tok-kw">(</span>gt_text<span class="tok-kw">)</span>
+        <span class="tok-kw">)</span>
+        pred_parts = split_into_parts<span class="tok-kw">(</span>
+            normalize_text<span class="tok-kw">(</span>pred_text<span class="tok-kw">)</span>
+        <span class="tok-kw">)</span>
+        <span class="tok-kw">if</span> (gt_parts <span class="tok-kw">and</span> pred_parts
+           <span class="tok-kw">and</span> len<span class="tok-kw">(</span>gt_parts<span class="tok-kw">)</span> == len<span class="tok-kw">(</span>pred_parts<span class="tok-kw">)</span>):
+            result = all<span class="tok-kw">(</span>
+                equality_check<span class="tok-kw">(</span>gt, pred<span class="tok-kw">)</span>
+                <span class="tok-kw">for</span> gt, pred <span class="tok-kw">in</span> zip<span class="tok-kw">(</span>gt_parts, pred_parts<span class="tok-kw">)</span>
+            <span class="tok-kw">)</span>
+    <span class="tok-kw">return</span> result</code></pre><figcaption><span class="lbl">Listing 3.10</span>Function to grade predicted answers against the ground truth</figcaption></figure>
+<p>This implementation of the <code>grade_answer</code> function first assumes the prediction is incorrect (<code>False</code>) and continues only if both the prediction and the ground truth are non-empty. It then normalizes each side and splits them into subparts (for example, breaking <code>"(14/3,</code> <code>2/3)"</code> into <code>["14/3",</code> <code>"2/3"]</code>). If the number of subparts matches, it compares them one by one using <code>equality_check</code>. The result is returned as correct (<code>True</code>) only if all pairs match mathematically.</p>
+<p>We can think of the <code>grade_answer</code> function as an advanced version of the <code>equality_ check</code> function from the previous section. It can split tuple-like expressions and normalize the answers before applying the <code>equality_check</code> function.</p>
+<p>On simple expressions, it works similarly to <code>equality_check</code>, returning <code>True</code> if two expressions are mathematically equivalent:</p>
+<pre><code class="language-python">grade_answer<span class="tok-kw">(</span><span class="tok-st">"14/3"</span>, <span class="tok-kw">r</span><span class="tok-st">"\frac{14}{3}"</span><span class="tok-kw">)</span></code></pre>
+<p>In addition, it now also returns <code>True</code> for two mathematically equivalent tuple-like expressions:</p>
+<pre><code class="language-python">grade_answer(r"(14/3, 2/3)", "(14/3, 4/6)")</code></pre>
+<p>To check the <code>grade_answer</code> function more comprehensively, the following listing contains more diverse test cases.</p>
+<figure class="listing"><pre><code class="language-python">tests = [
+        (<span class="tok-st">"check_1"</span>, <span class="tok-st">"3/4"</span>, <span class="tok-kw">r</span><span class="tok-st">"\frac{3}{4}"</span>, <span class="tok-kw">True</span>),
+        (<span class="tok-st">"check_2"</span>, <span class="tok-st">"(3)/(4)"</span>, <span class="tok-kw">r</span><span class="tok-st">"3/4"</span>, <span class="tok-kw">True</span>),
+        (<span class="tok-st">"check_3"</span>, <span class="tok-kw">r</span><span class="tok-st">"\frac{\sqrt{8}}{2}"</span>, <span class="tok-st">"sqrt(2)"</span>, <span class="tok-kw">True</span>),
+        (<span class="tok-st">"check_4"</span>, <span class="tok-kw">r</span><span class="tok-st">"\(</span> <span class="tok-st">\frac{1}{2}</span> <span class="tok-st">+</span> <span class="tok-st">\frac{1}{6}</span> <span class="tok-st">\)"</span>, <span class="tok-st">"2/3"</span>, <span class="tok-kw">True</span>),
+        (<span class="tok-st">"check_5"</span>, <span class="tok-st">"(1, 2)"</span>, <span class="tok-kw">r</span><span class="tok-st">"(1,2)"</span>, <span class="tok-kw">True</span>),
+        (<span class="tok-st">"check_6"</span>, <span class="tok-st">"(2, 1)"</span>, <span class="tok-st">"(1, 2)"</span>, <span class="tok-kw">False</span>),
+        (<span class="tok-st">"check_7"</span>, <span class="tok-st">"(1, 2, 3)"</span>, <span class="tok-st">"(1, 2)"</span>, <span class="tok-kw">False</span>),
+        (<span class="tok-st">"check_8"</span>, <span class="tok-st">"0.5"</span>, <span class="tok-st">"1/2"</span>, <span class="tok-kw">True</span>),
+        (<span class="tok-st">"check_9"</span>, <span class="tok-st">"0.3333333333"</span>, <span class="tok-st">"1/3"</span>, <span class="tok-kw">False</span>),
+        (<span class="tok-st">"check_10"</span>, <span class="tok-st">"1,234/2"</span>, <span class="tok-st">"617"</span>, <span class="tok-kw">True</span>),
+        (<span class="tok-st">"check_11"</span>, <span class="tok-kw">r</span><span class="tok-st">"\text{2/3}"</span>, <span class="tok-st">"2/3"</span>, <span class="tok-kw">True</span>),
+        (<span class="tok-st">"check_12"</span>, <span class="tok-st">"50%"</span>, <span class="tok-st">"1/2"</span>, <span class="tok-kw">False</span>),
+        (<span class="tok-st">"check_13"</span>, <span class="tok-kw">r</span><span class="tok-st">"2\cdot 3/4"</span>, <span class="tok-st">"3/2"</span>, <span class="tok-kw">True</span>),
+        (<span class="tok-st">"check_14"</span>, <span class="tok-kw">r</span><span class="tok-st">"90^\circ"</span>, <span class="tok-st">"90"</span>, <span class="tok-kw">True</span>),
+        (<span class="tok-st">"check_15"</span>, <span class="tok-kw">r</span><span class="tok-st">"\left(\frac{3}{4}\right)"</span>, <span class="tok-st">"3/4"</span>, <span class="tok-kw">True</span>),
+        (<span class="tok-st">"check_16"</span>, <span class="tok-kw">r</span><span class="tok-st">"2²"</span>, <span class="tok-st">"2**2"</span>, <span class="tok-kw">True</span>),
+    ]</code></pre><figcaption><span class="lbl">Listing 3.11</span>Test cases and demo function to test the grader</figcaption></figure>
+<pre><code class="language-python"><span class="tok-kw">def</span> run_demos_table(tests):
+    header = (<span class="tok-st">"Test"</span>, <span class="tok-st">"Expect"</span>, <span class="tok-st">"Got"</span>, <span class="tok-st">"Status"</span>)
+    rows = []
+    <span class="tok-kw">for</span> name, pred, gtruth, expect <span class="tok-kw">in</span> tests:
+        got = grade_answer<span class="tok-kw">(</span>pred, gtruth<span class="tok-kw">)</span>
+        status = <span class="tok-st">"PASS"</span> <span class="tok-kw">if</span> got == expect <span class="tok-kw">else</span> <span class="tok-st">"FAIL"</span>
+        rows.append<span class="tok-kw">(</span>(name, str<span class="tok-kw">(</span>expect<span class="tok-kw">)</span>, str<span class="tok-kw">(</span>got<span class="tok-kw">)</span>, status)<span class="tok-kw">)</span>
+    data = [header] + rows
+    col_widths = [
+        max<span class="tok-kw">(</span>len<span class="tok-kw">(</span>row<span class="tok-kw">[</span>i<span class="tok-kw">])</span> <span class="tok-kw">for</span> row <span class="tok-kw">in</span> data<span class="tok-kw">)</span>
+        <span class="tok-kw">for</span> i <span class="tok-kw">in</span> range<span class="tok-kw">(</span>len<span class="tok-kw">(</span>header<span class="tok-kw">))</span>
+    ]</code></pre>
+<pre><code class="language-python">    <span class="tok-kw">for</span> row <span class="tok-kw">in</span> data:
+        line = <span class="tok-st">" | "</span>.join<span class="tok-kw">(</span>
+            row<span class="tok-kw">[</span>i<span class="tok-kw">]</span>.ljust<span class="tok-kw">(</span>col_widths<span class="tok-kw">[</span>i<span class="tok-kw">])</span>
+            <span class="tok-kw">for</span> i <span class="tok-kw">in</span> range<span class="tok-kw">(</span>len<span class="tok-kw">(</span>header<span class="tok-kw">))</span>
+        <span class="tok-kw">)</span>
+        print<span class="tok-kw">(</span>line<span class="tok-kw">)</span>
+    passed = sum<span class="tok-kw">(</span>r<span class="tok-kw">[</span><span class="tok-fn">3</span><span class="tok-kw">]</span> == <span class="tok-st">"PASS"</span> <span class="tok-kw">for</span> r <span class="tok-kw">in</span> rows<span class="tok-kw">)</span>
+    print<span class="tok-kw">(f</span><span class="tok-st">"</span>\n<span class="tok-st">Passed </span>{passed}<span class="tok-st">/</span>{len<span class="tok-kw">(</span>rows<span class="tok-kw">)</span>}<span class="tok-st">"</span><span class="tok-kw">)</span></code></pre>
+<p>The code in listing 3.11 is a simple test suite that uses a selection of <code>tests</code> to check whether the <code>grade_answer</code> function works as intended. The <code>tests</code> list contains tuples covering fractions, LaTeX notation, tuple inputs, decimals, percentages, and other tricky formats. The <code>run_demos_table</code> function then runs each test by calling <code>grade_ answer</code>, collects the outcomes, and organizes the results into a formatted table.</p>
+<p>Calling the <code>run_demos_table(tests)</code> function in listing 3.11 prints the following table:</p>
+<pre><code class="language-python">Test | Expect | Got | Status
+check_1 | True | True | PASS
+check_2 | True | True | PASS
+check_3 | True | True | PASS
+check_4 | True | True | PASS
+check_5 | True | True | PASS
+check_6 | False | False | PASS
+check_7 | False | False | PASS
+check_8 | True | True | PASS
+check_9 | False | False | PASS
+check_10 | True | True | PASS
+check_11 | True | True | PASS
+check_12 | False | False | PASS
+check_13 | True | True | PASS
+check_14 | True | True | PASS
+check_15 | True | True | PASS
+check_16 | True | True | PASS
+Passed 16/16</code></pre>
+<p>As you can see from the <code>PASS</code> results, the <code>grade_answer</code> function is relatively robust and can handle a variety of differently formatted expressions.</p>
+<h3 id="h3-exercise-3-1-adding-more-test-cases">Exercise 3.1: Adding more test cases</h3>
+<div class="lead">Try to think of additional test cases, ideally, challenging ones, and add them to the <code>run_demos_table()</code> function. Can you find cases where the check fails incorrectly?</div>
+<p>With <code>grade_answer</code> implemented, we now have the building blocks to evaluate the LLM. In the next section, we’ll load a math dataset on which to evaluate it.</p>
+<nav class="pager"><a class="prev" href="page-24.html" rel="prev"><span class="dir">上一页</span><span class="t">3.6 Verifying mathematical equivalence</span></a><a class="next" href="page-26.html" rel="next"><span class="dir">下一页</span><span class="t">3.8 Loading the evaluation dataset</span></a></nav>
+</main>
+</body>
+</html>

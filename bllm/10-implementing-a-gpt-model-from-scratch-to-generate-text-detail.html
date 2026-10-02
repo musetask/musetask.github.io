@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>数学推导详解 · 4.2–4.6 LayerNorm、GELU、残差与参数量 · Build a Large Language Model (From Scratch)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f5f8f'/%3E%3Cpath d='M9 8h9a4.5 4.5 0 0 1 0 9H9zm0 9h9a4.5 4.5 0 0 1 0 9H9z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+<script>(function(){try{var t=localStorage.getItem('pdf2html-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="10-implementing-a-gpt-model-from-scratch-to-generate-text.html">4. LayerNorm 与 GELU 的数学推导</a>
+  <button class="btn" id="themeToggle" aria-label="切换深色模式">&#9788;</button>
+</header>
+<main id="main">
+
+<h1>4.2–4.6 LayerNorm、GELU、残差连接与参数量：完整数学推导</h1>
+
+<div class="plainbox">
+<p>这一章的公式密度不高，但每一处都有<b>容易被跳过却必须理解的细节</b>：为什么方差除以 \(n\) 而不是 \(n-1\)、GELU 那个奇怪的 0.044715 从哪来、残差连接到底怎么救梯度、以及 <code>163,009,536</code> 这个数字是怎么加出来的。</p>
+<p>最后一部分是本章最有价值的部分：<b>把 1.63 亿参数逐项加出来</b>，原书只给结果。</p>
+</div>
+
+<h2 class="deriv">一、LayerNorm：为什么是 0 均值 1 方差</h2>
+
+<h3>1.1 定义</h3>
+
+<p>对某个 token 的 \(d\) 维激活向量 \(a=(a_1,\dots,a_d)\)，LayerNorm 把它标准化：</p>
+
+\[
+\mu = \frac{1}{d}\sum_{i=1}^{d} a_i, \qquad
+\sigma^2 = \frac{1}{d}\sum_{i=1}^{d}(a_i - \mu)^2
+\]
+
+\[
+\mathrm{LayerNorm}(a)_i = \gamma \cdot \frac{a_i - \mu}{\sqrt{\sigma^2 + \epsilon}} + \beta
+\]
+
+<p>其中 \(\gamma,\beta\in\mathbb{R}^d\) 是<b>可学习的缩放和平移参数</b>，\(\epsilon\) 是防除零的小常数（PyTorch 默认 1e-5）。</p>
+
+<div class="key">
+<span class="tag">标准化之后为什么还要 \(\gamma,\beta\)</span>
+<p>如果只标准化，输出被强行限制在均值 0、方差 1 里，<b>层就失去了表达任意变换的能力</b>——后续层无论怎么加权，得到的分布形状都差不多。加上 \(\gamma,\beta\) 后，网络可以自己学回「要不要标准化」：把 \(\gamma\) 学到接近 0 就等于关掉这一层的归一化。这是 LayerNorm 相对 BatchNorm 的一个优势——<b>它不依赖 batch 统计量，所以训练和推理行为一致</b>。</p>
+<p>GPT-2 的 <code>nn.LayerNorm</code> 默认 <code>elementwise_affine=True</code>，即 \(\gamma,\beta\) 存在且可训练，768 维就是 1536 个参数。这解释了后面参数量表里的 <code>2,048</code> 或 <code>1,536</code>。</p>
+</div>
+
+<h3>1.2 用原书数字手算一遍</h3>
+
+<p>原书 4.2 节构造的 <code>nn.Sequential(nn.Linear(5,6), nn.ReLU())</code> 输出第一行是：</p>
+
+<pre><code>tensor([<span class="t-num">0.2260</span>, <span class="t-num">0.3470</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.2216</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>])</code></pre>
+
+<p>三个 0 是 ReLU 砍掉的负数。对这六个数做 LayerNorm：</p>
+
+<ol class="steps">
+<li><b>均值</b>：\(\mu = (0.2260+0.3470+0+0.2216+0+0)/6 = 0.7946/6 = 0.1324\)</li>
+<li><b>方差</b>：偏差为 \([0.0936,\ 0.2146,\ -0.1324,\ 0.0892,\ -0.1324,\ -0.1324]\)，平方和 \(= 0.00876+0.04605+0.01753+0.00796+0.01753+0.01753 = 0.11536\)，除以 6 得 \(\sigma^2 = 0.019227\)，\(\sigma = 0.1387\)</li>
+<li><b>归一化</b>：逐项除以 0.1387</li>
+</ol>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>\(a_i\)</th><th>\(a_i - \mu\)</th><th>\(\dfrac{a_i-\mu}{\sigma}\)</th><th>ReLU 前的值</th></tr></thead>
+<tbody>
+<tr><td>0.2260</td><td>0.0936</td><td><b>0.6748</b></td><td>0.05</td></tr>
+<tr><td>0.3470</td><td>0.2146</td><td><b>1.5474</b></td><td>0.27</td></tr>
+<tr><td>0.0000</td><td>−0.1324</td><td><b>−0.9551</b></td><td>−0.22</td></tr>
+<tr><td>0.2216</td><td>0.0892</td><td><b>0.6431</b></td><td>0.13</td></tr>
+<tr><td>0.0000</td><td>−0.1324</td><td><b>−0.9551</b></td><td>−0.24</td></tr>
+<tr><td>0.0000</td><td>−0.1324</td><td><b>−0.9551</b></td><td>−0.11</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>归一化后：均值 0.0000、方差 1.0000，与原书打印的 <code>Mean: tensor([[-0.0000], [0.0000]])</code> / <code>Variance: tensor([[1.0000], [1.0000]])</code> 一致。</p>
+
+<p>注意第 3、5、6 行的原始值都是 0，但<b>归一化后都是 −0.9551 而不是 0</b>。ReLU 抹掉的是「小于 0 的部分」，归一化后它们相对于均值仍然是偏低的。<b>ReLU 输出里的 0 携带了信息（这个维度被压制了），LayerNorm 恰恰把这个信息抹平了</b>——这是原书刻意先 ReLU 再 LayerNorm 的原因之一。</p>
+
+<h3>1.3 有偏方差：<code>unbiased=False</code> 的含义</h3>
+
+<p>原书特意用了一个 callout 解释这个参数。样本方差有两个版本：</p>
+
+\[
+\sigma^2_{\text{biased}} = \frac{1}{d}\sum (a_i-\mu)^2 \qquad
+\sigma^2_{\text{unbiased}} = \frac{1}{d-1}\sum (a_i-\mu)^2
+\]
+
+<p>无偏版本（除以 \(d-1\)）叫 <b>Bessel 修正</b>，修正的是「用有限样本估计总体方差时系统性偏低」这个统计偏差。两者比值恒为 \(d/(d-1)\)。</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>维度 \(d\)</th><th>有偏 \(1/d\)</th><th>无偏 \(1/(d-1)\)</th><th>绝对差</th><th>相对差</th></tr></thead>
+<tbody>
+<tr><td>6（原书例子）</td><td>0.019227</td><td>0.023072</td><td>0.003845</td><td>20%</td></tr>
+<tr><td>768（GPT-2）</td><td>0.001302</td><td>0.001304</td><td>0.0000017</td><td>0.13%</td></tr>
+<tr><td>12,288（GPT-3）</td><td>0.0000814</td><td>0.0000814</td><td>~7e-10</td><td>0.008%</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>维度越大差异越小，这正是原书说的 <i>"For LLMs, where the embedding dimension n is significantly large, the difference between using n and n−1 is practically negligible."</i> 原书用 6 维做演示时差了 20%，看起来很显著，但那是演示尺寸的产物。</p>
+
+<div class="warn">
+<span class="tag">真正的原因是兼容性，不是数学</span>
+<p>原书自己说了：<i>"I chose this approach to ensure compatibility with the GPT-2 model's normalization layers and because it reflects TensorFlow's default behavior."</i></p>
+<p>原始 GPT-2 用 TensorFlow 实现，LayerNorm 默认走有偏路径。如果我们在 PyTorch 里用无偏，会导致 <b>5.4 节加载 OpenAI 权重后每一层都差一点点</b>，误差累积到几十层后模型输出明显偏离。<b>实现复现时，"哪个是对的"不如"原作者用的哪个"重要。</b></p>
+</div>
+
+<h3>1.4 LayerNorm vs BatchNorm</h3>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th></th><th>BatchNorm</th><th>LayerNorm</th></tr></thead>
+<tbody>
+<tr><td>沿哪个维度统计</td><td>batch 维（跨样本）</td><td>特征维（跨维度）</td></tr>
+<tr><td>每个样本的统计量</td><td>需要整个 batch</td><td>自己就够了</td></tr>
+<tr><td>训练 / 推理是否一致</td><td><b>不一致</b>（用滑动平均）</td><td>一致</td></tr>
+<tr><td>依赖 batch size</td><td>是</td><td>否</td></tr>
+<tr><td>变长序列</td><td>padding 会污染统计量</td><td>不受影响</td></tr>
+<tr><td>为什么 LLM 选它</td><td colspan="2">autoregressive 训练中每步序列长度不同、batch 常常很小，BatchNorm 的统计量不可靠</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>GPT-2 124M 有 12 个 block × 2 个 LayerNorm + 1 个 final_norm = <b>25 个</b>，全部沿特征维归一化。</p>
+
+<h2 class="deriv">二、GELU：0.044715 从哪来</h2>
+
+<h3>2.1 精确定义</h3>
+
+<p>原书给出：<b>GELU(x) = x · Φ(x)</b>，其中 \(\Phi\) 是标准正态分布的累积分布函数：</p>
+
+\[
+\Phi(x) = \int_{-\infty}^{x} \frac{1}{\sqrt{2\pi}}e^{-t^2/2}\,dt
+\]
+
+<p>写成显式形式：</p>
+
+\[
+\mathrm{GELU}(x) = x \cdot \frac{1}{2}\left(1 + \mathrm{erf}\!\left(\frac{x}{\sqrt{2}}\right)\right)
+\]
+
+<div class="key">
+<span class="tag">GELU 是一个「软开关」</span>
+<p>\(\Phi(x)\) 可以读作「一个标准正态随机变量小于 \(x\) 的概率」。所以 GELU(x) = x × P(小于 x)。</p>
+<p>从行为看：</p>
+<p><b>x 很大（+3）：</b>\(\Phi(3)=0.9987\)，输出 \(\approx 0.999x\)，<b>几乎原样通过</b>。</p>
+<p><b>x 很小（−3）：</b>\(\Phi(-3)=0.0013\)，输出 \(\approx -0.004\)，<b>几乎被压成 0</b>。</p>
+<p><b>x = 0：</b>\(\Phi(0)=0.5\)，但 \(x=0\)，所以输出 0。</p>
+<p><b>和 ReLU 对比的关键差异：</b>ReLU 在 0 处有<b>不可导的尖角</b>，GELU 在 0 处光滑，且在 <b>x 略小于 0 时输出小负值而非硬截断</b>。这让梯度在 0 附近仍然连续。</p>
+</div>
+
+<h3>2.2 那个近似式</h3>
+
+<p>原书说实践中用曲线拟合得到的近似（GPT-2 本身也是用这个训练的）：</p>
+
+\[
+\mathrm{GELU}(x) \approx \frac{x}{2}\left(1 + \tanh\!\left[\sqrt{\tfrac{2}{\pi}}\,(x + 0.044715\,x^3)\right]\right)
+\]
+
+<p>对应代码：</p>
+
+<pre><code>return <span class="t-num">0.5</span> * x * (<span class="t-num">1</span> + torch.tanh(
+    torch.sqrt(torch.tensor(<span class="t-num">2.0</span> / torch.pi)) * (x + <span class="t-num">0.044715</span> * torch.pow(x, <span class="t-num">3</span>))
+)</code></pre>
+
+<p>逐项拆解：</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>项</th><th>值</th><th>来源</th></tr></thead>
+<tbody>
+<tr><td>\(\sqrt{2/\pi}\)</td><td>0.797885</td><td>高斯积分 \(\int e^{-t^2/2}dt = \sqrt{2\pi}\) 的倒数形式，保证 tanh 近似与 erf 近似的斜率匹配</td></tr>
+<tr><td>\(0.044715\)</td><td>—</td><td><b>纯经验值</b>，最小化全定义域上最大绝对误差的曲线拟合结果，没有任何理论推导</td></tr>
+<tr><td>\(x^3\)</td><td>—</td><td>三次修正项，用来补偿 tanh 尾部比 erf 尾部衰减更快造成的偏差</td></tr>
+<tr><td><code>torch.pi</code></td><td>3.14159265</td><td>PyTorch 里的 π 常量（<b>不是</b>可训练参数）</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>近似精度实测（与精确 \(\mathrm{GELU}(x)=x\Phi(x)\) 对比）：</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>\(x\)</th><th>精确 \(x\Phi(x)\)</th><th>tanh 近似</th><th>绝对误差</th></tr></thead>
+<tbody>
+<tr><td>−2</td><td>−0.0455</td><td>−0.0454</td><td>0.0001</td></tr>
+<tr><td>−1</td><td>−0.1587</td><td>−0.1588</td><td>0.0001</td></tr>
+<tr><td>−0.5</td><td>−0.1543</td><td>−0.1543</td><td>0.0000</td></tr>
+<tr><td>0</td><td>0.0000</td><td>0.0000</td><td>0.0000</td></tr>
+<tr><td>0.5</td><td>0.3457</td><td>0.3457</td><td>0.0000</td></tr>
+<tr><td>1</td><td>0.8413</td><td>0.8412</td><td>0.0001</td></tr>
+<tr><td>2</td><td>1.9545</td><td>1.9546</td><td>0.0001</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>最大误差在 1e-4 量级，对训练完全够用。之所以要近似而不是直接算 <code>erf</code>，是因为 <b>erf 在 GPU 上没有对应的融合算子</b>，而 tanh 是深度学习框架里高度优化的基本算子。</p>
+
+<div class="warn">
+<span class="tag">注意非单调</span>
+<p>GELU 在负半轴有<b>极小值</b>：\(x\approx-0.7518\) 时 GELU(x) 达到约 −0.17，之后才回升到 0。所以 <code>-0.5 → -0.1543</code>，而 <code>-1 → -0.1587</code>，<b>-1 的输出反而比 -0.5 更负</b>。这与 ReLU「越负越接近 0」的行为不同，是 GELU 曲线在图 4.8 中那个拐弯。</p>
+</div>
+
+<h2 class="deriv">三、残差连接：怎么把 2e-4 变成 0.22</h2>
+
+<p>原书 4.4 节用五层网络演示梯度消失。数字非常有说服力，值得完整看一遍。</p>
+
+<h3>3.1 梯度怎么走的</h3>
+
+<p>没有残差时，梯度要<b>串行</b>穿过全部 5 层：</p>
+
+\[
+\frac{\partial \mathcal{L}}{\partial W_1} = \frac{\partial \mathcal{L}}{\partial y} \prod_{l=5}^{2} \frac{\partial y}{\partial h_l}\frac{\partial h_l}{\partial W_l}\frac{\partial h_l}{\partial h_{l-1}}
+\]
+
+<p>每一项都带一个小于 1 的雅可比因子（Linear 的雅可比是权重矩阵，ReLU/GELU 的导数 \(\le 1\)）。5 层相乘，<b>指数级衰减</b>。</p>
+
+<p>加了残差后，前向是 \(\mathbf{x}_{l+1} = \mathbf{x}_l + f(\mathbf{x}_l)\)，反向求导时 <code>backward()</code> 会<b>把梯度同时分两路</b>：一路经过 \(f\)，一路直接穿过加号（因为 \(\partial(\mathbf{x}_l + f)/\partial \mathbf{x}_l = I + f'\)，单位矩阵项保证了梯度原封不动地传下去）。</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>层</th><th>无残差：梯度均值</th><th>有残差：梯度均值</th><th>放大倍数</th></tr></thead>
+<tbody>
+<tr><td>layers.4（最靠近 loss）</td><td>0.005050</td><td>1.325854</td><td>263×</td></tr>
+<tr><td>layers.3</td><td>0.001399</td><td>0.266573</td><td>191×</td></tr>
+<tr><td>layers.2</td><td>0.000715</td><td>0.328970</td><td>460×</td></tr>
+<tr><td>layers.1</td><td>0.000120</td><td>0.206941</td><td>1723×</td></tr>
+<tr><td>layers.0（最远）</td><td>0.000202</td><td>0.221698</td><td><b>1099×</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>最关键的一行是最后一行的 <b>1099 倍</b>。无残差时 layer 0 的梯度是 0.000202——这个数量级在 float32（有效位约 7 位十进制）下已经损失了 3 位精度，再多几层就完全消失了。有残差时是 0.2217，<b>健康地落在 0.1 量级</b>。</p>
+
+<p>用首尾比值看衰减：无残差 \(0.000202/0.005050 = 4.0\%\)，有残差 \(0.221698/1.325854 = 16.7\%\)。5 层网络的衰减率从每层 0.53 变成每层 0.70，<b>层数越多差距越大</b>。GPT-2 有 12 层，差距会进一步拉开。</p>
+
+<div class="key">
+<span class="tag">残差连接是架构的必需品，不是优化技巧</span>
+<p>原书 4.5 节的 <code>TransformerBlock</code> 里每个子层都有残差：</p>
+<p><code>residual = x; x = self.norm1(x); x, _ = self.att(x, x, x); x = self.dropout(x); x = x + residual</code></p>
+<p>注意代码里的 <code>residual = x</code> 是在 <b>norm 之前</b>保存的。这不是随意写的——<b>残差路径上不插入任何非线性或归一化</b>，梯度才能干净地直达。LayerNorm 和 Dropout 都只在残差分支内部生效。</p>
+</div>
+
+<h2 class="deriv">四、参数量：把 163,009,536 逐项加起来</h2>
+
+<p>原书 4.6 节直接给出 <code>Total number of parameters: 163,009,536</code>，但没给过程。用 <code>GPT_CONFIG_124M</code>（<code>vocab_size=50257</code>, <code>context_length=1024</code>, <code>emb_dim=768</code>, <code>n_heads=12</code>, <code>n_layers=12</code>, <code>qkv_bias=False</code>）可以完整还原。</p>
+
+<h3>4.1 逐模块拆解</h3>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>模块</th><th>计算</th><th>参数量</th></tr></thead>
+<tbody>
+<tr><td><code>tok_emb</code></td><td>\(50257 \times 768\)</td><td>38,597,376</td></tr>
+<tr><td><code>pos_emb</code></td><td>\(1024 \times 768\)</td><td>786,432</td></tr>
+<tr><td colspan="3" style="background:var(--accent-soft)"><b>每个 transformer block（共 12 个）</b></td></tr>
+<tr><td>&nbsp;&nbsp;<code>W_query</code></td><td>\(768 \times 768\), <b>无 bias</b>（<code>qkv_bias=False</code>）</td><td>589,824</td></tr>
+<tr><td>&nbsp;&nbsp;<code>W_key</code></td><td>\(768 \times 768\), 无 bias</td><td>589,824</td></tr>
+<tr><td>&nbsp;&nbsp;<code>W_value</code></td><td>\(768 \times 768\), 无 bias</td><td>589,824</td></tr>
+<tr><td>&nbsp;&nbsp;<code>out_proj</code></td><td>\(768 \times 768 + 768\)（<b>有 bias</b>）</td><td>590,592</td></tr>
+<tr><td>&nbsp;&nbsp;<b>注意力小计</b></td><td>\(4 \times 768^2 + 768\)</td><td><b>2,360,064</b></td></tr>
+<tr><td>&nbsp;&nbsp;<code>ff[0]</code></td><td>\(768 \times 3072 + 3072\)</td><td>2,362,368</td></tr>
+<tr><td>&nbsp;&nbsp;<code>ff[2]</code></td><td>\(3072 \times 768 + 768\)</td><td>2,360,064</td></tr>
+<tr><td>&nbsp;&nbsp;<b>前馈小计</b></td><td>\(768\cdot3072 + 3072 + 3072\cdot768 + 768\)</td><td><b>4,722,432</b></td></tr>
+<tr><td>&nbsp;&nbsp;<code>norm1</code> + <code>norm2</code></td><td>\(2 \times (768 \times 2)\)</td><td>3,072</td></tr>
+<tr><td>&nbsp;&nbsp;<b>单 block 合计</b></td><td>\(2{,}360{,}064 + 4{,}722{,}432 + 3{,}072\)</td><td><b>7,085,568</b></td></tr>
+<tr><td colspan="3" style="background:var(--accent-soft)"><b>其余</b></td></tr>
+<tr><td>12 个 block</td><td>\(7{,}085{,}568 \times 12\)</td><td>85,026,816</td></tr>
+<tr><td><code>final_norm</code></td><td>\(768 \times 2\)</td><td>1,536</td></tr>
+<tr><td><code>out_head</code></td><td>\(768 \times 50257\), <b>无 bias</b></td><td>38,597,376</td></tr>
+<tr><td colspan="2" style="font-weight:700">合计</td><td style="font-weight:700">163,009,536</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>验算：\(38597376 + 786432 + 85026816 + 1536 + 38597376 = 163{,}009{,}536\)。<b>与原书完全一致。</b> ✓</p>
+
+<div class="warn">
+<span class="tag">最容易算错的三处</span>
+<p><b>① <code>out_proj</code> 的 bias。</b>三个 QKV 矩阵没 bias（<code>qkv_bias=False</code>），但 <code>out_proj</code> <b>有</b> bias。少算 768×12 = 9,216。</p>
+<p><b>② 两个 LayerNorm。</b>每个 block 有 <code>norm1</code> 和 <code>norm2</code>，各 768×2 = 1,536，共 3,072。加上 <code>final_norm</code>，全书共 25 个 LayerNorm，\(25 \times 1536 = 38{,}400\) 个参数。</p>
+<p><b>③ <code>out_head</code> 无 bias。</b>原书写 <code>nn.Linear(cfg["emb_dim"], cfg["vocab_size"], bias=False)</code>。如果算成 38,598,144 就错了。</p>
+</div>
+
+<h3>4.2 为什么是 1.63 亿而不是 1.24 亿</h3>
+
+<p>因为 <code>tok_emb</code> 和 <code>out_head</code> 的形状<b>完全相同</b>：</p>
+
+<pre><code>Token embedding layer shape: torch.Size([<span class="t-num">50257</span>, <span class="t-num">768</span>])
+Output layer shape:         torch.Size([<span class="t-num">50257</span>, <span class="t-num">768</span>])</code></pre>
+
+<p>原始 GPT-2 用了 <b>weight tying</b>：输出层复用 embedding 的权重，不存第二份。减掉 <code>out_head</code>：</p>
+
+\[
+163{,}009{,}536 - 38{,}597{,}376 = 124{,}412{,}160
+\]
+
+<p>✓ 与原书打印的 <code>124,412,160</code> 一致。这才是「GPT-2 small 是 124M」的来源。</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>组成</th><th>参数量</th><th>占比</th></tr></thead>
+<tbody>
+<tr><td><code>out_head</code></td><td>38,597,376</td><td>23.7%</td></tr>
+<tr><td><code>tok_emb</code></td><td>38,597,376</td><td>23.7%</td></tr>
+<tr><td>12 × 前馈</td><td>56,669,184</td><td>34.8%</td></tr>
+<tr><td>12 × 注意力</td><td>28,320,768</td><td>17.4%</td></tr>
+<tr><td><code>pos_emb</code></td><td>786,432</td><td>0.5%</td></tr>
+<tr><td>25 × LayerNorm</td><td>38,400</td><td>0.02%</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>值得注意的是：<b>两个 embedding 层合计占掉模型的 47.4%</b>，而「Transformer 的计算主体」（注意力 + 前馈）只占 52.2%。词表大小对参数量有压倒性影响——这也是后来 LLaMA 把词表缩到 32k 的原因之一。</p>
+
+<h3>4.3 习题 4.1：前馈 vs 注意力</h3>
+
+<p>原书习题问「前馈模块和注意力模块各有多少参数」。从上表：</p>
+
+\[
+\frac{4{,}722{,}432}{2{,}360{,}064} \approx 2.001
+\]
+
+<p><b>恰好 2 倍。</b>这不是巧合：前馈是 <code>768 → 3072 → 768</code>，两个矩阵各约 236 万；注意力是四个 768×768，也约 236 万。GPT-2 的 <code>4 × d</code> 中间维度让两者参数量精确相等。</p>
+
+<p>参数量相等但<b>计算量与作用完全不同</b>：前馈是逐位置（position-wise）的非线性变换，注意力是 token 间的信息交换。这也是为什么 GPT-2 的 <code>n_layers=12</code>、<code>n_heads=12</code> 被设成相等——一层一个头，纯粹是工程惯例。</p>
+
+<h3>4.4 内存占用</h3>
+
+<p>原书最后算内存：假设 fp32（每参数 4 字节）：</p>
+
+\[
+\frac{163{,}009{,}536 \times 4}{1024^2} = 621.83\ \text{MB}
+\]
+
+<p>✓ 与原书的 <code>Total size of the model: 621.83 MB</code> 一致。</p>
+
+<p>几个推论：</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>精度</th><th>字节/参数</th><th>124M（weight tying 后）</th><th>备注</th></tr></thead>
+<tbody>
+<tr><td>fp32</td><td>4</td><td>474.59 MB</td><td>默认，训练用</td></tr>
+<tr><td>fp16 / bf16</td><td>2</td><td>237.30 MB</td><td>推理常用</td></tr>
+<tr><td>int8</td><td>1</td><td>118.65 MB</td><td>量化</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>训练时显存占用远不止模型大小：还要存 AdamW 的两个动量（<code>m</code> 和 <code>v</code>，各一份 fp32），加上梯度。粗算 <b>参数量 × 4 字节 × 4</b> ≈ 模型权重的 4 倍，即 124M 模型训练要约 1.9 GB 只用于状态，激活值和临时缓冲还要另算。这就是原书 5.2 节提醒「预训练很贵」、以及第 6、7 章改用 <code>lr=5e-5</code> 做微调（而非预训练的 4e-4）的原因。</p>
+
+<h2 class="deriv">五、一句话串起本章</h2>
+
+<div class="key">
+<span class="tag">四个数学细节如何互相咬合</span>
+<p><b>LayerNorm（有偏方差）</b>让每层输出分布稳定，防止激活值随深度漂移。</p>
+<p><b>GELU（平滑软开关）</b>提供非线性，且在 0 附近梯度连续，不会制造断崖。</p>
+<p><b>残差连接（梯度旁路）</b>让梯度有了一条不经过任何非线性的直达路径，深度才能堆到 12 层甚至 96 层。</p>
+<p><b>参数量（47% 在 embedding）</b>决定了词表大小是模型设计的一个前置约束，而不是纯数据问题。</p>
+</div>
+
+<nav class="deriv-nav">
+<a href="09-coding-attention-mechanisms-detail.html"><span class="dir">上一章</span>3.3–3.5 自注意力与因果掩码</a>
+<a href="math-detail.html"><span class="dir">索引</span>全部数学推导详解</a>
+<a href="11-pretraining-on-unlabeled-data-detail.html"><span class="dir">下一章</span>5. 交叉熵、困惑度与采样</a>
+</nav>
+
+</main>
+<nav class="chapnav" aria-label="导航"><div class="chapnav-inner">
+<a class="prev" href="09-coding-attention-mechanisms-detail.html"><span class="lbl">上一章</span><span class="nm">3. 自注意力机制的数学推导</span></a><a class="next" href="11-pretraining-on-unlabeled-data-detail.html"><span class="lbl">下一章</span><span class="nm">5. 交叉熵、困惑度与采样</span></a>
+</div></nav>
+<script src="app.js"></script>
+<script defer src="assets/katex/katex.min.js"></script>
+<script defer src="assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>

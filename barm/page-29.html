@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>Improving reasoning with inference-time scaling · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-28.html">
+<link rel="next" href="page-30.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 29 页 / 共 108 页</span></div>
+<h1 id="h1-improving-reasoning-with-inference-time-scaling">Improving reasoning with inference-time scaling</h1>
+<p class="summary">This chapter covers</p>
+<ul><li>Prompting an LLM to explain its reasoning to improve answer accuracy</li><li>Modifying the text generation function to produce diverse responses</li><li>Improving reasoning reliability by sampling multiple responses</li></ul>
+<p>Reasoning performance and answer accuracy can be improved without retraining or modifying the model itself. As shown in the overview in figure 4.1, this chapter covers two inference-time-scaling methods. These methods operate during inference, when the model generates text. As you’ll see later in this chapter, both methods more than double the accuracy of the base model used in previous chapters.</p>
+<p>We’ll first look at what inference-time scaling is, before we discuss the inference methods shown in figure 4.1.</p>
+<figure><a class="zoom" href="assets/figure-4.1.png" tabindex="-1"><img src="assets/figure-4.1.png" alt="" width="1143" height="695" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 4.1</span>A model of the topics covered in this book. This chapter focuses on inference-time-scaling techniques, which improve reasoning without additional training (stage 3). In particular, it extends the text generation function and implements a voting-based method to improve answer accuracy. The next chapter will introduce another inference-time-scaling approach where the model iteratively refines its own answers.</figcaption></figure>
+<h2 id="h2-introduction-to-inference-time-scaling"><span class="num">4.1</span>Introduction to inference-time scaling</h2>
+<p>There are two main strategies to improve reasoning:</p>
+<ul><li>Increasing training compute</li></ul>
+<ul><li>Increasing inference compute (also known as inference-time scaling or test-time scaling)</li></ul>
+<aside><span class="tag">Note</span>In machine learning and AI, “compute” refers to the computational resources required to train or run a model.</aside>
+<p>These two approaches are illustrated in figure 4.2, and the plots make it look like we can improve reasoning either by increasing training-time compute <em>or</em> inference-time compute. In reality, LLMs are usually designed to improve reasoning by combining heavy training-time compute (a topic of future chapters) <em>and</em> increased inference-time compute (the topic of this chapter).</p>
+<p><em>Inference-time compute scaling</em> (also called <em>inference-time scaling</em> or <em>test-time compute scaling</em>) means increasing computation at answer-generation time, after the model has already been trained, to improve the quality of its response. Instead of changing the </p>
+<figure><a class="zoom" href="assets/figure-4.2.png" tabindex="-1"><img src="assets/figure-4.2.png" alt="" width="1143" height="656" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 4.2</span>Comparing inference-time scaling (discussed in this chapter) and training-time scaling (discussed in chapters 6-8). Both approaches improve accuracy by using more compute, but inference-time scaling does this on the fly, without changing the model’s weight parameters. The plots are inspired by OpenAI’s article introducing its first reasoning model (https://openai.com/index/learning-to-reason-with-llms/).</figcaption></figure>
+<p>model’s weights, we let the trained model do more work per question, such as by generating more tokens and “thinking” longer, sampling multiple answers, or successively refining its answer.</p>
+<p>In this book, we’ll focus on three practical and foundational inference-time techniques (illustrated in figure 4.3):</p>
+<ul><li>Method 1: Extending the <em>chain-of-thought</em> response to prompt the model to explain its reasoning. This simple technique can substantially improve accuracy. </li></ul>
+<ul><li>Method 2: Parallel sampling via <em>self-consistency</em>, where the model generates multiple responses and selects the most frequent one.</li></ul>
+<ul><li>Method 3: Iterative <em>self-refinement</em>, where the model reviews and improves its own reasoning and answers across multiple steps.</li></ul>
+<p>These methods fall under the category of inference-time scaling because they cause the model to generate more tokens, which increases compute requirements during inference. They improve accuracy while making inference more expensive, which is a common theme of inference-time-scaling techniques. In this chapter, we’ll discuss the first two methods; the third will be covered in chapter 5.</p>
+<figure><a class="zoom" href="assets/figure-4.3.png" tabindex="-1"><img src="assets/figure-4.3.png" alt="" width="1143" height="956" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 4.3</span>Three inference-time methods to improve reasoning. The first modifies the prompt to encourage step-by-step reasoning, and the second samples multiple answers and selects the most frequent one. Those two approaches are discussed in this chapter. The third method, in which the model iteratively refines its own response, is introduced in the next chapter.</figcaption></figure>
+<p>The first method improves answer accuracy by prompting the model to explain its reasoning, a simple yet highly effective approach.</p>
+<p>The second method samples multiple responses for the same input and selects the most frequent one. We’ll do this by extending the text generation function introduced in the previous chapter and implementing <em>self-consistency</em>, a voting-based inference-time-scaling technique.</p>
+<p>In total, I evaluated more than ten different inference-time-scaling techniques across thousands of experiments. I chose the three methods illustrated in figure 4.3 because they combine three desirable properties: they improve accuracy on the model used here, they represent the main practical paradigms of inference-time scaling, and they are simple enough to implement from scratch without too much extra machinery. They also cover the two main patterns: generating longer responses and generating multiple responses.</p>
+<p>Longer responses that include reasoning and explanations (methods 1 and 3) are what we typically expect from reasoning models. Parallel sampling (method 2) is also widely used in production systems, such as Claude 4 (as described in the May 2025 introduction of Claude 4: <a href="https://www.anthropic.com/news/claude-4">https://www.anthropic.com/news/claude-4</a>).</p>
+<nav class="pager"><a class="prev" href="page-28.html" rel="prev"><span class="dir">上一页</span><span class="t">Loading the .jsonl file programmatically</span></a><a class="next" href="page-30.html" rel="next"><span class="dir">下一页</span><span class="t">4.2 Loading a pretrained model</span></a></nav>
+</main>
+</body>
+</html>

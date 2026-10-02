@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>数学推导详解 · A.3–A.4 链式法则与自动微分 · Build a Large Language Model (From Scratch)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f5f8f'/%3E%3Cpath d='M9 8h9a4.5 4.5 0 0 1 0 9H9zm0 9h9a4.5 4.5 0 0 1 0 9H9z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+<script>(function(){try{var t=localStorage.getItem('pdf2html-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="14-appendix-a-introduction-to-pytorch.html">A. 链式法则与自动微分</a>
+  <button class="btn" id="themeToggle" aria-label="切换深色模式">&#9788;</button>
+</header>
+<main id="main">
+
+<h1>A.3–A.4 链式法则与自动微分：完整数学推导</h1>
+
+<div class="plainbox">
+<p>原书在 A.4 节明确说：<i>"a deep mathematical understanding of gradients is not required to follow the contents of this book."</i> 这个态度是对的——但它也意味着<b>全书唯一一次手算梯度的地方（−0.0898 和 −0.0817）没有推导</b>。</p>
+<p>这一页把那两个数字算出来。原书的 logistic regression 例子足够小，可以<b>逐项手算并完全对上</b>，这是理解 PyTorch 训练循环最好的入口。</p>
+</div>
+
+<h2 class="deriv">一、计算图：把公式画成图</h2>
+
+<p>原书 A.3 节的例子是<b>逻辑回归</b>（单层神经网络）：</p>
+
+<pre><code>y  = torch.tensor([<span class="t-num">1.0</span>])     <span class="t-com"># 真实标签</span>
+x1 = torch.tensor([<span class="t-num">1.1</span>])     <span class="t-com"># 输入特征</span>
+w1 = torch.tensor([<span class="t-num">2.2</span>])     <span class="t-com"># 权重参数</span>
+b  = torch.tensor([<span class="t-num">0.0</span>])     <span class="t-com"># 偏置</span>
+
+z = x1 * w1 + b       <span class="t-com"># 线性层</span>
+a = torch.sigmoid(z)  <span class="t-com"># 激活</span>
+loss = F.binary_cross_entropy(a, y)   <span class="t-com"># 损失</span></code></pre>
+
+<p>用公式写就是三层：</p>
+
+\[
+z = x_1 w_1 + b, \qquad a = \sigma(z), \qquad \mathcal{L} = -\left[y\log a + (1-y)\log(1-a)\right]
+\]
+
+<p>其中 sigmoid 是 \(\sigma(z) = \dfrac{1}{1+e^{-z}}\)。</p>
+
+<div class="key">
+<span class="tag">为什么要引入计算图</span>
+<p>因为<b>求偏导数的手工过程是机械且易错的</b>：4 个节点要写 4 条局部导数链，还要处理重复路径（如 \(w_1\) 同时出现在 \(z\) 的乘法和链上）。层数一多，手算完全不现实。</p>
+<p>PyTorch 的做法：<b>前向时记录每一步操作，反向时按链式法则从 loss 往回走</b>。这就是 autograd 引擎的全部职责。原书把它称为 <i>"reverse-mode automatic differentiation"</i>——<b>反向模式</b>，指从输出往输入求导。</p>
+</div>
+
+<h2 class="deriv">二、链式法则：手算两个梯度</h2>
+
+<h3>2.1 逐步求局部导数</h3>
+
+<p>反向传播只需要三个局部导数：</p>
+
+<p><b>① 损失对 \(a\) 的导数。</b>二元交叉熵对预测值的导数：</p>
+
+\[
+\frac{\partial \mathcal{L}}{\partial a} = -\frac{y}{a} + \frac{1-y}{1-a}
+\]
+
+<p><b>② sigmoid 的导数。</b>这是最值得记的一个：</p>
+
+\[
+\sigma'(z) = \sigma(z)\,(1-\sigma(z)) = a(1-a)
+\]
+
+<p><b>③ 线性层的导数。</b>\(z = x_1w_1+b\)，所以</p>
+
+\[
+\frac{\partial z}{\partial w_1} = x_1, \qquad \frac{\partial z}{\partial b} = 1
+\]
+
+<h3>2.2 代入数字</h3>
+
+<ol class="steps">
+<li><b>前向：算 \(z\)</b>：\(z = 1.1 \times 2.2 + 0 = 2.42\)</li>
+<li><b>前向：算 \(a\)</b>：\(\sigma(2.42) = \dfrac{1}{1+e^{-2.42}} = \dfrac{1}{1+0.08892} = 0.91834\)</li>
+<li><b>前向：算 loss</b>：\(-\log(0.91834) = 0.08519\)（因为 \(y=1\)，只有第一项）</li>
+<li><b>∂𝓛/∂a</b>：\(-1/0.91834 + 0/0.08166 = -1.08892\)</li>
+<li><b>σ′(z)</b>：\(0.91834 \times 0.08166 = 0.074992\)</li>
+<li><b>链式法则：∂𝓛/∂z</b>：\(-1.08892 \times 0.074992 = -0.081660\)</li>
+<li><b>∂𝓛/∂w₁</b>：\(-0.081660 \times 1.1 = -0.089826\)</li>
+<li><b>∂𝓛/∂b</b>：\(-0.081660 \times 1 = -0.081660\)</li>
+</ol>
+
+<p>原书打印的结果是 <code>grad_L_w1 = tensor([-0.0898])</code> 和 <code>grad_L_b = tensor([-0.0817])</code>。<b>完全吻合。</b> ✓</p>
+
+<h3>2.3 一个值得验证的恒等式</h3>
+
+<p>注意第 7、8 步的关系：</p>
+
+\[
+\frac{\partial \mathcal{L}}{\partial w_1} = \frac{\partial \mathcal{L}}{\partial b} \times x_1
+\]
+
+<p>代入：\(-0.081660 \times 1.1 = -0.089826\)。✓ <b>因为 \(\partial z/\partial w_1 = x_1\) 而 \(\partial z/\partial b = 1\)，两个梯度必然相差一个 \(x_1\) 的倍数。</b>这是个很好的自查手段——两个梯度比例对不上就说明算错了。</p>
+
+<div class="key">
+<span class="tag">符号的物理含义</span>
+<p>两个梯度都是<b>负数</b>，意味着<b>增大 \(w_1\) 或 \(b\) 会让 loss 下降</b>。梯度下降的更新是 \(\theta \leftarrow \theta - \eta\nabla_\theta\mathcal{L}\)，减去一个负数就是<b>增大参数</b>。</p>
+<p>这是合理的：\(a=0.918\) 而 \(y=1\)，模型<b>已经正确预测且很自信</b>。真实标签是 1，而模型说「有 91.8% 概率是 spam」——这其实是「过度自信」了。</p>
+<p>但直觉上「过度自信」应该让 loss 变大才对。这里要小心：<b>二元交叉熵对「自信且正确」的惩罚是 <code>-log 0.918 = 0.085</code>，不是零</b>。模型可以更自信（趋近 1）来把 loss 降到 0。<b>减小 \(a\) 反而会让 loss 上升</b>，所以梯度为负，指向增大。</p>
+<p>这个例子的巧妙之处：<b>它说明「loss 小」不等于「概率对」，只说明「概率与标签的匹配程度好」。</b>模型答对了，但它对这个答案的置信度并不完美。</p>
+</div>
+
+<h2 class="deriv">三、sigmoid 导数的两种形式</h2>
+
+<p>直接对 \(\sigma(z) = \frac{1}{1+e^{-z}}\) 求导会得到一个看似复杂的结果：</p>
+
+\[
+\sigma'(z) = \frac{e^{-z}}{(1+e^{-z})^2}
+\]
+
+<p>但代入 \(\sigma(z)\) 化简，注意分母：</p>
+
+\[
+\frac{e^{-z}}{(1+e^{-z})^2} = \frac{1}{\left(\dfrac{1+e^{-z}}{e^{-z}}\right)^2} \cdot \frac{1}{e^{-z}} = \frac{1}{(1+e^{z})^2}\cdot e^{z}
+= \frac{e^{z}}{(1+e^{z})^2}
+\]
+
+<p>再验证它等于 \(\sigma(1-\sigma)\)：\(\sigma = \frac{1}{1+e^z}\)，\(1-\sigma = \frac{e^z}{1+e^z}\)，两者相乘 \(\frac{e^z}{(1+e^z)^2}\)。✓ <b>两者相同。</b></p>
+
+<div class="warn">
+<span class="tag">这个形式为什么重要：它是「饱和」的</span>
+<p>\(\sigma'(z) = \sigma(1-\sigma)\)，最大值在 \(\sigma=0.5\) 处为 0.25，且两端都趋于 0：</p>
+<div class="tablewrap">
+<table>
+<thead><tr><th>\(z\)</th><th>\(\sigma(z)\)</th><th>\(\sigma'(z)=\sigma(1-\sigma)\)</th><th>相对 0.25</th></tr></thead>
+<tbody>
+<tr><td>0</td><td>0.5000</td><td>0.2500</td><td>100%</td></tr>
+<tr><td>2.42</td><td>0.9183</td><td>0.0750</td><td>30%</td></tr>
+<tr><td>5</td><td>0.9933</td><td>0.0066</td><td>2.7%</td></tr>
+<tr><td>10</td><td>0.99995</td><td>0.0000454</td><td>0.018%</td></tr>
+</tbody>
+</table>
+</div>
+<p>原书这个例子里 \(z=2.42\)，梯度已经衰减到最大值的 30%。<b>这就是深度网络里 sigmoid 作为激活函数的致命弱点</b>——每过一层梯度就乘一次小于 0.25 的因子，十几层后彻底归零（梯度消失）。</p>
+<p><b>这正是第 4 章用 GELU 代替 ReLU/sigmoid 的原因之一。</b>GELU 的导数在负半轴也接近 1（不像 sigmoid 那样指数衰减），残差连接（第 4 章）再提供一条梯度旁路，两条措施一起让 12 层甚至 96 层的网络可训练。</p>
+</div>
+
+<h2 class="deriv">四、为什么 PyTorch 不让你手写 backward</h2>
+
+<p>原书说完手算梯度后转向 <code>loss.backward()</code>。差别在于<b>谁来组织那 8 步</b>：</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th></th><th>手算（A.4 节）</th><th><code>loss.backward()</code>（A.5 节起）</th></tr></thead>
+<tbody>
+<tr><td>链式法则</td><td>人手写 8 步</td><td>autograd 引擎自动完成</td></tr>
+<tr><td>通用性</td><td>换网络就要重写</td><td>任意拓扑通用</td></tr>
+<tr><td>中间量保存</td><td>自己记（易漏）</td><td>前向时自动记录</td></tr>
+<tr><td>反向图生命周期</td><td>—</td><td>默认算完即释放（<code>retain_graph=True</code> 可保留）</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>原书在 <code>grad(loss, w1, retain_graph=True)</code> 里显式传了 <code>retain_graph=True</code>，注释说 <i>"By default, PyTorch destroys the computation graph after calculating the gradients to free memory."</i>——因为它紧接着还要调一次 <code>grad(loss, b)</code>。这个参数在实战中很少用到，但解释了为什么会有它。</p>
+
+<h3>4.1 训练循环的三行</h3>
+
+<p>把 A.7 节的训练循环拆开，<b>三行就是完整的手工流程</b>：</p>
+
+<pre><code>logits = model(features)              <span class="t-com"># 前向（含所有中间量的记录）</span>
+loss = F.cross_entropy(logits, labels) <span class="t-com"># 前向最后一步：算损失</span>
+optimizer.zero_grad()                   <span class="t-com"># 清空上一轮的梯度</span>
+loss.backward()                         <span class="t-com"># 反向：链式法则，一次算完所有参数</span>
+optimizer.step()                        <span class="t-com"># 更新：θ ← θ − η·∇</span></code></pre>
+
+<div class="key">
+<span class="tag"><code>zero_grad()</code> 为什么必须调用</span>
+<p>PyTorch 的梯度是<b>累加</b>（<code>+=</code>）而非覆盖。这是 <code>loss.backward()</code> 而非 <code>grad.zero()</code> 的设计带来的灵活性：可以在多个 loss 上分别 backward 然后一次性更新。</p>
+<p>但代价是——<b>忘了清零就会把历史梯度一起加进来</b>，训练直接发散。这是 PyTorch 新手最常见的 bug。</p>
+</div>
+
+<h3>4.2 学习率 0.5 的效果</h3>
+
+<p>原书 A.7 节用 <code>lr=0.5</code> 训练 3 个 epoch，loss 从 0.75 降到 0.00。观察更新量：</p>
+
+\[
+\theta_{\text{new}} = \theta - \eta \cdot \frac{\partial \mathcal{L}}{\partial\theta}
+\]
+
+<p>在附录 A 的两个输入两个输出的小网络上，初始梯度量级约 0.1–0.5，乘以 \(\eta=0.5\) 后单步更新约 0.05–0.25。<b>这个学习率相对于参数量级是很大的</b>，所以收敛极快（3 个 epoch 就到 0）。</p>
+
+<div class="warn">
+<span class="tag">0.5 不能照搬到 LLM 上</span>
+<p>附录 A 的网络只有几十个参数，梯度稳定。LLM 用 <code>lr=4e-4</code>（预训练）或 <code>5e-5</code>（微调），<b>小了三个数量级</b>。</p>
+<p>原因是深层网络（96 层、768 维）的参数和梯度尺度完全不同，而且需要用 <b>AdamW</b> 而不是 <b>SGD</b>——AdamW 会按每个参数的历史梯度幅度做归一化，学习率的意义与 SGD 完全不同。</p>
+<p>原书 A.7 节的注释说得很准确：<i>"The learning rate is a hyperparameter, meaning it's a tunable setting that we must experiment with based on observing the loss."</i> <b>它不是有推导的物理量，是必须实测的超参数。</b></p>
+</div>
+
+<h2 class="deriv">五、把附录 A 和正文连起来</h2>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>附录 A 的概念</th><th>正文中的对应物</th><th>章节</th></tr></thead>
+<tbody>
+<tr><td><code>backward()</code> 链式法则</td><td>所有权重参数的梯度</td><td>全书</td></tr>
+<tr><td><code>F.cross_entropy(logits, labels)</code></td><td>预训练损失、分类损失</td><td>5, 6, 7</td></tr>
+<tr><td><code>optimizer.step()</code> + AdamW</td><td>预训练与微调的实际优化器</td><td>5.2, 6.7, 7.6</td></tr>
+<tr><td><code>model.eval()</code> / <code>no_grad()</code></td><td>评估时关闭梯度记录，省显存</td><td>5.1.3, 6.6</td></tr>
+<tr><td>sigmoid 导数饱和</td><td>为什么用 GELU 而非 sigmoid</td><td>4.3</td></tr>
+<tr><td>梯度消失</td><td>残差连接的动机</td><td>4.4</td></tr>
+<tr><td>softmax 饱和 → 小梯度</td><td>为什么除以 \(\sqrt{d_k}\)</td><td>3.4.1</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="key">
+<span class="tag">全书数学的一条暗线：梯度必须能流回去</span>
+<p>附录 A 说 sigmoid 导数会饱和；第 3 章说大 logits 让 softmax 梯度归零；第 4 章说残差连接提供梯度旁路。<b>这三处是同一个问题的三个侧面：如何让梯度在几十层内不消失。</b></p>
+<p>答案是三管齐下：<b>缩放 logits（3.4）</b> + <b>用导数不饱和的激活函数（4.3）</b> + <b>加残差旁路（4.4）</b>。理解了这一条，就理解了现代 LLM 架构里大半的「非标准」设计。</p>
+</div>
+
+<nav class="deriv-nav">
+<a href="math-detail.html"><span class="dir">索引</span>全部数学推导详解</a>
+<a href="09-coding-attention-mechanisms-detail.html"><span class="dir">开始阅读</span>3.3–3.5 自注意力与因果掩码</a>
+<a href="14-appendix-a-introduction-to-pytorch.html"><span class="dir">返回原文</span>A. Introduction to PyTorch</a>
+</nav>
+
+</main>
+<nav class="chapnav" aria-label="导航"><div class="chapnav-inner">
+<a class="prev" href="math-detail.html"><span class="lbl">索引</span><span class="nm">全部数学推导详解</span></a><a class="next" href="09-coding-attention-mechanisms-detail.html"><span class="lbl">开始阅读</span><span class="nm">3. 自注意力机制的数学推导</span></a>
+</div></nav>
+<script src="app.js"></script>
+<script defer src="assets/katex/katex.min.js"></script>
+<script defer src="assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>

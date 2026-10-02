@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>4.5.2 Adding a top-p filter to the text generation function · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-36.html">
+<link rel="next" href="page-38.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 37 页 / 共 108 页</span></div>
+<h3 id="h3-adding-a-top-p-filter-to-the-text-generation-function"><span class="num">4.5.2</span>Adding a top-p filter to the text generation function</h3>
+<p>We’ve walked through the top-<em>p</em> filtering steps using a toy example. Now let’s add the four top-<em>p</em> filtering steps (steps 4.1–4.4 in figure 4.16) to our existing text generation function between the probability conversion and the sampling.</p>
+<p>We’ll first assemble the top-<em>p</em> filtering steps from the previous section into a single, convenient function we can call.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">def</span> top_p_filter(probas, top_p):
+    <span class="tok-kw">if</span> top_p <span class="tok-kw">is</span> <span class="tok-kw">None</span> <span class="tok-kw">or</span> top_p &gt;= <span class="tok-fn">1.0</span>:
+        <span class="tok-kw">return</span> probas
+    sorted_probas, sorted_idx = torch.sort<span class="tok-kw">(</span>probas, dim=<span class="tok-fn">1</span>, descending=<span class="tok-kw">True)</span>
+    cumprobas = torch.cumsum<span class="tok-kw">(</span>sorted_probas, dim=<span class="tok-fn">1</span><span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 4.15</span>Top-p filtering function</figcaption></figure>
+<pre><code class="language-python">    prefix = cumprobas - sorted_probas
+    keep = prefix &lt; top_p
+    keep<span class="tok-kw">[</span>:, <span class="tok-fn">0</span><span class="tok-kw">]</span> = <span class="tok-kw">True</span>
+    kept_sorted = torch.where<span class="tok-kw">(</span>
+        keep, sorted_probas,
+        torch.zeros_like<span class="tok-kw">(</span>sorted_probas<span class="tok-kw">)</span>
+    <span class="tok-kw">)</span>
+    filtered = torch.zeros_like<span class="tok-kw">(</span>probas<span class="tok-kw">)</span>.scatter<span class="tok-kw">(</span><span class="tok-fn">1</span>, sorted_idx, kept_sorted<span class="tok-kw">)</span>
+    denom = torch.sum<span class="tok-kw">(</span>filtered, dim=<span class="tok-fn">1</span>, keepdim=<span class="tok-kw">True)</span>.clamp_min<span class="tok-kw">(</span><span class="tok-fn">1e-12</span><span class="tok-kw">)</span>
+    <span class="tok-kw">return</span> filtered / denom</code></pre>
+<figure><a class="zoom" href="assets/figure-4.16.png" tabindex="-1"><img src="assets/figure-4.16.png" alt="" width="1154" height="1327" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 4.16</span>Integrating top-p filtering with temperature scaling. After rescaling the next-token scores, top-p filtering is applied between steps 3.3 and 3.4 to limit sampling to the most probable tokens.</figcaption></figure>
+<p>The <code>top_p_filter</code> function in listing 4.15 first sorts token probabilities and computes their cumulative sum. It then keeps tokens whose prefix cumulative mass (the cumulative probability before each token) is below the <code>top_p</code> threshold, which includes the token that first crosses the threshold. It zeroes out the rest, maps the kept values back to their original order, and renormalizes the remaining probabilities so they sum to 1 again.</p>
+<p>Before we add this <code>top_p_filter</code> function to our text generation functions, let’s give it a try and see how it works with the previous temperature-scaling approach. First, we get the logits:</p>
+<pre><code class="language-python"><span class="tok-kw">with</span> torch.inference_mode<span class="tok-kw">()</span>:
+    next_token_logits = model<span class="tok-kw">(</span>input_token_ids<span class="tok-kw">)</span>[:, -<span class="tok-fn">1</span>]
+print<span class="tok-kw">(</span>next_token_logits.shape<span class="tok-kw">)</span></code></pre>
+<p>The preceding code prints the dimensions <code>[1,</code> <code>151936]</code> for the <code>next_token_logits</code> tensor. We are now working with the real data and full vocabulary, which has 151,936 entries.</p>
+<p>Next, we rescale the logits into probability scores and apply temperature scaling with a temperature of 0.35, as before:</p>
+<pre><code class="language-python">torch.manual_seed<span class="tok-kw">(</span><span class="tok-fn">123</span><span class="tok-kw">)</span>
+probas_lowT = torch.softmax<span class="tok-kw">(</span>
+    scale_logits_by_temperature<span class="tok-kw">(</span>next_token_logits, <span class="tok-fn">0.35</span><span class="tok-kw">)</span>, dim=-<span class="tok-fn">1</span>
+<span class="tok-kw">)</span>
+count_samples<span class="tok-kw">(</span>probas_lowT, threshold=<span class="tok-fn">1</span>, tokenizer=tokenizer<span class="tok-kw">)</span></code></pre>
+<p>This code is similar to what we used in the previous temperature-scaling examples, and it prints the following sampled outputs:</p>
+<pre><code class="language-python">' __': 158x
+' Berlin': 435x
+' ____': 169x
+' ______': 209x
+' Munich': 3x
+' Hamburg': 3x
+' _____': 18x</code></pre>
+<p>Now, let’s add the top-<em>p</em> filter and see how it changes the results:</p>
+<pre><code class="language-python">torch.manual_seed<span class="tok-kw">(</span><span class="tok-fn">123</span><span class="tok-kw">)</span>
+probas_lowT = torch.softmax<span class="tok-kw">(</span>
+    scale_logits_by_temperature<span class="tok-kw">(</span>next_token_logits, <span class="tok-fn">0.35</span><span class="tok-kw">)</span>, dim=-<span class="tok-fn">1</span>
+<span class="tok-kw">)</span>
+probas_lowT_filtered = top_p_filter<span class="tok-kw">(</span>probas_lowT, top_p=<span class="tok-fn">0.8</span><span class="tok-kw">)</span>
+count_samples<span class="tok-kw">(</span>probas_lowT_filtered, threshold=<span class="tok-fn">1</span>, tokenizer=tokenizer<span class="tok-kw">)</span></code></pre>
+<p>With a <code>top_p</code> threshold of 0.8, which is a typical value, we exclude the lowest-probability tokens whose cumulative probability makes up the remaining 20%. The sampled outputs are now as follows:</p>
+<pre><code class="language-python">' Berlin': 534x
+' ____': 217x
+' ______': 249x</code></pre>
+<p>As you can see, we now either select the correct city (removing <code>" Munich"</code> and<code>" Hamburg"</code> as sampled options) or we print the underscore token, which the model might use to format the text as a quiz question, with <code>' ______'</code> as a placeholder.</p>
+<p>Now let’s return to our math query and add the top-<em>p</em> filter to the <code>generate_text_ temp_stream_cache</code> function we coded in listing 4.8. The updated function, now called </p>
+<pre><code class="language-python">generate_text_top_p_stream_cache, is shown next.</code></pre>
+<figure class="listing"><pre><code class="language-python">@torch.inference_mode<span class="tok-kw">()</span>
+<span class="tok-kw">def</span> generate_text_top_p_stream_cache(
+    model,
+    token_ids,
+    max_new_tokens,
+    eos_token_id=<span class="tok-kw">None</span>,
+    temperature=<span class="tok-fn">0</span>.,
+    top_p=<span class="tok-kw">None</span>
+):
+    model.eval<span class="tok-kw">()</span>
+    cache = KVCache<span class="tok-kw">(</span>n_layers=model.cfg<span class="tok-kw">[</span>"n_layers"<span class="tok-kw">])</span>
+    model.reset_kv_cache<span class="tok-kw">()</span>
+    out = model<span class="tok-kw">(</span>token_ids, cache=cache<span class="tok-kw">)</span>[:, -<span class="tok-fn">1</span>]
+    <span class="tok-kw">for</span> _ <span class="tok-kw">in</span> range<span class="tok-kw">(</span>max_new_tokens<span class="tok-kw">)</span>:
+        orig_device = token_ids.device
+        <span class="tok-kw">if</span> temperature <span class="tok-kw">is</span> <span class="tok-kw">None</span> <span class="tok-kw">or</span> temperature == <span class="tok-fn">0.0</span>:
+            next_token = torch.argmax<span class="tok-kw">(</span>out, dim=-<span class="tok-fn">1</span>, keepdim=<span class="tok-kw">True)</span>
+        <span class="tok-kw">else</span>:
+            logits = scale_logits_by_temperature<span class="tok-kw">(</span>out, temperature<span class="tok-kw">)</span>
+            probas = torch.softmax<span class="tok-kw">(</span>logits, dim=-<span class="tok-fn">1</span><span class="tok-kw">)</span>
+            probas = top_p_filter<span class="tok-kw">(</span>probas, top_p<span class="tok-kw">)</span>
+            next_token = torch.multinomial<span class="tok-kw">(</span>probas.cpu<span class="tok-kw">()</span>, num_samples=<span class="tok-fn">1</span><span class="tok-kw">)</span>
+            next_token = next_token.to<span class="tok-kw">(</span>orig_device<span class="tok-kw">)</span>
+        <span class="tok-kw">if</span> (eos_token_id <span class="tok-kw">is</span> <span class="tok-kw">not</span> <span class="tok-kw">None</span>
+                <span class="tok-kw">and</span> torch.all<span class="tok-kw">(</span>next_token == eos_token_id<span class="tok-kw">)</span>):
+            <span class="tok-kw">break</span>
+        <span class="tok-kw">yield</span> next_token
+        out = model<span class="tok-kw">(</span>next_token, cache=cache<span class="tok-kw">)</span>[:, -<span class="tok-fn">1</span>]</code></pre><figcaption><span class="lbl">Listing 4.16</span>Text generation with top-p filtering</figcaption></figure>
+<p>Let’s plug this new text generation function into <code>generate_text_stream_concat_flex</code>, as we did before with the temperature-scaling version of the text generation function:</p>
+<pre><code class="language-python">torch.manual_seed<span class="tok-kw">(</span><span class="tok-fn">123</span><span class="tok-kw">)</span>
+response = generate_text_stream_concat_flex<span class="tok-kw">(</span>
+    model, tokenizer, prompt, device,
+    max_new_tokens=<span class="tok-fn">2048</span>, verbose=<span class="tok-kw">True</span>,
+    generate_func=generate_text_top_p_stream_cache,
+    temperature=<span class="tok-fn">0.5</span>,
+    top_p=<span class="tok-fn">0.8</span>,
+<span class="tok-kw">)</span></code></pre>
+<p>The output is <code>" \boxed{18}"</code>, which is still incorrect. Everything we have done so far is to let us sample different outputs. In the next section, we’ll use <code>generate_text_stream_ concat_flex</code> with our augmented text generation function (<code>generate_text_top_p_ stream_cache</code>) to sample different outputs when implementing the self-consistency inference-time-scaling technique.</p>
+<h3 id="h3-top-k-filtering">Top-k filtering</h3>
+<div class="lead">Top-k filtering is another way to limit the set of candidate next tokens during sampling. Instead of keeping all tokens whose cumulative probability stays below a threshold (as in top-p), top-k keeps only the k most likely tokens based on the model’s logits. After sorting the vocabulary by probability, everything past the first k entries is removed. The remaining k tokens are then renormalized and sampled from. In short, top-k keeps a fixed number of the most likely tokens, whereas top-p keeps a variable number of tokens depending on their cumulative mass. Top-k is simpler to implement, and I covered it in my Build a Large Language Model (From Scratch) book. Top-p sampling has become more popular recently.</div>
+<h3 id="h3-exercise-4-2-using-temperature-scaling-and-top-p-filtering-o">Exercise 4.2: Using temperature scaling and top-p filtering on MATH-500</h3>
+<div class="lead">Modify the <code>evaluate_math500_stream</code> function from listing 3.15 to see whether adding temperature scaling and top-p sampling will change the MATH-500 accuracy of the base model. You can use a setting of 0.9 for both temperature scaling and top-p.</div>
+<nav class="pager"><a class="prev" href="page-36.html" rel="prev"><span class="dir">上一页</span><span class="t">4.5.1 Selecting a subset of top-p tokens</span></a><a class="next" href="page-38.html" rel="next"><span class="dir">下一页</span><span class="t">4.6 Improving response accuracy with self-consistency</span></a></nav>
+</main>
+</body>
+</html>

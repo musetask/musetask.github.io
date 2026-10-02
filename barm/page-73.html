@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>7.6.3 More GRPO modifications, tips, and tricks · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/detail.css">
+<link rel="prev" href="page-72.html">
+<link rel="next" href="page-74.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 73 页 / 共 108 页</span></div>
+<aside class="detail-link"><span class="tag">补充材料</span>本节 sequence-level 与 token-level loss 的公式差异（原版 GRPO 的 1/|o| 项、DAPO 与 Dr. GRPO 为什么要去掉它）在 <a href="page-54-detail.html"><b>6.2 GRPO 目标函数 · 四</b></a>。全部推导页的索引见 <a href="math-detail.html">math-detail.html</a>。</aside>
+<h3 id="h3-more-grpo-modifications-tips-and-tricks"><span class="num">7.6.3</span>More GRPO modifications, tips, and tricks</h3>
+<p>In chapter 6, we implemented a version of GRPO without the KL loss term, with clipped policy ratios, and with a format reward for introductory purposes. Then we added these concepts to build a solid foundation for understanding the original </p>
+<p>GRPO algorithm, which underlies most modern reasoning training frameworks. Figure 7.21 outlines this next step, where we’ll discuss additional modifications, tips, and tricks.</p>
+<p>Figure 7.21 The last section in this chapter outlines additional GRPO modifications that have emerged | recently.</p>
+<p>As far as RLVR with GRPO goes, we learned that there are many knobs to tune. Besides changing the basic settings, such as the learning rate, maximum response length, and prompt format, there is a nearly infinite number of settings and modifications to try. </p>
+<p>Exploring a single modification, or a small handful of modifications, thoroughly could become a month- or year-long research project for a small research team.</p>
+<p>Algorithms are expected to keep changing and evolving. It is important, though, to understand the fundamentals and the general ideas behind them so you can understand and appreciate these improvements.</p>
+<p>In the months following the success of DeepSeek-R1, many researchers proposed changes to the original GRPO algorithm that improved both training stability and final performance. The following selection of suggested improvements comes from DAPO, </p>
+<p>Dr. GRPO, DeepSeek-V3.2, and others (you can find a full list of references and links in appendix A):</p>
+<p>1 Filter out zero-gradient examples (DAPO): Skip prompts where all sampled responses receive the same reward, because these groups produce no useful advantage signal.</p>
+<p>2 Use active sampling (DAPO): Oversample or prioritize prompts that produce a mix of correct and incorrect responses, because these provide a stronger learning signal.</p>
+<p>3 Switch from sequence-level to token-level loss (DAPO): Compute the loss over individual tokens rather than whole responses, which can reduce length-related bias.</p>
+<p>4 Omit the KL loss term (DAPO and Dr. GRPO): Remove the KL penalty when it hurts stability or performance, especially in math reasoning settings.</p>
+<p>5 Use a larger clipping range (DAPO): Relax the clipping threshold so the policy can make larger updates when the reward signal is reliable.</p>
+<p>6 Truncate importance-sampling ratios (verl): Cap very large importance weights so a few off-policy samples cannot dominate the update.</p>
+<p>7 Remove standard-deviation normalization of advantages (Dr. GRPO): Normalize rewards relative to the group mean but avoid dividing by the reward standard deviation.</p>
+<p>8 Tune the KL strength by domain (DeepSeek-V3.2): Use different KL coefficients for different data types, including zero KL for math tasks.</p>
+<p>9 Reweight the KL term with importance sampling (DeepSeek-V3.2): Correct the KL estimate when rollouts are sampled from an older policy rather than the current policy.</p>
+<p>10 Mask unsuitable off-policy sequences (DeepSeek-V3.2): Exclude rollout sequences that are too unlikely under the current policy.</p>
+<p>11 Preserve the sampling mask for top-<em>p</em> or top-<em>k</em> sampling (DeepSeek-V3.2): Compute probabilities only over the token set that was actually available during sampling.</p>
+<p>12 Keep the original GRPO advantage normalization (DeepSeek-V3.2): Retain the standard group-based advantage normalization when it works well empirically.</p>
+<p>13 Normalize each reward component before aggregation (GDPO): Normalize different reward types separately before combining them into a total reward.</p>
+<p>14 Apply sequence-level importance sampling and clipping (GSPO): Correct and clip updates at the whole-sequence level instead of only at the token level.</p>
+<p>15 Clip importance-sampling weights rather than token updates (CISPO): Limit the importance weights directly, so off-policy corrections remain stable.</p>
+<p>Detailed explanations, code examples, and training run results for those modifications are outside the scope of this chapter. If you’re interested, you can find them in the book’s supplementary materials at <a href="https://mng.bz/nZVv.">https://mng.bz/nZVv.</a></p>
+<h3 id="h3-summary-7">Summary</h3>
+<ul><li>Training reasoning models with GRPO can become unstable over longer runs, even when the implementation is correct and rewards initially improve.</li></ul>
+<ul><li>Interpreting GRPO training requires tracking multiple metrics jointly (average rewards, response length, evaluation accuracy, advantage statistics, and entropy): Basic metrics such as loss mainly serve as sanity checks in GRPO and should </li></ul>
+<p>not be overinterpreted in isolation.</p>
+<ul><li> Advantage statistics provide useful diagnostics: the mean should remain near zero by design, while the standard deviation reflects the strength and stability of the learning signal.</li></ul>
+<ul><li> Entropy measures how uncertain the model is during generation. Very low entropy can signal collapse, and very large entropy can indicate unstable updates and randomness in the model responses.</li></ul>
+<ul><li>Clipped policy ratios limit how much the policy can change between updates and can substantially improve training stability over longer runs.</li></ul>
+<ul><li>Adding a KL divergence term constrains long-term drift from a reference model but can destabilize training when the rewards collapse.</li></ul>
+<ul><li>For math reasoning tasks, several recent systems report better stability and performance by omitting the KL term altogether.</li></ul>
+<ul><li>Auxiliary format rewards can improve the response structure, such as encouraging the use of <code>&lt;think&gt;</code> and <code>&lt;/think&gt;</code> tokens.</li></ul>
+<ul><li>Beyond the original GRPO algorithm, many recent extensions modify advantage normalization, importance sampling, clipping strategies, and KL handling to improve stability and efficiency.</li></ul>
+<h1 id="h1-distilling-reasoning-models-for-efficient-reasoning">Distilling reasoning models for efficient reasoning</h1>
+<p class="summary">This chapter covers</p>
+<ul><li>Hard and soft distillation for reasoning models</li><li>Creating and preparing a teacher-generated reasoning dataset</li><li>Training and evaluating a distilled student model using cross-entropy loss</li></ul>
+<p>Reasoning performance can be improved not only through inference-time scaling and reinforcement learning, but also through <em>distillation</em>. In distillation, a smaller student model is trained on the reasoning traces and answers generated by a larger teacher model. As shown in the overview in figure 8.1, this chapter focuses on this training-time technique.</p>
+<p>We’ll look at model distillation in general before discussing the individual steps in the process.</p>
+<figure><a class="zoom" href="assets/figure-8.1.png" tabindex="-1"><img src="assets/figure-8.1.png" alt="" width="1143" height="486" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 8.1</span>A model of the topics covered in this book. This chapter focuses on distillation, where a smaller student model is trained on reasoning traces generated by a larger teacher model.</figcaption></figure>
+<nav class="pager"><a class="prev" href="page-72.html" rel="prev"><span class="dir">上一页</span><span class="t">7.6.2 Training a model to emit &lt;think&gt; tokens</span></a><a class="next" href="page-74.html" rel="next"><span class="dir">下一页</span><span class="t">8.1 Introducing model distillation for reasoning tasks</span></a></nav>
+</main>
+</body>
+</html>

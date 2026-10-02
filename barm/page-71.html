@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>7.6.1 Using &lt;think&gt; tokens · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-70.html">
+<link rel="next" href="page-72.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 71 页 / 共 108 页</span></div>
+<h3 id="h3-using-think-tokens"><span class="num">7.6.1</span>Using &lt;think&gt; tokens</h3>
+<p>Some reasoning models, such as DeepSeek-R1 and Qwen3, use special <code>&lt;think&gt;</code> and <code>&lt;/think&gt;</code> tokens. These are ordinary text tokens that mark the beginning and end of the model’s intermediate reasoning. We can prompt the model to write its step-by-step reasoning inside <code>&lt;think&gt; ... &lt;/think&gt;</code> and then provide the final answer outside these tags. This approach is optional, but it makes the output structure explicit and helps separate reasoning from the final result.</p>
+<p>To illustrate this concept, we’ll start by loading the tokenizer for the base model we used earlier.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.ch02 <span class="tok-kw">import</span> get_device
+<span class="tok-kw">from</span> reasoning_from_scratch.ch03 <span class="tok-kw">import</span> load_model_and_tokenizer
+device = get_device<span class="tok-kw">()</span>
+model, tokenizer_base = load_model_and_tokenizer<span class="tok-kw">(</span>
+    which_model=<span class="tok-st">"base"</span>,
+    device=device,
+    use_compile=<span class="tok-kw">False</span>
+<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 7.10</span>Loading the base model tokenizer</figcaption></figure>
+<p>Next, we’ll use the tokenizer to encode <code>&lt;think&gt;</code>:</p>
+<pre><code class="language-python">print<span class="tok-kw">(</span>tokenizer_base.encode<span class="tok-kw">(</span><span class="tok-st">"&lt;think&gt;"</span><span class="tok-kw">))</span></code></pre>
+<p>The output is <code>[13708, 766, 29]</code>, which means the tokenizer is breaking up the <code>&lt;think&gt;</code> token into several subword tokens. This indicates that the <code>&lt;think&gt;</code> token is not part of the tokenizer’s vocabulary.</p>
+<p>Nowadays, when developing tokenizers and creating the embedding layers of LLMs, developers often leave unused placeholder token IDs that can be used for specific purposes when fine-tuning a model. The Qwen3 base model tokenizer has some empty placeholder slots that we can use to add <code>&lt;think&gt;</code>:</p>
+<pre><code class="language-python">tokenizer_base._tok.add_special_tokens<span class="tok-kw">(</span>
+  [<span class="tok-st">"&lt;tool_response&gt;"</span>, <span class="tok-st">"&lt;/tool_response&gt;"</span>, <span class="tok-st">"&lt;think&gt;"</span>, <span class="tok-st">"&lt;/think&gt;"</span>]
+<span class="tok-kw">)</span></code></pre>
+<p>Note that we are also adding the <code>&lt;tool_response&gt;</code> and <code>&lt;/tool_response&gt;</code> tokens in the preceding code to match the tokenizer of the Qwen3 reasoning variant, which we’ll discuss shortly. But first, let’s check whether the modified base tokenizer now supports the newly added <code>&lt;think&gt;</code> and <code>&lt;/think&gt;</code> tokens:</p>
+<pre><code class="language-python">print<span class="tok-kw">(</span>tokenizer_base.encode<span class="tok-kw">(</span><span class="tok-st">"&lt;think&gt;"</span><span class="tok-kw">))</span>
+print<span class="tok-kw">(</span>tokenizer_base.encode<span class="tok-kw">(</span><span class="tok-st">"&lt;/think&gt;"</span><span class="tok-kw">))</span></code></pre>
+<p>The outputs are single tokens <code>[151667]</code> and <code>[151668]</code>, which indicates that the <code>&lt;think&gt;</code> and <code>&lt;/think&gt;</code> tokens are now part of the vocabulary and are no longer broken into subword tokens.</p>
+<p>These new tokens would also be supported by the base model, which supports token IDs from 0 to 151935, because it has a vocabulary size of 151936. We can confirm this by printing the size of the embedding layer:</p>
+<pre><code class="language-python">print<span class="tok-kw">(</span><span class="tok-st">"Vocabulary size:"</span>, model.tok_emb.weight.shape<span class="tok-kw">[</span><span class="tok-fn">0</span><span class="tok-kw">])</span></code></pre>
+<p>Alternatively, instead of modifying the base tokenizer, we could use the reasoning model variant, whose tokenizer already supports these <code>&lt;think&gt;</code> tokens natively. As in chapter 2, we can load the tokenizer separately.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.qwen3 <span class="tok-kw">import</span> Qwen3Tokenizer
+<span class="tok-kw">from</span> reasoning_from_scratch.qwen3 <span class="tok-kw">import</span> download_qwen3_small
+download_qwen3_small<span class="tok-kw">(</span>
+    kind=<span class="tok-st">"reasoning"</span>, tokenizer_only=<span class="tok-kw">True</span>, out_dir=<span class="tok-st">"qwen3"</span>
+<span class="tok-kw">)</span>
+tokenizer_path = Path<span class="tok-kw">(</span><span class="tok-st">"qwen3"</span><span class="tok-kw">)</span> / <span class="tok-st">"tokenizer-reasoning.json"</span>
+tokenizer = Qwen3Tokenizer<span class="tok-kw">(</span>tokenizer_file_path=tokenizer_path<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 7.11</span>Loading the reasoning model’s tokenizer</figcaption></figure>
+<p>Now, let’s use the reasoning tokenizer (<code>tokenizer</code>) instead of <code>tokenizer_base</code> to encode the token IDs:</p>
+<pre><code class="language-python">print<span class="tok-kw">(</span>tokenizer.encode<span class="tok-kw">(</span><span class="tok-st">"&lt;think&gt;"</span><span class="tok-kw">))</span>
+print<span class="tok-kw">(</span>tokenizer.encode<span class="tok-kw">(</span><span class="tok-st">"&lt;/think&gt;"</span><span class="tok-kw">))</span></code></pre>
+<p>As when we used <code>tokenizer_base</code>, this returns <code>[151667]</code> and <code>[151668]</code>.</p>
+<p>Now that we have a tokenizer that supports these <code>&lt;think&gt; &lt;/think&gt;</code> tokens, we can develop a reward function that checks whether the LLM uses them, and we’ll provide a nonzero reward if it does, as illustrated in figure 7.18. This means that we can develop a function that returns 1.0 if both <code>&lt;think&gt;</code> and <code>&lt;/think&gt;</code> appear in the output in the correct order; otherwise, it returns 0.0.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">def</span> reward_format(
+    token_ids,
+    prompt_len,
+    start_think_id=<span class="tok-fn">151667</span>,
+    end_think_id=<span class="tok-fn">151668</span>,
+):
+    <span class="tok-kw">try</span>:
+        gen = token_ids<span class="tok-kw">[</span>prompt_len:<span class="tok-kw">]</span>.tolist<span class="tok-kw">()</span>
+        <span class="tok-kw">return</span> float<span class="tok-kw">(</span>
+            gen.index<span class="tok-kw">(</span>start_think_id<span class="tok-kw">)</span> &lt; gen.index<span class="tok-kw">(</span>end_think_id<span class="tok-kw">)</span>
+        <span class="tok-kw">)</span>
+    <span class="tok-kw">except</span> ValueError:
+        <span class="tok-kw">return</span> <span class="tok-fn">0.0</span></code></pre><figcaption><span class="lbl">Listing 7.12</span>Implementing a format reward function</figcaption></figure>
+<figure><a class="zoom" href="assets/figure-7.18.png" tabindex="-1"><img src="assets/figure-7.18.png" alt="" width="1141" height="875" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 7.18</span>Using the previous correctness reward (left) and a correctness plus format reward (right)</figcaption></figure>
+<p>Let’s give this a try on a simple text:</p>
+<pre><code class="language-python">prompt = <span class="tok-st">"Calculate ..."</span>
+rollout = <span class="tok-st">"Let's ... &lt;think&gt; ... &lt;/think&gt; ..."</span>
+token_ids = tokenizer.encode<span class="tok-kw">(</span>prompt + rollout<span class="tok-kw">)</span>
+reward_format<span class="tok-kw">(</span>
+    token_ids=torch.tensor<span class="tok-kw">(</span>token_ids<span class="tok-kw">)</span>,
+    prompt_len=len<span class="tok-kw">(</span>tokenizer.encode<span class="tok-kw">(</span>prompt<span class="tok-kw">))</span>
+<span class="tok-kw">)</span></code></pre>
+<p>Running the <code>reward_format</code> function in the preceding code snippet returns 1.0 as expected, since the answer (<code>rollout</code>) contains both <code>&lt;think&gt;</code> and <code>&lt;/think&gt;</code>.</p>
+<h3 id="h3-exercise-7-1-testing-the-think-format-reward">Exercise 7.1: Testing the &lt;think&gt; format reward</h3>
+<div class="lead">Run the example and confirm it returns 1.0, since both <code>&lt;think&gt;</code> and <code>&lt;/think&gt;</code> appear in the correct order. Now modify the <code>rollout</code> text in the following ways:</div>
+<ul><li>Introduce a typo in one of the <code>&lt;think&gt;</code> <code>&lt;/think&gt;</code> tags.</li><li>Reverse the tag order.</li><li>Remove one tag.</li></ul>
+<div class="lead">Verify that the reward becomes 0.0 in each case.</div>
+<p>Now that we have this new <code>reward_format</code> function, we can use the format reward as an additional signal to train the model. For instance, we could convert <code>compute_grpo_loss</code> from chapter 6 into a <code>compute_grpo_loss_plus_format_reward</code> function, as follows (the changes are highlighted in the comments).</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">def</span> compute_grpo_loss_plus_format_reward(
+    <span class="tok-cm"># ...</span>
+    format_reward_weight=<span class="tok-fn">1.0</span>,
+):
+    <span class="tok-cm"># ...</span>
+        logp = sequence_logprob<span class="tok-kw">(</span>model, token_ids, prompt_len<span class="tok-kw">)</span>
+        rlvr_reward = reward_rlvr<span class="tok-kw">(</span>text, example<span class="tok-kw">[</span><span class="tok-st">"answer"</span><span class="tok-kw">])</span>
+        format_reward = reward_format<span class="tok-kw">(</span>token_ids, prompt_len<span class="tok-kw">)</span>         <span class="tok-cm"># NEW</span>
+        reward = rlvr_reward + format_reward_weight * format_reward <span class="tok-cm"># NEW</span>
+    <span class="tok-cm"># ...</span></code></pre><figcaption><span class="lbl">Listing 7.13</span>Updating the GRPO loss function with a format reward</figcaption></figure>
+<p>In addition, we can modify <code>render_prompt</code> to direct the model to emit these <code>&lt;think&gt;</code> and <code>&lt;/think&gt;</code> tokens explicitly.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">def</span> render_prompt_with_think_tokens(prompt):
+    template = (
+        <span class="tok-st">"You are a helpful math assistant.</span>\n<span class="tok-st">"</span>
+        <span class="tok-st">"When solving the problem, first write your reasoning inside &lt;think&gt;</span>
+<span class="tok-st">and &lt;/think&gt; tags.</span>\n<span class="tok-st">"</span>
+        <span class="tok-st">"Then write the final result on a new line in the exact format:</span>\n<span class="tok-st">"</span>
+        <span class="tok-st">"</span>\\<span class="tok-st">boxed</span>{ANSWER}\n\n<span class="tok-st">"</span>
+        <span class="tok-kw">f</span><span class="tok-st">"Question:</span>\n{prompt}\n\n<span class="tok-st">Answer:"</span>
+    )
+    <span class="tok-kw">return</span> template</code></pre><figcaption><span class="lbl">Listing 7.14</span>Updated prompt rendering function for &lt;think&gt; tokens</figcaption></figure>
+<p>In theory, the modifications in code listings 7.11 through 7.14 should be sufficient to train a reasoning model with an additional format reward. Let’s now look at how this works in practice and discuss some additional caveats.</p>
+<nav class="pager"><a class="prev" href="page-70.html" rel="prev"><span class="dir">上一页</span><span class="t">KL direction versus rollout sampling</span></a><a class="next" href="page-72.html" rel="next"><span class="dir">下一页</span><span class="t">7.6.2 Training a model to emit &lt;think&gt; tokens</span></a></nav>
+</main>
+</body>
+</html>

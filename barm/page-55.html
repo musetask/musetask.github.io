@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>6.3 Loading a pretrained model · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-54.html">
+<link rel="next" href="page-56.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 55 页 / 共 108 页</span></div>
+<h2 id="h2-loading-a-pretrained-model-3"><span class="num">6.3</span>Loading a pretrained model</h2>
+<p>As in previous chapters, we’ll begin by loading the pretrained model (see stage 5 in figure 6.10), which we’ll then use to generate the rollouts (answers to a prompt) needed for GRPO.</p>
+<figure><a class="zoom" href="assets/figure-6.10.png" tabindex="-1"><img src="assets/figure-6.10.png" alt="" width="1089" height="771" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 6.10</span>In stage 5, we load the pretrained model (this section) and dataset (next section) that we will use for the model training.</figcaption></figure>
+<p>The following listing shows the same code we’ve used previously for loading the tokenizer and base model.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">import</span> torch
+<span class="tok-kw">from</span> reasoning_from_scratch.ch02 <span class="tok-kw">import</span> get_device
+<span class="tok-kw">from</span> reasoning_from_scratch.ch03 <span class="tok-kw">import</span> (
+     load_model_and_tokenizer
+)
+device = get_device<span class="tok-kw">()</span>
+device = torch.device<span class="tok-kw">(</span><span class="tok-st">"cpu"</span><span class="tok-kw">)</span>
+model, tokenizer = load_model_and_tokenizer<span class="tok-kw">(</span>
+    which_model=<span class="tok-st">"base"</span>,
+    device=device,
+    use_compile=<span class="tok-kw">False</span>
+<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 6.1</span>Loading the tokenizer and base model</figcaption></figure>
+<p>Note that the preceding code runs on the CPU by default, to ensure you get results that are more consistent with those shown in this chapter. Once you have gone through this chapter in full, I recommend deleting the line <code>device = torch.device("cpu")</code> and running the chapter code on a GPU.</p>
+<p>Next, to ensure that the model is loaded correctly, we’ll check it with the temperature and top-<em>p</em> sampler code from chapter 4 on a simple math prompt.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.ch03 <span class="tok-kw">import</span> render_prompt
+<span class="tok-kw">from</span> reasoning_from_scratch.ch04 <span class="tok-kw">import</span> (
+    generate_text_stream_concat_flex,
+    generate_text_top_p_stream_cache
+)
+raw_prompt = (
+    <span class="tok-st">"Half the value of $3x-9$ is $x+37$. "</span>
+    <span class="tok-st">"What is the value of $x$?"</span>
+)
+prompt = render_prompt<span class="tok-kw">(</span>raw_prompt<span class="tok-kw">)</span>
+torch.manual_seed<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>
+response = generate_text_stream_concat_flex<span class="tok-kw">(</span>
+    model, tokenizer, prompt, device,
+    max_new_tokens=<span class="tok-fn">2048</span>, verbose=<span class="tok-kw">True</span>,
+    generate_func=generate_text_top_p_stream_cache,
+    temperature=<span class="tok-fn">0.9</span>,
+    top_p=<span class="tok-fn">0.9</span>
+<span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>response<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 6.2</span>Generating text with temperature scaling and top-p sampling</figcaption></figure>
+<p>The model prints <code>" \boxed{58}"</code>, which is an incorrect answer (<code>83</code> is correct), but that’s okay because the goal here was merely to make sure that the code runs without issue.</p>
+<h2 id="h2-loading-a-math-training-subset"><span class="num">6.4</span>Loading a MATH training subset</h2>
+<p>Next, we’ll load the dataset that we’ll use to train the model with GRPO. We’ll use a non-overlapping training subset derived from the original MATH dataset, which means that all MATH-500 evaluation problems are explicitly excluded from the training data. This prevents data leakage and ensures a clean separation between training and evaluation, as illustrated in figure 6.11.</p>
+<aside><span class="tag">Note</span>For details on how this dataset was constructed, see https://github.com/rasbt/math_full_minus_math500.</aside>
+<figure><a class="zoom" href="assets/figure-6.11.png" tabindex="-1"><img src="assets/figure-6.11.png" alt="" width="1099" height="699" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 6.11</span>Structure and split of the MATH dataset. The full dataset contains about 12,500 problems divided into a 500-problem test set (MATH-500), which we used for model evaluation in chapter 3. A non-overlapping set of 12,000 problems is used for training in this chapter.</figcaption></figure>
+<p>To load the 12,000 math problems from the MATH training set shown in figure 6.11, we’ll define the following <code>load_math_train</code> function. It is similar to the <code>load_math500_ test</code> function in chapter 3 except that we specify a different file path.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">import</span> json
+<span class="tok-kw">import</span> requests
+<span class="tok-kw">from</span> pathlib <span class="tok-kw">import</span> Path
+<span class="tok-kw">def</span> load_math_train(local_path=<span class="tok-st">"math_train.json"</span>, save_copy=<span class="tok-kw">True</span>):
+    local_path = Path<span class="tok-kw">(</span>local_path<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 6.3</span>Loading the MATH training set</figcaption></figure>
+<pre><code class="language-python">    url = (
+        <span class="tok-st">"https://raw.githubusercontent.com/rasbt/"</span>
+        <span class="tok-st">"math_full_minus_math500/refs/heads/main/"</span>
+        <span class="tok-st">"math_full_minus_math500.json"</span>
+    )
+    backup_url = (
+        <span class="tok-st">"https://f001.backblazeb2.com/file/reasoning-from-scratch/"</span>
+        <span class="tok-st">"MATH/math_full_minus_math500.json"</span>
+    )
+    <span class="tok-kw">if</span> local_path.exists<span class="tok-kw">()</span>:
+        <span class="tok-kw">with</span> local_path.open<span class="tok-kw">(</span><span class="tok-st">"r"</span>, encoding=<span class="tok-st">"utf-8"</span><span class="tok-kw">)</span> <span class="tok-kw">as</span> f:
+            data = json.load<span class="tok-kw">(</span>f<span class="tok-kw">)</span>
+    <span class="tok-kw">else</span>:
+        <span class="tok-kw">try</span>:
+            r = requests.get<span class="tok-kw">(</span>url, timeout=<span class="tok-fn">30</span><span class="tok-kw">)</span>
+            r.raise_for_status<span class="tok-kw">()</span>
+        <span class="tok-kw">except</span> requests.RequestException:
+            print<span class="tok-kw">(</span><span class="tok-st">"Using backup URL."</span><span class="tok-kw">)</span>
+            r = requests.get<span class="tok-kw">(</span>backup_url, timeout=<span class="tok-fn">30</span><span class="tok-kw">)</span>
+            r.raise_for_status<span class="tok-kw">()</span>
+        data = r.json<span class="tok-kw">()</span>
+        <span class="tok-kw">if</span> save_copy:
+            <span class="tok-kw">with</span> local_path.open<span class="tok-kw">(</span><span class="tok-st">"w"</span>, encoding=<span class="tok-st">"utf-8"</span><span class="tok-kw">)</span> <span class="tok-kw">as</span> f:
+                json.dump<span class="tok-kw">(</span>data, f, indent=<span class="tok-fn">2</span><span class="tok-kw">)</span>
+    <span class="tok-kw">return</span> data
+math_train = load_math_train()
+print(<span class="tok-st">"Dataset size:"</span>, len(math_train))</code></pre>
+<p>The preceding code should print <code>"Dataset</code> <code>size:</code> <code>12000"</code> to indicate that the dataset was loaded correctly.</p>
+<p>Next, we can print one of the 12,000 entries to get an idea of the dataset structure. For this, we’ll use the <code>pprint</code> function from the <code>pprint</code> standard library because it provides nicer formatting for dictionary entries than the regular <code>print</code> function:</p>
+<pre><code class="language-python"><span class="tok-kw">from</span> pprint <span class="tok-kw">import</span> pprint
+pprint<span class="tok-kw">(</span>math_train<span class="tok-kw">[</span><span class="tok-fn">4</span><span class="tok-kw">])</span></code></pre>
+<p>This is the resulting entry (index 4 corresponds to the fifth entry in the dataset):</p>
+<pre><code class="language-python">{
+    <span class="tok-st">"answer"</span>: <span class="tok-st">"6"</span>,
+    <span class="tok-st">"level"</span>: <span class="tok-st">"Level 3"</span>,
+    <span class="tok-st">"problem"</span>: (
+        <span class="tok-st">"Sam is hired for a 20-day period. On days that he "</span>
+        <span class="tok-st">"works, he earns $</span>\\<span class="tok-st">$60. For each day that he does "</span>
+        <span class="tok-st">"not work, $</span>\\<span class="tok-st">$30 is subtracted from his earnings. "</span>
+        <span class="tok-st">"At the end of the 20-day period, he received "</span>
+        <span class="tok-st">"$</span>\\<span class="tok-st">$660. How many days did he not work?"</span>
+    ),
+    <span class="tok-st">"solution"</span>: (
+        <span class="tok-st">"Call $x$ the number of days Sam works and $y$ the "</span>
+        <span class="tok-st">"number of days he does not... Thus, Sam did not "</span>
+        <span class="tok-st">"work for $</span>\\<span class="tok-st">boxed</span>{6}<span class="tok-st">$ days."</span>
+    ),
+    <span class="tok-st">"type"</span>: <span class="tok-st">"Algebra"</span>,
+    <span class="tok-st">"unique_id"</span>: <span class="tok-fn">4</span>,
+}</code></pre>
+<p>As you can see, each dataset example is stored as a dictionary with several fields. For training, the relevant fields are <code>"problem"</code>, which serves as the prompt, and <code>"answer"</code>, which is the target against which we verify the model’s output using the math verifier.</p>
+<p>The dataset also includes a full worked solution in the <code>"solution"</code> field. While such step-by-step solutions could in principle be used to evaluate intermediate reasoning steps, doing so would unnecessarily constrain the model and risk overfitting to a specific solution and style. Instead, we want to allow the model to explore the solution space more freely.</p>
+<nav class="pager"><a class="prev" href="page-54.html" rel="prev"><span class="dir">上一页</span><span class="t">6.2 RLVR using GRPO</span></a><a class="next" href="page-56.html" rel="next"><span class="dir">下一页</span><span class="t">6.5 Sampling rollouts</span></a></nav>
+</main>
+</body>
+</html>

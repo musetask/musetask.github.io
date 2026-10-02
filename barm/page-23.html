@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>3.5 Normalizing the extracted answer · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-22.html">
+<link rel="next" href="page-24.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 23 页 / 共 108 页</span></div>
+<h2 id="h2-normalizing-the-extracted-answer"><span class="num">3.5</span>Normalizing the extracted answer</h2>
+<p>Previously, we extracted the boxed answer <code>"\dfrac{14}{3}"</code> from the model’s response. </p>
+<p>Models may print the same value in many ways, such as <code>"\frac{14}{3}"</code>, <code>"14/3"</code><code>,"$14/3$"</code>, or <code>"(14)/(3)"</code>. To implement and use a robust checking system to determine whether the answer is correct, we first need a consistent method of comparing results. </p>
+<p>In this section, we’ll implement a normalization (or canonicalization) pass (step 4 in figure 3.7) that strips formatting and standardizes the answer.</p>
+<figure><a class="zoom" href="assets/figure-3.7.png" tabindex="-1"><img src="assets/figure-3.7.png" alt="" width="1137" height="799" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 3.7</span>An illustration of how the boxed result from the LLM output is extracted and converted into a canonical plain form. This normalized answer will later be verified against the correct answer.</figcaption></figure>
+<p>The normalization step shown in figure 3.7 is implemented in the following <code>normalize_text</code> function.</p>
+<figure class="listing"><pre><code class="language-python">LATEX_FIXES = [
+    (<span class="tok-kw">r</span><span class="tok-st">"\\left\s*"</span>, <span class="tok-st">""</span>),
+    (<span class="tok-kw">r</span><span class="tok-st">"\\right\s*"</span>, <span class="tok-st">""</span>),
+    (<span class="tok-kw">r</span><span class="tok-st">"\\,|\\!|\\;|\\:"</span>, <span class="tok-st">""</span>),
+    (<span class="tok-kw">r</span><span class="tok-st">"\\cdot"</span>, <span class="tok-st">"*"</span>),
+    (<span class="tok-kw">r</span><span class="tok-st">"\u00B7|\u00D7"</span>, <span class="tok-st">"*"</span>),
+    (<span class="tok-kw">r</span><span class="tok-st">"\\\^\\circ"</span>, <span class="tok-st">""</span>),
+    (<span class="tok-kw">r</span><span class="tok-st">"\\dfrac"</span>, <span class="tok-kw">r</span><span class="tok-st">"\\frac"</span>),
+    (<span class="tok-kw">r</span><span class="tok-st">"\\tfrac"</span>, <span class="tok-kw">r</span><span class="tok-st">"\\frac"</span>),
+    (<span class="tok-kw">r</span><span class="tok-st">"°"</span>, <span class="tok-st">""</span>),
+]
+RE_SPECIAL = re.compile<span class="tok-kw">(r</span><span class="tok-st">"&lt;\|[^&gt;]+?\|&gt;"</span><span class="tok-kw">)</span>
+SUPERSCRIPT_MAP = {
+    <span class="tok-st">"⁰"</span>: <span class="tok-st">"0"</span>, <span class="tok-st">"¹"</span>: <span class="tok-st">"1"</span>, <span class="tok-st">"²"</span>: <span class="tok-st">"2"</span>, <span class="tok-st">"³"</span>: <span class="tok-st">"3"</span>, <span class="tok-st">"⁴"</span>: <span class="tok-st">"4"</span>,
+    <span class="tok-st">"⁺"</span>: <span class="tok-st">"+"</span>, <span class="tok-st">"</span>⁻<span class="tok-st">"</span>: <span class="tok-st">"-"</span>, <span class="tok-st">"</span>⁽<span class="tok-st">"</span>: <span class="tok-st">"("</span>, <span class="tok-st">"</span>⁾<span class="tok-st">"</span>: <span class="tok-st">")"</span>,
+    <span class="tok-st">"⁵"</span>: <span class="tok-st">"5"</span>, <span class="tok-st">"⁶"</span>: <span class="tok-st">"6"</span>, <span class="tok-st">"⁷"</span>: <span class="tok-st">"7"</span>, <span class="tok-st">"⁸"</span>: <span class="tok-st">"8"</span>, <span class="tok-st">"⁹"</span>: <span class="tok-st">"9"</span>,
+}
+<span class="tok-kw">def</span> normalize_text(text):
+    <span class="tok-kw">if</span> <span class="tok-kw">not</span> text:
+        <span class="tok-kw">return</span> <span class="tok-st">""</span>
+    text = RE_SPECIAL.sub<span class="tok-kw">(</span><span class="tok-st">""</span>, text<span class="tok-kw">)</span>.strip<span class="tok-kw">()</span></code></pre><figcaption><span class="lbl">Listing 3.6</span>Normalizing extracted answers</figcaption></figure>
+<pre><code class="language-python">    match = re.match<span class="tok-kw">(r</span><span class="tok-st">"^[A-Za-z]\s*[.:]\s*(.+)$"</span>, text<span class="tok-kw">)</span>
+    <span class="tok-kw">if</span> match:
+        text = match.group<span class="tok-kw">(</span><span class="tok-fn">1</span><span class="tok-kw">)</span></code></pre>
+<pre><code class="language-python">    text = re.sub<span class="tok-kw">(r</span><span class="tok-st">"\^\s*\{\s*\\circ\s*\}"</span>, <span class="tok-st">""</span>, text<span class="tok-kw">)</span>
+    text = re.sub<span class="tok-kw">(r</span><span class="tok-st">"\^\s*\\circ"</span>, <span class="tok-st">""</span>, text<span class="tok-kw">)</span>
+    text = text.replace<span class="tok-kw">(</span><span class="tok-st">"°"</span>, <span class="tok-st">""</span><span class="tok-kw">)</span>
+    match = re.match<span class="tok-kw">(r</span><span class="tok-st">"^\\text\{(?P&lt;x&gt;.+?)\}$"</span>, text<span class="tok-kw">)</span>
+    <span class="tok-kw">if</span> match:
+        text = match.group<span class="tok-kw">(</span><span class="tok-st">"x"</span><span class="tok-kw">)</span>
+    text = re.sub<span class="tok-kw">(r</span><span class="tok-st">"\\\(|\\\)|\\\[|\\\]"</span>, <span class="tok-st">""</span>, text<span class="tok-kw">)</span></code></pre>
+<pre><code class="language-python">    <span class="tok-kw">for</span> pat, rep <span class="tok-kw">in</span> LATEX_FIXES:
+        text = re.sub<span class="tok-kw">(</span>pat, rep, text<span class="tok-kw">)</span></code></pre>
+<pre><code class="language-python">    <span class="tok-kw">def</span> convert_superscripts(s, base=<span class="tok-kw">None</span>):
+        converted = <span class="tok-st">""</span>.join<span class="tok-kw">(</span>
+            SUPERSCRIPT_MAP<span class="tok-kw">[</span>ch<span class="tok-kw">]</span> <span class="tok-kw">if</span> ch <span class="tok-kw">in</span> SUPERSCRIPT_MAP <span class="tok-kw">else</span> ch
+            <span class="tok-kw">for</span> ch <span class="tok-kw">in</span> s
+        <span class="tok-kw">)</span>
+        <span class="tok-kw">if</span> base <span class="tok-kw">is</span> <span class="tok-kw">None</span>:
+            <span class="tok-kw">return</span> converted
+        <span class="tok-kw">return</span> <span class="tok-kw">f</span><span class="tok-st">"</span>{base}<span class="tok-st">**</span>{converted}<span class="tok-st">"</span>
+        <span class="tok-kw">r</span><span class="tok-st">"([0-9A-Za-z\)\]\}])([⁰¹²³⁴⁵⁶⁷⁸⁹⁺</span>⁻<span class="tok-st">]+)"</span>,
+    text = re.sub<span class="tok-kw">(</span>
+        <span class="tok-kw">lambda</span> m: convert_superscripts<span class="tok-kw">(</span>m.group<span class="tok-kw">(</span><span class="tok-fn">2</span><span class="tok-kw">)</span>, base=m.group<span class="tok-kw">(</span><span class="tok-fn">1</span><span class="tok-kw">))</span>,
+        text,
+    <span class="tok-kw">)</span>
+    text = convert_superscripts<span class="tok-kw">(</span>text<span class="tok-kw">)</span></code></pre>
+<pre><code class="language-python">    text = text.replace<span class="tok-kw">(</span><span class="tok-st">"</span>\\<span class="tok-st">%"</span>, <span class="tok-st">"%"</span><span class="tok-kw">)</span>.replace<span class="tok-kw">(</span><span class="tok-st">"$"</span>, <span class="tok-st">""</span><span class="tok-kw">)</span>.replace<span class="tok-kw">(</span><span class="tok-st">"%"</span>, <span class="tok-st">""</span><span class="tok-kw">)</span>
+    text = re.sub<span class="tok-kw">(</span>
+        <span class="tok-kw">r</span><span class="tok-st">"\\sqrt\s*\{([^}]*)\}"</span>,
+        <span class="tok-kw">lambda</span> match: <span class="tok-kw">f</span><span class="tok-st">"sqrt(</span>{match.group<span class="tok-kw">(</span><span class="tok-fn">1</span><span class="tok-kw">)</span>}<span class="tok-st">)"</span>,
+        text,
+    <span class="tok-kw">)</span>
+    text = re.sub<span class="tok-kw">(</span>
+        <span class="tok-kw">r</span><span class="tok-st">"\\sqrt\s+([^\\\s{}]+)"</span>,
+        <span class="tok-kw">lambda</span> match: <span class="tok-kw">f</span><span class="tok-st">"sqrt(</span>{match.group<span class="tok-kw">(</span><span class="tok-fn">1</span><span class="tok-kw">)</span>}<span class="tok-st">)"</span>,
+        text,
+    <span class="tok-kw">)</span></code></pre>
+<pre><code class="language-python">    text = re.sub<span class="tok-kw">(</span>
+        <span class="tok-kw">r</span><span class="tok-st">"\\frac\s*\{([^{}]+)\}\s*\{([^{}]+)\}"</span>,
+        <span class="tok-kw">lambda</span> match: <span class="tok-kw">f</span><span class="tok-st">"(</span>{match.group<span class="tok-kw">(</span><span class="tok-fn">1</span><span class="tok-kw">)</span>}<span class="tok-st">)/(</span>{match.group<span class="tok-kw">(</span><span class="tok-fn">2</span><span class="tok-kw">)</span>}<span class="tok-st">)"</span>,
+        text,
+    <span class="tok-kw">)</span>
+    text = re.sub<span class="tok-kw">(</span>
+        <span class="tok-kw">r</span><span class="tok-st">"\\frac\s+([^\s{}]+)\s+([^\s{}]+)"</span>,
+        <span class="tok-kw">lambda</span> match: <span class="tok-kw">f</span><span class="tok-st">"(</span>{match.group<span class="tok-kw">(</span><span class="tok-fn">1</span><span class="tok-kw">)</span>}<span class="tok-st">)/(</span>{match.group<span class="tok-kw">(</span><span class="tok-fn">2</span><span class="tok-kw">)</span>}<span class="tok-st">)"</span>,
+        text,
+    <span class="tok-kw">)</span>
+    text = text.replace<span class="tok-kw">(</span><span class="tok-st">"^"</span>, <span class="tok-st">"**"</span><span class="tok-kw">)</span>
+    text = re.sub<span class="tok-kw">(</span>
+        <span class="tok-kw">r</span><span class="tok-st">"(?&lt;=\d)\s+(\d+/\d+)"</span>,
+        <span class="tok-kw">lambda</span> match: <span class="tok-st">"+"</span> + match.group<span class="tok-kw">(</span><span class="tok-fn">1</span><span class="tok-kw">)</span>,
+        text,
+    <span class="tok-kw">)</span>
+    text = re.sub<span class="tok-kw">(</span>
+        <span class="tok-kw">r</span><span class="tok-st">"(?&lt;=\d),(?=\d\d\d(\D|$))"</span>,
+        <span class="tok-st">""</span>,
+        text,
+    <span class="tok-kw">)</span>
+    <span class="tok-kw">return</span> text.replace<span class="tok-kw">(</span><span class="tok-st">"{"</span>, <span class="tok-st">""</span><span class="tok-kw">)</span>.replace<span class="tok-kw">(</span><span class="tok-st">"}"</span>, <span class="tok-st">""</span><span class="tok-kw">)</span>.strip<span class="tok-kw">()</span>.lower<span class="tok-kw">()</span></code></pre>
+<p>This <code>normalize_text</code> function takes an extracted answer string and rewrites it into a standardized format that we can reliably compare against reference solutions. It first strips away special tokens and unnecessary LaTeX clutter, such as <code>\left</code>, <code>\right</code>, or degree symbols. It then unwraps cases like <code>\text{...}</code>, removes inline math markers, and rewrites common structures into a calculator-style form. For example, it turns <code>\sqrt{a}</code> into <code>sqrt(a)</code> and <code>\frac{a}{b}</code> into <code>(a)/(b)</code>. Finally, it normalizes exponents, mixed numbers, and thousands separators and cleans up braces and casing. In short, the function transforms differently formatted LaTeX outputs into a clean, standardized string representation.</p>
+<p>Let’s try the <code>normalize_text</code> function on our model answer:</p>
+<pre><code class="language-python">print<span class="tok-kw">(</span>normalize_text<span class="tok-kw">(</span>extract_final_candidate<span class="tok-kw">(</span>model_answer<span class="tok-kw">)))</span></code></pre>
+<p>Instead of printing the answer with LaTeX formatting (<code>r"\dfrac{14}{3}"</code>), it returns the answer in a standardized, LaTeX-free form:</p>
+<pre><code class="language-python">"(14)/(3)"</code></pre>
+<p>Next, let’s try a differently formatted answer:</p>
+<pre><code class="language-python">print<span class="tok-kw">(</span>normalize_text<span class="tok-kw">(r</span><span class="tok-st">"\text{\[\frac{14}{3}\]}"</span><span class="tok-kw">))</span></code></pre>
+<p>This also returns <code>"(14)/(3)"</code>, as intended.</p>
+<p>We now have a robust method that extracts answer texts from an LLM’s response. In the next section, we’ll implement a function that compares the LLM answer with a correct reference answer.</p>
+<nav class="pager"><a class="prev" href="page-22.html" rel="prev"><span class="dir">上一页</span><span class="t">3.4 Extracting the final answer box</span></a><a class="next" href="page-24.html" rel="next"><span class="dir">下一页</span><span class="t">3.6 Verifying mathematical equivalence</span></a></nav>
+</main>
+</body>
+</html>

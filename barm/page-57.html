@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>6.7 Preparing learning signals from rollouts via advantages · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-56.html">
+<link rel="next" href="page-58.html">
+<link rel="stylesheet" href="assets/detail.css">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 57 页 / 共 108 页</span></div>
+<aside class="detail-link"><span class="tag">补充材料</span>这一节的数学推导（公式已用 KaTeX 排版，含逐步手算验证）在 <a href="page-58-detail.html"><b>6.7 advantage 组内归一化</b></a>。全部推导页的索引见 <a href="math-detail.html">math-detail.html</a>。</aside>
+<h2 id="h2-preparing-learning-signals-from-rollouts-via-advantages"><span class="num">6.7</span>Preparing learning signals from rollouts via advantages</h2>
+<p>We’ll now move on from rewards to the so-called <em>advantages</em>, as shown in figure 6.15. While rewards tell us how well each individual rollout performed, advantages capture how a rollout performed relative to other rollouts generated for the same prompt.</p>
+<p>The advantage values shown in figure 6.15 are computed by a simple formula:</p>
+<ul><li>𝑟𝑖 denotes the reward of the <em>i</em>-th rollout.</li></ul>
+<p>Here</p>
+<ul><li>𝜇𝑟 is the mean reward across the group of rollouts.</li></ul>
+<ul><li>σ𝑟 is the corresponding standard deviation.</li></ul>
+<ul><li>ϵ is a small constant added for numerical stability to avoid division-by-zero errors.</li></ul>
+<p>In code, we can implement the advantage calculation as follows.</p>
+<figure class="listing"><pre><code class="language-python">rewards = torch.tensor<span class="tok-kw">(</span>rollout_rewards, device=device<span class="tok-kw">)</span>
+advantages = (rewards - rewards.mean<span class="tok-kw">()</span>) / (rewards.std<span class="tok-kw">()</span> + <span class="tok-fn">1e-4</span>)
+print<span class="tok-kw">(</span>rewards<span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>advantages<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 6.8</span>Calculating advantages</figcaption></figure>
+<p>The rewards, which we computed in the previous section, are <code>[1., 1., 0., 0.]</code>, and the corresponding advantages are <code>[0.8659, 0.8659, -0.8659, -0.8659]</code>. These advantage values capture which responses performed better than average and which performed worse than average within the group.</p>
+<figure><a class="zoom" href="assets/figure-6.15.png" tabindex="-1"><img src="assets/figure-6.15.png" alt="" width="1027" height="991" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 6.15</span>The third GRPO stage computes the advantage values from the correctness rewards for the answers (rollouts).</figcaption></figure>
+<aside><span class="tag">Note</span>The “GR” (group relative) in GRPO refers to the fact that GRPO generates multiple answers (rollouts) per prompt and compares them relative to each other to construct a learning signal.</aside>
+<p>You might still wonder what the point of converting rewards into advantages is. At a practical level, the advantage values directly scale the gradients during the policy update. If the advantage is positive, the gradient increases the likelihood of the actions that produced that rollout. If it is negative, the gradient decreases their likelihood. Rollouts with advantages close to zero contribute very little.</p>
+<h3 id="h3-exercise-6-2-zero-advantage-cases">Exercise 6.2: Zero-advantage cases</h3>
+<div class="lead">Modify the rollout rewards so that all rollouts receive the same reward (for example, force all rewards to <code>0.0</code> or all to <code>1.0</code>). Run the advantage computation and verify that the resulting GRPO loss is zero. Why is this behavior desirable in Group Relative Policy Optimization?</div>
+<h2 id="h2-scoring-rollouts-with-sequence-log-probabilities"><span class="num">6.8</span>Scoring rollouts with sequence log probabilities</h2>
+<p>We calculated the rewards and then the advantages from them. Now we’ll take a separate branch from the rollouts and compute their log probabilities (logprobs), as shown in figure 6.16. Logprobs measure how likely the model considers each generated token to be under its current parameters, as discussed in the previous chapter.</p>
+<figure><a class="zoom" href="assets/figure-6.16.png" tabindex="-1"><img src="assets/figure-6.16.png" alt="" width="1031" height="963" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 6.16</span>The fourth stage in the GRPO pipeline computes log probabilities for each rollout. It is related to the logprob scorer we developed in the previous chapter.</figcaption></figure>
+<p>As shown in figure 6.16, these logprobs, together with the advantages, form the core ingredients of the GRPO policy gradient loss, which we will implement later on.</p>
+<p>In the previous chapter (listing 5.8), we implemented an <code>avg_logprob_answer</code> function that computes per-token logprobs for the model’s answer tokens. These values are obtained by evaluating the likelihood the model assigns to each generated token under its current parameters.</p>
+<p>When averaged across the response, these values are often referred to as token-level logprobs and are commonly used for scoring LLM outputs. Averaging is preferred in this context because it provides length normalization, which makes the scores comparable across responses of different lengths.</p>
+<nav class="pager"><a class="prev" href="page-56.html" rel="prev"><span class="dir">上一页</span><span class="t">6.5 Sampling rollouts</span></a><a class="next" href="page-58.html" rel="next"><span class="dir">下一页</span><span class="t">Mathematical definition of token-level log probabilities</span></a></nav>
+</main>
+</body>
+</html>

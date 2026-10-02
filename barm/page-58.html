@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>Mathematical definition of token-level log probabilities · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-57.html">
+<link rel="next" href="page-59.html">
+<link rel="stylesheet" href="assets/detail.css">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 58 页 / 共 108 页</span></div>
+<aside class="detail-link"><span class="tag">补充材料</span>这一节的数学推导（公式已用 KaTeX 排版，含逐步手算验证）在 <a href="page-58-detail.html"><b>6.8 序列 logprob 与 6.9 策略梯度损失</b></a>。全部推导页的索引见 <a href="math-detail.html">math-detail.html</a>。</aside>
+<h3 id="h3-mathematical-definition-of-token-level-log-probabilities">Mathematical definition of token-level log probabilities</h3>
+<div class="lead">Mathematically, the token-level logprobs we computed in the previous chapter can be written as</div>
+<ul><li>𝑦1, 𝑦2, ..., 𝑦𝑇 denote the tokens in the generated response of length <em>T</em>.</li></ul>
+<div class="lead">Here</div>
+<ul><li>𝑦&lt;t represents all previously generated tokens.</li><li><em>x </em>is the input prompt.</li><li><em>W </em>denotes the model’s weight parameters.</li></ul>
+<div class="lead">This expression is mathematically identical to the one used in the previous chapter; we simply switch from x to y to distinguish the generated output tokens from the input prompt.</div>
+<p>The <code>avg_logprob_answer</code> function from listing 5.8 is repeated and used here to compute the logprobs for the previous <code>prompt</code> and <code>answer_text</code> for illustration.</p>
+<figure class="listing"><pre><code class="language-python">@torch.inference_mode<span class="tok-kw">()</span>
+<span class="tok-kw">def</span> avg_logprob_answer(model, tokenizer, prompt, answer, device=<span class="tok-st">"cpu"</span>):
+    prompt_ids = tokenizer.encode<span class="tok-kw">(</span>prompt<span class="tok-kw">)</span>
+    answer_ids = tokenizer.encode<span class="tok-kw">(</span>answer<span class="tok-kw">)</span>
+    full_ids = torch.tensor<span class="tok-kw">(</span>prompt_ids + answer_ids, device=device<span class="tok-kw">)</span>
+    logits = model<span class="tok-kw">(</span>full_ids.unsqueeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">))</span>.squeeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>
+    logprobs = torch.log_softmax<span class="tok-kw">(</span>logits, dim=-<span class="tok-fn">1</span><span class="tok-kw">)</span>
+    start = len<span class="tok-kw">(</span>prompt_ids<span class="tok-kw">)</span> - <span class="tok-fn">1</span>
+    end = full_ids.shape<span class="tok-kw">[</span><span class="tok-fn">0</span><span class="tok-kw">]</span> - <span class="tok-fn">1</span></code></pre><figcaption><span class="lbl">Listing 6.9</span>Computing token-level log probabilities (similar to chapter 5)</figcaption></figure>
+<pre><code class="language-python">    t_idx = torch.arange<span class="tok-kw">(</span>start, end, device=device<span class="tok-kw">)</span>
+    next_tokens = full_ids<span class="tok-kw">[</span>start + <span class="tok-fn">1</span> : end + <span class="tok-fn">1</span><span class="tok-kw">]</span>
+    next_token_logps = logprobs<span class="tok-kw">[</span>t_idx, next_tokens<span class="tok-kw">]</span>
+    <span class="tok-kw">return</span> torch.mean<span class="tok-kw">(</span>next_token_logps<span class="tok-kw">)</span>.item<span class="tok-kw">()</span></code></pre>
+<pre><code class="language-python">avg_logprob_val = avg_logprob_answer<span class="tok-kw">(</span>
+                   model, tokenizer,
+                   prompt=prompt,
+                   answer=answer_text,
+                   device=device<span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>avg_logprob_val<span class="tok-kw">)</span>
+This returns -0.061279296875.</code></pre>
+<p>In GRPO, we do not use averaged token-level logprobs. Instead, we work with sequence-level logprobs. That’s because GRPO assigns a single reward and advantage to each rollout, which applies to the entire generated response. Intuitively, logprob should reflect how likely the model was to generate the whole sequence, not an average per token.</p>
+<p>We compute sequence-level logprobs by summing the logprobs of all generated tokens. (This sum corresponds to the log likelihood of producing the full response under the current model parameters.) In contrast, averaging token-level logprobs normalizes by sequence length. While this normalization is useful for scoring and comparing responses of different lengths, it would unintentionally rescale the learning signal in policy optimization and cause longer and shorter responses to contribute unevenly to the update. That kind of length-based rescaling is not part of the original GRPO formulation, which instead uses sequence-level logprobs for the whole rollout. We will revisit token-level logprobs in the next chapter when improving the algorithm. </p>
+<p>We can convert the token-level, length-normalized score into a sequence-level logprob by dropping the averaging step and replacing <code>torch.mean(next_token_logps)</code> with <code>torch.sum(next_token_logps)</code> in the code in listing 6.9.</p>
+<p>The same result can also be obtained by multiplying the averaged logprob by the number of answer tokens, as long as the token count matches exactly:</p>
+<pre><code class="language-python">sequence_logprob_val = avg_logprob_val * (
+    len<span class="tok-kw">(</span>tokenizer.encode<span class="tok-kw">(</span>answer_text<span class="tok-kw">))</span>
+)
+print<span class="tok-kw">(</span>sequence_logprob_val<span class="tok-kw">)</span></code></pre>
+<p>This now returns <code>-16.239013671875</code>.</p>
+<p>These sequence-level logprobs scale linearly with the sequence length <em>T</em>, which means that longer responses generally receive more negative logprob values. As a result, for two equally good answers, the optimization implicitly favors the shorter one, since it is cheaper in terms of likelihood. Summed logprobs therefore encourage the model to stop earlier unless producing a longer response is justified by a higher reward.</p>
+<p>So, as mentioned before, we can replace <code>torch.mean</code> with <code>torch.sum</code> in the function to obtain sequence-level logprobs. Because we ran the function in inference mode in the previous chapter using the <code>@torch.inference_mode()</code> decorator, we need to redefine it without the decorator so that PyTorch can track gradients.</p>
+<p>In addition, because <code>sample_response</code> from listing 6.4 already returns the <code>token_ids</code> and <code>prompt_len</code>, we can simplify the implementation by dropping the explicit tokenization step and the construction of <code>full_ids</code>.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">def</span> sequence_logprob_draft(model, token_ids, prompt_len):
+    logits = model<span class="tok-kw">(</span>token_ids.unsqueeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">))</span>.squeeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>.float<span class="tok-kw">()</span>
+    logprobs = torch.log_softmax<span class="tok-kw">(</span>logits, dim=-<span class="tok-fn">1</span><span class="tok-kw">)</span>
+    start = prompt_len - <span class="tok-fn">1</span>
+    end = token_ids.shape<span class="tok-kw">[</span><span class="tok-fn">0</span><span class="tok-kw">]</span> - <span class="tok-fn">1</span>
+    t_idx = torch.arange<span class="tok-kw">(</span>start, end, device=token_ids.device<span class="tok-kw">)</span>
+    next_tokens = token_ids<span class="tok-kw">[</span>start + <span class="tok-fn">1</span> : end + <span class="tok-fn">1</span><span class="tok-kw">]</span>
+    next_token_logps = logprobs<span class="tok-kw">[</span>t_idx, next_tokens<span class="tok-kw">]</span>
+    <span class="tok-kw">return</span> torch.sum<span class="tok-kw">(</span>next_token_logps<span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>sequence_logprob_draft<span class="tok-kw">(</span>model, token_ids, prompt_len<span class="tok-kw">))</span></code></pre><figcaption><span class="lbl">Listing 6.10</span>Computing sequence-level log probabilities</figcaption></figure>
+<p>This produces the following output:</p>
+<pre><code class="language-python">tensor(-16.2998, grad_fn=&lt;SumBackward0&gt;)</code></pre>
+<p>The result is similar to the <code>-16.2421875</code> we got earlier (the difference is due to floating-point behavior and rounding).</p>
+<p>PyTorch internally builds a computation graph that records each differentiable operation applied to a tensor. The <code>SumBackward0</code> entry shows that the summation of token log probabilities is part of this graph, which means gradients can propagate back through the sequence-level log probability to the model parameters.</p>
+<p>This is exactly what we’ll need for policy optimization later, when we implement the training loop to update the model weights via a backward pass. The backward pass applies the backpropagation algorithm, which is the standard method used in deep learning to compute gradients and update neural network weights.</p>
+<h3 id="h3-pytorch-computation-graphs-gradients-and-backpropagation">PyTorch computation graphs, gradients, and backpropagation</h3>
+<div class="lead">As the model produces an output, PyTorch records each mathematical operation that leads from the model parameters to that output. This record is called the computation graph. When we later run the backward pass, PyTorch uses this graph to perform backpropagation; that is, it computes gradients that describe how changes to the </div>
+<div class="lead">model’s parameters would affect the final result. If an operation is part of this graph, PyTorch can compute gradients through it during training. Understanding PyTorch’s computation graphs is not required for this chapter, but you can learn more, if you’re interested, in my tutorial at https://sebastianraschka.com/teaching/pytorch-1h/#3-seeing-models-as-computation-graphs.</div>
+<p>This draft implementation works, but we can simplify it a bit and make it more efficient for GPUs. In particular, we can avoid explicitly constructing index ranges and instead use <code>torch.gather</code> to directly select the logprob corresponding to the generated tokens. The following listing shows a more compact, optimized version of the same computation that produces identical results while being easier to read and faster to execute.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">def</span> sequence_logprob(model, token_ids, prompt_len):
+    logits = model<span class="tok-kw">(</span>token_ids.unsqueeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">))</span>.squeeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>.float<span class="tok-kw">()</span>
+    logprobs = torch.log_softmax<span class="tok-kw">(</span>logits, dim=-<span class="tok-fn">1</span><span class="tok-kw">)</span>
+    selected = logprobs<span class="tok-kw">[</span>:-<span class="tok-fn">1</span><span class="tok-kw">]</span>.gather<span class="tok-kw">(</span>
+        <span class="tok-fn">1</span>, token_ids<span class="tok-kw">[</span><span class="tok-fn">1</span>:<span class="tok-kw">]</span>.unsqueeze<span class="tok-kw">(</span>-<span class="tok-fn">1</span><span class="tok-kw">)</span>
+    <span class="tok-kw">)</span>.squeeze<span class="tok-kw">(</span>-<span class="tok-fn">1</span><span class="tok-kw">)</span>
+    <span class="tok-kw">return</span> torch.sum<span class="tok-kw">(</span>selected<span class="tok-kw">[</span>prompt_len - <span class="tok-fn">1</span>:<span class="tok-kw">])</span>
+print<span class="tok-kw">(</span>sequence_logprob<span class="tok-kw">(</span>model, token_ids, prompt_len<span class="tok-kw">))</span>
+Like the previous code, this returns tensor(-16.2998, grad_fn=&lt;SumBackward0&gt;).</code></pre><figcaption><span class="lbl">Listing 6.11</span>Optimized sequence-level log probabilities code</figcaption></figure>
+<aside><span class="tag">Tip</span>We could compute these logprobs directly in the sample_response function, which would improve efficiency by avoiding calling model(...) twice, in</aside>
+<pre><code class="language-python">both the sample_response and sequence_logprob functions.</code></pre>
+<p>Finally, with our robust and efficient sequence-level logprob function in place, we can calculate the respective logprobs of the four different rollouts.</p>
+<figure class="listing"><pre><code class="language-python">rollouts = [
+    <span class="tok-kw">r</span><span class="tok-st">"\boxed{83}"</span>,
+    <span class="tok-kw">r</span><span class="tok-st">"The correct answer is \boxed{83}"</span>,
+    <span class="tok-kw">r</span><span class="tok-st">"The final answer is 83"</span>,
+    <span class="tok-kw">r</span><span class="tok-st">"We get \boxed{38}"</span>,
+]
+rollout_logps = []
+<span class="tok-kw">for</span> text <span class="tok-kw">in</span> rollouts:
+    token_ids = tokenizer.encode<span class="tok-kw">(</span>prompt + <span class="tok-st">"</span> <span class="tok-st">"</span> + text<span class="tok-kw">)</span>
+    logprob = sequence_logprob<span class="tok-kw">(</span>
+        model=model,
+        token_ids=torch.tensor<span class="tok-kw">(</span>token_ids, device=device<span class="tok-kw">)</span>,
+        prompt_len=prompt_len,
+    <span class="tok-kw">)</span>
+    print<span class="tok-kw">(f</span><span class="tok-st">"Answer: </span>{text}<span class="tok-st">"</span><span class="tok-kw">)</span>
+    print<span class="tok-kw">(f</span><span class="tok-st">"Logprob: </span>{logprob.item<span class="tok-kw">()</span>:.4f}\n<span class="tok-st">"</span><span class="tok-kw">)</span>
+    rollout_logps.append<span class="tok-kw">(</span>logprob<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 6.12</span>Computing sequence-level log probabilities of all rollouts</figcaption></figure>
+<p>This prints the following:</p>
+<pre><code class="language-python">Answer: \boxed{83}
+Logprob: -7.9243
+Answer: The correct answer is \boxed{83}
+Logprob: -20.1546
+Answer: The final answer is 83
+Logprob: -16.6130
+Answer: We get \boxed{38}
+Logprob: -23.3677</code></pre>
+<p>As you can see, shorter and more concise answers receive higher (less negative) sequence-level logprobs than longer or more verbose responses. The exception is the last answer, which receives the lowest score. Note that this is the only answer that contains the incorrect numerical answer value (<code>38</code> instead of <code>83</code>), so this also makes intuitive sense.</p>
+<p>Overall, this illustrates how summed logprobs naturally favor concise outputs, which is consistent with their role in GRPO when rewards and advantages are applied at the sequence level.</p>
+<nav class="pager"><a class="prev" href="page-57.html" rel="prev"><span class="dir">上一页</span><span class="t">6.7 Preparing learning signals from rollouts via advantages</span></a><a class="next" href="page-59.html" rel="next"><span class="dir">下一页</span><span class="t">6.9 From advantages to policy updates via the GRPO loss</span></a></nav>
+</main>
+</body>
+</html>

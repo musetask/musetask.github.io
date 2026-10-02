@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>G · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-106.html">
+<link rel="next" href="page-108.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 107 页 / 共 108 页</span></div>
+<h3 id="h3-g">G</h3>
+<p>grading answers 77–81</p>
+<p>greedy decoding 114</p>
+<p>ground truth 74</p>
+<p>GRPO (Group Relative Policy Optimization)</p>
+<p>high-level GRPO intuition via chef analogy 188</p>
+<p>improving for reinforcement learning</p>
+<p>adding explicit format reward 256–266</p>
+<p>advantage tracking 234</p>
+<p>computing clipped policy ratios 243–247</p>
+<p>controlling how much model changes with KL </p>
+<p>term 249–256</p>
+<p>entropy tracking 236–240</p>
+<p>inspecting training run 229–233</p>
+<p>more modifications, tips, and tricks 264–266</p>
+<p>plotting additional metrics 240</p>
+<p>stabilizing sequence-level GRPO using clipped </p>
+<p>policy ratios 242–248</p>
+<p>tracking performance metrics 226–242</p>
+<p>training model to emit &lt;think&gt; tokens </p>
+<p>261–264</p>
+<p>training with clipped policy ratios 247</p>
+<p>using &lt;think&gt; tokens 257–261</p>
+<p>pipeline policy updates via GRPO loss 208</p>
+<p>putting everything together in single GRPO </p>
+<p>function 211–214</p>
+<p>scoring rollouts with sequence log </p>
+<p>probabilities 203–208</p>
+<p>tracking performance metrics</p>
+<p>calculating evaluation accuracy 232</p>
+<p>executing training run 227</p>
+<p>training loop implementing 214–220</p>
+<p>training reasoning models with reinforcement </p>
+<p>learning 211–214</p>
+<p>using 186–191</p>
+<h3 id="h3-h">H</h3>
+<p>hard distillation 269</p>
+<p>hardware, needs and recommendations 23–24</p>
+<p>heuristic, defined 142</p>
+<p>Hugging Face Model Hub 83</p>
+<h3 id="h3-i">I</h3>
+<p>inference 45</p>
+<p>faster via KV caching 46–49</p>
+<p>faster via PyTorch model compilation 50–55</p>
+<p>inference-time scaling 9, 94–98, 136</p>
+<p>adding temperature scaling to text generation </p>
+<p>function 116</p>
+<p>controlling output diversity with temperature </p>
+<p>scaling 103</p>
+<p>improving reasoning with 98–103, 107</p>
+<p>likelihoods vs. probabilities 155</p>
+<p>log probabilities 156–162</p>
+<p>next-token selection process 104</p>
+<p>sampling next token from probability </p>
+<p>distribution 110</p>
+<p>self-consistency sampling 127–134</p>
+<p>self-refinement 137, 162–166</p>
+<p>self-refinement loop 170–177</p>
+<p>token probability scores 146–156</p>
+<p>top-k filtering 127</p>
+<p>top-p filtering 123</p>
+<p>instruction fine-tuning 6, 180</p>
+<h3 id="h3-j">J</h3>
+<p>joint probability 150</p>
+<p>judgment-based evaluation 59</p>
+<h3 id="h3-k">K</h3>
+<p>KL (Kullback–Leibler) divergence 269</p>
+<p>controlling how much model changes with KL </p>
+<p>term 249–256</p>
+<p>implementing KL loss term 250–253</p>
+<p>training with KL loss term 253–256</p>
+<p>kl_loss 191, 262</p>
+<p>KVCache object 48</p>
+<p>KV caching, faster inference via 46–49</p>
+<h3 id="h3-l">L</h3>
+<p>LaTeX class 64, 69</p>
+<p>learning signals, preparing from rollouts via </p>
+<p>advantages 201</p>
+<p>likelihoods 142, 155</p>
+<p>sequence likelihoods 147</p>
+<p>token log probabilities 139</p>
+<p>LLM-as-a-judge 142</p>
+<p>LLMs (large language models) 18</p>
+<p>for text generation 19</p>
+<p>generating text with, coding minimal text </p>
+<p>generation function 40–45</p>
+<p>improving reasoning with training and inference </p>
+<p>techniques 8–9</p>
+<p>preparing input texts for 25–28</p>
+<p>scoring responses with rule-based score 142–146</p>
+<p>text generation with</p>
+<p>faster inference via KV caching 46–49</p>
+<p>inference via PyTorch model compilation 50–55</p>
+<p>loading pretrained models 29–34</p>
+<p>sequential LLM text generation process 34–40</p>
+<p>setting up coding environment 20–23</p>
+<p>training pipeline 5–6</p>
+<p>logits 105</p>
+<p>rescaling token scores (logits) via temperature </p>
+<p>parameter 107</p>
+<p>log probabilities 156–162</p>
+<p>scoring model confidence with 162–166</p>
+<p>scoring rollouts with sequence log </p>
+<p>probabilities 203–208</p>
+<p>log probabilities (logprobs) 147, 203</p>
+<p>log-probability scoring (logprob scoring) </p>
+<p>method 139</p>
+<p>loss, answer-only 289</p>
+<p>lr (learning rate) 219, 295</p>
+<h3 id="h3-m">M</h3>
+<p>mathematical equivalence, verifying 74–77</p>
+<p>MATH dataset</p>
+<p>loading training dataset for distillation 273–276</p>
+<p>loading training subset 193–195</p>
+<p>math verifiers 58</p>
+<p>max function 39</p>
+<p>maximization 210</p>
+<p>mid-training stage 5</p>
+<p>minimization 210</p>
+<p>model distillation, overview of 268–271</p>
+<p>multi-reward training 302</p>
+<h3 id="h3-n">N</h3>
+<p>next-token probabilities 147</p>
+<p>next-token selection process 104</p>
+<p>normalizing extracted answers 71–74</p>
+<p>nucleus sampling 118</p>
+<p>num_rollouts 219, 220</p>
+<h3 id="h3-o">O</h3>
+<p>open-world setting 10</p>
+<h3 id="h3-p">P</h3>
+<p>partial function 174</p>
+<p>pattern matching, logical reasoning versus 10</p>
+<p>per-token probabilities 147</p>
+<p>pip package installer 20, 21</p>
+<p>policy gradient loss, mathematical definition of 210</p>
+<p>policy optimization algorithm 186</p>
+<p>policy updates, via GRPO loss 208</p>
+<p>post-training stage 5</p>
+<p>PPO (proximal policy optimization) 187</p>
+<p>preference tuning 6, 180</p>
+<p>pretrained LLMs (large language models), text </p>
+<p>generation with, faster inference via PyTorch </p>
+<p>model compilation 50–55</p>
+<p>pretrained models, loading 29–34, 139–142</p>
+<p>pretraining stage 5</p>
+<p>probabilities, likelihoods vs. 155</p>
+<p>probability scores 142</p>
+<p>process rewards 302</p>
+<p>prompt template 87</p>
+<p>Proximal Policy Optimization Algorithms 244</p>
+<p>PyTorch, inference via model compilation 50–55</p>
+<h3 id="h3-q">Q</h3>
+<p>Qwen3Model class 32</p>
+<h3 id="h3-r">R</h3>
+<p>raw strings 68</p>
+<p>reasoning</p>
+<p>distilling models for efficient reasoning 276–285</p>
+<p>improving with inference-time scaling 94</p>
+<p>reasoning distillation, generating dataset for 271</p>
+<p>reasoning models 1, 18, 176</p>
+<p>building from scratch 13</p>
+<p>defined 2–5</p>
+<p>distilling</p>
+<p>computing training and validation losses </p>
+<p>286–291</p>
+<p>evaluating distilled model 296–300</p>
+<p>loading MATH training dataset for 273–276</p>
+<p>loading pretrained model 285</p>
+<p>next steps 302</p>
+<p>staying up to date in fast-moving field 302</p>
+<p>training loops for distillation 291–296</p>
+<p>reasoning models</p>
+<p>evaluating 57, 84</p>
+<p>building math verifiers 58</p>
+<p>extracting final answer box 66–71</p>
+<p>implementing wrapper for easier text </p>
+<p>generation 65</p>
+<p>loading evaluation dataset 81–84</p>
+<p>loading pretrained model to generate text </p>
+<p>61–64</p>
+<p>normalizing extracted answers 71–74</p>
+<p>verifying mathematical equivalence 74–77</p>
+<p>future directions for 301</p>
+<p>grading answers 77–81</p>
+<p>improving with inference-time scaling</p>
+<p>adding temperature scaling to text generation </p>
+<p>function 116</p>
+<p>chain-of-thought prompting 100–103</p>
+<p>controlling output diversity with temperature </p>
+<p>scaling 103</p>
+<p>loading pretrained model 98–100</p>
+<p>rescaling token scores (logits) via temperature </p>
+<p>parameter 107</p>
+<p>sampling next token from probability </p>
+<p>distribution 110</p>
+<p>selecting subset of top-p tokens 119</p>
+<p>improving with training and inference </p>
+<p>techniques 8–9</p>
+<p>inference-time scaling 123, 127</p>
+<p>LLM versus human reasoning 4</p>
+<p>logical reasoning vs. 13</p>
+<p>pattern matching versus logical reasoning 10</p>
+<p>self-consistency sampling 127–134</p>
+<p>simulating reasoning without explicit rules 11</p>
+<p>training, scoring rollouts with sequence log </p>
+<p>probabilities 203–208</p>
+<p>training with reinforcement learning 179, 211–214</p>
+<p>calculating rewards 199</p>
+<p>implementing GRPO training loop 214–220</p>
+<p>loading MATH training subset 193–195</p>
+<p>loading pretrained model 191</p>
+<p>policy updates via GRPO loss 208</p>
+<p>putting everything together in single GRPO </p>
+<p>function 211–214</p>
+<p>sampling rollouts 195–199</p>
+<p>training with RL</p>
+<p>overview of 180–186</p>
+<p>RLHF 182</p>
+<p>RLVR 185</p>
+<p>training with RLVR, loading and evaluating saved </p>
+<p>model checkpoints 220–223</p>
+<p>reasoning training 180</p>
+<p>regex (regular expressions) 70–71</p>
+<p>re library 70</p>
+<p>requirements.txt file 20</p>
+<p>rewards</p>
+<p>calculating 199</p>
+<p>improving GRPO for reinforcement learning, </p>
+<p>adding explicit format reward 256–266</p>
+<p>RLHF (reinforcement learning with human </p>
+<p>feedback) 6, 9, 182</p>
+<p>RL (reinforcement learning) 9, 179</p>
+<p>GRPO (group relative policy optimization) 227, </p>
+<p>229–233</p>
+<p>GRPO, tracking performance metrics 233–242</p>
+<p>improving GRPO 226, 242–248</p>
+<p>overview of 180–186</p>
+<p>training reasoning models with 179, 191, 193–199, </p>
+<p>201, 203–208, 211–216</p>
+<p>RLVR (reinforcement learning with verifiable rewards)</p>
+<p>high-level GRPO intuition via chef analogy 188</p>
+<p>high-level GRPO procedure 189</p>
+<p>improving GRPO for</p>
+<p>adding explicit format reward 256–266</p>
+<p>more modifications, tips, and tricks 264–266</p>
+<p>training model to emit &lt;think&gt; tokens </p>
+<p>261–264</p>
+<p>using &lt;think&gt; tokens 257–261</p>
+<p>loading and evaluating saved model </p>
+<p>checkpoints 220–223</p>
+<p>training reasoning models with</p>
+<p>implementing GRPO training loop 214–220</p>
+<p>using GRPO 186–191</p>
+<p>roadmap to building reasoning models 15</p>
+<p>rollouts</p>
+<p>preparing learning signals from via advantages 201</p>
+<p>sampling 195–199, 254</p>
+<p>scoring with sequence log probabilities 203–208</p>
+<nav class="pager"><a class="prev" href="page-106.html" rel="prev"><span class="dir">上一页</span><span class="t">G.6 The multi-turn interface</span></a><a class="next" href="page-108.html" rel="next"><span class="dir">下一页</span><span class="t">S</span></a></nav>
+</main>
+</body>
+</html>

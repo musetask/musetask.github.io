@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>数学推导详解 · 7.4 裁剪策略比率 clipped policy ratio · Build a Reasoning Model</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">数学推导详解 · 7.4 clipped ratio</span>
+<a class="nav" href="page-67.html">原文</a>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">对应原文第 66–68 页 · 第 7 章 Improving GRPO for reinforcement learning</span></div>
+
+<h1>7.4 裁剪策略比率：完整数学推导</h1>
+
+<div class="lead">
+<a href="page-58-detail.html">6.9 的策略梯度损失</a>假设「采样时的策略」就是「当前策略」。这个假设只在<b>采完样立刻更新一次</b>时成立。7.4 引入裁剪比率，就是为了让<b>同一批数据被反复使用多次</b>时训练不发散。
+</div>
+
+<h2 class="deriv">一、要解决什么问题</h2>
+
+<p>原始策略梯度（6.9）：</p>
+
+\[
+\mathcal{L}_{\text{pg}} = -\frac{1}{N}\sum_{i=1}^{N} A_i \log \pi_\theta(y^{(i)} \mid x^{(i)})
+\]
+
+<p>隐含假设：算 logprob 的 \(\pi_\theta\) 就是产生这些 rollout 的策略。问题在于真实训练要<b>复用</b>数据：</p>
+
+<ol class="steps">
+<li>用 \(\pi_{\theta_{\text{old}}}\) 采样一批 rollout，算出 \(A_i\)</li>
+<li>用同一批数据更新 \(\theta\)</li>
+<li>如果还要再更新一次，<b>此时的 \(\pi_\theta\) 已经变了</b>，但 \(A_i\) 却是按旧策略的优劣算的</li>
+</ol>
+
+<p>这叫 <b>off-policy</b> 问题。$A_i$ 属于旧策略，拿它来评价新策略的行为是错的。</p>
+
+<h2 class="deriv">二、策略比率 policy ratio</h2>
+
+<h3>2.1 定义</h3>
+
+<p>用<b>概率之比</b>来衡量新旧策略的差异：</p>
+
+\[
+\rho_i = \frac{\pi_\theta(y^{(i)} \mid x^{(i)})}{\pi_{\theta_{\text{old}}}(y^{(i)} \mid x^{(i)})}
+\]
+
+<p>比值的好处是<b>与序列长度无关</b>。如果要直接比概率，$T_i$ 不同的两条序列根本没法比；比值则自动约掉了长度效应。</p>
+
+<h3>2.2 从 logprob 算出来</h3>
+
+<p>因为 \(\log\) 和除法可以互换：</p>
+
+\[
+\log \rho_i = \log \pi_\theta - \log \pi_{\theta_{\text{old}}} \quad\Longrightarrow\quad \rho_i = \exp\big(\log \pi_\theta - \log \pi_{\text{old}}\big)
+\]
+
+<pre><code>new_logps = logprobs                                       <span class="tok-cm"># 假想更新后的模型</span>
+old_logps = torch.tensor([<span class="tok-nu">-10.9243</span>, <span class="tok-nu">-20.3546</span>, <span class="tok-nu">-14.6130</span>, <span class="tok-nu">-23.3677</span>])
+
+log_ratio = new_logps - old_logps
+ratio     = torch.exp(log_ratio)
+<span class="tok-fn">print</span>(<span class="tok-st">"Ratio:"</span>, ratio)
+<span class="tok-cm"># tensor([20.0855, 1.2214, 0.1353, 1.0000])</span></code></pre>
+
+<h3>2.3 验算第一项</h3>
+
+\[
+\rho_1 = \exp(-7.9243 - (-10.9243)) = \exp(3.0) = 20.0855
+\]
+
+<p>含义：更新后的模型给这条（正确的）回答的概率，是旧模型的 <b>20 倍</b>。</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>i</th><th>回答</th><th>正确?</th><th>\(\log\pi_{\text{new}}\)</th><th>\(\log\pi_{\text{old}}\)</th><th>\(\log\rho\)</th><th>\(\rho\)</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><code>\boxed{83}</code></td><td>✅</td><td>−7.92</td><td>−10.92</td><td><b>+3.0</b></td><td><b>20.09</b></td></tr>
+<tr><td>2</td><td><code>The correct answer is \boxed{83}</code></td><td>✅</td><td>−20.15</td><td>−20.35</td><td>+0.2</td><td>1.22</td></tr>
+<tr><td>3</td><td><code>The final answer is 83</code></td><td>❌</td><td>−16.61</td><td>−14.61</td><td><b>−2.0</b></td><td><b>0.135</b></td></tr>
+<tr><td>4</td><td><code>We get \boxed{38}</code></td><td>❌</td><td>−23.37</td><td>−23.37</td><td>0.0</td><td>1.00</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>四个数字的解读：</p>
+
+<ul>
+<li><b>\(\rho = 1.0\)</b>（第 4 行）表示「完全没变」，这是参照点。</li>
+<li><b>\(\rho &gt; 1\)</b> 表示新策略<b>更倾向于</b>这条序列。</li>
+<li><b>\(\rho &lt; 1\)</b> 表示新策略<b>更不倾向于</b>这条序列。</li>
+<li>\(\rho\) 是<b>指数</b>，所以 \(\log\rho\) 差 3.0 就是 20 倍，差 2.0 就是 \(e^2 = 7.4\) 倍。<b>logprob 的小变化会被放大成比率的大变化</b>——这正是需要裁剪的原因。</li>
+</ul>
+
+<div class="key">
+<span class="tag">为什么用 exp 而不直接比</span>
+<p>因为序列概率小到 \(e^{-23}\) 这个量级，直接相除两个这么小的浮点数会损失精度。取 log 后做减法，再 <code>exp</code> 回去，数值稳定性好得多。</p>
+</div>
+
+<h2 class="deriv">三、裁剪</h2>
+
+<h3>3.1 公式</h3>
+
+<p>把比率限制在 \([1-\epsilon,\; 1+\epsilon]\) 区间内：</p>
+
+\[
+\text{clip}(\rho_i,\, 1-\epsilon,\, 1+\epsilon) = \min\big(\max(\rho_i,\; 1-\epsilon),\; 1+\epsilon\big)
+\]
+
+<pre><code>clip_eps = <span class="tok-nu">10.0</span>   <span class="tok-cm"># DeepSeek-R1 用的值，非常宽松</span>
+clipped_ratio = torch.clamp(ratio, <span class="tok-nu">1.0</span> - clip_eps, <span class="tok-nu">1.0</span> + clip_eps)
+<span class="tok-fn">print</span>(<span class="tok-st">"Clipped ratio:"</span>, clipped_ratio)
+<span class="tok-cm"># tensor([11.0000, 1.2214, 0.1353, 1.0000])</span></code></pre>
+
+<p>只有第 1 项被裁了：\(20.0855 \to 11.0000\)。其余三项的 \(\rho\) 都落在 clamp 区间 \([1-\epsilon,\,1+\epsilon]=[-9,\,11]\) 内（\(\rho\) 本身恒正，实际有效下界是 0；这个区间极宽，因为 \(\epsilon = 10\)）。</p>
+
+<h3>3.2 裁剪的完整目标函数</h3>
+
+<p>PPO / GRPO 的裁剪目标是<b>两项取 min</b>，这一点很容易被忽略：</p>
+
+\[
+\mathcal{L}_{\text{clip}} = -\frac{1}{N}\sum_{i=1}^{N} \min\Big(\rho_i A_i,\;\; \text{clip}(\rho_i, 1-\epsilon, 1+\epsilon)\, A_i\Big)
+\]
+
+<pre><code>adv = advantages.detach()
+unclipped = ratio * adv
+clipped   = clipped_ratio * adv
+obj = torch.minimum(unclipped, clipped)
+clipped_pg_loss = -torch.<span class="tok-fn">mean</span>(obj)</code></pre>
+
+<div class="warn">
+<span class="tag">为什么是 min 不是 max</span>
+<p>因为外层有负号。RL 想<b>最大化</b> \(\min(\rho_i A_i, \text{clip}(\cdot) A_i)\)，而 PyTorch 要最小化，所以取负。</p>
+<p>「min」这个选择的巧妙之处：它只在<b>让目标变好</b>的那个方向上起作用——<b>裁掉过于激进的改进，但保留过于保守的退步</b>。这叫 <b>pessimistic bound（悲观界）</b>。</p>
+</div>
+
+<h3>3.3 逐项看 min 在做什么</h3>
+
+<div class="tw">
+<table>
+<thead><tr><th></th><th>\(\rho A\)（unclipped）</th><th>\(\rho_{\text{clip}} A\)</th><th>min 取</th><th>梯度的实际影响</th></tr></thead>
+<tbody>
+<tr><td>\(A &gt; 0,\ \rho = 20.09\)</td><td>\(0.8659 \times 20.09 = 17.39\)</td><td>\(0.8659 \times 11 = 9.53\)</td><td><b>9.53</b></td><td>✅ 正确但概率暴涨 → <b>限制</b>继续推高</td></tr>
+<tr><td>\(A &gt; 0,\ \rho = 1.22\)</td><td>\(1.06\)</td><td>\(1.06\)</td><td>1.06</td><td>没被裁 → 正常推高</td></tr>
+<tr><td>\(A &lt; 0,\ \rho = 0.135\)</td><td>\(-0.8659 \times 0.135 = -0.117\)</td><td>−0.117</td><td>−0.117</td><td>没被裁（\(-9 \le 0.135\)）→ 正常压低</td></tr>
+<tr><td>\(A &lt; 0,\ \rho = 1.0\)</td><td>\(-0.8659\)</td><td>−0.8659</td><td>−0.8659</td><td>没被裁 → 正常压低</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>3.4 算一下完整 loss</h3>
+
+\[
+\mathcal{L}_{\text{clip}} = -\frac{1}{4}\left[9.53 + 1.06 - 0.117 - 0.8659\right] = -\frac{9.6071}{4} \approx -2.3998
+\]
+
+<p>对上原文的 <code>-2.3998</code>。✓</p>
+
+<p>注意：不要拿它去和 6.9 的 <code>-2.5764</code> 比——那是另一套公式 \(-\mathrm{mean}(A\cdot\log\pi)\)。这里正确的「未裁剪对照」是同一目标函数里去掉 clip 的版本：</p>
+
+\[
+\mathcal{L}_{\text{unclipped}} = -\frac{1}{4}\big[17.392 + 1.058 - 0.117 - 0.866\big] = -\frac{17.467}{4} \approx \mathbf{-4.367}
+\]
+
+<p>两者之差全部来自第 1 项：\((17.392 - 9.525)/4 \approx \mathbf{1.967}\)。只有一项被裁，但这一项本身从 20 倍压到 11 倍，对 loss 的贡献仍然不小。</p>
+
+<div class="eq-note">
+<b>和原文数字的关系：</b>原文同时打印了简化版 pg loss（\(-2.5764\)）和 clipped loss（\(-2.3998\)），并说差异小是因为 <code>clip_eps=10</code> 太宽松。那句话针对的是「本例只有一项触发了裁剪」；但若拿同一目标函数的 clipped / unclipped 对比，差异其实是 1.967，并不小——<b>宽松的 \(\epsilon\) 只保证「很少触发」，一旦触发，单次裁掉的幅度仍然可以很大</b>。
+</div>
+
+<h2 class="deriv">四、为什么需要裁剪</h2>
+
+<p>原文的解释：</p>
+
+<blockquote style="margin:1rem 0;padding-left:1rem;border-left:3px solid var(--rule);color:#3a3634">
+If the new model suddenly assigns a much higher or much lower probability to a rollout than the old model, the raw ratio can become very large or very small. Without clipping, this would scale the advantage term substantially, which could lead to a very large gradient step that might destabilize training.
+</blockquote>
+
+<div class="key">
+<span class="tag">三重的放大效应</span>
+<p>看第 1 行：\(\log\pi\) 变了 3.0，\(\rho\) 变成 <b>20 倍</b>，再乘上 \(A = 0.87\) 得到 <b>17.4</b>。<b>logprob 空间里一个很小的移动，经过 exp 和乘 advantage 之后变成一个巨大的 loss 项</b>——这个 loss 项会产生巨大的梯度，可能一步就把模型推到很远的地方。</p>
+<p>后果：token 概率剧变 → reward 崩塌、熵坍缩，或者输出变得不稳定。原文列举了这三种症状。</p>
+</div>
+
+<h3>4.1 <code>policy_ratio</code> 作为监控指标</h3>
+
+<pre><code>policy_ratio = torch.<span class="tok-fn">mean</span>(ratio)   <span class="tok-cm"># 5.6106</span></code></pre>
+
+\[
+\frac{20.0855 + 1.2214 + 0.1353 + 1.0000}{4} = 5.6106
+\]
+
+<p>这个值在训练中被持续跟踪。<b>远大于 1 说明更新步子迈得太大</b>（模型大幅提高了对采样 token 的概率），是训练可能崩掉的早期信号。</p>
+
+<h3>4.2 <code>clip_eps</code> 的取值谱系</h3>
+
+<div class="tw">
+<table>
+<thead><tr><th>场景</th><th>clip_eps</th><th>效果</th></tr></thead>
+<tbody>
+<tr><td>DeepSeek-R1（本书 Ch7）</td><td><b>10</b></td><td>极弱裁剪，几乎不限制</td></tr>
+<tr><td>RLHF / PPO</td><td>0.1</td><td>激进裁剪，每步策略变化很小</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>原文的观察：<i>with this very generous clip_eps value of 10.0, only the first value is clipped from 20.0855 down to 11.0000.</i></p>
+
+<div class="warn">
+<span class="tag">数学 R1 + 数学任务 ≈ 关掉裁剪</span>
+<p>当 \(\epsilon = 10\) 时裁剪区间是 \([1-\epsilon,\,1+\epsilon]=[-9,\,11]\)。clamp 作用在 \(\rho\) 本身，所以要让它真的起作用需要 \(\rho &gt; 11\)（或 \(\rho &lt; -9\)，但 \(\rho&gt;0\) 不会发生）——<b>即 \(\log\rho\) 超过 \(\log 11 \approx 2.4\) 才会触发</b>。advantage 通常在 \([-1, 1]\)（第 7 章实测 <code>adv_std ≈ 0.9998</code>），但那不改变触发条件；它只影响被裁之后对 loss 的贡献大小。</p>
+<p>这是数学任务上一个有意义的 <code>clip_eps</code> 值，但在通用 RLHF 里就相当于几乎不裁剪。</p>
+</div>
+
+<h2 class="deriv">五、DeepSeek-R1 的实际做法</h2>
+
+<p>7.4.2 描述了两种数据复用策略：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th></th><th>DeepSeek-R1（大 rollout 池）</th><th>本书的简化版</th></tr></thead>
+<tbody>
+<tr><td>rollout 池</td><td>一次生成 <b>8,192</b> 条</td><td>每轮生成 <b>8</b> 条</td></tr>
+<tr><td>minibatch</td><td>切成 <b>16</b> 个</td><td>不用切，<code>inner_epochs</code> 控制</td></tr>
+<tr><td>参考模型更新</td><td>每 <b>400</b> 步</td><td>每轮</td></tr>
+</tbody>
+</table>
+</div>
+
+<pre><code><span class="tok-cm"># DeepSeek-R1 的流程</span>
+<span class="tok-nu">1</span>. 复制当前模型作为参考策略
+<span class="tok-nu">2</span>. 用参考策略采样大批量 rollout
+<span class="tok-nu">3</span>. 切成 minibatch
+<span class="tok-nu">4</span>. 对每个 minibatch:
+      a. 用参考模型算 old_logps
+      b. 用当前模型算 new_logps    <span class="tok-cm"># 每个 minibatch 后模型都变了</span>
+      c. 更新当前模型
+<span class="tok-nu">5</span>. 更新参考模型
+
+<span class="tok-cm"># 本书 7_4_plus_clip_ratio.py 的流程</span>
+<span class="tok-nu">1</span>. 复制当前模型作为参考策略
+<span class="tok-nu">2</span>. 采样 8 条 rollout
+<span class="tok-nu">3</span>. a. old_logps  b. new_logps  c. 更新
+<span class="tok-nu">4</span>. 重复 2-3（默认再来一次），但用<b>新</b> rollout
+<span class="tok-nu">5</span>. 更新参考模型</code></pre>
+
+<div class="key">
+<span class="tag">step 4 的差异是本质的</span>
+<p>DeepSeek-R1 在 16 个 minibatch 上反复用<b>同一批固定 rollout</b>，所以 <code>new_logps</code> 每次都不一样，\(\rho\) 逐步偏离 1——<b>裁剪机制真正被激活</b>。</p>
+<p>本书每轮重新采样，所以 <code>new_logps</code> 每次都是从新 rollout 算的，<code>inner_epochs=2</code> 才是让 <code>new ≠ old</code> 的机制。原文诚实地说明：<i>Due to resource constraints, we cannot generate as many rollouts and minibatches as DeepSeek-R1 does, so we'll use a smaller approximation.</i></p>
+</div>
+
+<h2 class="deriv">六、和其他改进的关系</h2>
+
+<p>裁剪解决「步子迈太大」，但<b>长期漂移</b>是另一个问题——需要 KL 项。</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>机制</th><th>参照对象</th><th>作用范围</th><th>对应小节</th></tr></thead>
+<tbody>
+<tr><td>clipped ratio</td><td>\(\pi_{\theta_{\text{old}}}\)（<b>每轮更新</b>）</td><td>单步更新幅度</td><td>7.4</td></tr>
+<tr><td>KL 项</td><td>\(\pi_{\text{ref}}\)（<b>训练初期固定</b>）</td><td>长期漂移</td><td>7.5</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>原文特别强调这个对比：<i>In the clipped policy ratio section, we replaced the reference model in each iteration. For the KL loss term, the reference model used to compute the reference logprobs is the original model at the beginning of training, and it is either kept fixed or replaced relatively rarely (in the case of DeepSeek-R1, every 400 steps).</i></p>
+
+<p>→ KL 项的数学展开见 <a href="page-70-detail.html">page-70-detail.html</a>。</p>
+
+<nav class="deriv-nav">
+<a href="page-70-detail.html"><span class="dir">详解</span>7.5 KL 项的方向与失效</a>
+<a href="page-58-detail.html"><span class="dir">详解</span>6.8 / 6.9 策略梯度基础</a>
+<a href="page-65-detail.html"><span class="dir">详解</span>7.3 熵的度量与坍缩</a>
+<a href="page-67.html"><span class="dir">原文</span>7.4.1 计算裁剪比率</a>
+</nav>
+
+</main>
+
+<script defer src="assets/katex/katex.min.js"></script>
+<script defer src="assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>

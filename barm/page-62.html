@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>Summary · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-61.html">
+<link rel="next" href="page-63.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 62 页 / 共 108 页</span></div>
+<h3 id="h3-summary-6">Summary</h3>
+<ul><li>Reinforcement learning (RL) can be used to train LLMs on human preference labels and verifiable rewards.</li></ul>
+<ul><li>RL is typically applied as post-training on top of a pretrained base model, and it can be inserted at different stages of an LLM pipeline, including reasoning training and preference tuning.</li></ul>
+<ul><li>RL with human feedback (RLHF) optimizes for human preferences via a two-stage setup: train a reward model from ranked responses, and then use reward scores to update the LLM.</li></ul>
+<ul><li>RL with verifiable rewards (RLVR) simplifies RLHF by replacing learned reward models with deterministic, automatically computed verifiers (for example, math answer checking).</li></ul>
+<ul><li>GRPO is a policy optimization algorithm that turns verifier rewards into parameter updates. Because GRPO directly optimizes the model using sequence-level rewards without requiring a separate value model, it is particularly convenient. GRPO is a more resource-friendly alternative to other RL algorithms for LLMs because it avoids training a separate value model and instead derives learning signals from comparisons within a group of sampled rollouts.</li></ul>
+<ul><li>A “rollout” refers to a full model answer (completion) for a prompt; rewards, advantages, and log probabilities are computed from the rollout in later steps. Rewards are computed by a verifier that grants a reward only if the final answer is both correct and extractable in a required format, like <code>"\boxed{}"</code>.</li></ul>
+<ul><li>Raw rewards are transformed into advantages by normalizing each rollout reward relative to the group mean and standard deviation.</li></ul>
+<ul><li>GRPO also relies on sequence-level log probabilities, which are computed by summing token log probabilities over the generated answer tokens.</li></ul>
+<ul><li>Sequence log probabilities, together with the advantages, form the core policy-gradient objective in GRPO.</li></ul>
+<ul><li>The full GRPO loss computation is combined into a single function that performs rollout sampling, reward computation, advantage calculation, log probability computation, and policy-gradient loss calculation.</li></ul>
+<ul><li>The surrounding training loop is a standard deep learning loop, with the key difference being that the loss comes from GRPO rather than conventional classification losses.</li></ul>
+<ul><li>Training is resource intensive because each step requires generating multiple, potentially long rollouts, but even short GRPO runs can increase MATH-500 accuracy from 15% to 47%.</li></ul>
+<h1 id="h1-improving-grpo-for-reinforcement-learning">Improving GRPO for reinforcement learning</h1>
+<p class="summary">This chapter covers</p>
+<ul><li>Interpreting training curves and evaluation metrics</li><li>Preventing the model from exploiting the reward signal</li><li>Extending task-correctness rewards with additional response-formatting rewards</li></ul>
+<p>Previously, we implemented the GRPO<em> </em>algorithm for reinforcement learning with verifiable rewards (RLVR) from end to end. Now, as shown in figure 7.1, we’ll pick up from that baseline and focus on what happens when we run longer training.</p>
+<p>In particular, we’ll discuss which metrics are worth tracking (beyond reward and accuracy), how to spot failure modes early, and why training can become unstable even when the code is “correct.” As it turns out, basic GRPO can lead to training instability, so this chapter also introduces practical GRPO extensions and fixes that are used in reasoning-model training.</p>
+<figure><a class="zoom" href="assets/figure-7.1.png" tabindex="-1"><img src="assets/figure-7.1.png" alt="" width="1141" height="499" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 7.1</span>A model of the topics covered in this book. This chapter provides deeper coverage of the GRPO algorithm for reinforcement learning with verifiable rewards.</figcaption></figure>
+<h2 id="h2-improving-grpo"><span class="num">7.1</span>Improving GRPO</h2>
+<p>We implemented GRPO (Group Relative Policy Optimization) in the previous chapter; we’ll now revisit the training run and analyze it more thoroughly. We’ll also revisit the KL loss term that we omitted in the previous chapter and discuss some practical tips and algorithmic choices that become important in real training runs. These topics are summarized in the chapter overview in figure 7.2.</p>
+<p>The examples in this chapter are based on actual experiments, but the results should be interpreted with care. To draw strong conclusions about the effect of individual settings, each experiment would need to be repeated multiple times and the results averaged, since randomness in sampling and optimization can lead to noticeable variation between runs. That said, the examples shown here are sufficient to illustrate the main ideas and the relevant tradeoffs.</p>
+<aside><span class="tag">Note</span>This chapter focuses on additional technical details and practical considerations for using GRPO. If you find the content in this chapter too technical, you can move on, as the next chapter does not depend on it.</aside>
+<h2 id="h2-tracking-grpo-performance-metrics"><span class="num">7.2</span>Tracking GRPO performance metrics</h2>
+<p>In chapter 6, we ran a short GRPO training loop and briefly examined the results. For example, the output of a short run was structured as follows:</p>
+<pre><code class="language-python">[Step 1/50] loss=-0.0000 reward_avg=0.000 avg_resp_len=5.5
+[Step 2/50] loss=-0.0000 reward_avg=0.000 avg_resp_len=6.8
+[Step 3/50] loss=0.3592 reward_avg=0.250 avg_resp_len=7.8</code></pre>
+<pre><code class="language-bash">[Step 4/50] loss=2.7401 reward_avg=0.250 avg_resp_len=56.5
+[Step 5/50] loss=3.3214 reward_avg=0.500 avg_resp_len=251.2
+# ...</code></pre>
+<figure><a class="zoom" href="assets/figure-7.2.png" tabindex="-1"><img src="assets/figure-7.2.png" alt="" width="911" height="762" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 7.2</span>A chapter overview showing the different topics covered in this chapter</figcaption></figure>
+<p>Let’s pick up from this point and discuss which metrics to track when training with GRPO, and how they can help interpret and debug training behavior.</p>
+<nav class="pager"><a class="prev" href="page-61.html" rel="prev"><span class="dir">上一页</span><span class="t">6.11 Implementing the GRPO training loop</span></a><a class="next" href="page-63.html" rel="next"><span class="dir">下一页</span><span class="t">7.2.1 Executing a GRPO training run</span></a></nav>
+</main>
+</body>
+</html>

@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>Multinomial sampling · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/detail.css">
+<link rel="prev" href="page-34.html">
+<link rel="next" href="page-36.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 35 页 / 共 108 页</span></div>
+<aside class="detail-link"><span class="tag">补充材料</span>这一节「多项式抽样」的数学推导（<code>P(x_i) = p_i</code> 的定义、<code>torch.multinomial</code> 的语义、以及 435/1000 那次实验的定量检验）在 <a href="page-35-detail.html"><b>4.6 多项式抽样</b></a>。全部推导页的索引见 <a href="math-detail.html">math-detail.html</a>。</aside>
+<h3 id="h3-multinomial-sampling">Multinomial sampling</h3>
+<div class="lead">Multinomial sampling is the procedure used to pick the next token, given a probability distribution over the vocabulary, such as the softmax probability scores. In multinomial sampling, instead of always selecting the most likely token (known as greedy decoding), we draw one token at random, with tokens of higher probability being more likely to be selected. This randomness is important for generating diverse responses, which we’ll later use in self-consistency sampling. To illustrate this further, we can think of the probability scores as a set of weighted choices. For example, a token with probability 0.40 is four times as likely to appear as one with probability 0.10, but both remain possible outcomes. Suppose the model assigns the following probabilities:</div>
+<ul><li>“Berlin”: 0.70</li><li>“Munich”: 0.20</li><li>“Hamburg”: 0.10</li></ul>
+<div class="lead">Greedy decoding would always return “Berlin.” Multinomial sampling instead draws one token according to these weights. Across a very large number of draws, “Berlin” will appear most often (70% of the time), “Munich” sometimes (20% of the time), and “Hamburg” only occasionally (10% of the time). This variability is what allows us to generate multiple candidate answers for self-consistency in later sections.</div>
+<aside><span class="tag">Note</span>This count_samples function is meant for illustration only. In real text generation, we only draw one token at a time. This function takes a large number of samples from the distribution to show how often each token is selected, making the underlying probabilities easier to visualize and understand.</aside>
+<p>First, let’s run the <code>count_samples</code> function on the probability scores that we obtained by applying a temperature of 5:</p>
+<pre><code class="language-python">torch.manual_seed<span class="tok-kw">(</span><span class="tok-fn">123</span><span class="tok-kw">)</span>
+count_samples<span class="tok-kw">(</span>next_token_probas, tokenizer=tokenizer<span class="tok-kw">)</span></code></pre>
+<p>The output is as follows:</p>
+<pre><code class="language-python">'}': 2x
+' &lt;/': 2x
+' represent': 2x
+' Inf': 2x
+'()*': 2x
+' beside': 2x
+' Kob': 2x
+'': 2x</code></pre>
+<p>As you can see, even though the default sample size is 1,000, none of the sampled tokens appear more than twice. Also, all of these are nonsense tokens in the context of the <code>"The</code> <code>capital</code> <code>of</code> <code>Germany</code> <code>is"</code> query. The reason for these nonsensical results is that we used a temperature value that is much too high.</p>
+<p>Let’s try a lower temperature value of 0.35, which sharpens the score distribution and makes it more likely to select a meaningful next token:</p>
+<pre><code class="language-python">torch.manual_seed<span class="tok-kw">(</span><span class="tok-fn">123</span><span class="tok-kw">)</span>
+probas_lowT = torch.softmax<span class="tok-kw">(</span>
+    scale_logits_by_temperature<span class="tok-kw">(</span>next_token_logits, <span class="tok-fn">0.35</span><span class="tok-kw">)</span>, dim=-<span class="tok-fn">1</span>
+<span class="tok-kw">)</span></code></pre>
+<p>In this case, we see the following output:</p>
+<pre><code class="language-python">' __': 158x
+' Berlin': 435x
+' ____': 169x
+' ______': 209x
+' Munich': 3x
+' Hamburg': 3x
+' _____': 18x</code></pre>
+<p>This output makes much more sense as a set of next-token candidates for our <code>"The capital</code> <code>of</code> <code>Germany</code> <code>is"</code> query. Out of the 1,000 samples, the <code>" Berlin"</code> token was drawn 435 times. You can check via <code>print(probas_lowT[0,</code> <code>19_846])</code> that the probability of drawing this token is approximately 42% at the temperature value 0.35. To make it even more likely that <code>" Berlin"</code> will be sampled, we could further reduce the temperature.</p>
+<p>Notice that some of the other, rarer candidates also make sense. For example, both<code>" Munich"</code> and <code>" Hamburg"</code> are big cities in Germany, so they are not completely unrelated to the query. The underscore responses (<code>" ____"</code>) are likely due to the model having seen text in the form of a quiz with a placeholder; e.g., <code>"The</code> <code>capital</code> <code>of</code> <code>Germany</code> </p>
+<pre><code class="language-python">is ____".</code></pre>
+<p>You may wonder, if <code>" Berlin"</code> is the correct answer, what’s the point of making the model occasionally give the wrong answer by adding this temperature rescaling and multinomial sampling? For different kinds of queries, introducing randomness during sampling helps the model explore alternative responses instead of always choosing the single most likely token. This variability can be useful for creative or open-ended tasks, where there may be multiple valid completions.</p>
+<p>Specifically, in reasoning tasks, we can use this sampling diversity through techniques such as self-consistency (discussed in section 4.6), which generate multiple candidate answers and compare them to improve answer accuracy.</p>
+<h3 id="h3-adding-temperature-scaling-to-the-text-generation-function"><span class="num">4.4.4</span>Adding temperature scaling to the text generation function</h3>
+<p>Before we introduce another improvement to the text generation process by adding a token-probability selection filter, let’s add the temperature-scaling modification to the text generation function so we can more readily generate new tokens with the model.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.qwen3 <span class="tok-kw">import</span> KVCache
+@torch.inference_mode<span class="tok-kw">()</span>
+<span class="tok-kw">def</span> generate_text_temp_stream_cache(
+    model,
+    token_ids,
+    max_new_tokens,
+    eos_token_id=<span class="tok-kw">None</span>,
+    temperature=<span class="tok-fn">0</span>.
+):
+    model.eval<span class="tok-kw">()</span>
+    cache = KVCache<span class="tok-kw">(</span>n_layers=model.cfg<span class="tok-kw">[</span>"n_layers"<span class="tok-kw">])</span>
+    model.reset_kv_cache<span class="tok-kw">()</span>
+    out = model<span class="tok-kw">(</span>token_ids, cache=cache<span class="tok-kw">)</span>[:, -<span class="tok-fn">1</span>]
+    <span class="tok-kw">for</span> _ <span class="tok-kw">in</span> range<span class="tok-kw">(</span>max_new_tokens<span class="tok-kw">)</span>:
+        <span class="tok-cm">########################################</span>
+        <span class="tok-cm"># NEW:</span>
+        orig_device = token_ids.device
+        <span class="tok-kw">if</span> temperature <span class="tok-kw">is</span> <span class="tok-kw">None</span> <span class="tok-kw">or</span> temperature == <span class="tok-fn">0.0</span>:
+            next_token = torch.argmax<span class="tok-kw">(</span>out, dim=-<span class="tok-fn">1</span>, keepdim=<span class="tok-kw">True)</span>
+        <span class="tok-kw">else</span>:
+            logits = scale_logits_by_temperature<span class="tok-kw">(</span>out, temperature<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 4.8</span>Text generation with temperature scaling</figcaption></figure>
+<pre><code class="language-bash">            probas = torch.softmax<span class="tok-kw">(</span>logits, dim=-<span class="tok-fn">1</span><span class="tok-kw">)</span>
+            next_token = torch.multinomial<span class="tok-kw">(</span>probas.cpu<span class="tok-kw">()</span>, num_samples=<span class="tok-fn">1</span><span class="tok-kw">)</span>
+            next_token = next_token.to<span class="tok-kw">(</span>orig_device<span class="tok-kw">)</span>
+        <span class="tok-cm">#########################################</span>
+        <span class="tok-kw">if</span> (eos_token_id <span class="tok-kw">is</span> <span class="tok-kw">not</span> <span class="tok-kw">None</span>
+                <span class="tok-kw">and</span> torch.all<span class="tok-kw">(</span>next_token == eos_token_id<span class="tok-kw">)</span>):
+            <span class="tok-kw">break</span>
+        <span class="tok-kw">yield</span> next_token
+        out = model<span class="tok-kw">(</span>next_token, cache=cache<span class="tok-kw">)</span>[:, -<span class="tok-fn">1</span>]
+The generate_text_temp_stream_cache in listing 4.8 is similar to the generate_text_</code></pre>
+<p><code>stream_cache</code> from chapter 2. What’s new is that it now includes temperature rescaling and sampling (below the <code># New</code> comment indicator in the code).</p>
+<p>The following code shows how temperature scaling and sampling are integrated into the token-generation loop itself. This function can be passed into the more flexible <code>generate_text_stream_concat_flex</code> wrapper introduced in listing 4.2, which keeps the outer prompt-handling code unchanged while letting us swap in different decoding strategies:</p>
+<pre><code class="language-python">torch.manual_seed<span class="tok-kw">(</span><span class="tok-fn">123</span><span class="tok-kw">)</span>
+response = generate_text_stream_concat_flex<span class="tok-kw">(</span>
+    model, tokenizer, prompt, device,
+    max_new_tokens=<span class="tok-fn">2048</span>, verbose=<span class="tok-kw">True</span>,
+    generate_func=generate_text_temp_stream_cache,
+    temperature=<span class="tok-fn">1.1</span>
+<span class="tok-kw">)</span></code></pre>
+<p>The output is <code>\boxed{$x</code> <code>=</code> <code>\frac{90}{7}$}</code>. The correct answer is 83, so the model is still wrong, but this was meant as a demonstration to show that we can tweak the answer by using temperature scaling and sampling.</p>
+<h3 id="h3-choosing-temperature-settings">Choosing temperature settings</h3>
+<div class="lead">In practice, temperature selection depends on the goal. A temperature of 0.0 corresponds to greedy decoding, where we always pick the highest-probability token. Small nonzero values such as 0.3–0.8 are often useful when we want a bit more diversity without making the output too erratic. Much higher values make the model explore more broadly, which can be useful for creative generation or broad search, but often hurts reliability on tasks where we want the single most likely answer.</div>
+<p>In the next section, we’ll improve the sampling process.</p>
+<h2 id="h2-balancing-diversity-and-coherence-with-top-p-sampling"><span class="num">4.5</span>Balancing diversity and coherence with top-p sampling</h2>
+<p>You’ve seen how temperature scaling and sampling (via <code>torch.multinomial</code>) can increase the diversity of the LLM responses, for better or for worse. Specifically, you saw that this approach may end up sampling tokens that are unrelated to the user query.</p>
+<p>We’ll now improve the sampling process by adding a top-<em>p</em> filter (figure 4.12) so that very low-confidence tokens are not sampled by accident. The top-<em>p</em> sampling process described in this section is also known as <em>nucleus sampling</em>.</p>
+<figure><a class="zoom" href="assets/figure-4.12.png" tabindex="-1"><img src="assets/figure-4.12.png" alt="" width="1142" height="760" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 4.12</span>Overview of the top-p filtering process. The filter keeps only the highest-probability tokens by sorting them, applying a cumulative cutoff, selecting the top-p subset, and renormalizing the result.</figcaption></figure>
+<p>Figure 4.12 summarizes the four steps that make up the top-<em>p</em> filter: sorting the token probabilities, computing their cumulative sum, selecting the subset that satisfies the top-<em>p</em> cutoff, and renormalizing the remaining probabilities so that they again form a valid distribution. The renormalization step is necessary, because once we remove all low-probability tokens, the remaining probabilities no longer sum to one. To sample correctly, we need to rescale the remaining values so that they represent a proper probability distribution.</p>
+<p>We’ll now walk through steps 4.1 through 4.4 from figure 4.12 in detail. </p>
+<nav class="pager"><a class="prev" href="page-34.html" rel="prev"><span class="dir">上一页</span><span class="t">4.4.3 Sampling the next token from a probability distribution</span></a><a class="next" href="page-36.html" rel="next"><span class="dir">下一页</span><span class="t">4.5.1 Selecting a subset of top-p tokens</span></a></nav>
+</main>
+</body>
+</html>

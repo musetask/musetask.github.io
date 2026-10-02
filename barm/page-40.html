@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>Choosing temperature and top-p settings · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-39.html">
+<link rel="next" href="page-41.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 40 页 / 共 108 页</span><span class="cur">Choosing temperature and top-p settings</span></div>
+<figure><a class="zoom" href="assets/figure-4.19.png" tabindex="-1"><img src="assets/figure-4.19.png" alt="" width="1143" height="543" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 4.19</span>Summary of this chapter’s focus on inference-time techniques. Here, the text generation function was extended with a voting-based method to improve answer accuracy. The next chapter introduces self-refinement, in which the model iteratively improves its responses.</figcaption></figure>
+<h3 id="h3-summary-4">Summary</h3>
+<ul><li>Reasoning abilities and answer accuracy can be improved without retraining the model by increasing compute at inference time (inference-time scaling).</li></ul>
+<ul><li>A flexible text generation wrapper (<code>generate_text_stream_concat_flex</code>) allows different sampling strategies to be plugged in without changing the surrounding code.</li></ul>
+<ul><li>Next tokens are produced from logits via softmax.</li></ul>
+<ul><li>Temperature scaling changes logits to control the diversity of the generated text. Top-<em>p</em> (nucleus) sampling filters out low-probability tokens to reduce the chance of generating nonsensical answers.</li></ul>
+<ul><li>Chain-of-thought prompting (such as “Explain step by step.”) often yields more accurate answers by encouraging the model to write out its intermediate reasoning, though it increases the number of generated tokens and, in turn, the runtime cost. Self-consistency sampling generates multiple answers, extracts the final boxed result from each, and selects the most frequent answer via majority vote to improve answer accuracy.</li></ul>
+<ul><li>Experiments on the MATH-500 dataset show that combining chain-of-thought prompting with self-consistency can substantially boost accuracy compared to the baseline without sampling, at the cost of much longer running times.</li></ul>
+<ul><li>The central tradeoff of inference-time scaling is higher accuracy in exchange for more compute.</li></ul>
+<h1 id="h1-inference-time-scaling-via-self-refinement">Inference-time scaling via self-refinement</h1>
+<p class="summary">This chapter covers</p>
+<ul><li>Scoring LLM answers with a simple rule-based scorer</li><li>Computing an LLM’s confidence in its answers</li><li>Coding a self-refinement loop where the LLM iteratively improves its answers</li></ul>
+<p>The previous chapter introduced the concept of <em>inference-time scaling </em>(<em>inference scaling </em>for short), which improves the accuracy of model responses without further training. In particular, it focused on <em>self-consistency</em>, where the model generates multiple answers, and the final answer is the most frequent one.</p>
+<p>As outlined in figure 5.1, this chapter will move beyond self-consistency for inference scaling and cover another popular and useful inference-scaling technique, <em>self-refinement</em>. Instead of generating and choosing from multiple answers, self-refinement focuses on iteratively refining a single answer to correct potential mistakes.</p>
+<figure><a class="zoom" href="assets/figure-5.1.png" tabindex="-1"><img src="assets/figure-5.1.png" alt="" width="1141" height="683" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 5.1</span>A model of the topics covered in this book. This chapter continues with stage 3 and focuses on inference-time techniques for improving reasoning without additional training. It introduces self-refinement, where the model iteratively critiques and improves its own answers.</figcaption></figure>
+<h2 id="h2-scoring-and-iteratively-improving-model-responses"><span class="num">5.1</span>Scoring and iteratively improving model responses</h2>
+<p>As you’ve seen, inference scaling trades additional compute for better accuracy. We’ve covered two inference-scaling techniques so far: <em>chain-of-thought prompting</em> and <em>self-consistency</em>.</p>
+<p>Chain-of-thought prompting, the first method illustrated in figure 5.2, modifies the prompt, such as by adding the phrase <code>"Explain</code> <code>step</code> <code>by</code> <code>step."</code>, which can trigger a base model to write longer explanations that can in turn improve answer accuracy. This method is particularly useful for base models that don’t naturally provide reasoning-like explanations. Models trained as reasoning models usually don’t benefit from this type of inference scaling because they already explain their answers.</p>
+<p>Self-consistency, the second method in figure 5.2, lets the model produce several answers in parallel. We then choose the final answer by selecting the most frequent of these candidates.</p>
+<p>Even though self-consistency is quite simple, it often yields large gains in answer accuracy, which is why it has become a common choice in LLM applications where accuracy is a higher priority than latency. Recent examples include DeepSeekMath-V2 and Google’s Gemini 3 Deep Think mode (see appendix A for references). One downside </p>
+<figure><a class="zoom" href="assets/figure-5.2.png" tabindex="-1"><img src="assets/figure-5.2.png" alt="" width="1143" height="983" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 5.2</span>The three inference-time methods to improve reasoning covered in this book. The first two methods were covered in the previous chapter. This chapter covers the third method, self-refinement, where the model iteratively improves its own answers.</figcaption></figure>
+<p>of self-consistency is that selecting the most common answer requires short answers that can be compared.</p>
+<p>In this chapter, we’ll implement a more versatile technique, <em>self-refinement</em>, in which the LLM learns to improve its own answers iteratively (method 3 in figure 5.2). Before we do so, though, we’ll first implement scoring functions to compare and rank different answers, as outlined in figure 5.3.</p>
+<p>After loading the pretrained LLM, as in previous chapters (step 1 in figure 5.3), we’ll implement a simple <em>rule-based scoring</em> function to illustrate the concept of scoring (step 2). Then we’ll go over the concepts of <em>token probabilities</em> (step 3) and <em>token log probabilities</em> </p>
+<figure><a class="zoom" href="assets/figure-5.3.png" tabindex="-1"><img src="assets/figure-5.3.png" alt="" width="1031" height="394" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 5.3</span>We’ll build a simple rule-based score, compute token probabilities and log probabilities, and use these scores as part of a self-refinement method in which the model iteratively improves its own answers.</figcaption></figure>
+<p>(step 4), which we’ll need to implement the log-probability scoring (logprob scoring) method (step 5) for our self-refinement loop (step 6).</p>
+<p>We will primarily use the logprob scoring function (step 5 in figure 5.3) to track progress within the self-refinement loop. These scoring functions can also be used to break ties in self-consistency or to select the best response instead of relying on a majority vote.</p>
+<p>The overview in figure 5.3, leading up to self-refinement, looks relatively short and straightforward, but the topics of token probability and log probability are somewhat complex. These topics will also be relevant in the next chapter, where we’ll implement reinforcement learning methods to train the LLM. To that end, we’ll spend some time here discussing the concept of log-probability scoring.</p>
+<nav class="pager"><a class="prev" href="page-39.html" rel="prev"><span class="dir">上一页</span><span class="t">Choosing temperature and top-p settings</span></a><a class="next" href="page-41.html" rel="next"><span class="dir">下一页</span><span class="t">5.2 Loading a pretrained model</span></a></nav>
+</main>
+</body>
+</html>

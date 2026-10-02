@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>数学推导详解 · 5. 交叉熵、困惑度与采样策略 · Build a Large Language Model (From Scratch)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f5f8f'/%3E%3Cpath d='M9 8h9a4.5 4.5 0 0 1 0 9H9zm0 9h9a4.5 4.5 0 0 1 0 9H9z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+<script>(function(){try{var t=localStorage.getItem('pdf2html-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="11-pretraining-on-unlabeled-data.html">5. 交叉熵、困惑度与采样</a>
+  <button class="btn" id="themeToggle" aria-label="切换深色模式">&#9788;</button>
+</header>
+<main id="main">
+
+<h1>5. 交叉熵、困惑度与采样策略：完整数学推导</h1>
+
+<div class="plainbox">
+<p>这是全书数学最密集的一章。原书把交叉熵拆成 figure 5.7 的六个步骤，每步只给一个数字，读者要自己拼出整体。这一页把六步<b>还原成一个公式</b>，并补上三个原书没细说的地方：<b>为什么困惑度可以解释成「有效词表大小」</b>、<b>温度到底在缩放什么</b>、<b>1000 次采样的计数为什么和理论值对不上</b>。</p>
+<p>所有数字均用原书 5.1–5.3 节的 logits 手算复核，与原文逐位吻合。</p>
+</div>
+
+<h2 class="deriv">一、交叉熵：把六步还原成一个公式</h2>
+
+<h3>1.1 从最小二乘到交叉熵</h3>
+
+<p>预训练的目标是「预测下一个 token」。设真实 token 为 \(y\)，模型给出的分布为 \(p=(p_1,\dots,p_V)\)。我们希望最大化 \(p_y\)，等价于最小化：</p>
+
+\[
+\mathcal{L} = -\frac{1}{N}\sum_{n=1}^{N} \log p_{y_n}
+\]
+
+<p>这叫<b>负对数似然</b>（negative log-likelihood, NLL）。它就是交叉熵在「真实分布是 one-hot」这个特例下的形式：</p>
+
+\[
+H(p,q) = -\sum_{v=1}^{V} p_v \log q_v
+\]
+
+<p>其中 \(p\) 是真实分布（本例中 \(p_{y}=1\)，其余为 0），\(q\) 是模型分布。one-hot 代入后，\(-\sum_v p_v\log q_v = -1\cdot\log q_y\)，<b>只剩一项</b>。</p>
+
+<div class="key">
+<span class="tag">为什么用对数</span>
+<p>概率是乘性的，而概率连乘几十次会瞬间下溢到 0（fp32 最小正规数约 1e-38，30 项就可能溢出）。取对数把乘法变加法：\(\log\prod = \sum\log\)。</p>
+<p>用原书 5.1.2 节的例子实测：六个 token 的概率是 <code>[7.4541e-05, 3.1061e-05, 1.1563e-05, ...]</code>，<b>总和只有 0.000189</b>。直接连乘会得到 \(0.000189^{6} \approx 4.5\times10^{-23}\)，虽然还没溢出，但精度已经损失殆尽。取对数后是 <code>[-9.5042, -10.3796, -11.3677, -11.4798, -9.7764, -12.2561]</code>，全部在 −10 附近，<b>数值健康</b>。</p>
+</div>
+
+<h3>1.2 PyTorch 的 <code>cross_entropy</code> 内部做了六件事</h3>
+
+<p>原书 figure 5.7 把计算拆成六步。用公式写出来（这就是 <code>torch.nn.functional.cross_entropy</code> 的数学定义）：</p>
+
+<ol class="steps">
+<li><b>logits → probabilities</b>：\(p_i = \dfrac{e^{z_i}}{\sum_j e^{z_j}}\)（内部做，数值稳定版）</li>
+<li><b>取 log</b>：\(\log p_i\)</li>
+<li><b>按 targets 索引</b>：只取 \(\log p_{y_n}\)，其他位置丢弃</li>
+<li><b>取负</b>：\(-\log p_{y_n}\)</li>
+<li><b>求平均</b>（<code>reduction='mean'</code>）：\(\dfrac{1}{N}\sum_n -\log p_{y_n}\)</li>
+<li><b>输出标量 loss</b></li>
+</ol>
+
+<p>关键在于 <b>第 1 步和第 2 步其实可以合并成一个恒等式</b>：</p>
+
+\[
+\log p_y = z_y - \log\sum_{j=1}^{V} e^{z_j} = z_y - \mathrm{logsumexp}(z)
+\]
+
+<p>这解释了 appendix A 的那句注释：<i>"PyTorch's commonly used loss functions combine the softmax operation with the negative log-likelihood loss in a single class. The reason for this is numerical efficiency and stability."</i>——<b>根本不显式构造 <code>probas</code> 这个 50257 维的概率向量</b>，而是直接算 logsumexp。</p>
+
+<div class="warn">
+<span class="tag">这就是「不要先 softmax 再 cross_entropy」的原因</span>
+<p>如果你写 <code>loss = F.cross_entropy(F.softmax(logits, dim=-1), targets)</code>，模型在 <b>logits 上</b>做了一次 logsumexp，又在<b>概率上</b>做了一次。概率值可能小到 \(10^{-40}\)，再取对数就变 −92，损失完全失真，而且梯度被截断。</p>
+<p>正确做法：<code>F.cross_entropy(logits, targets)</code>，<b>把原始 logits 传进去</b>。附录 A 说的 "the outputs of the last layer (logits) without passing them to a nonlinear activation function" 就是这个意思。</p>
+</div>
+
+<h3>1.3 用原书数字完整走一遍</h3>
+
+<p>原书给出六个 token 的 <code>log_probas</code>（即 \(\log p_{y_n}\)）：</p>
+
+<pre><code>tensor([ -<span class="t-num">9.5042</span>, -<span class="t-num">10.3796</span>, -<span class="t-num">11.3677</span>,
+         -<span class="t-num">11.4798</span>,  -<span class="t-num">9.7764</span>, -<span class="t-num">12.2561</span>])</code></pre>
+
+<p>直接算：</p>
+
+\[
+\frac{9.5042 + 10.3796 + 11.3677 + 11.4798 + 9.7764 + 12.2561}{6} = \frac{64.7638}{6} = 10.7940
+\]
+
+<p>✓ 与原书 <code>neg_avg_log_probas = tensor(10.7940)</code> 和 <code>cross_entropy</code> 的输出完全一致。</p>
+
+<div class="eq-note">
+<b>这个 10.7940 意味着什么？</b>每个 token 平均只分到了 \(e^{-10.7940} \approx 2.1\times10^{-5}\) 的概率。随机猜的话应该得到 \(1/50257 \approx 2.0\times10^{-5}\)。<b>也就是说，这个刚初始化的模型和随机猜几乎一样。</b>这正是原书说训练目标是「bring the negative average log probability down to 0」的原因——把 10.79 压到接近 0 意味着每个 token 的概率趋近 1。
+</div>
+
+<h3>1.4 为什么是 mean 而不是 sum</h3>
+
+<p>逐 token 的 NLL 是 <code>9.5042, 10.3796, 11.3677, ...</code>，用 <code>sum</code> 会得到 64.7638；用 <code>mean</code> 得到 10.7940。</p>
+
+<p>选择 <code>mean</code> 的实际理由：<b>让 loss 的量级和序列长度解耦</b>。如果不除以 \(N\)，训练 1024-token 序列的 loss 就是 1024-token 序列的 1024 倍，学习率、梯度裁剪阈值都得跟着改。<code>mean</code> 让同一个 <code>lr=0.0004</code> 在任何序列长度下都可用。</p>
+
+<p>这个选择在第 7 章会<b>再次出现</b>，而且结论相反：那里用 <code>sum</code> 才是对的（因为要按序列而非按 token 计权）。理解「什么时候除以 N」是跨章节的关键。</p>
+
+<h2 class="deriv">二、困惑度：把 loss 翻译成人话</h2>
+
+<h3>2.1 定义与验算</h3>
+
+\[
+\mathrm{PPL} = \exp(\mathcal{L}) = \exp\left(-\frac{1}{N}\sum_{n=1}^{N}\log p_{y_n}\right)
+\]
+
+<p>代入原书的 10.7940：</p>
+
+\[
+e^{10.7940} = 48{,}725.93
+\]
+
+<p>✓ 与原书 <code>perplexity = torch.exp(loss)</code> 打印的 <code>tensor(48725.8203)</code> 一致（末位差异来自 10.7940 是四位小数，真正的 loss 有更多位）。</p>
+
+<h3>2.2 关键性质：PPL 就是「有效词表大小」</h3>
+
+<p>这是原书那句 <i>"it signifies the effective vocabulary size about which the model is uncertain at each step"</i> 的严格含义。</p>
+
+<p>考虑一个均匀分布：\(p_i = 1/V\)，则每个 \(\log p = \log(1/V) = -\log V\)，所以</p>
+
+\[
+\mathcal{L} = \log V \quad\Longrightarrow\quad \mathrm{PPL} = V
+\]
+
+<p>代入 \(V = 50257\)：均匀分布的困惑度正好是 <b>50,257</b>。所以：</p>
+
+<div class="key">
+<span class="tag">困惑度的两种读法</span>
+<p><b>读法一（除法视角）：</b>困惑度 = 模型在每一步「等效于从多少个 token 里随机挑一个」。PPL=100 意味着模型的预测能力相当于在 100 个候选中盲猜。</p>
+<p><b>读法二（信息论视角）：</b>每个 token 消耗了 \(\log_2 \mathrm{PPL}\) 比特。PPL=100 时是 6.64 比特/token。</p>
+<p><b>下界：</b>真实分布的困惑度下限是它的<b>真实熵</b> \(H(p)\)，不是 1。英文文本的熵大约 1.1–1.3 比特/token，对应 PPL 下界约 2.1–2.4。<b>所以训练良好的 LLM 的 PPL 远大于 1，这是正常的。</b></p>
+</div>
+
+<p>把原书的例子放进这个框架：</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>模型状态</th><th>Loss</th><th>PPL</th><th>解读</th></tr></thead>
+<tbody>
+<tr><td>随机初始化（原文）</td><td>10.7940</td><td>48,726</td><td>词表 50,257 的 97%——几乎完全随机</td></tr>
+<tr><td>均匀分布（理论）</td><td>10.8249</td><td>50,257</td><td>完全无信息</td></tr>
+<tr><td>训练 10 epoch 后（原文）</td><td>3.11</td><td>22.4</td><td>等效于在 22 个候选中猜</td></tr>
+<tr><td>熵下界</td><td>~0.8</td><td>~2.2</td><td>理论极限</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>原文 5.2 节的训练输出里，第一个 epoch 训练损失是 <code>9.781</code>，10 个 epoch 后降到 <code>3.11</code>。对应 PPL 从 <code>e^9.781 ≈ 17,688</code> 降到 <code>e^3.11 ≈ 22.4</code>。<b>两个数量级的改善</b>，而且注意 PPL 只下降了约 800 倍（因为 loss 的下降是对数尺度的）。</p>
+
+<div class="warn">
+<span class="tag">PPL 的三个使用陷阱</span>
+<p><b>① 不可跨 tokenizer 比较。</b>PPL 依赖词表大小和切分粒度。同一段文本用 50k 词表 PPL=30、用 32k 词表可能 PPL=20，但这不代表后者更好。跨模型比较必须<b>同一个 tokenizer</b>。</p>
+<p><b>② 不可跨长度比较。</b>loss 是逐 token 平均，短句和长句的 PPL 天生不同。评测必须固定评测集和长度设置。</p>
+<p><b>③ PPL 下降不等于模型变好。</b>PPL 只衡量对下一个 token 的拟合，不衡量事实性、安全性、指令遵循能力。第 7 章的指令微调和第 8 章的评测说明了这一点。</p>
+</div>
+
+<h2 class="deriv">三、温度缩放：改变的是 logits 之间的比值</h2>
+
+<h3>3.1 定义</h3>
+
+\[
+p_i(T) = \frac{\exp(z_i / T)}{\sum_{j=1}^{V} \exp(z_j / T)}
+\]
+
+<p>原书的实现：</p>
+
+<pre><code>def softmax_with_temperature(logits, temperature):
+    scaled_logits = logits / temperature
+    return torch.softmax(scaled_logits, dim=<span class="t-num">0</span>)</code></pre>
+
+<h3>3.2 温度的真实作用：压缩比值，不是缩放概率</h3>
+
+<p>关键性质是 softmax 对 logits 的<b>平移不变性</b>：给所有 logits 加同一个常数 \(c\)，概率不变，因为分子分母同乘 \(e^{c/T}\)。所以温度只作用于 <b>logits 之间的差</b>。</p>
+
+<p>取任意两个 token，\(T>0\) 时它们的概率比是：</p>
+
+\[
+\frac{p_i(T)}{p_j(T)} = \exp\!\left(\frac{z_i - z_j}{T}\right)
+\]
+
+<p>这解释了温度的两种效果<b>是同一件事的两面</b>：</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>温度</th><th>比值 \(\exp(\Delta/T)\)</th><th>效果</th><th>等效行为</th></tr></thead>
+<tbody>
+<tr><td>\(T = 0.1\)</td><td>比值放大 <b>10 倍</b></td><td>分布极陡，只有 argmax</td><td>退化成 <code>argmax</code></td></tr>
+<tr><td>\(T = 1\)</td><td>原始比值</td><td>原始分布</td><td>不缩放</td></tr>
+<tr><td>\(T = 5\)</td><td>比值<b>缩小到 1/5</b></td><td>分布平坦</td><td>接近均匀分布</td></tr>
+<tr><td>\(T \to \infty\)</td><td>所有比值 → 1</td><td>完全均匀</td><td>纯随机选词</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="key">
+<span class="tag">\(T\to 0\) 收敛到 argmax，不是发散</span>
+<p>这是个反直觉但重要的性质。当 \(T\to 0\) 时最大 logit 那个的概率 \(\to 1\)，其余 \(\to 0\)，<b>总和仍是 1</b>。所以温度 0 不会产生 NaN，只是变成贪心解码。原书代码里 <code>if temperature &lt; 0.0</code> 才报错，<code>temperature=0</code> 是合法的。</p>
+</div>
+
+<h3>3.3 用原书 logits 手算三个温度</h3>
+
+<p>原书 5.3.1 节的九个 logits：</p>
+
+<pre><code>next_token_logits = torch.tensor([<span class="t-num">4.51</span>, <span class="t-num">0.89</span>, -<span class="t-num">1.90</span>, <span class="t-num">6.75</span>, <span class="t-num">1.63</span>,
+                                 -<span class="t-num">1.62</span>, -<span class="t-num">1.89</span>, <span class="t-num">6.28</span>, <span class="t-num">1.79</span>])</code></pre>
+
+<p>对应的词（figure 5.14 的横轴）：<code>closer, every, effort, forward, inches, moves, pizza, toward, you</code>。手算三个温度：</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>词</th><th>logit</th><th>\(T=1\)</th><th>\(T=0.1\)</th><th>\(T=5\)</th></tr></thead>
+<tbody>
+<tr><td>closer</td><td>4.51</td><td>0.0609</td><td>0.0000</td><td>0.1546</td></tr>
+<tr><td>every</td><td>0.89</td><td>0.0016</td><td>0.0000</td><td>0.0750</td></tr>
+<tr><td>effort</td><td>−1.90</td><td>0.0001</td><td>0.0000</td><td>0.0429</td></tr>
+<tr><td><b>forward</b></td><td><b>6.75</b></td><td><b>0.5721</b></td><td><b>0.9910</b></td><td>0.2421</td></tr>
+<tr><td>inches</td><td>1.63</td><td>0.0034</td><td>0.0000</td><td>0.0869</td></tr>
+<tr><td>moves</td><td>−1.62</td><td>0.0001</td><td>0.0000</td><td>0.0454</td></tr>
+<tr><td><b>pizza</b></td><td>−1.89</td><td>0.0001</td><td>0.0000</td><td><b>0.0430</b></td></tr>
+<tr><td>toward</td><td>6.28</td><td>0.3576</td><td>0.0090</td><td>0.2203</td></tr>
+<tr><td>you</td><td>1.79</td><td>0.0040</td><td>0.0000</td><td>0.0898</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>三列各自求和都是 1.0000。三个可以直接对回原文的观察：</p>
+
+<ul>
+<li><b>原书说 T=1 时 "forward" 被选中约 60% 的时间</b>：这里是 57.2%，加上 toward 的 35.8%，两个 token 合计 93%。✓</li>
+<li><b>原书说 T=0.1 时几乎 100% 是 "forward"</b>：99.1%，toward 只剩 0.9%。注意 toward 的 logit 是 6.28，只比 forward 低 0.47——<b>在 T=1 时它们的比值是 \(\exp(0.47)=1.6\)，在 T=0.1 时变成 \(\exp(4.7)=110\)</b>。这就是温度的威力：<b>0.47 的 logit 差距在低温度下被放大到完全压制</b>。</li>
+<li><b>原书说 T=5 时 "pizza" 出现约 4%</b>：这里是 4.3%。✓ 注意 pizza 的 logit 是 −1.89，比 forward 低 8.64，在 T=1 时比值是 \(\exp(-8.64)=1.75\times10^{-4}\)，<b>但在 T=5 时变成 \(\exp(-1.728)=0.178\)</b>——从「几乎不可能」变成「比 toward/you 只低一点」。</li>
+</ul>
+
+<h3>3.4 1000 次采样的计数为什么对不上理论值</h3>
+
+<p>原书用 <code>print_sampled_tokens</code> 采样 1000 次，得到：</p>
+
+<pre><code><span class="t-num">73</span> x closer    <span class="t-num">0</span> x every    <span class="t-num">0</span> x effort
+<span class="t-num">582</span> x forward   <span class="t-num">2</span> x inches   <span class="t-num">0</span> x moves
+  <span class="t-num">0</span> x pizza     <span class="t-num">343</span> x toward</code></pre>
+
+<p>但 \(T=1\) 的理论概率是 closer 0.0609、forward 0.5721、toward 0.3576，对应期望计数应该是 <b>61 / 572 / 358</b>。实测是 <b>73 / 582 / 343</b>，对不上。</p>
+
+<p>原因是<b>抽样误差</b>。二项分布的标准差是 \(\sigma = \sqrt{Np(1-p)}\)，代入：</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>词</th><th>\(p\)</th><th>期望计数</th><th>标准差</th><th>实测</th><th>偏离</th></tr></thead>
+<tbody>
+<tr><td>closer</td><td>0.0609</td><td>60.9</td><td>7.6</td><td>73</td><td>+1.6σ</td></tr>
+<tr><td>forward</td><td>0.5721</td><td>572.1</td><td>15.6</td><td>582</td><td>+0.6σ</td></tr>
+<tr><td>toward</td><td>0.3576</td><td>357.6</td><td>15.2</td><td>343</td><td>−1.0σ</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>三个偏离都在 1.6σ 以内，<b>完全在正常波动范围内</b>。这不是 bug。</p>
+
+<div class="eq-note">
+<b>习题 5.1 的加速思路就是利用这个。</b>题目问「能不能想到更快更准的方法来确定 pizza 被采样的频率」——<b>直接读 <code>probas[6]</code> 就行，不需要采样</b>。\(T=1\) 时是 0.0001（1000 次期望 0.1 次，所以实测 0 次完全正确），\(T=5\) 时是 0.0430。采样是<b>用来演示机制</b>的，不是用来<b>测量</b>的。
+</div>
+
+<h2 class="deriv">四、top-k 采样：为什么掩码要放在 softmax 之前</h2>
+
+<h3>4.1 机制</h3>
+
+<p>原书 5.3.2 节的代码用 <code>topk</code> 找出最大的 \(k\) 个 logit，用 <code>min</code> 取其中最小值作为阈值，然后 <code>masked_fill</code> 把所有小于阈值的填成 <code>-inf</code>：</p>
+
+<pre><code>top_logits, _ = torch.topk(next_token_logits, top_k)
+min_val = torch.min(top_logits)
+top_k_filtered_logits = torch.where(
+    next_token_logits &lt; min_val, <span class="t-num">-torch.inf</span>, next_token_logits
+)</code></pre>
+
+<p>然后照常 <code>softmax</code>。因为 \(e^{-\infty}=0\)，<b>被砍掉的 token 概率自动为 0，剩下的自动重新归一化</b>——和 3.4 节（见前一章）的因果掩码完全同一个技巧。</p>
+
+<h3>4.2 用原书 logits 走一遍 k=3</h3>
+
+<p>最大的三个 logit 是 6.75（forward）、6.28（toward）、4.51（closer），阈值 \(\min = 4.51\)。掩码后：</p>
+
+<pre><code>[<span class="t-num">4.51</span>, -inf, -inf, <span class="t-num">6.75</span>, -inf, -inf, -inf, <span class="t-num">6.28</span>, -inf]</code></pre>
+
+<p>softmax 后（figure 5.15 的柱状图）：</p>
+
+<pre><code>[<span class="t-num">0.0615</span>, 0, 0, <span class="t-num">0.5775</span>, 0, 0, 0, <span class="t-num">0.3610</span>, 0]</code></pre>
+
+<p>和为 1.0000。✓ 注意 forward 从 \(T=1\) 时的 0.5721 <b>升到</b> 0.5775——因为被砍掉的部分释放出来的概率质量按比例分给了保留的三个 token。</p>
+
+<h3>4.3 与 temperature 的分工</h3>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th></th><th>temperature</th><th>top-k</th></tr></thead>
+<tbody>
+<tr><td>作用位置</td><td>softmax <b>之前</b>，缩放 logits</td><td>softmax <b>之前</b>，填 -inf</td></tr>
+<tr><td>控制什么</td><td>分布的<b>陡峭程度</b>（连续）</td><td>候选集合的<b>大小</b>（离散）</td></tr>
+<tr><td>保留的 token</td><td>全部，但概率有高低</td><td>硬性只保留 k 个</td></tr>
+<tr><td>失效模式</td><td>T 太大 → 全是垃圾；T 太小 → 无多样性</td><td>k 太大 → 退化成无 top-k</td></tr>
+<tr><td>自适应</td><td>是（分布越尖影响越大）</td><td><b>否</b>（永远 k 个）</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>这解释了原书说的 <i>"one downside of this approach is that it sometimes leads to grammatically incorrect or completely nonsensical outputs such as 'every effort moves you pizza'"</i>：<b>temperature=5 时 pizza 的概率从 0.0001 涨到 0.043，1000 次会撞上约 43 次</b>。加了 top-k 之后，pizza 无论概率多小都会被排除。</p>
+
+<div class="warn">
+<span class="tag">两者顺序有讲究，但不是任意的</span>
+<p>正确顺序是 <b>先缩放 logits → 再 top-k 掩码 → 最后 softmax</b>。原因：<b>top-k 是「按排名」筛选的，而排名与温度无关</b>（温度单调变换不改顺序），所以两种顺序选出的 k 个 token 完全相同。但<b>掩码必须在 softmax 之前</b>，否则要额外做一次重归一化，浪费一步。</p>
+<p>原书 <code>generate</code> 函数的顺序正是如此：<code>logits = logits / temperature</code> → <code>top_k</code> 筛选 → <code>softmax</code> → <code>multinomial</code>。</p>
+</div>
+
+<div class="key">
+<span class="tag">本章的三个数：10.7940 / 48726 / 5</span>
+<p><b>10.7940</b> 是这个随机模型每 token 平均的负对数似然，约等于随机猜。</p>
+<p><b>48,726</b> 是它的困惑度，约为词表 50,257 的 97%。</p>
+<p><b>5</b> 是原书实测的困惑度对应的温度——<b>高到让 "pizza" 有 4% 概率</b>。记住这个数：<b>温度不是「多样性旋钮」，它是「胡说的概率」旋钮。</b>原书用 pizza 演示的正是这一点。</p>
+</div>
+
+<nav class="deriv-nav">
+<a href="10-implementing-a-gpt-model-from-scratch-to-generate-text-detail.html"><span class="dir">上一章</span>4.2–4.6 LayerNorm 与 GELU</a>
+<a href="math-detail.html"><span class="dir">索引</span>全部数学推导详解</a>
+<a href="12-fine-tuning-for-classification-detail.html"><span class="dir">下一章</span>6.6 分类损失与 argmax</a>
+</nav>
+
+</main>
+<nav class="chapnav" aria-label="导航"><div class="chapnav-inner">
+<a class="prev" href="10-implementing-a-gpt-model-from-scratch-to-generate-text-detail.html"><span class="lbl">上一章</span><span class="nm">4. LayerNorm 与 GELU 的推导</span></a><a class="next" href="12-fine-tuning-for-classification-detail.html"><span class="lbl">下一章</span><span class="nm">6. 分类损失与 argmax</span></a>
+</div></nav>
+<script src="app.js"></script>
+<script defer src="assets/katex/katex.min.js"></script>
+<script defer src="assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>

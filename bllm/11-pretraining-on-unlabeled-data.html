@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="generator" content="pdf2html2.py">
+<title>Pretraining on unlabeled data · Build a Large Language Model (From Scratch)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f5f8f'/%3E%3Cpath d='M9 8h9a4.5 4.5 0 0 1 0 9H9zm0 9h9a4.5 4.5 0 0 1 0 9H9z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="assets/detail.css">
+<script>(function(){try{var t=localStorage.getItem('pdf2html-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn" href="index.html" title="Contents">&#9776;</a>
+  <a class="brand" href="index.html">Pretraining on unlabeled data</a>
+  <button class="btn" id="themeToggle" aria-label="Toggle dark mode">&#9788;</button>
+</header>
+<main id="main">
+<details class="toc"><summary>本章目录</summary><ul><li class="l2"><a href="#this-chapter-covers-5">This chapter covers</a></li><li class="l3"><a href="#weight-parameters">Weight parameters</a></li><li class="l2"><a href="#evaluating-generative-text-models">5.1 Evaluating generative text models</a></li><li class="l3"><a href="#using-gpt-to-generate-text">5.1.1 Using GPT to generate text</a></li><li class="l3"><a href="#calculating-the-text-generation-loss">5.1.2 Calculating the text generation loss</a></li><li class="l3"><a href="#backpropagation">Backpropagation</a></li><li class="l3"><a href="#cross-entropy-loss">Cross entropy loss</a></li><li class="l3"><a href="#perplexity">Perplexity</a></li><li class="l3"><a href="#calculating-the-training-and-validation-set-losses">5.1.3 Calculating the training and validation set losses</a></li><li class="l3"><a href="#the-cost-of-pretraining-llms">The cost of pretraining LLMs</a></li><li class="l2"><a href="#training-an-llm">5.2 Training an LLM</a></li><li class="l3"><a href="#adamw">AdamW</a></li><li class="l2"><a href="#decoding-strategies-to-control-randomness">5.3 Decoding strategies to control randomness</a></li><li class="l3"><a href="#temperature-scaling">5.3.1 Temperature scaling</a></li><li class="l3"><a href="#exercise-5-1">Exercise 5.1</a></li><li class="l3"><a href="#top-k-sampling">5.3.2 Top-k sampling</a></li><li class="l3"><a href="#modifying-the-text-generation-function">5.3.3 Modifying the text generation function</a></li><li class="l3"><a href="#exercise-5-2">Exercise 5.2</a></li><li class="l3"><a href="#exercise-5-3">Exercise 5.3</a></li><li class="l2"><a href="#loading-and-saving-model-weights-in-pytorch">5.4 Loading and saving model weights in PyTorch</a></li><li class="l3"><a href="#exercise-5-4">Exercise 5.4</a></li><li class="l2"><a href="#loading-pretrained-weights-from-openai">5.5 Loading pretrained weights from OpenAI</a></li><li class="l3"><a href="#exercise-5-5">Exercise 5.5</a></li><li class="l3"><a href="#exercise-5-6">Exercise 5.6</a></li><li class="l2"><a href="#summary-5">Summary</a></li></ul></details><h1 id="pretraining-on-unlabeled-data">Pretraining on unlabeled data<a class="anchor" href="#pretraining-on-unlabeled-data">#</a></h1>
+<h2 id="this-chapter-covers-5">This chapter covers<a class="anchor" href="#this-chapter-covers-5">#</a></h2>
+<p>Thus far, we have implemented the data sampling and attention mechanism and coded the LLM architecture. It is now time to implement a training function and pretrain the LLM. We will learn about basic model evaluation techniques to measure the quality of the generated text, which is a requirement for optimizing the LLM during the training process. Moreover, we will discuss how to load pretrained weights, giving our LLM a solid starting point for fine-tuning. Figure 5.1 lays out our overall plan, highlighting what we will discuss in this chapter.</p>
+<p><strong>128</strong></p>
+<div class="pdfpage" data-page="150">PDF p. 150</div>
+<figure><img src="assets/fig-0098.png" alt="" loading="lazy"><figcaption>Figure 5.1 The three main stages of coding an LLM. This chapter focuses on stage 2: pretraining the LLM (step  4), which includes implementing the training code (step 5), evaluating the performance (step 6), and saving and  loading model weights (step 7).</figcaption></figure>
+<h3 id="weight-parameters">Weight parameters <a class="anchor" href="#weight-parameters">#</a></h3>
+<div class="plainbox"><p>In the context of LLMs and other deep learning models, <em>weights</em> refer to the trainable</p><p>parameters that the learning process adjusts. These weights are also known as</p><p><em>weight parameters</em> or simply <em>parameters</em>. In frameworks like PyTorch, these weights</p><p>are stored in linear layers; we used these to implement the multi-head attention mod-</p><p>ule in chapter 3 and the <code>GPTModel</code> in chapter 4. After initializing a layer (<code>new_layer</code></p></div>
+<p><code>=</code> <code>torch.nn.Linear(...)</code>), we can access its weights through the <code>.weight</code> attri-</p>
+<div class="plainbox"><p>bute, <code>new_layer.weight</code>. Additionally, for convenience, PyTorch allows direct</p><p>access to all a model’s trainable parameters, including weights and biases, through</p><p>the method <code>model.parameters()</code>, which we will use later when implementing the</p><p>model training.</p></div>
+<h2 id="evaluating-generative-text-models">5.1 Evaluating generative text models<a class="anchor" href="#evaluating-generative-text-models">#</a></h2>
+<p>After briefly recapping the text generation from chapter 4, we will set up our LLM for text generation and then discuss basic ways to evaluate the quality of the generated text. We will then calculate the training and validation losses. Figure 5.2 shows the topics covered in this chapter, with these first three steps highlighted.</p>
+<div class="pdfpage" data-page="151">PDF p. 151</div>
+<figure><img src="assets/fig-0099.png" alt="" loading="lazy"><figcaption>Figure 5.2 An overview of the topics covered in this chapter. We begin by recapping text generation  (step 1) before moving on to discuss basic model evaluation techniques (step 2) and training and  validation losses (step 3).</figcaption></figure>
+<h3 id="using-gpt-to-generate-text">5.1.1 Using GPT to generate text<a class="anchor" href="#using-gpt-to-generate-text">#</a></h3>
+<p>Let’s set up the LLM and briefly recap the text generation process we implemented in chapter 4. We begin by initializing the GPT model that we will later evaluate and train using the <code>GPTModel</code> class and <code>GPT_CONFIG_124M</code> dictionary (see chapter 4):</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 2 条</summary><ul><li>We shorten the context length from 1,024 to 256 tokens.</li><li>It’s possible and common to set dropout to 0.</li></ul></details><pre><code><span class="t-kw">import</span> <span class="t-bi">torch</span>
+<span class="t-kw">from</span> chapter04 <span class="t-kw">import</span> GPTModel
+GPT_CONFIG_124M <span class="t-op">=</span> {
+ <span class="t-str">"vocab_size"</span>: <span class="t-num">50257</span>,
+ <span class="t-str">"context_length"</span>: <span class="t-num">256</span>,
+ <span class="t-str">"emb_dim"</span>: <span class="t-num">768</span>,
+ <span class="t-str">"n_heads"</span>: <span class="t-num">12</span>,
+ <span class="t-str">"n_layers"</span>: <span class="t-num">12</span>,
+ <span class="t-str">"drop_rate"</span>: <span class="t-num">0.1</span>,
+ <span class="t-str">"qkv_bias"</span>: <span class="t-kw">False</span>
+}
+<span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)
+model <span class="t-op">=</span> <span class="t-fn">GPTModel</span>(GPT_CONFIG_124M)
+model.<span class="t-fn">eval</span>()</code></pre></div>
+<p>Considering the <code>GPT_CONFIG_124M</code> dictionary, the only adjustment we have made compared to the previous chapter is that we have reduced the context length (<code>context_</code> <code>length</code>) to 256 tokens. This modification reduces the computational demands of training the model, making it possible to carry out the training on a standard laptop computer.</p>
+<p> Originally, the GPT-2 model with 124 million parameters was configured to handle up to 1,024 tokens. After the training process, we will update the context size setting</p>
+<div class="pdfpage" data-page="152">PDF p. 152</div>
+<figure><img src="assets/fig-0100.png" alt="" loading="lazy"><figcaption>Figure 5.3 Generating text involves encoding text into token IDs that the LLM processes into logit vectors. The  logit vectors are then converted back into token IDs, detokenized into a text representation.</figcaption></figure>
+<p class="listing-title"><span class="no">Listing 5.1</span><span class="tl">Utility functions for text to token ID conversion</span></p>
+<p>and load pretrained weights to work with a model configured for a 1,024-token context length.</p>
+<p> Using the <code>GPTModel</code> instance, we adopt the <code>generate_text_simple</code> function from chapter 4 and introduce two handy functions: <code>text_to_token_</code> <code>ids</code> and <code>token_ids_</code> <code>to_text</code>. These functions facilitate the conversion between text and token representations, a technique we will utilize throughout this chapter. </p>
+<p>Figure 5.3 illustrates a three-step text generation process using a GPT model. First, the tokenizer converts input text into a series of token IDs (see chapter 2). Second, the model receives these token IDs and generates corresponding logits, which are vectors representing the probability distribution for each token in the vocabulary (see chapter 4). Third, these logits are converted back into token IDs, which the tokenizer decodes into human-readable text, completing the cycle from textual input to textual output.</p>
+<p> We can implement the text generation process, as shown in the following listing.</p>
+<div class="codeblock"><pre><code><span class="t-kw">import</span> <span class="t-bi">tiktoken</span>
+<span class="t-kw">from</span> chapter04 <span class="t-kw">import</span> generate_text_simple
+<span class="t-kw">def</span> <span class="t-fn">text_to_token_ids</span>(text, tokenizer):
+ encoded <span class="t-op">=</span> tokenizer.<span class="t-fn">encode</span>(text, allowed_special<span class="t-op">=</span>{<span class="t-str">'&lt;|endoftext|&gt;'</span>})
+ encoded_tensor <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>(encoded).<span class="t-fn">unsqueeze</span>(<span class="t-num">0</span>)
+ <span class="t-kw">return</span> encoded_tensor
+<span class="t-kw">def</span> <span class="t-fn">token_ids_to_text</span>(token_ids, tokenizer):
+ flat <span class="t-op">=</span> token_ids.<span class="t-fn">squeeze</span>(<span class="t-num">0</span>)
+ <span class="t-kw">return</span> tokenizer.<span class="t-fn">decode</span>(flat.<span class="t-fn">tolist</span>())
+start_context <span class="t-op">=</span> <span class="t-str">"Every effort moves you"</span>
+tokenizer <span class="t-op">=</span> <span class="t-bi">tiktoken</span>.<span class="t-fn">get_encoding</span>(<span class="t-str">"gpt2"</span>)
+token_ids <span class="t-op">=</span> <span class="t-fn">generate_text_simple</span>(
+ model<span class="t-op">=</span>model,
+ idx<span class="t-op">=</span><span class="t-fn">text_to_token_ids</span>(start_context, tokenizer),
+ max_new_tokens<span class="t-op">=</span><span class="t-num">10</span>,
+ context_size<span class="t-op">=</span>GPT_CONFIG_124M[<span class="t-str">"context_length"</span>]
+)
+<span class="t-bi">print</span>(<span class="t-str">"Output text:\n"</span>, <span class="t-fn">token_ids_to_text</span>(token_ids, tokenizer))</code></pre></div>
+<div class="pdfpage" data-page="153">PDF p. 153</div>
+<p>Using this code, the <code>model</code> generates the following text:</p>
+<div class="codeblock"><pre><code>Output text:
+ Every effort moves you rentingetic wasn? refres RexMeCHicular stren</code></pre></div>
+<p>Clearly, the model isn’t yet producing coherent text because it hasn’t undergone training. To define what makes text “coherent” or “high quality,” we have to implement a numerical method to evaluate the generated content. This approach will enable us to monitor and enhance the model’s performance throughout its training process.</p>
+<p> Next, we will calculate a <em>loss metric</em> for the generated outputs. This loss serves as a progress and success indicator of the training progress. Furthermore, in later chapters, when we fine-tune our LLM, we will review additional methodologies for assessing model quality.</p>
+<h3 id="calculating-the-text-generation-loss">5.1.2 Calculating the text generation loss<a class="anchor" href="#calculating-the-text-generation-loss">#</a></h3>
+<p>Next, let’s explore techniques for numerically assessing text quality generated during training by calculating a <em>text generation loss</em>. We will go over this topic step by step with a practical example to make the concepts clear and applicable, beginning with a short recap of how the data is loaded and how the text is generated via the</p>
+<p><code>generate_text_simple</code> function. </p>
+<p> Figure 5.4 illustrates the overall flow from input text to LLM-generated text using a five-step procedure. This text-generation process shows what the <code>generate_text_simple</code> function does internally. We need to perform these same initial steps before we can compute a loss that measures the generated text quality later in this section.</p>
+<p> Figure 5.4 outlines the text generation process with a small seven-token vocabulary to fit this image on a single page. However, our <code>GPTModel</code> works with a much larger</p>
+<div class="pdfpage" data-page="154">PDF p. 154</div>
+<figure><img src="assets/fig-0101.png" alt="" loading="lazy"><figcaption>Figure 5.4 For each of the three input tokens, shown on the left, we compute a vector containing probability  scores corresponding to each token in the vocabulary. The index position of the highest probability score in each  vector represents the most likely next token ID. These token IDs associated with the highest probability scores  are selected and mapped back into a text that represents the text generated by the model.</figcaption></figure>
+<p>vocabulary consisting of 50,257 words; hence, the token IDs in the following code will range from 0 to 50,256 rather than 0 to 6. </p>
+<p> Also, figure 5.4 only shows a single text example (<code>"every</code> <code>effort</code> <code>moves"</code>) for simplicity. In the following hands-on code example that implements the steps in the figure, we will work with two input examples for the GPT model (<code>"every</code> <code>effort</code> <code>moves"</code></p>
+<p>and <code>"I</code> <code>really</code> <code>like"</code>).</p>
+<p> Consider these two input examples, which have already been mapped to token IDs (figure 5.4, step 1):</p>
+<div class="codeblock"><pre><code>inputs <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>([[<span class="t-num">16833</span>, <span class="t-num">3626</span>, <span class="t-num">6100</span>], <span class="t-com"># ["every effort moves",
+ [40, 1107, 588]]) # "I really like"]</span></code></pre></div>
+<p>Matching these inputs, the <code>targets</code> contain the token IDs we want the model to produce:</p>
+<div class="codeblock"><pre><code>targets <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>([[<span class="t-num">3626</span>, <span class="t-num">6100</span>, <span class="t-num">345</span> ], <span class="t-com"># [" effort moves you",
+ [1107, 588, 11311]]) # " really like chocolate"]</span></code></pre></div>
+<p>Note that the targets are the inputs but shifted one position forward, a concept we covered in chapter 2 during the implementation of the data loader. This shifting strategy is crucial for teaching the model to predict the next token in a sequence.</p>
+<div class="pdfpage" data-page="155">PDF p. 155</div>
+<figure><img src="assets/fig-0102.png" alt="" loading="lazy"></figure>
+<figure><img src="assets/fig-0103.png" alt="" loading="lazy"></figure>
+<p> Now we feed the inputs into the model to calculate logits vectors for the two input examples, each comprising three tokens. Then we apply the <code>softmax</code> function to transform these logits into probability scores (<code>probas</code>; figure 5.4, step 2):</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 2 条</summary><ul><li>Disables gradient tracking since we are not training yet</li><li>Probability of each token in vocabulary</li></ul></details><pre><code><span class="t-kw">with</span> <span class="t-bi">torch</span>.<span class="t-fn">no_grad</span>():  logits <span class="t-op">=</span> <span class="t-fn">model</span>(inputs)
+probas <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">softmax</span>(logits, dim<span class="t-op">=-</span><span class="t-num">1</span>)
+<span class="t-bi">print</span>(probas.shape)</code></pre></div>
+<p>The resulting tensor dimension of the probability score (<code>probas</code>) tensor is</p>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">3</span>, <span class="t-num">50257</span>])</code></pre></div>
+<p>The first number, 2, corresponds to the two examples (rows) in the inputs, also known as batch size. The second number, 3, corresponds to the number of tokens in each input (row). Finally, the last number corresponds to the embedding dimensionality, which is determined by the vocabulary size. Following the conversion from logits to probabilities via the <code>softmax</code> function, the <code>generate_text_simple</code> function then converts the resulting probability scores back into text (figure 5.4, steps 3–5).</p>
+<p> We can complete steps 3 and 4 by applying the <code>argmax</code> function to the probability scores to obtain the corresponding token IDs:</p>
+<div class="codeblock"><pre><code>token_ids <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">argmax</span>(probas, dim<span class="t-op">=-</span><span class="t-num">1</span>, keepdim<span class="t-op">=</span><span class="t-kw">True</span>)
+<span class="t-bi">print</span>(<span class="t-str">"Token IDs:\n"</span>, token_ids)</code></pre></div>
+<p>Given that we have two input batches, each containing three tokens, applying the <code>argmax</code> function to the probability scores (figure 5.4, step 3) yields two sets of outputs, each with three predicted token IDs:</p>
+<div class="codeblock"><pre><code>Token IDs:</code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 2 条</summary><ul><li>First batch</li><li>Second batch</li></ul></details><pre><code> <span class="t-fn">tensor</span>([[[<span class="t-num">16657</span>],
+ [ <span class="t-num">339</span>],
+ [<span class="t-num">42826</span>]],
+ [[<span class="t-num">49906</span>],
+ [<span class="t-num">29669</span>],
+ [<span class="t-num">41751</span>]]])</code></pre></div>
+<p>Finally, step 5 converts the token IDs back into text:</p>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(f<span class="t-str">"Targets batch 1: {token_ids_to_text(targets[0], tokenizer)}"</span>)
+<span class="t-bi">print</span>(f<span class="t-str">"Outputs batch 1:"</span>
+ f<span class="t-str">" {token_ids_to_text(token_ids[0].flatten(), tokenizer)}"</span>)</code></pre></div>
+<p>When we decode these tokens, we find that these output tokens are quite different from the target tokens we want the model to generate:</p>
+<div class="codeblock"><pre><code>Targets batch <span class="t-num">1</span>: effort moves you
+Outputs batch <span class="t-num">1</span>: Armed heNetflix</code></pre></div>
+<div class="pdfpage" data-page="156">PDF p. 156</div>
+<figure><img src="assets/fig-0104.png" alt="" loading="lazy"><figcaption>Figure 5.5 An overview of the topics covered in this chapter. We have completed step 1. We are now ready to  implement the text evaluation function (step 2).</figcaption></figure>
+<p>The model produces random text that is different from the target text because it has not been trained yet. We now want to evaluate the performance of the model’s generated text numerically via a loss (figure 5.5). Not only is this useful for measuring the quality of the generated text, but it’s also a building block for implementing the training function, which we will use to update the model’s weight to improve the generated text.</p>
+<p>Part of the text evaluation process that we implement, as shown in figure 5.5, is to measure “how far” the generated tokens are from the correct predictions (targets). The training function we implement later will use this information to adjust the model weights to generate text that is more similar to (or, ideally, matches) the target text.</p>
+<p> The model training aims to increase the softmax probability in the index positions corresponding to the correct target token IDs, as illustrated in figure 5.6. This softmax probability is also used in the evaluation metric we will implement next to numerically assess the model’s generated outputs: the higher the probability in the correct positions, the better.</p>
+<p> Remember that figure 5.6 displays the softmax probabilities for a compact seventoken vocabulary to fit everything into a single figure. This implies that the starting random values will hover around 1/7, which equals approximately 0.14. However, the vocabulary we are using for our GPT-2 model has 50,257 tokens, so most of the initial probabilities will hover around 0.00002 (1/50,257). </p>
+<div class="pdfpage" data-page="157">PDF p. 157</div>
+<figure><img src="assets/fig-0105.png" alt="" loading="lazy"><figcaption>Figure 5.6 Before training, the model produces random next-token probability vectors. The goal of model  training is to ensure that the probability values corresponding to the highlighted target token IDs are maximized.</figcaption></figure>
+<p>For each of the two input texts, we can print the initial softmax probability scores corresponding to the target tokens using the following code:</p>
+<div class="codeblock"><pre><code>text_idx <span class="t-op">=</span> <span class="t-num">0</span>
+target_probas_1 <span class="t-op">=</span> probas[text_idx, [<span class="t-num">0</span>, <span class="t-num">1</span>, <span class="t-num">2</span>], targets[text_idx]]
+<span class="t-bi">print</span>(<span class="t-str">"Text 1:"</span>, target_probas_1)
+text_idx <span class="t-op">=</span> <span class="t-num">1</span>
+target_probas_2 <span class="t-op">=</span> probas[text_idx, [<span class="t-num">0</span>, <span class="t-num">1</span>, <span class="t-num">2</span>], targets[text_idx]]
+<span class="t-bi">print</span>(<span class="t-str">"Text 2:"</span>, target_probas_2)</code></pre></div>
+<p>The three target token ID probabilities for each batch are</p>
+<div class="codeblock"><pre><code>Text <span class="t-num">1</span>: <span class="t-fn">tensor</span>([<span class="t-num">7.4541e</span><span class="t-op">-</span><span class="t-num">05</span>, <span class="t-num">3.1061e</span><span class="t-op">-</span><span class="t-num">05</span>, <span class="t-num">1.1563e</span><span class="t-op">-</span><span class="t-num">05</span>])
+Text <span class="t-num">2</span>: <span class="t-fn">tensor</span>([<span class="t-num">1.0337e</span><span class="t-op">-</span><span class="t-num">05</span>, <span class="t-num">5.6776e</span><span class="t-op">-</span><span class="t-num">05</span>, <span class="t-num">4.7559e</span><span class="t-op">-</span><span class="t-num">06</span>])</code></pre></div>
+<p>The goal of training an LLM is to maximize the likelihood of the correct token, which involves increasing its probability relative to other tokens. This way, we ensure the LLM consistently picks the target token—essentially the next word in the sentence— as the next token it generates.</p>
+<div class="pdfpage" data-page="158">PDF p. 158</div>
+<figure><img src="assets/fig-0106.png" alt="" loading="lazy"><figcaption>Figure 5.7 Calculating the loss involves several steps. Steps 1 to 3, which we have already  completed, calculate the token probabilities corresponding to the target tensors. These  probabilities are then transformed via a logarithm and averaged in steps 4 to 6.</figcaption></figure>
+<h3 id="backpropagation">Backpropagation<a class="anchor" href="#backpropagation">#</a></h3>
+<div class="plainbox"><p>How do we maximize the softmax probability values corresponding to the target</p><p>tokens? The big picture is that we update the model weights so that the model outputs</p><p>higher values for the respective token IDs we want to generate. The weight update is</p><p>done via a process called <em>backpropagation</em>, a standard technique for training deep</p><p>neural networks (see sections A.3 to A.7 in appendix A for more details about back-</p><p>propagation and model training).</p><p>Backpropagation requires a loss function, which calculates the difference between</p><p>the model’s predicted output (here, the probabilities corresponding to the target</p><p>token IDs) and the actual desired output. This loss function measures how far off the</p><p>model’s predictions are from the target values.</p></div>
+<p>Next, we will calculate the loss for the probability scores of the two example batches, <code>target_probas_1</code> and <code>target_probas_2</code>. The main steps are illustrated in figure 5.7. Since we already applied steps 1 to 3 to obtain <code>target_probas_1</code> and <code>target_</code> <code>probas_2</code>, we proceed with step 4, applying the <em>logarithm</em> to the probability scores:</p>
+<div class="codeblock"><pre><code>log_probas <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">log</span>(<span class="t-bi">torch</span>.<span class="t-fn">cat</span>((target_probas_1, target_probas_2)))
+<span class="t-bi">print</span>(log_probas)</code></pre></div>
+<div class="codeblock"><pre><code><span class="t-op">=</span> [[[ <span class="t-num">0.1113</span>, <span class="t-op">-</span><span class="t-num">0.1057</span>, <span class="t-op">-</span><span class="t-num">0.3666</span>, ..., ]]]
+<span class="t-op">=</span> [[[<span class="t-num">1.8849e</span><span class="t-op">-</span><span class="t-num">05</span>, <span class="t-num">1.5172e</span><span class="t-op">-</span><span class="t-num">05</span>, <span class="t-num">1.1687e</span><span class="t-op">-</span><span class="t-num">05</span>, ..., ]]]
+<span class="t-op">=</span> [<span class="t-num">7.4541e</span><span class="t-op">-</span><span class="t-num">05</span>, <span class="t-num">3.1061e</span><span class="t-op">-</span><span class="t-num">05</span>, <span class="t-num">1.1563e</span><span class="t-op">-</span><span class="t-num">05</span>, ..., ]</code></pre></div>
+<div class="codeblock"><pre><code><span class="t-op">=</span> [<span class="t-op">-</span><span class="t-num">9.5042</span>, <span class="t-op">-</span><span class="t-num">10.3796</span>, <span class="t-op">-</span><span class="t-num">11.3677</span>, ..., ]</code></pre></div>
+<p>This results in the following values:</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([ <span class="t-op">-</span><span class="t-num">9.5042</span>, <span class="t-op">-</span><span class="t-num">10.3796</span>, <span class="t-op">-</span><span class="t-num">11.3677</span>, <span class="t-op">-</span><span class="t-num">11.4798</span>, <span class="t-op">-</span><span class="t-num">9.7764</span>, <span class="t-op">-</span><span class="t-num">12.2561</span>])</code></pre></div>
+<div class="pdfpage" data-page="159">PDF p. 159</div>
+<p>Working with logarithms of probability scores is more manageable in mathematical optimization than handling the scores directly. This topic is outside the scope of this book, but I’ve detailed it further in a lecture, which can be found in appendix B.</p>
+<p> Next, we combine these log probabilities into a single score by computing the average (step 5 in figure 5.7):</p>
+<div class="codeblock"><pre><code>avg_log_probas <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">mean</span>(log_probas)
+<span class="t-bi">print</span>(avg_log_probas)</code></pre></div>
+<p>The resulting average log probability score is</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>(<span class="t-op">-</span><span class="t-num">10.7940</span>)</code></pre></div>
+<p>The goal is to get the average log probability as close to 0 as possible by updating the model’s weights as part of the training process. However, in deep learning, the common practice isn’t to push the average log probability up to 0 but rather to bring the negative average log probability down to 0. The negative average log probability is simply the average log probability multiplied by –1, which corresponds to step 6 in figure 5.7:</p>
+<div class="codeblock"><pre><code>neg_avg_log_probas <span class="t-op">=</span> avg_log_probas <span class="t-op">*</span> <span class="t-op">-</span><span class="t-num">1</span>
+<span class="t-bi">print</span>(neg_avg_log_probas)</code></pre></div>
+<p>This prints <code>tensor(10.7940)</code>. In deep learning, the term for turning this negative value, –10.7940, into 10.7940, is known as the <em>cross entropy </em>loss. PyTorch comes in handy here, as it already has a built-in <code>cross_entropy</code> function that takes care of all these six steps in figure 5.7 for us.</p>
+<h3 id="cross-entropy-loss">Cross entropy loss<a class="anchor" href="#cross-entropy-loss">#</a></h3>
+<aside class="detail-link"><span class="tag">数学推导详解</span>把 figure 5.7 的六步还原成一个公式、<b>困惑度 = 有效词表大小</b>、温度如何缩放概率比值，见 <a href="11-pretraining-on-unlabeled-data-detail.html"><b>5.1–5.3 交叉熵、困惑度与采样</b></a>。全部推导页的索引见 <a href="math-detail.html">math-detail.html</a>。</aside>
+<div class="plainbox"><p>At its core, the cross entropy loss is a popular measure in machine learning and deep</p><p>learning that measures the difference between two probability distributions—typi-</p><p>cally, the true distribution of labels (here, tokens in a dataset) and the predicted dis-</p><p>tribution from a model (for instance, the token probabilities generated by an LLM). </p><p>In the context of machine learning and specifically in frameworks like PyTorch, the</p></div>
+<p><code>cross_entropy</code> function computes this measure for discrete outcomes, which is</p>
+<div class="plainbox"><p>similar to the negative average log probability of the target tokens given the model’s</p><p>generated token probabilities, making the terms “cross entropy” and “negative aver-</p><p>age log probability” related and often used interchangeably in practice.</p></div>
+<p>Before we apply the <code>cross_entropy</code> function, let’s briefly recall the shape of the logits and target tensors:</p>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(<span class="t-str">"Logits shape:"</span>, logits.shape)
+<span class="t-bi">print</span>(<span class="t-str">"Targets shape:"</span>, targets.shape)</code></pre></div>
+<div class="pdfpage" data-page="160">PDF p. 160</div>
+<p>The resulting shapes are</p>
+<div class="codeblock"><pre><code>Logits shape: <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">3</span>, <span class="t-num">50257</span>])
+Targets shape: <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">3</span>])</code></pre></div>
+<p>As we can see, the <code>logits</code> tensor has three dimensions: batch size, number of tokens, and vocabulary size. The <code>targets</code> tensor has two dimensions: batch size and number of tokens.</p>
+<p> For the <code>cross_entropy</code> loss function in PyTorch, we want to flatten these tensors by combining them over the batch dimension:</p>
+<div class="codeblock"><pre><code>logits_flat <span class="t-op">=</span> logits.<span class="t-fn">flatten</span>(<span class="t-num">0</span>, <span class="t-num">1</span>)
+targets_flat <span class="t-op">=</span> targets.<span class="t-fn">flatten</span>()
+<span class="t-bi">print</span>(<span class="t-str">"Flattened logits:"</span>, logits_flat.shape)
+<span class="t-bi">print</span>(<span class="t-str">"Flattened targets:"</span>, targets_flat.shape)</code></pre></div>
+<p>The resulting tensor dimensions are</p>
+<div class="codeblock"><pre><code>Flattened logits: <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">6</span>, <span class="t-num">50257</span>])
+Flattened targets: <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">6</span>])</code></pre></div>
+<p>Remember that the <code>targets</code> are the token IDs we want the LLM to generate, and the <code>logits</code> contain the unscaled model outputs before they enter the <code>softmax</code> function to obtain the probability scores.</p>
+<p> Previously, we applied the <code>softmax</code> function, selected the probability scores corresponding to the target IDs, and computed the negative average log probabilities. PyTorch’s <code>cross_entropy</code> function will take care of all these steps for us:</p>
+<div class="codeblock"><pre><code>loss <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-bi">nn</span>.functional.<span class="t-fn">cross_entropy</span>(logits_flat, targets_flat)
+<span class="t-bi">print</span>(loss)</code></pre></div>
+<p>The resulting loss is the same that we obtained previously when applying the individual steps in figure 5.7 manually:</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>(<span class="t-num">10.7940</span>)</code></pre></div>
+<h3 id="perplexity">Perplexity<a class="anchor" href="#perplexity">#</a></h3>
+<div class="plainbox"><p><em>Perplexity</em> is a measure often used alongside cross entropy loss to evaluate the per-</p><p>formance of models in tasks like language modeling. It can provide a more interpre-</p><p>table way to understand the uncertainty of a model in predicting the next token in a</p><p>sequence. </p><p>Perplexity measures how well the probability distribution predicted by the model</p><p>matches the actual distribution of the words in the dataset. Similar to the loss, a lower</p><p>perplexity indicates that the model predictions are closer to the actual distribution.</p></div>
+<div class="pdfpage" data-page="161">PDF p. 161</div>
+<figure><img src="assets/fig-0107.png" alt="" loading="lazy"><figcaption>Figure 5.8 Having completed steps 1 and 2, including computing the cross entropy loss, we can now apply this  loss computation to the entire text dataset that we will use for model training.</figcaption></figure>
+<div class="plainbox"><p><strong><em>(continued)</em></strong></p><p>Perplexity can be calculated as <code>perplexity</code> <code>=</code> <code>torch.exp(loss)</code>, which returns</p></div>
+<p><code>tensor(48725.8203)</code> when applied to the previously calculated loss. </p>
+<div class="plainbox"><p>Perplexity is often considered more interpretable than the raw loss value because it sig-</p><p>nifies the effective vocabulary size about which the model is uncertain at each step. In</p><p>the given example, this would translate to the model being unsure about which among</p><p>48,725 tokens in the vocabulary to generate as the next token.</p></div>
+<p>We have now calculated the loss for two small text inputs for illustration purposes. Next, we will apply the loss computation to the entire training and validation sets.</p>
+<h3 id="calculating-the-training-and-validation-set-losses">5.1.3 Calculating the training and validation set losses<a class="anchor" href="#calculating-the-training-and-validation-set-losses">#</a></h3>
+<p>We must first prepare the training and validation datasets that we will use to train the LLM. Then, as highlighted in figure 5.8, we will calculate the cross entropy for the training and validation sets, which is an important component of the model training process.</p>
+<p>To compute the loss on the training and validation datasets, we use a very small text dataset, the “The Verdict” short story by Edith Wharton, which we have already worked with in chapter 2. By selecting a text from the public domain, we circumvent any concerns related to usage rights. Additionally, using such a small dataset allows for the execution of code examples on a standard laptop computer in a matter of minutes, even without a high-end GPU, which is particularly advantageous for educational purposes. </p>
+<div class="pdfpage" data-page="162">PDF p. 162</div>
+<aside class="callout note"><p class="lab">NOTE</p><p>Interested readers can also use the supplementary code for this book to prepare a larger-scale dataset consisting of more than 60,000 public domain books from Project Gutenberg and train an LLM on these (see appendix D for details).</p></aside>
+<h3 id="the-cost-of-pretraining-llms">The cost of pretraining LLMs <a class="anchor" href="#the-cost-of-pretraining-llms">#</a></h3>
+<div class="plainbox"><p>To put the scale of our project into perspective, consider the training of the 7 billion</p><p>parameter Llama 2 model, a relatively popular openly available LLM. This model</p><p>required 184,320 GPU hours on expensive A100 GPUs, processing 2 trillion tokens.</p><p>At the time of writing, running an 8 × A100 cloud server on AWS costs around $30</p><p>per hour. A rough estimate puts the total training cost of such an LLM at around</p><p>$690,000 (calculated as 184,320 hours divided by 8, then multiplied by $30).</p></div>
+<p>The following code loads the “The Verdict” short story:</p>
+<div class="codeblock"><pre><code>file_path <span class="t-op">=</span> <span class="t-str">"the-verdict.txt"</span>
+<span class="t-kw">with</span> <span class="t-bi">open</span>(file_path, <span class="t-str">"r"</span>, encoding<span class="t-op">=</span><span class="t-str">"utf-8"</span>) <span class="t-kw">as</span> file:
+ text_data <span class="t-op">=</span> file.<span class="t-fn">read</span>()</code></pre></div>
+<p>After loading the dataset, we can check the number of characters and tokens in the dataset:</p>
+<div class="codeblock"><pre><code>total_characters <span class="t-op">=</span> <span class="t-bi">len</span>(text_data)
+total_tokens <span class="t-op">=</span> <span class="t-bi">len</span>(tokenizer.<span class="t-fn">encode</span>(text_data))
+<span class="t-bi">print</span>(<span class="t-str">"Characters:"</span>, total_characters)
+<span class="t-bi">print</span>(<span class="t-str">"Tokens:"</span>, total_tokens)</code></pre></div>
+<p>The output is</p>
+<div class="codeblock"><pre><code>Characters: <span class="t-num">20479</span>
+Tokens: <span class="t-num">5145</span></code></pre></div>
+<p>With just 5,145 tokens, the text might seem too small to train an LLM, but as mentioned earlier, it’s for educational purposes so that we can run the code in minutes instead of weeks. Plus, later we will load pretrained weights from OpenAI into our</p>
+<p><code>GPTModel</code> code.</p>
+<p> Next, we divide the dataset into a training and a validation set and use the data loaders from chapter 2 to prepare the batches for LLM training. This process is visualized in figure 5.9. Due to spatial constraints, we use a <code>max_length=6</code>. However, for the actual data loaders, we set the <code>max_length</code> equal to the 256-token context length that the LLM supports so that the LLM sees longer texts during training.</p>
+<div class="pdfpage" data-page="163">PDF p. 163</div>
+<figure><img src="assets/fig-0108.png" alt="" loading="lazy"><figcaption>Figure 5.9 When preparing the data loaders, we split the input text into training and validation set portions. Then  we tokenize the text (only shown for the training set portion for simplicity) and divide the tokenized text into  chunks of a user-specified length (here, 6). Finally, we shuffle the rows and organize the chunked text into batches  (here, batch size 2), which we can use for model training.</figcaption></figure>
+<aside class="callout note"><p class="lab">NOTE</p><p>We are training the model with training data presented in similarly sized chunks for simplicity and efficiency. However, in practice, it can also be beneficial to train an LLM with variable-length inputs to help the LLM to better generalize across different types of inputs when it is being used.</p></aside>
+<p>To implement the data splitting and loading, we first define a <code>train_ratio</code> to use 90% of the data for training and the remaining 10% as validation data for model evaluation during training:</p>
+<div class="codeblock"><pre><code>train_ratio <span class="t-op">=</span> <span class="t-num">0.90</span>
+split_idx <span class="t-op">=</span> <span class="t-bi">int</span>(train_ratio <span class="t-op">*</span> <span class="t-bi">len</span>(text_data))
+train_data <span class="t-op">=</span> text_data[:split_idx]
+val_data <span class="t-op">=</span> text_data[split_idx:]</code></pre></div>
+<div class="pdfpage" data-page="164">PDF p. 164</div>
+<p>Using the <code>train_data</code> and <code>val_data</code> subsets, we can now create the respective data loader reusing the <code>create_dataloader_v1</code> code from chapter 2:</p>
+<div class="codeblock"><pre><code><span class="t-kw">from</span> chapter02 <span class="t-kw">import</span> create_dataloader_v1
+<span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)
+train_loader <span class="t-op">=</span> <span class="t-fn">create_dataloader_v1</span>(
+ train_data,
+ batch_size<span class="t-op">=</span><span class="t-num">2</span>,
+ max_length<span class="t-op">=</span>GPT_CONFIG_124M[<span class="t-str">"context_length"</span>],
+ stride<span class="t-op">=</span>GPT_CONFIG_124M[<span class="t-str">"context_length"</span>],
+ drop_last<span class="t-op">=</span><span class="t-kw">True</span>,
+ shuffle<span class="t-op">=</span><span class="t-kw">True</span>,
+ num_workers<span class="t-op">=</span><span class="t-num">0</span>
+)
+val_loader <span class="t-op">=</span> <span class="t-fn">create_dataloader_v1</span>(
+ val_data,
+ batch_size<span class="t-op">=</span><span class="t-num">2</span>,
+ max_length<span class="t-op">=</span>GPT_CONFIG_124M[<span class="t-str">"context_length"</span>],
+ stride<span class="t-op">=</span>GPT_CONFIG_124M[<span class="t-str">"context_length"</span>],
+ drop_last<span class="t-op">=</span><span class="t-kw">False</span>,
+ shuffle<span class="t-op">=</span><span class="t-kw">False</span>,
+ num_workers<span class="t-op">=</span><span class="t-num">0</span>
+)</code></pre></div>
+<p>We used a relatively small batch size to reduce the computational resource demand because we were working with a very small dataset. In practice, training LLMs with batch sizes of 1,024 or larger is not uncommon.</p>
+<p> As an optional check, we can iterate through the data loaders to ensure that they were created correctly:</p>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(<span class="t-str">"Train loader:"</span>)
+<span class="t-kw">for</span> x, y <span class="t-kw">in</span> train_loader:
+ <span class="t-bi">print</span>(x.shape, y.shape)
+<span class="t-bi">print</span>(<span class="t-str">"\nValidation loader:"</span>)
+<span class="t-kw">for</span> x, y <span class="t-kw">in</span> val_loader:
+ <span class="t-bi">print</span>(x.shape, y.shape)</code></pre></div>
+<p>We should see the following outputs:</p>
+<div class="codeblock"><pre><code>Train loader:
+<span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">256</span>]) <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">256</span>])
+<span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">256</span>]) <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">256</span>])
+<span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">256</span>]) <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">256</span>])
+<span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">256</span>]) <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">256</span>])
+<span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">256</span>]) <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">256</span>])
+<span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">256</span>]) <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">256</span>])
+<span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">256</span>]) <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">256</span>])
+<span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">256</span>]) <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">256</span>])
+<span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">256</span>]) <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">256</span>])</code></pre></div>
+<div class="pdfpage" data-page="165">PDF p. 165</div>
+<p class="listing-title"><span class="no">Listing 5.2</span><span class="tl">Function to compute the training and validation loss</span></p>
+<figure><img src="assets/fig-0109.png" alt="" loading="lazy"></figure>
+<figure><img src="assets/fig-0110.png" alt="" loading="lazy"></figure>
+<div class="codeblock"><pre><code>Validation loader:
+<span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">256</span>]) <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">256</span>])</code></pre></div>
+<p>Based on the preceding code output, we have nine training set batches with two samples and 256 tokens each. Since we allocated only 10% of the data for validation, there is only one validation batch consisting of two input examples. As expected, the input data (<code>x</code>) and target data (<code>y</code>) have the same shape (the batch size times the number of tokens in each batch) since the targets are the inputs shifted by one position, as discussed in chapter 2.</p>
+<p> Next, we implement a utility function to calculate the cross entropy loss of a given batch returned via the training and validation loader:</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>The transfer to a given device allows us to transfer the data to a GPU.</li></ul></details><pre><code><span class="t-kw">def</span> <span class="t-fn">calc_loss_batch</span>(input_batch, target_batch, model, device):
+ input_batch <span class="t-op">=</span> input_batch.<span class="t-fn">to</span>(device)
+ target_batch <span class="t-op">=</span> target_batch.<span class="t-fn">to</span>(device)
+ logits <span class="t-op">=</span> <span class="t-fn">model</span>(input_batch)
+ loss <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-bi">nn</span>.functional.<span class="t-fn">cross_entropy</span>(
+ logits.<span class="t-fn">flatten</span>(<span class="t-num">0</span>, <span class="t-num">1</span>), target_batch.<span class="t-fn">flatten</span>()
+ )
+ <span class="t-kw">return</span> loss</code></pre></div>
+<p>We can now use this <code>calc_loss_batch</code> utility function, which computes the loss for a single batch, to implement the following <code>calc_loss_loader</code> function that computes the loss over all the batches sampled by a given data loader.</p>
+<div class="codeblock"><pre><code><span class="t-kw">def</span> <span class="t-fn">calc_loss_loader</span>(data_loader, model, device, num_batches<span class="t-op">=</span><span class="t-kw">None</span>):
+ total_loss <span class="t-op">=</span> <span class="t-num">0.</span>
+ <span class="t-kw">if</span> <span class="t-bi">len</span>(data_loader) <span class="t-op">==</span> <span class="t-num">0</span>:</code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 2 条</summary><ul><li>Iteratives over all batches if no fixed num_batches is specified</li><li>Reduces the number of batches to match the total number of batches in the data</li></ul></details><pre><code> <span class="t-kw">return</span> <span class="t-bi">float</span>(<span class="t-str">"nan"</span>)
+ <span class="t-kw">elif</span> num_batches <span class="t-kw">is</span> <span class="t-kw">None</span>:
+ num_batches <span class="t-op">=</span> <span class="t-bi">len</span>(data_loader)
+ <span class="t-kw">else</span>:
+ num_batches <span class="t-op">=</span> <span class="t-bi">min</span>(num_batches, <span class="t-bi">len</span>(data_loader))
+ <span class="t-kw">for</span> i, (input_batch, target_batch) <span class="t-kw">in</span> <span class="t-bi">enumerate</span>(data_loader):
+ <span class="t-kw">if</span> i <span class="t-op">&lt;</span> num_batches:
+ loss <span class="t-op">=</span> <span class="t-fn">calc_loss_batch</span>(
+ input_batch, target_batch, model, device
+ )
+ total_loss <span class="t-op">+=</span> loss.<span class="t-fn">item</span>()</code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 4 条</summary><ul><li>Sums loss loader if num_batches</li><li>for each exceeds the number</li><li>batch of batches in the data loader</li><li>Averages the loss over all batches</li></ul></details><pre><code> <span class="t-kw">else</span>:
+ <span class="t-kw">break</span>
+ <span class="t-kw">return</span> total_loss <span class="t-op">/</span> num_batches</code></pre></div>
+<p>By default, the <code>calc_loss_loader</code> function iterates over all batches in a given data loader, accumulates the loss in the <code>total_loss</code> variable, and then computes and</p>
+<div class="pdfpage" data-page="166">PDF p. 166</div>
+<figure><img src="assets/fig-0111.png" alt="" loading="lazy"><figcaption>Figure 5.10 We have recapped the text generation process (step 1) and implemented basic model  evaluation techniques (step 2) to compute the training and validation set losses (step 3). Next, we  will go to the training functions and pretrain the LLM (step 4).</figcaption></figure>
+<p>averages the loss over the total number of batches. Alternatively, we can specify a smaller number of batches via <code>num_batches</code> to speed up the evaluation during model training.</p>
+<p> Let’s now see this <code>calc_loss_loader</code> function in action, applying it to the training and validation set loaders:</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 5 条</summary><ul><li>If you have a machine with a CUDA-supported GPU, the LLM Disables gradient tracking</li><li>will train on the GPU without for efficiency because we</li><li>making any changes to the code. are not training yet</li><li>we ensure the data is loaded ontoVia the “device” setting,</li><li>the same device as the LLM model.</li></ul></details><pre><code>device <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">device</span>(<span class="t-str">"cuda"</span> <span class="t-kw">if</span> <span class="t-bi">torch</span>.cuda.<span class="t-fn">is_available</span>() <span class="t-kw">else</span> <span class="t-str">"cpu"</span>)
+model.<span class="t-fn">to</span>(device)
+<span class="t-kw">with</span> <span class="t-bi">torch</span>.<span class="t-fn">no_grad</span>():
+ train_loss <span class="t-op">=</span> <span class="t-fn">calc_loss_loader</span>(train_loader, model, device)
+ val_loss <span class="t-op">=</span> <span class="t-fn">calc_loss_loader</span>(val_loader, model, device)
+<span class="t-bi">print</span>(<span class="t-str">"Training loss:"</span>, train_loss)
+<span class="t-bi">print</span>(<span class="t-str">"Validation loss:"</span>, val_loss)</code></pre></div>
+<p>The resulting loss values are</p>
+<div class="codeblock"><pre><code>Training loss: <span class="t-num">10.98758347829183</span>
+Validation loss: <span class="t-num">10.98110580444336</span></code></pre></div>
+<p>The loss values are relatively high because the model has not yet been trained. For comparison, the loss approaches 0 if the model learns to generate the next tokens as they appear in the training and validation sets.</p>
+<p> Now that we have a way to measure the quality of the generated text, we will train the LLM to reduce this loss so that it becomes better at generating text, as illustrated in figure 5.10.</p>
+<div class="pdfpage" data-page="167">PDF p. 167</div>
+<figure><img src="assets/fig-0112.png" alt="" loading="lazy"></figure>
+<p>Next, we will focus on pretraining the LLM. After model training, we will implement alternative text generation strategies and save and load pretrained model weights.</p>
+<h2 id="training-an-llm">5.2 Training an LLM<a class="anchor" href="#training-an-llm">#</a></h2>
+<p>It is finally time to implement the code for pretraining the LLM, our <code>GPTModel</code>. For this, we focus on a straightforward training loop to keep the code concise and readable. </p>
+<aside class="callout note"><p class="lab">NOTE</p><p>Interested readers can learn about more advanced techniques, includ-</p></aside>
+<p>ing <em>learning rate warmup</em>, <em>cosine annealing</em>, and <em>gradient clipping</em>, in appendix D.</p>
+<p class="caption">Figure 5.11 A typical training loop for training deep neural networks in  PyTorch consists of numerous steps, iterating over the batches in the training  set for several epochs. In each loop, we calculate the loss for each training  set batch to determine loss gradients, which we use to update the model  weights so that the training set loss is minimized.</p>
+<p>The flowchart in figure 5.11 depicts a typical PyTorch neural network training workflow, which we use for training an LLM. It outlines eight steps, starting with iterating over each epoch, processing batches, resetting gradients, calculating the loss and new</p>
+<div class="pdfpage" data-page="168">PDF p. 168</div>
+<p class="listing-title"><span class="no">Listing 5.3</span><span class="tl">The main function for pretraining LLMs</span></p>
+<figure><img src="assets/fig-0113.png" alt="" loading="lazy"></figure>
+<figure><img src="assets/fig-0114.png" alt="" loading="lazy"></figure>
+<p>gradients, and updating weights and concluding with monitoring steps like printing losses and generating text samples. </p>
+<aside class="callout note"><p class="lab">NOTE</p><p>If you are relatively new to training deep neural networks with PyTorch and any of these steps are unfamiliar, consider reading sections A.5 to A.8 in appendix A.</p></aside>
+<p>We can implement this training flow via the <code>train_model_simple</code> function in code.</p>
+<div class="codeblock"><pre><code><span class="t-kw">def</span> <span class="t-fn">train_model_simple</span>(model, train_loader, val_loader,
+ optimizer, device, num_epochs,
+ eval_freq, eval_iter, start_context, tokenizer):
+ train_losses, val_losses, track_tokens_seen <span class="t-op">=</span> [], [], []</code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 5 条</summary><ul><li>Initializes lists to</li><li>Starts the main track losses and</li><li>training loop tokens seen</li><li>Resets loss gradients from the previous batch iteration</li><li>Calculates loss gradients</li></ul></details><pre><code> tokens_seen, global_step <span class="t-op">=</span> <span class="t-num">0</span>, <span class="t-op">-</span><span class="t-num">1</span>
+ <span class="t-kw">for</span> epoch <span class="t-kw">in</span> <span class="t-bi">range</span>(num_epochs):
+ model.<span class="t-fn">train</span>()
+ <span class="t-kw">for</span> input_batch, target_batch <span class="t-kw">in</span> train_loader:
+ optimizer.<span class="t-fn">zero_grad</span>()
+ loss <span class="t-op">=</span> <span class="t-fn">calc_loss_batch</span>(
+ input_batch, target_batch, model, device
+ )
+ loss.<span class="t-fn">backward</span>()</code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 2 条</summary><ul><li>Updates model weights using loss gradients</li><li>Prints a sample text</li></ul></details><pre><code> optimizer.<span class="t-fn">step</span>()
+ tokens_seen <span class="t-op">+=</span> input_batch.<span class="t-fn">numel</span>()
+ global_step <span class="t-op">+=</span> <span class="t-num">1</span>
+ <span class="t-kw">if</span> global_step <span class="t-op">%</span> eval_freq <span class="t-op">==</span> <span class="t-num">0</span>:  train_loss, val_loss <span class="t-op">=</span> <span class="t-fn">evaluate_model</span>( Optional evaluation step
+ model, train_loader, val_loader, device, eval_iter)
+ train_losses.<span class="t-fn">append</span>(train_loss)
+ val_losses.<span class="t-fn">append</span>(val_loss)
+ track_tokens_seen.<span class="t-fn">append</span>(tokens_seen)
+ <span class="t-bi">print</span>(f<span class="t-str">"Ep {epoch+1} (Step {global_step:06d}): "</span>
+ f<span class="t-str">"Train loss {train_loss:.3f}, "</span>
+ f<span class="t-str">"Val loss {val_loss:.3f}"</span>
+ )
+ <span class="t-fn">generate_and_print_sample</span>( after each epoch
+ model, tokenizer, device, start_context
+ )
+ <span class="t-kw">return</span> train_losses, val_losses, track_tokens_seen</code></pre></div>
+<p>Note that the <code>train_model_simple</code> function we just created uses two functions we</p>
+<p>have not defined yet: <code>evaluate_model</code> and <code>generate_and_print_sample</code>. </p>
+<p> The <code>evaluate_model</code> function corresponds to step 7 in figure 5.11. It prints the training and validation set losses after each model update so we can evaluate whether the training improves the model. More specifically, the <code>evaluate_model</code> function calculates the loss over the training and validation set while ensuring the model is in eval-</p>
+<div class="pdfpage" data-page="169">PDF p. 169</div>
+<p>over the training and validation sets:</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 4 条</summary><ul><li>Disables gradient tracking, which is not</li><li>Dropout is disabled during required during evaluation, to reduce</li><li>evaluation for stable, the computational overhead</li><li>reproducible results.</li></ul></details><pre><code><span class="t-kw">def</span> <span class="t-fn">evaluate_model</span>(model, train_loader, val_loader, device, eval_iter):
+ model.<span class="t-fn">eval</span>()
+ <span class="t-kw">with</span> <span class="t-bi">torch</span>.<span class="t-fn">no_grad</span>():
+ train_loss <span class="t-op">=</span> <span class="t-fn">calc_loss_loader</span>(
+ train_loader, model, device, num_batches<span class="t-op">=</span>eval_iter
+ )
+ val_loss <span class="t-op">=</span> <span class="t-fn">calc_loss_loader</span>(
+ val_loader, model, device, num_batches<span class="t-op">=</span>eval_iter
+ )
+ model.<span class="t-fn">train</span>()
+ <span class="t-kw">return</span> train_loss, val_loss</code></pre></div>
+<p>Similar to <code>evaluate_model</code>, the <code>generate_and_print_sample</code> function is a convenience function that we use to track whether the model improves during the training. In particular, the <code>generate_and_print_sample</code> function takes a text snippet (<code>start_context</code>) as input, converts it into token IDs, and feeds it to the LLM to generate a text sample using the <code>generate_text_simple</code> function we used earlier:</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>Compact print format</li></ul></details><pre><code><span class="t-kw">def</span> <span class="t-fn">generate_and_print_sample</span>(model, tokenizer, device, start_context):
+ model.<span class="t-fn">eval</span>()
+ context_size <span class="t-op">=</span> model.pos_emb.weight.shape[<span class="t-num">0</span>]
+ encoded <span class="t-op">=</span> <span class="t-fn">text_to_token_ids</span>(start_context, tokenizer).<span class="t-fn">to</span>(device)
+ <span class="t-kw">with</span> <span class="t-bi">torch</span>.<span class="t-fn">no_grad</span>():
+ token_ids <span class="t-op">=</span> <span class="t-fn">generate_text_simple</span>(
+ model<span class="t-op">=</span>model, idx<span class="t-op">=</span>encoded,
+ max_new_tokens<span class="t-op">=</span><span class="t-num">50</span>, context_size<span class="t-op">=</span>context_size
+ )
+ decoded_text <span class="t-op">=</span> <span class="t-fn">token_ids_to_text</span>(token_ids, tokenizer)
+ <span class="t-bi">print</span>(decoded_text.<span class="t-fn">replace</span>(<span class="t-str">"\n"</span>, <span class="t-str">" "</span>))
+ model.<span class="t-fn">train</span>()</code></pre></div>
+<p>While the <code>evaluate_model</code> function gives us a numeric estimate of the model’s training progress, this <code>generate_and_print_sample</code> text function provides a concrete text example generated by the model to judge its capabilities during training.</p>
+<h3 id="adamw">AdamW <a class="anchor" href="#adamw">#</a></h3>
+<div class="plainbox"><p><em>Adam</em> optimizers are a popular choice for training deep neural networks. However, in</p><p>our training loop, we opt for the <em>AdamW</em> optimizer. AdamW is a variant of Adam that</p><p>improves the weight decay approach, which aims to minimize model complexity and</p><p>prevent overfitting by penalizing larger weights. This adjustment allows AdamW to</p><p>achieve more effective regularization and better generalization; thus, AdamW is fre-</p><p>quently used in the training of LLMs.</p></div>
+<div class="pdfpage" data-page="170">PDF p. 170</div>
+<p>Let’s see this all in action by training a <code>GPTModel</code> instance for 10 epochs using an <code>AdamW</code> optimizer and the <code>train_model_simple</code> function we defined earlier: </p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>The .parameters() method returns all trainable weight parameters of the model.</li></ul></details><pre><code><span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)
+model <span class="t-op">=</span> <span class="t-fn">GPTModel</span>(GPT_CONFIG_124M)
+model.<span class="t-fn">to</span>(device)
+optimizer <span class="t-op">=</span> <span class="t-bi">torch</span>.optim.<span class="t-fn">AdamW</span>(
+ model.<span class="t-fn">parameters</span>(),
+ lr<span class="t-op">=</span><span class="t-num">0.0004</span>, weight_decay<span class="t-op">=</span><span class="t-num">0.1</span>
+)
+num_epochs <span class="t-op">=</span> <span class="t-num">10</span>
+train_losses, val_losses, tokens_seen <span class="t-op">=</span> <span class="t-fn">train_model_simple</span>(
+ model, train_loader, val_loader, optimizer, device,
+ num_epochs<span class="t-op">=</span>num_epochs, eval_freq<span class="t-op">=</span><span class="t-num">5</span>, eval_iter<span class="t-op">=</span><span class="t-num">5</span>,
+ start_context<span class="t-op">=</span><span class="t-str">"Every effort moves you"</span>, tokenizer<span class="t-op">=</span>tokenizer
+)</code></pre></div>
+<p>Executing the <code>train_model_simple</code> function starts the training process, which takes about 5 minutes to complete on a MacBook Air or a similar laptop. The output printed during this execution is as follows:</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 2 条</summary><ul><li>Intermediate</li><li>results removed to save space</li></ul></details><pre><code>Ep <span class="t-num">1</span> (Step <span class="t-num">000000</span>): Train loss <span class="t-num">9.781</span>, Val loss <span class="t-num">9.933</span>
+Ep <span class="t-num">1</span> (Step <span class="t-num">000005</span>): Train loss <span class="t-num">8.111</span>, Val loss <span class="t-num">8.339</span>
+Every effort moves you,,,,,,,,,,,,.
+Ep <span class="t-num">2</span> (Step <span class="t-num">000010</span>): Train loss <span class="t-num">6.661</span>, Val loss <span class="t-num">7.048</span>
+Ep <span class="t-num">2</span> (Step <span class="t-num">000015</span>): Train loss <span class="t-num">5.961</span>, Val loss <span class="t-num">6.616</span>
+Every effort moves you, <span class="t-kw">and</span>, <span class="t-kw">and</span>, <span class="t-kw">and</span>, <span class="t-kw">and</span>, <span class="t-kw">and</span>, <span class="t-kw">and</span>, <span class="t-kw">and</span>, <span class="t-kw">and</span>, <span class="t-kw">and</span>, <span class="t-kw">and</span>,
+ <span class="t-kw">and</span>, <span class="t-kw">and</span>, <span class="t-kw">and</span>, <span class="t-kw">and</span>, <span class="t-kw">and</span>, <span class="t-kw">and</span>, <span class="t-kw">and</span>, <span class="t-kw">and</span>, <span class="t-kw">and</span>, <span class="t-kw">and</span>, <span class="t-kw">and</span>, <span class="t-kw">and</span>,, <span class="t-kw">and</span>, <span class="t-kw">and</span>,
+[...]
+Ep <span class="t-num">9</span> (Step <span class="t-num">000080</span>): Train loss <span class="t-num">0.541</span>, Val loss <span class="t-num">6.393</span>
+Every effort moves you?<span class="t-str">" "</span>Yes<span class="t-op">--</span>quite insensible to the irony. She wanted
+him vindicated<span class="t-op">--</span><span class="t-kw">and</span> by me<span class="t-op">!</span><span class="t-str">" He laughed again, and threw back the</span>
+window<span class="t-op">-</span>curtains, I had the donkey. <span class="t-str">"There were days when I</span>
+Ep <span class="t-num">10</span> (Step <span class="t-num">000085</span>): Train loss <span class="t-num">0.391</span>, Val loss <span class="t-num">6.452</span>
+Every effort moves you know,<span class="t-str">" was one of the axioms he laid down across the</span>
+Sevres <span class="t-kw">and</span> silver of an exquisitely appointed luncheon<span class="t-op">-</span>table, when, on a
+later day, I had again run over <span class="t-kw">from</span> Monte Carlo; <span class="t-kw">and</span> Mrs. Gis</code></pre></div>
+<p>As we can see, the training loss improves drastically, starting with a value of 9.781 and converging to 0.391. The language skills of the model have improved quite a lot. In the beginning, the model is only able to append commas to the start context (<code>Every</code> <code>effort</code> <code>moves</code> <code>you,,,,,,,,,,,,</code>) or repeat the word <code>and</code>. At the end of the training, it can generate grammatically correct text. </p>
+<p> Similar to the training set loss, we can see that the validation loss starts high (9.933) and decreases during the training. However, it never becomes as small as the training set loss and remains at 6.452 after the 10th epoch.</p>
+<p> Before discussing the validation loss in more detail, let’s create a simple plot that shows the training and validation set losses side by side:</p>
+<div class="pdfpage" data-page="171">PDF p. 171</div>
+<figure><img src="assets/fig-0115.png" alt="" loading="lazy"><figcaption>Figure 5.12 At the beginning of the training, both the training and validation  set losses sharply decrease, which is a sign that the model is learning. However,  the training set loss continues to decrease past the second epoch, whereas the  validation loss stagnates. This is a sign that the model is still learning, but it’s  overfitting to the training set past epoch 2.</figcaption></figure>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 2 条</summary><ul><li>Creates a second x-axis that shares the same y-axis</li><li>Invisible plot for aligning ticks</li></ul></details><pre><code><span class="t-kw">import</span> matplotlib.pyplot <span class="t-kw">as</span> plt
+<span class="t-kw">from</span> matplotlib.ticker <span class="t-kw">import</span> MaxNLocator
+<span class="t-kw">def</span> <span class="t-fn">plot_losses</span>(epochs_seen, tokens_seen, train_losses, val_losses):
+ fig, ax1 <span class="t-op">=</span> plt.<span class="t-fn">subplots</span>(figsize<span class="t-op">=</span>(<span class="t-num">5</span>, <span class="t-num">3</span>))
+ ax1.<span class="t-fn">plot</span>(epochs_seen, train_losses, label<span class="t-op">=</span><span class="t-str">"Training loss"</span>)
+ ax1.<span class="t-fn">plot</span>(
+ epochs_seen, val_losses, linestyle<span class="t-op">=</span><span class="t-str">"-."</span>, label<span class="t-op">=</span><span class="t-str">"Validation loss"</span>
+ )
+ ax1.<span class="t-fn">set_xlabel</span>(<span class="t-str">"Epochs"</span>)
+ ax1.<span class="t-fn">set_ylabel</span>(<span class="t-str">"Loss"</span>)
+ ax1.<span class="t-fn">legend</span>(loc<span class="t-op">=</span><span class="t-str">"upper right"</span>)
+ ax1.xaxis.<span class="t-fn">set_major_locator</span>(<span class="t-fn">MaxNLocator</span>(integer<span class="t-op">=</span><span class="t-kw">True</span>))
+ ax2 <span class="t-op">=</span> ax1.<span class="t-fn">twiny</span>()
+ ax2.<span class="t-fn">plot</span>(tokens_seen, train_losses, alpha<span class="t-op">=</span><span class="t-num">0</span>)
+ ax2.<span class="t-fn">set_xlabel</span>(<span class="t-str">"Tokens seen"</span>)
+ fig.<span class="t-fn">tight_layout</span>()
+ plt.<span class="t-fn">show</span>()
+epochs_tensor <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">linspace</span>(<span class="t-num">0</span>, num_epochs, <span class="t-bi">len</span>(train_losses))
+<span class="t-fn">plot_losses</span>(epochs_tensor, tokens_seen, train_losses, val_losses)</code></pre></div>
+<p>The resulting training and validation loss plot is shown in figure 5.12. As we can see, both the training and validation losses start to improve for the first epoch. However, the losses start to diverge past the second epoch. This divergence and the fact that the validation loss is much larger than the training loss indicate that the model is overfitting to the training data. We can confirm that the model memorizes the training data verbatim by searching for the generated text snippets, such as <code>quite</code> <code>insensible</code> <code>to</code> <code>the</code> <code>irony</code> in the “The Verdict” text file. </p>
+<div class="pdfpage" data-page="172">PDF p. 172</div>
+<figure><img src="assets/fig-0116.png" alt="" loading="lazy"><figcaption>Figure 5.13 Our model can generate coherent text after implementing the training function.  However, it often memorizes passages from the training set verbatim. Next, we will discuss  strategies to generate more diverse output texts.</figcaption></figure>
+<p>This memorization is expected since we are working with a very, very small training dataset and training the model for multiple epochs. Usually, it’s common to train a model on a much larger dataset for only one epoch. </p>
+<aside class="callout note"><p class="lab">NOTE</p><p>As mentioned earlier, interested readers can try to train the model on 60,000 public domain books from Project Gutenberg, where this overfitting does not occur; see appendix B for details. </p></aside>
+<p>As illustrated in figure 5.13, we have completed four of our objectives for this chaper. Next, we will cover text generation strategies for LLMs to reduce training data memorization and increase the originality of the LLM-generated text before we cover weight loading and saving and loading pretrained weights from OpenAI’s GPT model.</p>
+<h2 id="decoding-strategies-to-control-randomness">5.3 Decoding strategies to control randomness<a class="anchor" href="#decoding-strategies-to-control-randomness">#</a></h2>
+<p>Let’s look at text generation strategies (also called decoding strategies) to generate more original text. First, we will briefly revisit the <code>generate_text_simple</code> function that we used inside <code>generate_and_print_sample</code> earlier. Then we will cover two techniques, <em>temperature scaling</em> and <em>top-k sampling</em>, to improve this function.</p>
+<p> We begin by transferring the model back from the GPU to the CPU since inference with a relatively small model does not require a GPU. Also, after training, we put the model into evaluation mode to turn off random components such as dropout:</p>
+<div class="codeblock"><pre><code>model.<span class="t-fn">to</span>(<span class="t-str">"cpu"</span>)
+model.<span class="t-fn">eval</span>()</code></pre></div>
+<p>Next, we plug the <code>GPTModel</code> instance (<code>model</code>) into the <code>generate_text_simple</code> function, which uses the LLM to generate one token at a time:</p>
+<div class="pdfpage" data-page="173">PDF p. 173</div>
+<div class="codeblock"><pre><code>tokenizer <span class="t-op">=</span> <span class="t-bi">tiktoken</span>.<span class="t-fn">get_encoding</span>(<span class="t-str">"gpt2"</span>)
+token_ids <span class="t-op">=</span> <span class="t-fn">generate_text_simple</span>(
+ model<span class="t-op">=</span>model,
+ idx<span class="t-op">=</span><span class="t-fn">text_to_token_ids</span>(<span class="t-str">"Every effort moves you"</span>, tokenizer),
+ max_new_tokens<span class="t-op">=</span><span class="t-num">25</span>,
+ context_size<span class="t-op">=</span>GPT_CONFIG_124M[<span class="t-str">"context_length"</span>]
+)
+<span class="t-bi">print</span>(<span class="t-str">"Output text:\n"</span>, <span class="t-fn">token_ids_to_text</span>(token_ids, tokenizer))</code></pre></div>
+<p>The generated text is</p>
+<div class="codeblock"><pre><code>Output text:
+Every effort moves you know,<span class="t-str">" was one of the axioms he laid down across the</span>
+Sevres <span class="t-kw">and</span> silver of an exquisitely appointed lun</code></pre></div>
+<p>As explained earlier, the generated token is selected at each generation step corresponding to the largest probability score among all tokens in the vocabulary. This means that the LLM will always generate the same outputs even if we run the preceding <code>generate_text_simple</code> function multiple times on the same start context (<code>Every</code></p>
+<div class="codeblock"><pre><code>effort moves you).</code></pre></div>
+<h3 id="temperature-scaling">5.3.1 Temperature scaling<a class="anchor" href="#temperature-scaling">#</a></h3>
+<p>Let’s now look at temperature scaling, a technique that adds a probabilistic selection process to the next-token generation task. Previously, inside the <code>generate_text_simple</code> function, we always sampled the token with the highest probability as the next token using <code>torch.argmax</code>, also known as <em>greedy decoding</em>. To generate text with more variety, we can replace <code>argmax</code> with a function that samples from a probability distribution (here, the probability scores the LLM generates for each vocabulary entry at each token generation step).</p>
+<p> To illustrate the probabilistic sampling with a concrete example, let’s briefly discuss the next-token generation process using a very small vocabulary for illustration purposes:</p>
+<div class="codeblock"><pre><code>vocab <span class="t-op">=</span> {
+ <span class="t-str">"closer"</span>: <span class="t-num">0</span>,
+ <span class="t-str">"every"</span>: <span class="t-num">1</span>,
+ <span class="t-str">"effort"</span>: <span class="t-num">2</span>,
+ <span class="t-str">"forward"</span>: <span class="t-num">3</span>,
+ <span class="t-str">"inches"</span>: <span class="t-num">4</span>,
+ <span class="t-str">"moves"</span>: <span class="t-num">5</span>,
+ <span class="t-str">"pizza"</span>: <span class="t-num">6</span>,
+ <span class="t-str">"toward"</span>: <span class="t-num">7</span>,
+ <span class="t-str">"you"</span>: <span class="t-num">8</span>,
+}
+inverse_vocab <span class="t-op">=</span> {v: k <span class="t-kw">for</span> k, v <span class="t-kw">in</span> vocab.<span class="t-fn">items</span>()}</code></pre></div>
+<div class="pdfpage" data-page="174">PDF p. 174</div>
+<p>Next, assume the LLM is given the start context <code>"every</code> <code>effort</code> <code>moves</code> <code>you"</code> and generates the following next-token logits:</p>
+<div class="codeblock"><pre><code>next_token_logits <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>(
+ [<span class="t-num">4.51</span>, <span class="t-num">0.89</span>, <span class="t-op">-</span><span class="t-num">1.90</span>, <span class="t-num">6.75</span>, <span class="t-num">1.63</span>, <span class="t-op">-</span><span class="t-num">1.62</span>, <span class="t-op">-</span><span class="t-num">1.89</span>, <span class="t-num">6.28</span>, <span class="t-num">1.79</span>]
+)</code></pre></div>
+<p>As discussed in chapter 4, inside <code>generate_text_simple</code>, we convert the logits into probabilities via the <code>softmax</code> function and obtain the token ID corresponding to the generated token via the <code>argmax</code> function, which we can then map back into text via the inverse vocabulary:</p>
+<div class="codeblock"><pre><code>probas <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">softmax</span>(next_token_logits, dim<span class="t-op">=</span><span class="t-num">0</span>)
+next_token_id <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">argmax</span>(probas).<span class="t-fn">item</span>()
+<span class="t-bi">print</span>(inverse_vocab[next_token_id])</code></pre></div>
+<p>Since the largest logit value and, correspondingly, the largest softmax probability score are in the fourth position (index position 3 since Python uses 0 indexing), the generated word is <code>"forward"</code>. </p>
+<p> To implement a probabilistic sampling process, we can now replace <code>argmax</code> with the <code>multinomial</code> function in PyTorch:</p>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)
+next_token_id <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">multinomial</span>(probas, num_samples<span class="t-op">=</span><span class="t-num">1</span>).<span class="t-fn">item</span>()
+<span class="t-bi">print</span>(inverse_vocab[next_token_id])</code></pre></div>
+<p>The printed output is <code>"forward"</code> just like before. What happened? The <code>multinomial</code> function samples the next token proportional to its probability score. In other words, <code>"forward"</code> is still the most likely token and will be selected by <code>multinomial</code> most of the time but not all the time. To illustrate this, let’s implement a function that repeats this sampling 1,000 times:</p>
+<div class="codeblock"><pre><code><span class="t-kw">def</span> <span class="t-fn">print_sampled_tokens</span>(probas):
+ <span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)
+ sample <span class="t-op">=</span> [<span class="t-bi">torch</span>.<span class="t-fn">multinomial</span>(probas, num_samples<span class="t-op">=</span><span class="t-num">1</span>).<span class="t-fn">item</span>()
+ <span class="t-kw">for</span> i <span class="t-kw">in</span> <span class="t-bi">range</span>(<span class="t-num">1_000</span>)]
+ sampled_ids <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">bincount</span>(<span class="t-bi">torch</span>.<span class="t-fn">tensor</span>(sample))
+ <span class="t-kw">for</span> i, freq <span class="t-kw">in</span> <span class="t-bi">enumerate</span>(sampled_ids):
+ <span class="t-bi">print</span>(f<span class="t-str">"{freq} x {inverse_vocab[i]}"</span>)
+<span class="t-fn">print_sampled_tokens</span>(probas)</code></pre></div>
+<p>The sampling output is</p>
+<div class="codeblock"><pre><code><span class="t-num">73</span> x closer
+<span class="t-num">0</span> x every
+<span class="t-num">0</span> x effort
+<span class="t-num">582</span> x forward
+<span class="t-num">2</span> x inches
+<span class="t-num">0</span> x moves
+<span class="t-num">0</span> x pizza
+<span class="t-num">343</span> x toward</code></pre></div>
+<div class="pdfpage" data-page="175">PDF p. 175</div>
+<p>As we can see, the word <code>forward</code> is sampled most of the time (582 out of 1,000 times), but other tokens such as <code>closer</code>, <code>inches</code>, and <code>toward</code> will also be sampled some of the time. This means that if we replaced the <code>argmax</code> function with the <code>multinomial</code> function inside the <code>generate_and_print_sample</code> function, the LLM would some-</p>
+<div class="codeblock"><pre><code>times generate texts such <span class="t-kw">as</span> every effort moves you toward, every effort moves
+you inches, <span class="t-kw">and</span> every effort moves you closer instead of every effort moves you
+forward.</code></pre></div>
+<p> We can further control the distribution and selection process via a concept called <em>temperature scaling.</em> Temperature scaling is just a fancy description for dividing the logits by a number greater than 0:</p>
+<div class="codeblock"><pre><code><span class="t-kw">def</span> <span class="t-fn">softmax_with_temperature</span>(logits, temperature):
+ scaled_logits <span class="t-op">=</span> logits <span class="t-op">/</span> temperature
+ <span class="t-kw">return</span> <span class="t-bi">torch</span>.<span class="t-fn">softmax</span>(scaled_logits, dim<span class="t-op">=</span><span class="t-num">0</span>)</code></pre></div>
+<p>Temperatures greater than 1 result in more uniformly distributed token probabilities, and temperatures smaller than 1 will result in more confident (sharper or more peaky) distributions. Let’s illustrate this by plotting the original probabilities alongside probabilities scaled with different temperature values:</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>Original, lower, and higher confidence</li></ul></details><pre><code>temperatures <span class="t-op">=</span> [<span class="t-num">1</span>, <span class="t-num">0.1</span>, <span class="t-num">5</span>]
+scaled_probas <span class="t-op">=</span> [<span class="t-fn">softmax_with_temperature</span>(next_token_logits, T)
+ <span class="t-kw">for</span> T <span class="t-kw">in</span> temperatures]
+x <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">arange</span>(<span class="t-bi">len</span>(vocab))
+bar_width <span class="t-op">=</span> <span class="t-num">0.15</span>
+fig, ax <span class="t-op">=</span> plt.<span class="t-fn">subplots</span>(figsize<span class="t-op">=</span>(<span class="t-num">5</span>, <span class="t-num">3</span>))
+<span class="t-kw">for</span> i, T <span class="t-kw">in</span> <span class="t-bi">enumerate</span>(temperatures):
+ rects <span class="t-op">=</span> ax.<span class="t-fn">bar</span>(x <span class="t-op">+</span> i <span class="t-op">*</span> bar_width, scaled_probas[i],
+ bar_width, label<span class="t-op">=</span>f<span class="t-str">'Temperature = {T}'</span>)
+ax.<span class="t-fn">set_ylabel</span>(<span class="t-str">'Probability'</span>)
+ax.<span class="t-fn">set_xticks</span>(x)
+ax.<span class="t-fn">set_xticklabels</span>(vocab.<span class="t-fn">keys</span>(), rotation<span class="t-op">=</span><span class="t-num">90</span>)
+ax.<span class="t-fn">legend</span>()
+plt.<span class="t-fn">tight_layout</span>()
+plt.<span class="t-fn">show</span>()</code></pre></div>
+<p>The resulting plot is shown in figure 5.14.</p>
+<p> A temperature of 1 divides the logits by 1 before passing them to the <code>softmax</code> function to compute the probability scores. In other words, using a temperature of 1 is the same as not using any temperature scaling. In this case, the tokens are selected with a probability equal to the original softmax probability scores via the <code>multinomial</code> sampling function in PyTorch. For example, for the temperature setting 1, the token corresponding to “forward” would be selected about 60% of the time, as we can see in figure 5.14.</p>
+<div class="pdfpage" data-page="176">PDF p. 176</div>
+<figure><img src="assets/fig-0117.png" alt="" loading="lazy"><figcaption>Figure 5.14 A temperature of 1 represents the unscaled probability  scores for each token in the vocabulary. Decreasing the temperature to  0.1 sharpens the distribution, so the most likely token (here, “forward”)  will have an even higher probability score. Likewise, increasing the  temperature to 5 makes the distribution more uniform.</figcaption></figure>
+<p>Also, as we can see in figure 5.14, applying very small temperatures, such as 0.1, will result in sharper distributions such that the behavior of the <code>multinomial</code> function selects the most likely token (here, <code>"forward"</code>) almost 100% of the time, approaching the behavior of the <code>argmax</code> function. Likewise, a temperature of 5 results in a more uniform distribution where other tokens are selected more often. This can add more variety to the generated texts but also more often results in nonsensical text. For example, using the temperature of 5 results in texts such as <code>every</code> <code>effort</code> <code>moves</code> <code>you</code> <code>pizza</code> about 4% of the time.</p>
+<h3 id="exercise-5-1">Exercise 5.1<a class="anchor" href="#exercise-5-1">#</a></h3>
+<div class="plainbox"><p>Use the <code>print_sampled_tokens</code> function to print the sampling frequencies of the</p><p>softmax probabilities scaled with the temperatures shown in figure 5.14. How often</p><p>is the word <code>pizza</code> sampled in each case? Can you think of a faster and more accurate</p><p>way to determine how often the word <code>pizza</code> is sampled?</p></div>
+<h3 id="top-k-sampling">5.3.2 Top-k sampling<a class="anchor" href="#top-k-sampling">#</a></h3>
+<p>We’ve now implemented a probabilistic sampling approach coupled with temperature scaling to increase the diversity of the outputs. We saw that higher temperature values result in more uniformly distributed next-token probabilities, which result in more diverse outputs as it reduces the likelihood of the model repeatedly selecting the most probable token. This method allows for the exploring of less likely but potentially more interesting and creative paths in the generation process. However, one downside of this approach is that it sometimes leads to grammatically incorrect or completely nonsensical outputs such as <code>every</code> <code>effort</code> <code>moves</code> <code>you</code> <code>pizza</code>.</p>
+<div class="pdfpage" data-page="177">PDF p. 177</div>
+<figure><img src="assets/fig-0118.png" alt="" loading="lazy"><figcaption>Softmax</figcaption></figure>
+<p> <em>Top-k sampling</em>, when combined with probabilistic sampling and temperature scaling, can improve the text generation results. In top-k sampling, we can restrict the sampled tokens to the top-k most likely tokens and exclude all other tokens from the selection process by masking their probability scores, as illustrated in figure 5.15.</p>
+<div class="codeblock"><pre><code><span class="t-str">"forward"</span><span class="t-str">"inches"</span>
+<span class="t-str">"closer"</span>
+<span class="t-str">"effort"</span>
+<span class="t-str">"toward"</span>
+<span class="t-str">"every"</span>
+<span class="t-str">"moves"</span>
+<span class="t-str">"pizza"</span>
+<span class="t-str">"you"</span></code></pre></div>
+<p class="caption">Vocabulary:</p>
+<div class="codeblock"><pre><code><span class="t-num">0</span> <span class="t-num">1</span> <span class="t-num">2</span> <span class="t-num">3</span> <span class="t-num">4</span> <span class="t-num">5</span> <span class="t-num">6</span> <span class="t-num">7</span> <span class="t-num">8</span></code></pre></div>
+<p class="caption">Index position:</p>
+<div class="codeblock"><pre><code><span class="t-op">=</span> [ <span class="t-num">4.51</span>, <span class="t-num">0.89</span>, <span class="t-op">-</span><span class="t-num">1.90</span>, <span class="t-num">6.75</span>, <span class="t-num">1.63</span>, <span class="t-op">-</span><span class="t-num">1.62</span>, <span class="t-op">-</span><span class="t-num">1.89</span>, <span class="t-num">6.28</span>, <span class="t-num">1.79</span> ]</code></pre></div>
+<p class="caption">Logits</p>
+<div class="codeblock"><pre><code><span class="t-op">=</span> [ <span class="t-num">4.51</span>, <span class="t-num">0.89</span>, <span class="t-op">-</span><span class="t-num">1.90</span>, <span class="t-num">6.75</span>, <span class="t-num">1.63</span>, <span class="t-op">-</span><span class="t-num">1.62</span>, <span class="t-op">-</span><span class="t-num">1.89</span>, <span class="t-num">6.28</span>, <span class="t-num">1.79</span> ]<span class="t-num">4.51</span>,, <span class="t-num">6.75</span>, <span class="t-num">1.63</span>, <span class="t-op">-</span><span class="t-num">1.62</span>, <span class="t-op">-</span><span class="t-num">1.89</span>, <span class="t-num">6.28</span>, <span class="t-num">1.79</span> ], <span class="t-num">6.75</span>, <span class="t-num">1.63</span>, <span class="t-op">-</span><span class="t-num">1.62</span>, <span class="t-op">-</span><span class="t-num">1.89</span>, <span class="t-num">6.28</span>, <span class="t-num">1.79</span> ]</code></pre></div>
+<p class="caption">Top-k (k = 3)</p>
+<p><code>-inf</code> mask</p>
+<div class="codeblock"><pre><code><span class="t-op">=</span> [ <span class="t-num">4.51</span>, <span class="t-op">-</span>inf, <span class="t-op">-</span>inf, <span class="t-num">6.75</span>, <span class="t-op">-</span>inf, <span class="t-op">-</span>inf, <span class="t-op">-</span>inf, <span class="t-num">6.28</span>, <span class="t-op">-</span>inf ]<span class="t-num">4.51</span>,<span class="t-num">6.75</span>, <span class="t-op">-</span>inf, <span class="t-op">-</span>inf, <span class="t-op">-</span>inf, <span class="t-num">6.28</span>, <span class="t-op">-</span>inf ]<span class="t-num">6.75</span>, <span class="t-op">-</span>inf, <span class="t-op">-</span>inf, <span class="t-op">-</span>inf, <span class="t-num">6.28</span>, <span class="t-op">-</span>inf ]</code></pre></div>
+<div class="codeblock"><pre><code><span class="t-op">=</span> [ <span class="t-num">0.06</span>, <span class="t-num">0.00</span>, <span class="t-num">0.00</span>, <span class="t-num">0.57</span>, <span class="t-num">0.00</span>, <span class="t-num">0.00</span>, <span class="t-num">0.00</span>, <span class="t-num">0.36</span>, <span class="t-num">0.00</span> ]<span class="t-num">0.06</span>,, <span class="t-num">0.57</span>, <span class="t-num">0.00</span>, <span class="t-num">0.00</span>, <span class="t-num">0.00</span>, <span class="t-num">0.36</span>, <span class="t-num">0.00</span> ], <span class="t-num">0.57</span>, <span class="t-num">0.00</span>, <span class="t-num">0.00</span>, <span class="t-num">0.00</span>, <span class="t-num">0.36</span>, <span class="t-num">0.00</span> ]</code></pre></div>
+<p class="caption">Figure 5.15 Using top-k sampling with k = 3, we focus on the three tokens associated with the highest logits  and mask out all other tokens with negative infinity (–inf) before applying the softmax function. This results  in a probability distribution with a probability value 0 assigned to all non-top-k tokens. (The numbers in this figure  are truncated to two digits after the decimal point to reduce visual clutter. The values in the “Softmax” row  should add up to 1.0.)</p>
+<p>The top-k approach replaces all nonselected logits with negative infinity value (<code>-inf</code>), such that when computing the softmax values, the probability scores of the non-top-k tokens are 0, and the remaining probabilities sum up to 1. (Careful readers may remember this masking trick from the causal attention module we implemented in chapter 3, section 3.5.1.)</p>
+<p> In code, we can implement the top-k procedure in figure 5.15 as follows, starting with the selection of the tokens with the largest logit values:</p>
+<div class="codeblock"><pre><code>top_k <span class="t-op">=</span> <span class="t-num">3</span>
+top_logits, top_pos <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">topk</span>(next_token_logits, top_k)
+<span class="t-bi">print</span>(<span class="t-str">"Top logits:"</span>, top_logits)
+<span class="t-bi">print</span>(<span class="t-str">"Top positions:"</span>, top_pos)</code></pre></div>
+<div class="pdfpage" data-page="178">PDF p. 178</div>
+<figure><img src="assets/fig-0119.png" alt="" loading="lazy"></figure>
+<p class="listing-title"><span class="no">Listing 5.4</span><span class="tl">A modified text generation function with more diversity</span></p>
+<p>The logits values and token IDs of the top three tokens, in descending order, are</p>
+<div class="codeblock"><pre><code>Top logits: <span class="t-fn">tensor</span>([<span class="t-num">6.7500</span>, <span class="t-num">6.2800</span>, <span class="t-num">4.5100</span>])
+Top positions: <span class="t-fn">tensor</span>([<span class="t-num">3</span>, <span class="t-num">7</span>, <span class="t-num">0</span>])</code></pre></div>
+<p>Subsequently, we apply PyTorch’s <code>where</code> function to set the logit values of tokens that are below the lowest logit value within our top-three selection to negative infinity (<code>-inf</code>): </p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 3 条</summary><ul><li>Identifies logits less than the minimum in the top 3</li><li>Assigns –inf to these lower logits</li><li>Retains the original logits for all other tokens</li></ul></details><pre><code>new_logits <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">where</span>(
+ condition<span class="t-op">=</span>next_token_logits <span class="t-op">&lt;</span> top_logits[<span class="t-op">-</span><span class="t-num">1</span>],
+ input<span class="t-op">=</span><span class="t-bi">torch</span>.<span class="t-fn">tensor</span>(<span class="t-bi">float</span>(<span class="t-str">'-inf'</span>)),
+ other<span class="t-op">=</span>next_token_logits
+)
+<span class="t-bi">print</span>(new_logits)</code></pre></div>
+<p>The resulting logits for the next token in the nine-token vocabulary are</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([<span class="t-num">4.5100</span>, <span class="t-op">-</span>inf, <span class="t-op">-</span>inf, <span class="t-num">6.7500</span>, <span class="t-op">-</span>inf, <span class="t-op">-</span>inf, <span class="t-op">-</span>inf, <span class="t-num">6.2800</span>,
+ <span class="t-op">-</span>inf])</code></pre></div>
+<p>Lastly, let’s apply the <code>softmax</code> function to turn these into next-token probabilities:</p>
+<div class="codeblock"><pre><code>topk_probas <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">softmax</span>(new_logits, dim<span class="t-op">=</span><span class="t-num">0</span>)
+<span class="t-bi">print</span>(topk_probas)</code></pre></div>
+<p>As we can see, the result of this top-three approach are three non-zero probability scores:</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([<span class="t-num">0.0615</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.5775</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.3610</span>,
+ <span class="t-num">0.0000</span>])</code></pre></div>
+<p>We can now apply the temperature scaling and multinomial function for probabilistic sampling to select the next token among these three non-zero probability scores to generate the next token. We do this next by modifying the text generation function.</p>
+<h3 id="modifying-the-text-generation-function">5.3.3 Modifying the text generation function<a class="anchor" href="#modifying-the-text-generation-function">#</a></h3>
+<p>Now, let’s combine temperature sampling and top-k sampling to modify the <code>generate_</code> <code>text_simple</code> function we used to generate text via the LLM earlier, creating a new <code>generate</code> function.</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>The for loop is the same as before: gets logits and only focuses on the last time step.</li></ul></details><pre><code><span class="t-kw">def</span> <span class="t-fn">generate</span>(model, idx, max_new_tokens, context_size,
+ temperature<span class="t-op">=</span><span class="t-num">0.0</span>, top_k<span class="t-op">=</span><span class="t-kw">None</span>, eos_id<span class="t-op">=</span><span class="t-kw">None</span>):
+ <span class="t-kw">for</span> _ <span class="t-kw">in</span> <span class="t-bi">range</span>(max_new_tokens):
+ idx_cond <span class="t-op">=</span> idx[:, <span class="t-op">-</span>context_size:]
+ <span class="t-kw">with</span> <span class="t-bi">torch</span>.<span class="t-fn">no_grad</span>():
+ logits <span class="t-op">=</span> <span class="t-fn">model</span>(idx_cond)
+ logits <span class="t-op">=</span> logits[:, <span class="t-op">-</span><span class="t-num">1</span>, :]</code></pre></div>
+<div class="pdfpage" data-page="179">PDF p. 179</div>
+<figure><img src="assets/fig-0120.png" alt="" loading="lazy"></figure>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 3 条</summary><ul><li>Filters logits with top_k sampling</li><li>Carries out greedy next-</li><li>Applies token selection</li></ul></details><pre><code> <span class="t-kw">if</span> top_k <span class="t-kw">is</span> <span class="t-kw">not</span> <span class="t-kw">None</span>:
+ top_logits, _ <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">topk</span>(logits, top_k)
+ min_val <span class="t-op">=</span> top_logits[:, <span class="t-op">-</span><span class="t-num">1</span>]
+ logits <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">where</span>(
+ logits <span class="t-op">&lt;</span> min_val,
+ <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>(<span class="t-bi">float</span>(<span class="t-str">'-inf'</span>)).<span class="t-fn">to</span>(logits.device),
+ logits
+ )
+ <span class="t-kw">if</span> temperature <span class="t-op">&gt;</span> <span class="t-num">0.0</span>:</code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 3 条</summary><ul><li>temperature as before when</li><li>scaling temperature scaling is disabled</li><li>Stops generating early if end-of-sequence token is encountered</li></ul></details><pre><code> logits <span class="t-op">=</span> logits <span class="t-op">/</span> temperature
+ probs <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">softmax</span>(logits, dim<span class="t-op">=-</span><span class="t-num">1</span>)
+ idx_next <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">multinomial</span>(probs, num_samples<span class="t-op">=</span><span class="t-num">1</span>)
+ <span class="t-kw">else</span>:
+ idx_next <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">argmax</span>(logits, dim<span class="t-op">=-</span><span class="t-num">1</span>, keepdim<span class="t-op">=</span><span class="t-kw">True</span>)
+ <span class="t-kw">if</span> idx_next <span class="t-op">==</span> eos_id:
+ <span class="t-kw">break</span>
+ idx <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">cat</span>((idx, idx_next), dim<span class="t-op">=</span><span class="t-num">1</span>)
+ <span class="t-kw">return</span> idx</code></pre></div>
+<p>Let’s now see this new <code>generate</code> function in action:</p>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)
+token_ids <span class="t-op">=</span> <span class="t-fn">generate</span>(
+ model<span class="t-op">=</span>model,
+ idx<span class="t-op">=</span><span class="t-fn">text_to_token_ids</span>(<span class="t-str">"Every effort moves you"</span>, tokenizer),
+ max_new_tokens<span class="t-op">=</span><span class="t-num">15</span>,
+ context_size<span class="t-op">=</span>GPT_CONFIG_124M[<span class="t-str">"context_length"</span>],
+ top_k<span class="t-op">=</span><span class="t-num">25</span>,
+ temperature<span class="t-op">=</span><span class="t-num">1.4</span>
+)
+<span class="t-bi">print</span>(<span class="t-str">"Output text:\n"</span>, <span class="t-fn">token_ids_to_text</span>(token_ids, tokenizer))</code></pre></div>
+<p>The generated text is</p>
+<div class="codeblock"><pre><code>Output text:
+ Every effort moves you stand to work on surprise, a one of us had gone
+ <span class="t-kw">with</span> random<span class="t-op">-</span></code></pre></div>
+<p>As we can see, the generated text is very different from the one we previously gener-</p>
+<p>ated via the <code>generate_simple</code> function in section 5.3 (<code>"Every</code> <code>effort</code> <code>moves</code> <code>you</code> <code>know,"</code> <code>was</code> <code>one</code> <code>of</code> <code>the</code> <code>axioms</code> <code>he</code> <code>laid...!</code> ), which was a memorized passage from the training set.</p>
+<h3 id="exercise-5-2">Exercise 5.2<a class="anchor" href="#exercise-5-2">#</a></h3>
+<div class="plainbox"><p>Play around with different temperatures and top-k settings. Based on your observa-</p><p>tions, can you think of applications where lower temperature and top-k settings are</p><p>desired? Likewise, can you think of applications where higher temperature and top-k</p><p>settings are preferred? (It’s recommended to also revisit this exercise at the end of</p><p>the chapter after loading the pretrained weights from OpenAI.)</p></div>
+<div class="pdfpage" data-page="180">PDF p. 180</div>
+<figure><img src="assets/fig-0121.png" alt="" loading="lazy"><figcaption>Figure 5.16 After training and inspecting the model, it is often helpful to save the model so that  we can use or continue training it later (step 6).</figcaption></figure>
+<h3 id="exercise-5-3">Exercise 5.3<a class="anchor" href="#exercise-5-3">#</a></h3>
+<div class="plainbox"><p>What are the different combinations of settings for the <code>generate</code> function to force</p><p>deterministic behavior, that is, disabling the random sampling such that it always pro-</p><p>duces the same outputs similar to the <code>generate_simple</code> function?</p></div>
+<h2 id="loading-and-saving-model-weights-in-pytorch">5.4 Loading and saving model weights in PyTorch<a class="anchor" href="#loading-and-saving-model-weights-in-pytorch">#</a></h2>
+<p>Thus far, we have discussed how to numerically evaluate the training progress and pretrain an LLM from scratch. Even though both the LLM and dataset were relatively small, this exercise showed that pretraining LLMs is computationally expensive. Thus, it is important to be able to save the LLM so that we don’t have to rerun the training every time we want to use it in a new session. </p>
+<p> So, let’s discuss how to save and load a pretrained model, as highlighted in figure 5.16. Later, we will load a more capable pretrained GPT model from OpenAI into our <code>GPTModel</code> instance.</p>
+<p>Fortunately, saving a PyTorch model is relatively straightforward. The recommended way is to save a model’s <code>state_dict</code>, a dictionary mapping each layer to its parameters, using the <code>torch.save</code> function:</p>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.<span class="t-fn">save</span>(model.<span class="t-fn">state_dict</span>(), <span class="t-str">"model.pth"</span>)</code></pre></div>
+<p><code>"model.pth"</code> is the filename where the <code>state_dict</code> is saved. The <code>.pth</code> extension is a convention for PyTorch files, though we could technically use any file extension. </p>
+<p> Then, after saving the model weights via the <code>state_dict</code>, we can load the model weights into a new <code>GPTModel</code> model instance:</p>
+<div class="pdfpage" data-page="181">PDF p. 181</div>
+<div class="codeblock"><pre><code>model <span class="t-op">=</span> <span class="t-fn">GPTModel</span>(GPT_CONFIG_124M)
+model.<span class="t-fn">load_state_dict</span>(<span class="t-bi">torch</span>.<span class="t-fn">load</span>(<span class="t-str">"model.pth"</span>, map_location<span class="t-op">=</span>device))
+model.<span class="t-fn">eval</span>()</code></pre></div>
+<p>As discussed in chapter 4, dropout helps prevent the model from overfitting to the training data by randomly “dropping out” of a layer’s neurons during training. However, during inference, we don’t want to randomly drop out any of the information the network has learned. Using <code>model.eval()</code> switches the model to evaluation mode for inference, disabling the dropout layers of the <code>model</code>. If we plan to continue pretraining a model later—for example, using the <code>train_model_simple</code> function we defined earlier in this chapter—saving the optimizer state is also recommended.</p>
+<p> Adaptive optimizers such as AdamW store additional parameters for each model weight. AdamW uses historical data to adjust learning rates for each model parameter dynamically. Without it, the optimizer resets, and the model may learn suboptimally or even fail to converge properly, which means it will lose the ability to generate coherent text. Using <code>torch.save</code>, we can save both the model and optimizer <code>state_dict</code> contents:</p>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.<span class="t-fn">save</span>({
+ <span class="t-str">"model_state_dict"</span>: model.<span class="t-fn">state_dict</span>(),
+ <span class="t-str">"optimizer_state_dict"</span>: optimizer.<span class="t-fn">state_dict</span>(),
+ },
+ <span class="t-str">"model_and_optimizer.pth"</span>
+)</code></pre></div>
+<p>Then we can restore the model and optimizer states by first loading the saved data via</p>
+<p><code>torch.load</code> and then using the <code>load_state_dict</code> method:</p>
+<div class="codeblock"><pre><code>checkpoint <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">load</span>(<span class="t-str">"model_and_optimizer.pth"</span>, map_location<span class="t-op">=</span>device)
+model <span class="t-op">=</span> <span class="t-fn">GPTModel</span>(GPT_CONFIG_124M)
+model.<span class="t-fn">load_state_dict</span>(checkpoint[<span class="t-str">"model_state_dict"</span>])
+optimizer <span class="t-op">=</span> <span class="t-bi">torch</span>.optim.<span class="t-fn">AdamW</span>(model.<span class="t-fn">parameters</span>(), lr<span class="t-op">=</span><span class="t-num">5e</span><span class="t-op">-</span><span class="t-num">4</span>, weight_decay<span class="t-op">=</span><span class="t-num">0.1</span>)
+optimizer.<span class="t-fn">load_state_dict</span>(checkpoint[<span class="t-str">"optimizer_state_dict"</span>])
+model.<span class="t-fn">train</span>();</code></pre></div>
+<h3 id="exercise-5-4">Exercise 5.4<a class="anchor" href="#exercise-5-4">#</a></h3>
+<div class="plainbox"><p>After saving the weights, load the model and optimizer in a new Python session or</p><p>Jupyter notebook file and continue pretraining it for one more epoch using the</p></div>
+<div class="codeblock"><pre><code>train_model_simple function.</code></pre></div>
+<h2 id="loading-pretrained-weights-from-openai">5.5 Loading pretrained weights from OpenAI<a class="anchor" href="#loading-pretrained-weights-from-openai">#</a></h2>
+<p>Previously, we trained a small GPT-2 model using a limited dataset comprising a shortstory book. This approach allowed us to focus on the fundamentals without the need for extensive time and computational resources. </p>
+<div class="pdfpage" data-page="182">PDF p. 182</div>
+<p> Fortunately, OpenAI openly shared the weights of their GPT-2 models, thus eliminating the need to invest tens to hundreds of thousands of dollars in retraining the model on a large corpus ourselves. So, let’s load these weights into our <code>GPTModel</code> class and use the model for text generation. Here, <em>weights</em> refer to the weight parameters stored in the <code>.weight</code> attributes of PyTorch’s <code>Linear</code> and <code>Embedding</code> layers, for example. We accessed them earlier via <code>model.parameters()</code> when training the model. In chapter 6, will reuse these pretrained weights to fine-tune the model for a text classification task and follow instructions similar to ChatGPT.</p>
+<p> Note that OpenAI originally saved the GPT-2 weights via TensorFlow, which we have to install to load the weights in Python. The following code will use a progress bar tool called <code>tqdm</code> to track the download process, which we also have to install.</p>
+<p> You can install these libraries by executing the following command in your terminal:</p>
+<div class="codeblock"><pre><code>pip install tensorflow<span class="t-op">&gt;=</span><span class="t-num">2.15.0</span> tqdm<span class="t-op">&gt;=</span><span class="t-num">4.66</span></code></pre></div>
+<p>The download code is relatively long, mostly boilerplate, and not very interesting. Hence, instead of devoting precious space to discussing Python code for fetching files from the internet, we download the <code>gpt_download.py</code> Python module directly from this chapter’s online repository:</p>
+<div class="codeblock"><pre><code><span class="t-kw">import</span> urllib.request
+url <span class="t-op">=</span> (
+ <span class="t-str">"https://raw.githubusercontent.com/rasbt/"</span>
+ <span class="t-str">"LLMs-from-scratch/main/ch05/"</span>
+ <span class="t-str">"01_main-chapter-code/gpt_download.py"</span>
+)
+filename <span class="t-op">=</span> url.<span class="t-fn">split</span>(<span class="t-str">'/'</span>)[<span class="t-op">-</span><span class="t-num">1</span>]
+urllib.request.<span class="t-fn">urlretrieve</span>(url, filename)</code></pre></div>
+<p>Next, after downloading this file to the local directory of your Python session, you should briefly inspect the contents of this file to ensure that it was saved correctly and contains valid Python code.</p>
+<p> We can now import the <code>download_and_load_gpt2</code> function from the <code>gpt_download</code> <code>.py</code> file as follows, which will load the GPT-2 architecture settings (<code>settings</code>) and weight parameters (<code>params</code>) into our Python session:</p>
+<div class="codeblock"><pre><code><span class="t-kw">from</span> gpt_download <span class="t-kw">import</span> download_and_load_gpt2
+settings, params <span class="t-op">=</span> <span class="t-fn">download_and_load_gpt2</span>(
+ model_size<span class="t-op">=</span><span class="t-str">"124M"</span>, models_dir<span class="t-op">=</span><span class="t-str">"gpt2"</span>
+)</code></pre></div>
+<p>Executing this code downloads the following seven files associated with the <code>124M</code> parameter GPT-2 model:</p>
+<div class="codeblock"><pre><code>checkpoint: <span class="t-num">100</span><span class="t-op">%|</span>███████████████████████████<span class="t-op">|</span> <span class="t-num">77.0</span><span class="t-op">/</span><span class="t-num">77.0</span> [<span class="t-num">00</span>:<span class="t-num">00</span><span class="t-op">&lt;</span><span class="t-num">00</span>:<span class="t-num">00</span>,
+ <span class="t-num">63.9kiB</span><span class="t-op">/</span>s]
+encoder.json: <span class="t-num">100</span><span class="t-op">%|</span>█████████████████████████<span class="t-op">|</span> <span class="t-num">1.04M</span><span class="t-op">/</span><span class="t-num">1.04M</span> [<span class="t-num">00</span>:<span class="t-num">00</span><span class="t-op">&lt;</span><span class="t-num">00</span>:<span class="t-num">00</span>,
+ <span class="t-num">2.20MiB</span><span class="t-op">/</span>s]
+hprams.json: <span class="t-num">100</span><span class="t-op">%|</span>██████████████████████████<span class="t-op">|</span> <span class="t-num">90.0</span><span class="t-op">/</span><span class="t-num">90.0</span> [<span class="t-num">00</span>:<span class="t-num">00</span><span class="t-op">&lt;</span><span class="t-num">00</span>:<span class="t-num">00</span>,
+ <span class="t-num">78.3kiB</span><span class="t-op">/</span>s]
+model.ckpt.data<span class="t-op">-</span><span class="t-num">00000</span><span class="t-op">-</span>of<span class="t-op">-</span><span class="t-num">00001</span>: <span class="t-num">100</span><span class="t-op">%|</span>███████<span class="t-op">|</span> <span class="t-num">498M</span><span class="t-op">/</span><span class="t-num">498M</span> [<span class="t-num">01</span>:<span class="t-num">09</span><span class="t-op">&lt;</span><span class="t-num">00</span>:<span class="t-num">00</span>,
+ <span class="t-num">7.16MiB</span><span class="t-op">/</span>s]
+model.ckpt.index: <span class="t-num">100</span><span class="t-op">%|</span>█████████████████████<span class="t-op">|</span> <span class="t-num">5.21k</span><span class="t-op">/</span><span class="t-num">5.21k</span> [<span class="t-num">00</span>:<span class="t-num">00</span><span class="t-op">&lt;</span><span class="t-num">00</span>:<span class="t-num">00</span>,
+ <span class="t-num">3.24MiB</span><span class="t-op">/</span>s]
+model.ckpt.meta: <span class="t-num">100</span><span class="t-op">%|</span>██████████████████████<span class="t-op">|</span> <span class="t-num">471k</span><span class="t-op">/</span><span class="t-num">471k</span> [<span class="t-num">00</span>:<span class="t-num">00</span><span class="t-op">&lt;</span><span class="t-num">00</span>:<span class="t-num">00</span>,
+ <span class="t-num">2.46MiB</span><span class="t-op">/</span>s]
+vocab.bpe: <span class="t-num">100</span><span class="t-op">%|</span>████████████████████████████<span class="t-op">|</span> <span class="t-num">456k</span><span class="t-op">/</span><span class="t-num">456k</span> [<span class="t-num">00</span>:<span class="t-num">00</span><span class="t-op">&lt;</span><span class="t-num">00</span>:<span class="t-num">00</span>,
+ <span class="t-num">1.70MiB</span><span class="t-op">/</span>s]</code></pre></div>
+<div class="pdfpage" data-page="183">PDF p. 183</div>
+<aside class="callout note"><p class="lab">NOTE</p><p>If the download code does not work for you, it could be due to intermittent internet connection, server problems, or changes in how OpenAI shares the weights of the open-source GPT-2 model. In this case, please visit this chapter’s online code repository at <a href="https://github.com/rasbt/LLMs" rel="noopener">https://github.com/rasbt/LLMs</a>from-scratch for alternative and updated instructions, and reach out via the Manning Forum for further questions. </p></aside>
+<p>Assuming the execution of the previous code has completed, let’s inspect the contents</p>
+<div class="codeblock"><pre><code>of settings <span class="t-kw">and</span> params:
+<span class="t-bi">print</span>(<span class="t-str">"Settings:"</span>, settings)
+<span class="t-bi">print</span>(<span class="t-str">"Parameter dictionary keys:"</span>, params.<span class="t-fn">keys</span>())</code></pre></div>
+<p>The contents are</p>
+<div class="codeblock"><pre><code>Settings: {<span class="t-str">'n_vocab'</span>: <span class="t-num">50257</span>, <span class="t-str">'n_ctx'</span>: <span class="t-num">1024</span>, <span class="t-str">'n_embd'</span>: <span class="t-num">768</span>, <span class="t-str">'n_head'</span>: <span class="t-num">12</span>,
+ <span class="t-str">'n_layer'</span>: <span class="t-num">12</span>}
+Parameter dictionary keys: <span class="t-fn">dict_keys</span>([<span class="t-str">'blocks'</span>, <span class="t-str">'b'</span>, <span class="t-str">'g'</span>, <span class="t-str">'wpe'</span>, <span class="t-str">'wte'</span>])</code></pre></div>
+<p>Both <code>settings</code> and <code>params</code> are Python dictionaries. The <code>settings</code> dictionary stores the LLM architecture settings similarly to our manually defined <code>GPT_CONFIG_124M</code> settings. The <code>params</code> dictionary contains the actual weight tensors. Note that we only printed the dictionary keys because printing the weight contents would take up too much screen space; however, we can inspect these weight tensors by printing the whole dictionary via <code>print(params)</code> or by selecting individual tensors via the respective dictionary keys, for example, the embedding layer weights:</p>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(params[<span class="t-str">"wte"</span>])
+<span class="t-bi">print</span>(<span class="t-str">"Token embedding weight tensor dimensions:"</span>, params[<span class="t-str">"wte"</span>].shape)</code></pre></div>
+<p>The weights of the token embedding layer are</p>
+<div class="codeblock"><pre><code>[[<span class="t-op">-</span><span class="t-num">0.11010301</span> ... <span class="t-op">-</span><span class="t-num">0.1363697</span> <span class="t-num">0.01506208</span> <span class="t-num">0.04531523</span>]
+ [ <span class="t-num">0.04034033</span> ... <span class="t-num">0.08605453</span> <span class="t-num">0.00253983</span> <span class="t-num">0.04318958</span>]
+ [<span class="t-op">-</span><span class="t-num">0.12746179</span> ... <span class="t-num">0.08991534</span> <span class="t-op">-</span><span class="t-num">0.12972379</span> <span class="t-op">-</span><span class="t-num">0.08785918</span>]
+ ...
+ [<span class="t-op">-</span><span class="t-num">0.04453601</span> ... <span class="t-num">0.10435229</span> <span class="t-num">0.09783269</span> <span class="t-op">-</span><span class="t-num">0.06952604</span>]
+ [ <span class="t-num">0.1860082</span> ... <span class="t-op">-</span><span class="t-num">0.09625227</span> <span class="t-num">0.07847701</span> <span class="t-op">-</span><span class="t-num">0.02245961</span>]</code></pre></div>
+<div class="pdfpage" data-page="184">PDF p. 184</div>
+<figure><img src="assets/fig-0122.png" alt="" loading="lazy"><figcaption>Figure 5.17 GPT-2 LLMs come in several different model sizes, ranging from 124 million to 1,558 million  parameters. The core architecture is the same, with the only difference being the embedding sizes and the number  of times individual components like the attention heads and transformer blocks are repeated.</figcaption></figure>
+<div class="codeblock"><pre><code> [ <span class="t-num">0.05135201</span> ... <span class="t-num">0.00704835</span> <span class="t-num">0.15519823</span> <span class="t-num">0.12067825</span>]]
+Token embedding weight tensor dimensions: (<span class="t-num">50257</span>, <span class="t-num">768</span>)</code></pre></div>
+<p>We downloaded and loaded the weights of the smallest GPT-2 model via the <code>download_</code> <code>and_load_gpt2(model_size="124M",</code> <code>...)</code> setting. OpenAI also shares the weights of larger models: <code>355M</code>, <code>774M</code>, and <code>1558M</code>. The overall architecture of these differently sized GPT models is the same, as illustrated in figure 5.17, except that different</p>
+<p class="caption">modelGPT</p>
+<aside class="sidenote">Total number of parameters: • 124 M in “gpt2-small” • 355 M in “gpt2-medium” • 774 M in “gpt2-large” • 1558 M in “gpt2-xl”</aside>
+<div class="pdfpage" data-page="185">PDF p. 185</div>
+<p>architectural elements are repeated different numbers of times and the embedding size differs. The remaining code in this chapter is also compatible with these larger models.</p>
+<p> After loading the GPT-2 model weights into Python, we still need to transfer them from the <code>settings</code> and <code>params</code> dictionaries into our <code>GPTModel</code> instance. First, we create a dictionary that lists the differences between the different GPT model sizes in figure 5.17:</p>
+<div class="codeblock"><pre><code>model_configs <span class="t-op">=</span> {
+ <span class="t-str">"gpt2-small (124M)"</span>: {<span class="t-str">"emb_dim"</span>: <span class="t-num">768</span>, <span class="t-str">"n_layers"</span>: <span class="t-num">12</span>, <span class="t-str">"n_heads"</span>: <span class="t-num">12</span>},
+ <span class="t-str">"gpt2-medium (355M)"</span>: {<span class="t-str">"emb_dim"</span>: <span class="t-num">1024</span>, <span class="t-str">"n_layers"</span>: <span class="t-num">24</span>, <span class="t-str">"n_heads"</span>: <span class="t-num">16</span>},
+ <span class="t-str">"gpt2-large (774M)"</span>: {<span class="t-str">"emb_dim"</span>: <span class="t-num">1280</span>, <span class="t-str">"n_layers"</span>: <span class="t-num">36</span>, <span class="t-str">"n_heads"</span>: <span class="t-num">20</span>},
+ <span class="t-str">"gpt2-xl (1558M)"</span>: {<span class="t-str">"emb_dim"</span>: <span class="t-num">1600</span>, <span class="t-str">"n_layers"</span>: <span class="t-num">48</span>, <span class="t-str">"n_heads"</span>: <span class="t-num">25</span>},
+}</code></pre></div>
+<p>Suppose we are interested in loading the smallest model, <code>"gpt2-small</code> <code>(124M)"</code>. We can use the corresponding settings from the <code>model_configs</code> table to update our full-length <code>GPT_CONFIG_124M</code> we defined and used earlier:</p>
+<div class="codeblock"><pre><code>model_name <span class="t-op">=</span> <span class="t-str">"gpt2-small (124M)"</span>
+NEW_CONFIG <span class="t-op">=</span> GPT_CONFIG_124M.<span class="t-fn">copy</span>()
+NEW_CONFIG.<span class="t-fn">update</span>(model_configs[model_name])</code></pre></div>
+<p>Careful readers may remember that we used a 256-token length earlier, but the original GPT-2 models from OpenAI were trained with a 1,024-token length, so we have to update the <code>NEW_CONFIG</code> accordingly:</p>
+<div class="codeblock"><pre><code>NEW_CONFIG.<span class="t-fn">update</span>({<span class="t-str">"context_length"</span>: <span class="t-num">1024</span>})</code></pre></div>
+<p>Also, OpenAI used bias vectors in the multi-head attention module’s linear layers to implement the query, key, and value matrix computations. Bias vectors are not commonly used in LLMs anymore as they don’t improve the modeling performance and are thus unnecessary. However, since we are working with pretrained weights, we need to match the settings for consistency and enable these bias vectors:</p>
+<div class="codeblock"><pre><code>NEW_CONFIG.<span class="t-fn">update</span>({<span class="t-str">"qkv_bias"</span>: <span class="t-kw">True</span>})</code></pre></div>
+<p>We can now use the updated <code>NEW_CONFIG</code> dictionary to initialize a new <code>GPTModel</code> instance:</p>
+<div class="codeblock"><pre><code>gpt <span class="t-op">=</span> <span class="t-fn">GPTModel</span>(NEW_CONFIG)
+gpt.<span class="t-fn">eval</span>()</code></pre></div>
+<div class="pdfpage" data-page="186">PDF p. 186</div>
+<p class="listing-title"><span class="no">Listing 5.5</span><span class="tl">Loading OpenAI weights into our GPT model code</span></p>
+<p>By default, the <code>GPTModel</code> instance is initialized with random weights for pretraining. The last step to using OpenAI’s model weights is to override these random weights with the weights we loaded into the <code>params</code> dictionary. For this, we will first define a small <code>assign</code> utility function that checks whether two tensors or arrays (<code>left</code> and <code>right</code>) have the same dimensions or shape and returns the right tensor as trainable PyTorch parameters:</p>
+<div class="codeblock"><pre><code><span class="t-kw">def</span> <span class="t-fn">assign</span>(left, right):
+ <span class="t-kw">if</span> left.shape <span class="t-op">!=</span> right.shape:
+ <span class="t-kw">raise</span> <span class="t-bi">ValueError</span>(f<span class="t-str">"Shape mismatch. Left: {left.shape}, "</span>
+ <span class="t-str">"Right: {right.shape}"</span>
+ )
+ <span class="t-kw">return</span> <span class="t-bi">torch</span>.<span class="t-bi">nn</span>.<span class="t-fn">Parameter</span>(<span class="t-bi">torch</span>.<span class="t-fn">tensor</span>(right))</code></pre></div>
+<p>Next, we define a <code>load_weights_into_gpt</code> function that loads the weights from the <code>params</code> dictionary into a <code>GPTModel</code> instance <code>gpt.</code></p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 3 条</summary><ul><li>Sets the model’s positional and token embedding weights</li><li>The np.split function is used to divide the attention and bias weights into three equal parts for the query, key, and value components.</li><li>Iterates over each transformer block in the model</li></ul></details><pre><code><span class="t-kw">import</span> numpy <span class="t-kw">as</span> <span class="t-bi">np</span>
+<span class="t-kw">def</span> <span class="t-fn">load_weights_into_gpt</span>(gpt, params): to those specified <span class="t-kw">in</span> params.
+ gpt.pos_emb.weight <span class="t-op">=</span> <span class="t-fn">assign</span>(gpt.pos_emb.weight, params[<span class="t-str">'wpe'</span>])
+ gpt.tok_emb.weight <span class="t-op">=</span> <span class="t-fn">assign</span>(gpt.tok_emb.weight, params[<span class="t-str">'wte'</span>])
+
+ <span class="t-kw">for</span> b <span class="t-kw">in</span> <span class="t-bi">range</span>(<span class="t-bi">len</span>(params[<span class="t-str">"blocks"</span>])):
+ q_w, k_w, v_w <span class="t-op">=</span> <span class="t-bi">np</span>.<span class="t-fn">split</span>(
+ (params[<span class="t-str">"blocks"</span>][b][<span class="t-str">"attn"</span>][<span class="t-str">"c_attn"</span>])[<span class="t-str">"w"</span>], <span class="t-num">3</span>, axis<span class="t-op">=-</span><span class="t-num">1</span>)
+ gpt.trf_blocks[b].att.W_query.weight <span class="t-op">=</span> <span class="t-fn">assign</span>(
+ gpt.trf_blocks[b].att.W_query.weight, q_w.T)
+ gpt.trf_blocks[b].att.W_key.weight <span class="t-op">=</span> <span class="t-fn">assign</span>(
+ gpt.trf_blocks[b].att.W_key.weight, k_w.T)
+ gpt.trf_blocks[b].att.W_value.weight <span class="t-op">=</span> <span class="t-fn">assign</span>(
+ gpt.trf_blocks[b].att.W_value.weight, v_w.T)
+ q_b, k_b, v_b <span class="t-op">=</span> <span class="t-bi">np</span>.<span class="t-fn">split</span>(
+ (params[<span class="t-str">"blocks"</span>][b][<span class="t-str">"attn"</span>][<span class="t-str">"c_attn"</span>])[<span class="t-str">"b"</span>], <span class="t-num">3</span>, axis<span class="t-op">=-</span><span class="t-num">1</span>)
+ gpt.trf_blocks[b].att.W_query.bias <span class="t-op">=</span> <span class="t-fn">assign</span>(
+ gpt.trf_blocks[b].att.W_query.bias, q_b)
+ gpt.trf_blocks[b].att.W_key.bias <span class="t-op">=</span> <span class="t-fn">assign</span>(
+ gpt.trf_blocks[b].att.W_key.bias, k_b)
+ gpt.trf_blocks[b].att.W_value.bias <span class="t-op">=</span> <span class="t-fn">assign</span>(
+ gpt.trf_blocks[b].att.W_value.bias, v_b)
+ gpt.trf_blocks[b].att.out_proj.weight <span class="t-op">=</span> <span class="t-fn">assign</span>(
+ gpt.trf_blocks[b].att.out_proj.weight,
+ params[<span class="t-str">"blocks"</span>][b][<span class="t-str">"attn"</span>][<span class="t-str">"c_proj"</span>][<span class="t-str">"w"</span>].T)
+ gpt.trf_blocks[b].att.out_proj.bias <span class="t-op">=</span> <span class="t-fn">assign</span>(
+ gpt.trf_blocks[b].att.out_proj.bias,
+ params[<span class="t-str">"blocks"</span>][b][<span class="t-str">"attn"</span>][<span class="t-str">"c_proj"</span>][<span class="t-str">"b"</span>])
+ gpt.trf_blocks[b].ff.layers[<span class="t-num">0</span>].weight <span class="t-op">=</span> <span class="t-fn">assign</span>(
+ gpt.trf_blocks[b].ff.layers[<span class="t-num">0</span>].weight,
+ params[<span class="t-str">"blocks"</span>][b][<span class="t-str">"mlp"</span>][<span class="t-str">"c_fc"</span>][<span class="t-str">"w"</span>].T)
+ gpt.trf_blocks[b].ff.layers[<span class="t-num">0</span>].bias <span class="t-op">=</span> <span class="t-fn">assign</span>(
+ gpt.trf_blocks[b].ff.layers[<span class="t-num">0</span>].bias,
+ params[<span class="t-str">"blocks"</span>][b][<span class="t-str">"mlp"</span>][<span class="t-str">"c_fc"</span>][<span class="t-str">"b"</span>])
+ gpt.trf_blocks[b].ff.layers[<span class="t-num">2</span>].weight <span class="t-op">=</span> <span class="t-fn">assign</span>(
+ gpt.trf_blocks[b].ff.layers[<span class="t-num">2</span>].weight,
+ params[<span class="t-str">"blocks"</span>][b][<span class="t-str">"mlp"</span>][<span class="t-str">"c_proj"</span>][<span class="t-str">"w"</span>].T)
+ gpt.trf_blocks[b].ff.layers[<span class="t-num">2</span>].bias <span class="t-op">=</span> <span class="t-fn">assign</span>(
+ gpt.trf_blocks[b].ff.layers[<span class="t-num">2</span>].bias,
+ params[<span class="t-str">"blocks"</span>][b][<span class="t-str">"mlp"</span>][<span class="t-str">"c_proj"</span>][<span class="t-str">"b"</span>])
+ gpt.trf_blocks[b].norm1.scale <span class="t-op">=</span> <span class="t-fn">assign</span>(
+ gpt.trf_blocks[b].norm1.scale,
+ params[<span class="t-str">"blocks"</span>][b][<span class="t-str">"ln_1"</span>][<span class="t-str">"g"</span>])
+ gpt.trf_blocks[b].norm1.shift <span class="t-op">=</span> <span class="t-fn">assign</span>(
+ gpt.trf_blocks[b].norm1.shift,
+ params[<span class="t-str">"blocks"</span>][b][<span class="t-str">"ln_1"</span>][<span class="t-str">"b"</span>])
+ gpt.trf_blocks[b].norm2.scale <span class="t-op">=</span> <span class="t-fn">assign</span>(
+ gpt.trf_blocks[b].norm2.scale,
+ params[<span class="t-str">"blocks"</span>][b][<span class="t-str">"ln_2"</span>][<span class="t-str">"g"</span>])
+ gpt.trf_blocks[b].norm2.shift <span class="t-op">=</span> <span class="t-fn">assign</span>(
+ gpt.trf_blocks[b].norm2.shift,
+ params[<span class="t-str">"blocks"</span>][b][<span class="t-str">"ln_2"</span>][<span class="t-str">"b"</span>])
+ gpt.final_norm.scale <span class="t-op">=</span> <span class="t-fn">assign</span>(gpt.final_norm.scale, params[<span class="t-str">"g"</span>])
+ gpt.final_norm.shift <span class="t-op">=</span> <span class="t-fn">assign</span>(gpt.final_norm.shift, params[<span class="t-str">"b"</span>])
+ gpt.out_head.weight <span class="t-op">=</span> <span class="t-fn">assign</span>(gpt.out_head.weight, params[<span class="t-str">"wte"</span>])</code></pre></div>
+<div class="pdfpage" data-page="187">PDF p. 187</div>
+<p>In the <code>load_weights_into_gpt</code> function, we carefully match the weights from OpenAI’s implementation with our <code>GPTModel</code> implementation. To pick a specific example, OpenAI stored the weight tensor for the output projection layer for the</p>
+<p>first transformer block as <code>params["blocks"][0]["attn"]["c_proj"]["w"]</code>. In our</p>
+<p>implementation, this weight tensor corresponds to <code>gpt.trf_blocks[b].att.out_proj</code> <code>.weight</code>, where <code>gpt</code> is a <code>GPTModel</code> instance.</p>
+<p> Developing the <code>load_weights_into_gpt</code> function took a lot of guesswork since OpenAI used a slightly different naming convention from ours. However, the <code>assign</code> function would alert us if we try to match two tensors with different dimensions. Also, if we made a mistake in this function, we would notice this, as the resulting GPT model would be unable to produce coherent text.</p>
+<p> Let’s now try the <code>load_weights_into_gpt</code> out in practice and load the OpenAI model weights into our <code>GPTModel</code> instance <code>gpt</code>:</p>
+<div class="codeblock"><pre><code><span class="t-fn">load_weights_into_gpt</span>(gpt, params)
+gpt.<span class="t-fn">to</span>(device)</code></pre></div>
+<div class="pdfpage" data-page="188">PDF p. 188</div>
+<ul><li>  When LLMs generate text, they output one token at a time.</li><li>  By default, the next token is generated by converting the model outputs into probability scores and selecting the token from the vocabulary that corresponds to the highest probability score, which is known as “greedy decoding.”</li><li>  Using probabilistic sampling and temperature scaling, we can influence the diversity and coherence of the generated text.</li><li>  Training and validation set losses can be used to gauge the quality of text generated by LLM during training.</li></ul>
+<p>If the model is loaded correctly, we can now use it to generate new text using our previous <code>generate</code> function:</p>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)
+token_ids <span class="t-op">=</span> <span class="t-fn">generate</span>(
+ model<span class="t-op">=</span>gpt,
+ idx<span class="t-op">=</span><span class="t-fn">text_to_token_ids</span>(<span class="t-str">"Every effort moves you"</span>, tokenizer).<span class="t-fn">to</span>(device),
+ max_new_tokens<span class="t-op">=</span><span class="t-num">25</span>,
+ context_size<span class="t-op">=</span>NEW_CONFIG[<span class="t-str">"context_length"</span>],
+ top_k<span class="t-op">=</span><span class="t-num">50</span>,
+ temperature<span class="t-op">=</span><span class="t-num">1.5</span>
+)
+<span class="t-bi">print</span>(<span class="t-str">"Output text:\n"</span>, <span class="t-fn">token_ids_to_text</span>(token_ids, tokenizer))</code></pre></div>
+<p>The resulting text is as follows:</p>
+<div class="codeblock"><pre><code>Output text:
+ Every effort moves you toward finding an ideal new way to practice
+something<span class="t-op">!</span>
+What makes us want to be on top of that?</code></pre></div>
+<p>We can be confident that we loaded the model weights correctly because the model can produce coherent text. A tiny mistake in this process would cause the model to fail. In the following chapters, we will work further with this pretrained model and fine-tune it to classify text and follow instructions.</p>
+<h3 id="exercise-5-5">Exercise 5.5<a class="anchor" href="#exercise-5-5">#</a></h3>
+<div class="plainbox"><p>Calculate the training and validation set losses of the <code>GPTModel</code> with the pretrained</p><p>weights from OpenAI on the “The Verdict” dataset.</p></div>
+<h3 id="exercise-5-6">Exercise 5.6<a class="anchor" href="#exercise-5-6">#</a></h3>
+<div class="plainbox"><p>Experiment with GPT-2 models of different sizes—for example, the largest 1,558 mil-</p><p>lion parameter model—and compare the generated text to the 124 million model. </p></div>
+<h2 id="summary-5">Summary<a class="anchor" href="#summary-5">#</a></h2>
+<div class="pdfpage" data-page="189">PDF p. 189</div>
+<ul><li>  Pretraining an LLM involves changing its weights to minimize the training loss.</li><li>  The training loop for LLMs itself is a standard procedure in deep learning, using a conventional cross entropy loss and AdamW optimizer.</li><li>  Pretraining an LLM on a large text corpus is time- and resource-intensive, so we can load openly available weights as an alternative to pretraining the model on a large dataset ourselves.</li></ul>
+<div class="pdfpage" data-page="190">PDF p. 190</div>
+<ul><li>  Introducing different LLM fine-tuning approaches</li><li>  Preparing a dataset for text classification</li><li>  Modifying a pretrained LLM for fine-tuning </li><li>  Fine-tuning an LLM to identify spam messages</li><li>  Evaluating the accuracy of a fine-tuned LLM  classifier</li><li>  Using a fine-tuned LLM to classify new data</li></ul><div class="colophon"><p>由 <code>pdf2html2.py</code> 从 <code>bllm2.pdf</code> 转换。插图为原书矢量图按区域渲染的截图，代码块带语法高亮，连字符断词已按全书词表还原。</p></div>
+</main>
+<nav class="chapnav" aria-label="Chapter navigation"><div class="chapnav-inner">
+<a class="prev" href="10-implementing-a-gpt-model-from-scratch-to-generate-text.html"><span class="lbl">上一章</span><span class="nm">Implementing a GPT model from scratch to generate text</span></a><a class="next" href="12-fine-tuning-for-classification.html"><span class="lbl">下一章</span><span class="nm">Fine-tuning for classification</span></a>
+</div></nav>
+<script src="app.js"></script>
+</body>
+</html>

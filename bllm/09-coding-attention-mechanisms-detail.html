@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>数学推导详解 · 3.3–3.5 自注意力与因果掩码 · Build a Large Language Model (From Scratch)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f5f8f'/%3E%3Cpath d='M9 8h9a4.5 4.5 0 0 1 0 9H9zm0 9h9a4.5 4.5 0 0 1 0 9H9z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+<script>(function(){try{var t=localStorage.getItem('pdf2html-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="09-coding-attention-mechanisms.html">3. 自注意力机制的数学推导</a>
+  <button class="btn" id="themeToggle" aria-label="切换深色模式">&#9788;</button>
+</header>
+<main id="main">
+
+<h1>3.3–3.5 自注意力与因果掩码：完整数学推导</h1>
+
+<div class="plainbox">
+<p>原书把自注意力拆成十四段代码，每段只做一件事，但<b>每一步之间的数学关系被压缩成了「然后我们归一化」这样的一句话</b>。这一页把三件事彻底讲清：<b>点积为什么是相似度</b>、<b>为什么要除以 \(\sqrt{d_k}\)</b>、<b>因果掩码为什么不会泄漏信息</b>。</p>
+<p>所有数字都用原书 3.3–3.5 节的输入向量手算复核过，可以逐个对回原文。</p>
+</div>
+
+<h2 class="deriv">一、点积：一个数同时表达相似度和注意力强度</h2>
+
+<p>点积的定义就是把两个向量逐项相乘再求和：</p>
+
+\[
+\omega_{2j} \;=\; \mathbf{x}^{(2)} \cdot \mathbf{x}^{(j)} \;=\; \sum_{i=1}^{d} x^{(2)}_i \, x^{(j)}_i
+\]
+
+<p>代入原书 3.3.1 的 <code>inputs</code>（六句话词，\(d=3\)），取第二个词 "journey" \(\mathbf{x}^{(2)}=[0.55,\,0.87,\,0.66]\) 做 query：</p>
+
+<div class="tablewrap">
+<table class="sym">
+<thead><tr><th>词</th><th>\(\mathbf{x}^{(j)}\)</th><th>逐项乘积</th><th>\(\omega_{2j}\)</th></tr></thead>
+<tbody>
+<tr><td>Your</td><td>[0.43, 0.15, 0.89]</td><td>0.2365, 0.1305, 0.5874</td><td><b>0.9544</b></td></tr>
+<tr><td>journey</td><td>[0.55, 0.87, 0.66]</td><td>0.3025, 0.7569, 0.4356</td><td><b>1.4950</b></td></tr>
+<tr><td>starts</td><td>[0.57, 0.85, 0.64]</td><td>0.3135, 0.7395, 0.4224</td><td><b>1.4754</b></td></tr>
+<tr><td>with</td><td>[0.22, 0.58, 0.33]</td><td>0.1210, 0.5046, 0.2178</td><td><b>0.8434</b></td></tr>
+<tr><td>one</td><td>[0.77, 0.25, 0.10]</td><td>0.4235, 0.2175, 0.0660</td><td><b>0.7070</b></td></tr>
+<tr><td>step</td><td>[0.05, 0.80, 0.55]</td><td>0.0275, 0.6960, 0.3630</td><td><b>1.0865</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>逐项验算第一行：\(0.55\times0.43=0.2365\)，\(0.87\times0.15=0.1305\)，\(0.66\times0.89=0.5874\)，和为 \(0.9544\)。✓ 与原文 <code>tensor([0.9544, 1.4950, 1.4754, 0.8434, 0.7070, 1.0865])</code> 一致。</p>
+
+<h3>1.1 相似度从哪来：方向，不是长度</h3>
+
+<p>关键在于 \(\mathbf{x}^{(2)}\) 是<b>固定的</b>，变的只有 \(\mathbf{x}^{(j)}\)。把公式写成内积形式：</p>
+
+\[
+\omega_{2j} \;=\; \lVert \mathbf{x}^{(2)} \rVert \cdot \lVert \mathbf{x}^{(j)} \rVert \cos \theta_j
+\]
+
+<p>其中 \(\theta_j\) 是两向量夹角。于是分数由两部分决定：<b>向量的模长</b>和<b>夹角</b>。原书说「higher dot product indicates a greater degree of alignment」，说的就是夹角那一项。</p>
+
+<p>这也解释了一个容易困惑的现象：<b>"journey" 自己给自己打了最高分 1.4950，但这不是「相似」</b>。它是因为 \(\mathbf{x}^{(2)}\) 和 \(\mathbf{x}^{(2)}\) 夹角为 0（\(\cos 0 = 1\)），模长也最大。在自注意力里，token 天然会关注自己，这正是我们要的。</p>
+
+<div class="key">
+<span class="tag">点积的三个性质</span>
+<p><b>可加性</b>：\(\mathbf{a}\cdot(\mathbf{b}+\mathbf{c}) = \mathbf{a}\cdot\mathbf{b} + \mathbf{a}\cdot\mathbf{c}\)。所以一次矩阵乘法 \(X X^\top\) 就能算出所有两两分数，不需要 36 次循环。</p>
+<p><b>对称性</b>：\(\mathbf{a}\cdot\mathbf{b} = \mathbf{b}\cdot\mathbf{a}\)。注意原书 3.3.2 的分数矩阵是对称的（对角线是每个向量和自己的点积，即模长平方），这在<b>双向</b>注意力里没问题，但在因果注意力里必须靠掩码打破——因为 \(j&gt;i\) 的分数是被禁止的。</p>
+<p><b>可微</b>：点积对输入是线性的，梯度直接回传，这就是它能训练的原因。</p>
+</div>
+
+<h2 class="deriv">二、归一化：为什么是 softmax 而不是除以总和</h2>
+
+<p>点积是无界的：数值可以任意大或任意小，不能直接当权重。原文先试了最简单的办法——除以这一行的总和：</p>
+
+\[
+\alpha_{2j}^{\text{naive}} = \frac{\omega_{2j}}{\sum_{k=1}^{T} \omega_{2k}}
+\]
+
+<p>总和是 \(6.5617\)，得到：</p>
+
+<pre><code>attn_weights_2_tmp = attn_scores_2 / attn_scores_2.sum()
+<span class="t-com"># tensor([0.1455, 0.2278, 0.2249, 0.1285, 0.1077, 0.1656])</span></code></pre>
+
+<div class="warn">
+<span class="tag">这个方法有三个真实缺陷</span>
+<p><b>① 负权重。</b>只要有一个 \(\omega_{2j}&lt;0\)，除以正的总和就可能得到负的「注意力」。而注意力必须非负。</p>
+<p><b>② 不改变大小顺序。</b>它只是整体缩放。softmax 做了同样的排序，但额外施加了<b>指数放大</b>：差距 1.0 的两个分数，softmax 后差距会变成 4 倍以上。</p>
+<p><b>③ 梯度性质差。</b>除法在分母接近 0 时梯度爆炸，且它是线性变换，softmax 那种「饱和即梯度归零」的可控行为完全没有。</p>
+</div>
+
+<h3>2.1 softmax 的定义与指数放大效应</h3>
+
+\[
+\alpha_{2j} = \frac{\exp(\omega_{2j})}{\sum_{k=1}^{T} \exp(\omega_{2k})}
+\]
+
+<p>softmax 的三个性质：<b>恒正</b>（分子恒正）、<b>归一</b>（分母就是所有分子之和）、<b>保序且放大差距</b>。第三点值得展开，因为它正是下一节除以 \(\sqrt{d_k}\) 要对付的东西。</p>
+
+<p>放大效应来自指数：两个分数差 \(\Delta\)，softmax 后它们的<b>比值</b>是</p>
+
+\[
+\frac{\alpha_{2i}}{\alpha_{2j}} \;=\; \exp(\omega_{2i} - \omega_{2j}) \;=\; \exp(\Delta)
+\]
+
+<p>验算：\(\omega_{22}=1.4950\)、\(\omega_{24}=0.8434\)，\(\Delta = 0.6516\)，\(\exp(0.6516)=1.9186\)。而除以总和的方法给出的比值只有 \(1.4950/0.8434=1.7726\)。✓ softmax 把差距拉大了。</p>
+
+<p>把这个结论反过来用：如果两个分数差 5，\(\exp(5)=148.4\)，几乎全部概率质量会塌到最高分那个上；差 10 时是 \(22026\)，其余项在数值上直接归零。<b>softmax 是个指数放大器，而点积的方差随维度线性增长——两者相遇就是梯度消失。</b></p>
+
+<div class="eq-note">
+<b>两个归一化结果的对比</b>（原书 3.3.1 同一组分数）：naive 给 <code>[0.1455, 0.2278, 0.2249, 0.1285, 0.1077, 0.1656]</code>，softmax 给 <code>[0.1385, 0.2379, 0.2333, 0.1240, 0.1082, 0.1581]</code>。softmax 把最大项从 0.2278 提到 0.2379、把最小项从 0.1455 压到 0.1385——<b>总和都是 1，但形状更陡</b>。
+</div>
+
+<h2 class="deriv">三、为什么要除以 \(\sqrt{d_k}\)：这一节是本章的核心</h2>
+
+<p>原书 3.4.1 给出的代码是：</p>
+
+<pre><code>d_k = keys.shape[-1]
+attn_weights_2 = torch.softmax(attn_scores_2 / d_k**<span class="t-num">0.5</span>, dim=-<span class="t-num">1</span>)</code></pre>
+
+<p>代码只说了「除以平方根」，<b>没说为什么是平方根而不是别的数</b>。答案在点积的方差里。</p>
+
+<h3>3.1 方差推导</h3>
+
+<p>假设 \(q_i\) 和 \(k_i\) 相互独立、各自均值为 0、方差为 1（这是权重初始化后的典型状态）。点积是 \(d_k\) 个独立乘积之和：</p>
+
+\[
+\omega \;=\; \sum_{i=1}^{d_k} q_i k_i
+\]
+
+<p>每一项的方差：\(\mathrm{Var}(q_i k_i) = \mathrm{E}[q_i^2 k_i^2] - (\mathrm{E}[q_i k_i])^2 = 1\cdot 1 - 0 = 1\)。由独立性和可加性：</p>
+
+\[
+\mathrm{Var}(\omega) \;=\; \sum_{i=1}^{d_k} \mathrm{Var}(q_i k_i) \;=\; d_k
+\]
+
+<p>所以标准差是 \(\sqrt{d_k}\)。<b>除以 \(\sqrt{d_k}\) 恰好把方差拉回 1</b>，让分数的分布与维度无关。</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>\(d_k\)</th><th>\(\sqrt{d_k}\)</th><th>分数标准差（缩放前）</th><th>典型分数差（缩放后）</th></tr></thead>
+<tbody>
+<tr><td>2</td><td>1.414</td><td>1.41</td><td>~1.4</td></tr>
+<tr><td>64</td><td>8.000</td><td>8.17</td><td>~8</td></tr>
+<tr><td>768（GPT-2 124M）</td><td>27.713</td><td>27.52</td><td>~28</td></tr>
+<tr><td>12,288（GPT-3）</td><td>110.85</td><td>~111</td><td>~111</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>（第三行的 27.52 是 3000 次蒙特卡洛采样实测值，理论值 \(\sqrt{768}=27.713\)，吻合。）</p>
+
+<h3>3.2 不除会怎样：梯度消失的定量分析</h3>
+
+<p>softmax 的雅可比矩阵对角元是 \(\alpha_i(1-\alpha_i)\)。这个值<b>在两端都趋于 0</b>，只在 \(\alpha=0.5\) 时最大（0.25）。分布越陡，梯度越小：</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>最高两项 logit 差</th><th>\(\alpha_{\max}\)</th><th>\(\alpha_{\max}(1-\alpha_{\max})\)</th><th>相对梯度</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>0.7311</td><td>0.1966</td><td>79%</td></tr>
+<tr><td>2</td><td>0.8808</td><td>0.1050</td><td>42%</td></tr>
+<tr><td>5</td><td>0.9933</td><td>0.0066</td><td>2.7%</td></tr>
+<tr><td>10</td><td>0.99995</td><td>0.0000454</td><td>0.018%</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>现在把维度接进来。\(d_k=768\) 时分数标准差是 27.5，意味着<b>不同 token 之间的分数差经常达到 20–30</b>。代入上表，梯度只剩 <b>0.018% 甚至更低</b>——有效位数在 float32 里就已经被吃光了。</p>
+
+<p>更糟的是这会自我强化：梯度小 → 权重更新小 → 分数差距保持不变 → 梯度继续小。这就是原书说的 <i>"gradients can drastically slow down learning or cause training to stagnate"</i>。</p>
+
+<div class="key">
+<span class="tag">这就是「scaled」的含义</span>
+<p>除以 \(\sqrt{d_k}\) 后，典型分数差从 ~28 降到 ~1，落在上表第一行，梯度保留 79%。<b>缩放不改变哪个 token 更重要（保序），只把分数拉回 softmax 的敏感区间。</b></p>
+<p>原书因此把这个机制叫做 scaled-dot-product attention——名字里那个 "scaled" 就是这一步。</p>
+</div>
+
+<h3>3.3 用原书数字完整走一遍</h3>
+
+<p>3.4.1 节的 <code>attn_scores_2</code> = <code>[1.2705, 1.8524, 1.8111, 1.0795, 0.5577, 1.5440]</code>，此时 <code>keys.shape[-1] = 2</code>，所以 \(\sqrt{d_k}=\sqrt{2}=1.4142\)。</p>
+
+<ol class="steps">
+<li><b>除以 \(\sqrt{2}=1.4142\)</b>：<code>[0.8984, 1.3098, 1.2806, 0.7633, 0.3944, 1.0918]</code></li>
+<li><b>exp</b>（以最大值 1.3098 平移）：<code>[0.6627, 1.0000, 0.9712, 0.5790, 0.4003, 0.8041]</code></li>
+<li><b>求和</b>：4.4172</li>
+<li><b>归一</b>：<code>[0.1500, 0.2264, 0.2199, 0.1311, 0.0906, 0.1820]</code></li>
+</ol>
+
+<p>结果与原文打印的完全一致：</p>
+
+<pre><code><span class="t-com"># attn_weights_2 = softmax(attn_scores_2 / d_k**0.5)</span>
+tensor([<span class="t-num">0.1500</span>, <span class="t-num">0.2264</span>, <span class="t-num">0.2199</span>, <span class="t-num">0.1311</span>, <span class="t-num">0.0906</span>, <span class="t-num">0.1820</span>])</code></pre>
+
+<p>六项之和为 1.0000。第 2 步的 max 平移（<code>exp</code> 减掉最大值）是数值稳定技巧，数学上完全等价——<code>exp</code> 全体乘同一个常数 <code>e^{-1.3098}</code> 后在第 4 步被约掉。若不平移，<code>exp</code> 结果是 <code>[2.4556, 3.7056, 3.5989, 2.1454, 1.4834, 2.9796]</code>，和为 16.3685，归一化后<b>逐位相同</b>。</p>
+
+<div class="eq-note">
+<b>max 平移是数值稳定技巧，不是数学变换。</b>softmax 的分子分母同乘一个常数 \(e^{-c}\) 结果不变：\(\frac{\sum_i e^{s_i}e^{-c}}{\sum_j e^{s_j}e^{-c}} = \frac{\sum_i e^{s_i}}{\sum_j e^{s_j}}\)。它的唯一作用是防止 \(e^{28}\) 这种量级溢出成 <code>inf</code>。上面两种算法数学上完全相同，只是浮点路径不同。
+</div>
+
+<h3>3.4 缩放的三个作用，缺一不可</h3>
+
+<div class="warn">
+<span class="tag">除以 \(d_k\) 或 \(\sqrt{d_k}\) 以外都不行</span>
+<p><b>不除</b>：\(d_k=768\) 时分数差 ~28，softmax 完全饱和，梯度归零。</p>
+<p><b>除以 \(d_k=768\)</b>：分数差被压到 0.036，全部挤在 \(\alpha=0.5\) 附近——虽然梯度大，但<b>注意力分布完全失去区分度</b>，模型退化成「平均看待所有 token」。</p>
+<p><b>只有除以 \(\sqrt{d_k}\)</b> 同时满足：分布有区分度（分数差 ~1–3）且梯度不饱和。\(d_k\) 是<b>方差</b>，\(\sqrt{d_k}\) 是<b>标准差</b>，要归一化的是标准差。</p>
+</div>
+
+<h2 class="deriv">四、因果掩码：先掩再归一，为什么不泄漏信息</h2>
+
+<p>原书 3.5.1 节提出了一个看起来危险的担心（<i>Information leakage</i>）：</p>
+
+<p>「掩码是在 softmax <b>之后</b>做的，那么未来 token 的分数<b>已经参与了 softmax 的分母</b>，难道没有被重分配到可见 token 上吗？」</p>
+
+<p>答案是<b>没有</b>。这是 softmax 最优美的性质，值得完整证明。</p>
+
+<h3>4.1 关键恒等式</h3>
+
+<p>设第 \(i\) 行中，可见位置集合为 \(V_i\)（\(j \le i\)），被掩位置为 \(M_i\)（\(j &gt; i\)）。softmax 后先掩码，得到未归一化的 \(u_j\)：</p>
+
+\[
+u_j = \frac{e^{\omega_{ij}}}{\sum_{k=1}^{T} e^{\omega_{ik}}}
+\]
+
+<p>掩码把 \(M_i\) 置零，再按可见部分的总和 \(S_i = \sum_{j \in V_i} u_j\) 归一化。对任意 \(j \in V_i\)：</p>
+
+\[
+\hat{\alpha}_{ij} = \frac{u_j}{S_i} = \frac{\dfrac{e^{\omega_{ij}}}{\sum_{k=1}^{T} e^{\omega_{ik}}}}{\sum_{m \in V_i} \dfrac{e^{\omega_{im}}}{\sum_{k=1}^{T} e^{\omega_{ik}}}}
+= \frac{e^{\omega_{ij}}}{\sum_{m \in V_i} e^{\omega_{im}}}
+\]
+
+<p>分母里的 \(\sum_{k=1}^{T}\) 和 \(\sum_{m \in V_i}\) <b>被约掉了</b>。结果就是：<b>只在可见位置上做 softmax，和从未计入未来 token 完全一样。</b></p>
+
+<p>这就是原书那句话的含义：<i>"the effect of the masked positions is nullified—they don't contribute to the softmax score in any meaningful way."</i> 未来 token 确实参与了中间那一步的分母，但那一层分母在归一化时被整除抵消，不留任何痕迹。</p>
+
+<h3>4.2 用原书数字验证</h3>
+
+<p>3.5.1 节的 <code>attn_weights</code> 第二行是 <code>[0.2041, 0.1659, 0.1662, 0.1496, 0.1665, 0.1477]</code>。掩码后只保留前两项，和为 \(0.3700\)：</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>位置 \(j\)</th><th>\(u_j\)</th><th>掩码后</th><th>归一化 \(\hat\alpha_{2j}\)</th><th>只在 {1,2} 上做 softmax</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>0.2041</td><td>0.2041</td><td><b>0.5517</b></td><td>0.5516</td></tr>
+<tr><td>2</td><td>0.1659</td><td>0.1659</td><td><b>0.4483</b></td><td>0.4484</td></tr>
+<tr><td>3–6</td><td>0.1662, 0.1496, 0.1665, 0.1477</td><td>0</td><td>0</td><td>—</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>原书打印的归一化结果是 <code>[0.5517, 0.4483, 0, 0, 0, 0]</code>，与我用「只对前两项做 softmax」独立算出的 <code>[0.5516, 0.4484]</code> 一致（末位差异来自四舍五入）。✓</p>
+
+<p>第三行也一样：<code>[0.2036, 0.1659, 0.1662]</code> 保留，和为 0.5357，归一化得 <code>[0.3800, 0.3097, 0.3103]</code>——正是原文的值。✓</p>
+
+<h3>4.3 <code>-inf</code> 技巧：把两步合成一步</h3>
+
+<p>既然掩码位置在归一化后必然为 0，那就不必「先算再掩再归一」，直接<b>在 softmax 之前</b>把分数换成 \(-\infty\)：</p>
+
+\[
+e^{-\infty} = 0
+\]
+
+<p>于是被掩位置自动得到权重 0，且剩下位置的 softmax 分母<b>只累加可见位置</b>，一次 softmax 就得到最终结果。原书的代码：</p>
+
+<pre><code>mask = torch.triu(torch.ones(context_length, context_length), diagonal=<span class="t-num">1</span>)
+masked = attn_scores.masked_fill(mask.bool(), -torch.inf)
+attn_weights = torch.softmax(masked / keys.shape[-1]**<span class="t-num">0.5</span>, dim=<span class="t-num">1</span>)</code></pre>
+
+<p>用原书打印的 <code>masked</code> 第二行 <code>[0.4656, 0.1723, -inf, -inf, -inf, -inf]</code> 验算：除以 \(\sqrt{2}\) 后为 <code>[0.3292, 0.1218]</code>，softmax 得：</p>
+
+\[
+\frac{e^{0.3292}}{e^{0.3292}+e^{0.1218}} = 0.5517
+\]
+
+<p>✓ 与「先掩后归一」的结果<b>完全相同</b>。这就是原书说的 <i>"a more efficient way"</i>：省掉一次乘法、一次求和、一次除法。</p>
+
+<div class="key">
+<span class="tag">为什么是 -inf 而不是 -1e9</span>
+<p>两个原因。<b>① 正确性</b>：<code>-1e9</code> 在 fp32 里 <code>exp(-1e9)</code> 会下溢成 0，<b>碰巧也对</b>；但如果是 <code>-100</code>，<code>exp(-100)=3.7e-44</code>，虽然接近 0 但不是 0，在极端情况下会留下不可忽略的残余。\(-\infty\) 是语义上精确的「概率为 0」。</p>
+<p><b>② 梯度</b>：softmax 对 <code>-inf</code> 的梯度恰好是 0（因为对应的概率是 0）。用有限大数则会产生非零但极小的梯度泄漏。</p>
+</div>
+
+<h3>4.4 <code>tril</code> 与 <code>triu</code> 的方向</h3>
+
+<p>两种写法容易搞混，区别在<b>掩的是上三角还是下三角</b>：</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th></th><th><code>tril</code>（3.5.1 早期写法）</th><th><code>triu(diagonal=1)</code>（最终写法）</th></tr></thead>
+<tbody>
+<tr><td>保留什么</td><td>下三角（含对角线）= 1</td><td>上三角（不含对角线）= True</td></tr>
+<tr><td>作用对象</td><td>乘到<b>已归一化</b>的权重上</td><td>填进<b>未归一化</b>的分数里</td></tr>
+<tr><td>之后还要做什么</td><td><b>必须</b>再按行归一化</td><td><b>不需要</b>，softmax 自动处理</td></tr>
+<tr><td>信息泄漏风险</td><td>需依赖 4.1 的证明才安全</td><td>结构上不可能泄漏</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><code>diagonal=1</code> 保证对角线不被掩掉——<b>token 必须能关注自己</b>，这在 3.3 节已经看到（"journey" 对自己分数最高）。</p>
+
+<h2 class="deriv">五、多头：把维度切开，而不是把维度加大</h2>
+
+<p>3.6 节的多头注意力容易被误解成「参数更多所以更强」。实际的机制是：</p>
+
+\[Z = \mathrm{Concat}\big(\mathrm{head}_1, \dots, \mathrm{head}_h\big) W^O, \qquad
+\mathrm{head}_i = \mathrm{softmax}\!\left(\frac{Q_i K_i^\top}{\sqrt{d_k}}\right) V_i
+\]
+
+<p>其中 \(Q_i, K_i, V_i\) 是把 \(d_{\text{model}}\) <b>切成 \(h\) 份</b>得到的，每份维度 \(d_k = d_{\text{model}}/h\)。GPT-2 124M 的配置是 \(d_{\text{model}}=768\)、\(h=12\)，所以 <b>每个头的 \(d_k=64\)</b>。</p>
+
+<div class="key">
+<span class="tag">切分带来的关键好处：\(d_k\) 保持不变</span>
+<p>如果用 12 个头各算 768 维（不切分），那么每个头内部 \(d_k=768\)，上面的方差分析说明分数标准差会达到 27.5，梯度再次消失。</p>
+<p>切分后每个头 \(d_k=64\)，\(\sqrt{64}=8\)，分数标准差 8.17——<b>缩放因子把每个头的分数都控制在可训练区间</b>。多头设计不只是为了多样性，它同时是维度扩展时的<b>梯度保护措施</b>。</p>
+<p>代价：总参数量不变（\(W_q\) 仍是 \(768\times768\)，只是被视作 12 个 \(768\times64\) 的块），但<b>每个头只能看到 64 维子空间</b>。</p>
+</div>
+
+<h2 class="deriv">六、自查：三个能独立答对的问题</h2>
+
+<ol class="steps">
+<li>为什么除以 \(\sqrt{d_k}\) 而不是 \(d_k\)？<br>
+<span style="color:var(--muted);font-size:.9em">→ 见本文 3.1 与 3.4。答不出「方差 vs 标准差」这一层就说明没真懂。</span></li>
+<li>掩码后为什么还要归一化？如果不归一化，注意力权重之和不等于 1 会怎样？<br>
+<span style="color:var(--muted);font-size:.9em">→ 3.5.1 的两步写法。见 4.3，这个「不归一化」正是 <code>-inf</code> 技巧能省掉它的原因。</span></li>
+<li>softmax 归一化和除以总和，归一化后形状一样吗？<br>
+<span style="color:var(--muted);font-size:.9em">→ 见 2.1 的对比表。同样和为 1，但 softmax 更陡。</span></li>
+</ol>
+
+<nav class="deriv-nav">
+<a href="math-detail.html"><span class="dir">索引</span>全部数学推导详解</a>
+<a href="10-implementing-a-gpt-model-from-scratch-to-generate-text-detail.html"><span class="dir">下一章</span>4.2–4.4 LayerNorm 与 GELU</a>
+<a href="09-coding-attention-mechanisms.html"><span class="dir">返回原文</span>3. Coding attention mechanisms</a>
+</nav>
+
+</main>
+<nav class="chapnav" aria-label="导航"><div class="chapnav-inner">
+<a class="prev" href="08-working-with-text-data.html"><span class="lbl">上一章</span><span class="nm">Working with text data</span></a><a class="next" href="10-implementing-a-gpt-model-from-scratch-to-generate-text-detail.html"><span class="lbl">下一章</span><span class="nm">4. LayerNorm 与 GELU 的推导</span></a>
+</div></nav>
+<script src="app.js"></script>
+<script defer src="assets/katex/katex.min.js"></script>
+<script defer src="assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>

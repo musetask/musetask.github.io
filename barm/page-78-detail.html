@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>数学推导详解 · 8.6 交叉熵损失 · Build a Reasoning Model</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">数学推导详解 · 8.6 交叉熵</span>
+<a class="nav" href="page-78.html">原文</a>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">对应原文第 78–79 页 · 第 8 章 Distilling reasoning models for efficient reasoning</span></div>
+
+<h1>8.6 交叉熵损失：完整数学推导</h1>
+
+<div class="lead">
+第 6 章 GRPO 用的是<b>序列 logprob</b>（sum，不归一化）；第 8 章蒸馏用的是<b>交叉熵</b>（mean，归一化）。<b>同一个量，除以不同的东西，变成了两个完全不同的目标函数。</b>
+这一页讲清楚这个转换，以及它为什么直接决定了蒸馏的效果。
+</div>
+
+<h2 class="deriv">一、从序列 logprob 到交叉熵</h2>
+
+<h3>1.1 负号</h3>
+
+<p>交叉熵就是<b>负的</b>平均对数概率：</p>
+
+\[
+\mathcal{L}_{\text{CE}} = -\frac{1}{T}\sum_{t=1}^{T} \log P_\theta(y_t \mid y_{&lt;t}, x)
+\]
+
+<p>负号的作用和 6.9 一样：<b>PyTorch 只最小化，而「模型更确信」对应 logprob 更大（即 loss 更小）。</b>所以要取负，让「loss 小」等价于「模型对正确答案更有信心」。</p>
+
+<h3>1.2 用原文的例子算一遍</h3>
+
+<p>原文沿用第 5 章的 <code>"The capital of Germany is Berlin"</code>：5 个目标 token（<code>capital</code>、<code>of</code>、<code>Germany</code>、<code>is</code>、<code>Berlin</code>），序列 logprob = −16.6250。</p>
+
+\[
+\mathcal{L}_{\text{CE}} = -\frac{-16.6250}{5} = \frac{16.6250}{5} = 3.325
+\]
+
+<p>原文的数字：<i>If −16.6250 is the log probability, the negative log probability is 16.6250, and the negative average log probability (or cross-entropy) is 16.6250/5 = 3.325.</i></p>
+
+<div class="key">
+<span class="tag">关键性质：越接近 0 越好</span>
+<p>因为 logprob 总是 \(\le 0\)（概率不超过 1），所以 CE 总是 \(\ge 0\)。<b>CE = 0</b> 当且仅当模型给每个正确答案的概率都是 1（完美记忆）。CE 越小，模型越接近完美。
+</p>
+</div>
+
+<h3>1.3 为什么必须除以 T</h3>
+
+<pre><code><span class="tok-kw">with</span> torch.no_grad():
+    seq_logprob = sequence_logprob(model, tok, prompt_len)
+
+num_answer_tokens = tok.numel() - prompt_len
+avg_logprob = -seq_logprob / num_answer_tokens
+<span class="tok-fn">print</span>(<span class="tok-st">f"Average logprob: {avg_logprob:.2f}"</span>)  <span class="tok-cm"># 1.68</span></code></pre>
+
+<p>原文的解释：<i>Summed log probabilities grow with sequence length, so they are not directly comparable across examples with shorter or longer answers.</i></p>
+
+<p>这一点和 <a href="page-58-detail.html">6.8 节的 mean vs sum</a> 完全不同，值得并排看：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th></th><th>GRPO（Ch6）</th><th>蒸馏（Ch8）</th></tr></thead>
+<tbody>
+<tr><td>目标</td><td>最大化 <i>好回答</i> 的联合概率</td><td>最小化 <i>参考答案</i> 的负对数似然</td></tr>
+<tr><td>聚合方式</td><td><code>sum</code></td><td><code>mean</code></td></tr>
+<tr><td>长度效应</td><td>保留（长回答梯度更大）</td><td><b>消除</b>（长回答不被额外惩罚）</td></tr>
+<tr><td>本质</td><td>策略梯度，需要似然的真实尺度</td><td>监督学习，需要跨样本可比的损失值</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="warn">
+<span class="tag">为什么蒸馏必须用 mean</span>
+<p>因为蒸馏数据里各条样本长度<b>差异巨大</b>（原文例子里最短 236 token，最长 2048，平均 1180）。用 sum 的话，长样本的 loss 天然大得多，<b>梯度会被长样本主导</b>，模型实际只学会了模仿长推理的写法。</p>
+<p>用 mean 后每条样本权重相同，<b>无论长短</b>。</p>
+</div>
+
+<h2 class="deriv">二、用 torch.nn.functional.cross_entropy</h2>
+
+<h3>2.1 标准 API</h3>
+
+<pre><code>torch.nn.functional.cross_entropy(logits, target)
+<span class="tok-cm"># logits: [N, C]   C = 词表大小，未归一化
+# target: [N]      每个位置的正确类别（这里是真实 token ID）</span></code></pre>
+
+<p>注意 PyTorch 的 <code>cross_entropy</code> <b>内部已经包含了 log_softmax</b>，所以要传<b>原始 logits</b>，不能传概率或 logprob（传了就变成 log-log）。</p>
+
+<p>数学定义（对单条样本、忽略 batch 维度）：</p>
+
+\[
+\mathcal{L}_{\text{CE}} = \frac{1}{N_{\text{positions}}}\sum_{i=1}^{N_{\text{positions}}} \left(-\log \frac{\exp(\text{logits}[i, \text{target}[i]])}{\sum_{v} \exp(\text{logits}[i, v])}\right)
+\]
+
+<p>它等价于 <code>-(target * log_softmax(logits)).sum(dim).mean()</code>，用交叉熵融合算子实现可以省内存。</p>
+
+<h3>2.2 关键：只算答案部分</h3>
+
+<pre><code>input_ids  = tok[:<span class="tok-nu">-1</span>].unsqueeze(<span class="tok-nu">0</span>)   <span class="tok-cm"># 去掉最后一个，作为输入</span>
+target_ids = tok[<span class="tok-nu">1</span>:]                    <span class="tok-cm"># 整体右移一位，作为标签</span>
+
+logits = model(input_ids).squeeze(<span class="tok-nu">0</span>)
+
+first_answer_logit_idx = <span class="tok-fn">max</span>(prompt_len - <span class="tok-nu">1</span>, <span class="tok-nu">0</span>)
+answer_logits   = logits[first_answer_logit_idx:]
+answer_targets  = target_ids[first_answer_logit_idx:]
+
+<span class="tok-kw">with</span> torch.no_grad():
+    ce_mean_direct = torch.nn.functional.cross_entropy(answer_logits, answer_targets)</code></pre>
+
+<h3>2.3 两个切片各自在做什么</h3>
+
+<div class="tw">
+<table>
+<thead><tr><th>切片</th><th>数学意义</th></tr></thead>
+<tbody>
+<tr><td><code>tok[:-1]</code> 作输入，<code>tok[1:]</code> 作标签</td><td>标准的 <b>next-token 错位</b>：位置 \(i\) 的预测对应位置 \(i+1\) 的 token。和你在 GPT-2 那本书里写过的一样</td></tr>
+<tr><td><code>[prompt_len-1:]</code></td><td>切掉 <b>prompt 部分</b>。原文：<i>the prompt is the context provided as input and not something we want the model to be penalized for reproducing</i></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="key">
+<span class="tag">为什么不惩罚 prompt</span>
+<p>prompt 是<b>我们强加的输入</b>，不是模型该生成的东西。如果把 prompt 也算进 loss，模型会被训练成「无条件复现 prompt」，这会破坏推理能力。原文的措辞很明确：<i>we discard the logits and targets that correspond only to the prompt portion.</i></p>
+<p>这和 5.6 节 logprob scorer「排除 prompt」是同一个理由，但这里的 stakes 高得多——5.6 只是打分，8.6 是<b>在改权重</b>。</p>
+</div>
+
+<div class="eq-note">
+<b><code>max(prompt_len - 1, 0)</code> 的防御：</b>如果 <code>prompt_len</code> 是 0 或 1，<code>prompt_len - 1</code> 会是负数，PyTorch 切片会从末尾开始取（拿到错误的数据）。这个 <code>max</code> 避免了这个坑。
+</div>
+
+<h3>2.4 验证两个实现一致</h3>
+
+<p>原文分别用两种方式算，结果应当相同：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>方式</th><th>代码</th></tr></thead>
+<tbody>
+<tr><td>手写</td><td><code>-seq_logprob / num_answer_tokens</code> → 1.68</td></tr>
+<tr><td>PyTorch</td><td><code>F.cross_entropy(answer_logits, answer_targets)</code> → 1.68</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="key">
+<span class="tag">这一步的意义</span>
+<p>它把第 6 章的 <code>sequence_logprob</code>（手写、只求和）和 PyTorch 的标准 API 连起来了。<b>确认 <code>cross_entropy</code> 内部做的事就是「log_softmax + 负平均 + 只在选中 token 上」</b>——以后你在任何 PyTorch 代码里看到 <code>cross_entropy</code>，都可以直接映射回这个公式。</p>
+</div>
+
+<h2 class="deriv">三、硬蒸馏 vs 软蒸馏</h2>
+
+<p>第 8.1 节区分了两种蒸馏：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th></th><th>硬蒸馏 hard distillation</th><th>软蒸馏 soft distillation</th></tr></thead>
+<tbody>
+<tr><td>训练目标</td><td>teacher 的<b>文本 token</b></td><td>teacher 的<b>概率分布</b>（KL 散度）</td></tr>
+<tr><td>损失</td><td>交叉熵</td><td>\(D_{\text{KL}}(P_{\text{teacher}} \| P_{\text{student}})\)</td></tr>
+<tr><td>需要什么</td><td>只需 teacher 生成的<b>文本</b></td><td>需要 teacher 的 <b>logits</b>（全词表分布）</td></tr>
+<tr><td>本质</td><td>合成数据上的 SFT</td><td>传统知识蒸馏</td></tr>
+<tr><td>本书采用</td><td>✅</td><td>❌</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>硬蒸馏的实际优势（原文的措辞）：<i>our only need access to the teacher's generated text, not its logits</i>。<b>这在实践中是决定性的</b>——teacher 的 logits 是 151,936 维，存储成本极高；文本则可以存 JSON 反复使用。</p>
+
+<p>原文还有一条经验结论：<i>Hard distillation is usually more practical than soft distillation</i>，且 DeepSeek-R1 论文报告小模型上硬蒸馏比纯 RL 训练效果更好。</p>
+
+<h2 class="deriv">四、蒸馏结果解读</h2>
+
+<div class="tw">
+<table>
+<caption class="lbl">Table 8.1 · MATH-500 准确率</caption>
+<thead><tr><th>方法</th><th>Epoch</th><th>验证损失</th><th>准确率</th></tr></thead>
+<tbody>
+<tr><td>Base Qwen3 0.6B (Ch3)</td><td>—</td><td>—</td><td>15.2%</td></tr>
+<tr><td>Reasoning Qwen3 0.6B (Ch3)</td><td>—</td><td>—</td><td><b>48.2%</b></td></tr>
+<tr><td>DeepSeek-R1 teacher</td><td>1</td><td>0.5436</td><td>30.6%</td></tr>
+<tr><td>DeepSeek-R1 teacher</td><td>2</td><td>0.5349</td><td>32.4%</td></tr>
+<tr><td>DeepSeek-R1 teacher</td><td>3</td><td>0.5343</td><td><b>33.6%</b></td></tr>
+<tr><td>Qwen3 235B-A22B teacher</td><td>1</td><td>0.4043</td><td><b>45.0%</b></td></tr>
+<tr><td>Qwen3 235B-A22B teacher</td><td>2</td><td>0.3963</td><td>43.8%</td></tr>
+<tr><td>Qwen3 235B-A22B teacher</td><td>3</td><td>0.3948</td><td>44.2%</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>4.1 验证损失下降但准确率不升</h3>
+
+<p>注意 Qwen3 teacher 那三行：验证损失从 0.4043 一路降到 0.3948（<b>一直在降</b>），但准确率 45.0% → 43.8% → 44.2%（<b>在 45 附近震荡，不升</b>）。</p>
+
+<div class="key">
+<span class="tag">损失不是准确率</span>
+<p>交叉熵衡量的是「<b>模型对 teacher 输出的模仿保真度</b>」，不是「<b>解题正确率</b>」。两者只是弱相关：一条推理路径可以被完美模仿而结论仍是错的。</p>
+<p><b>这解释了为什么第 3 章的 verifier 评测不可省略</b>——训练 loss 好看不代表任务做得对。原文始终用 MATH-500 准确率作为最终判据，而不是用 loss。
+</p>
+</div>
+
+<h3>4.2 teacher 家族的影响</h3>
+
+<p>DeepSeek-R1 teacher（33.6%）明显不如 Qwen3 235B-A22B teacher（45.0%）。原文的解释：<i>the teacher and student come from the same model family, which means that the tokenizer, prompting conventions, and overall response style are more closely aligned.</i></p>
+
+<p>数学上这来自 <b>tokenizer 差异</b>：不同模型的 BPE 切分不同，同一段推理被切成不同数量的 token。跨家族蒸馏时，student 要同时学「模仿思路」和「适应切分习惯」，<b>前者的能力被后者稀释了</b>。</p>
+
+<h3>4.3 成本对比</h3>
+
+<p>原文给了很有说服力的一组数字：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>训练</th><th>耗时</th><th>内存</th></tr></thead>
+<tbody>
+<tr><td>蒸馏（Ch8）</td><td>约 <b>3 小时</b></td><td>约 <b>15 GB</b></td></tr>
+<tr><td>GRPO 几轮（Ch6）</td><td>约 <b>12 小时</b></td><td>约 <b>70 GB</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>而且 teacher 数据可以<b>提前离线生成</b>（12,000 题，API 成本约 50 美元），训练时直接加载。RL 则必须在线采样。</p>
+
+<h3>4.4 Exercise 8.2 的意外结论</h3>
+
+<div class="tw">
+<table>
+<caption class="lbl">Table B.6 · 有无 think 标签的对比</caption>
+<thead><tr><th>Teacher</th><th>Epoch</th><th>验证损失</th><th>准确率</th></tr></thead>
+<tbody>
+<tr><td>DeepSeek-R1</td><td>1</td><td><b>0.5436</b> (0.5404)</td><td>31.8% (30.6%)</td></tr>
+<tr><td>Qwen3 235B-A22B</td><td>1</td><td><b>0.4043</b> (0.3130)</td><td>44.8% (45.0%)</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>括号内是<b>有</b> <code>&lt;/think&gt;</code> 标签的结果。原文的观察：</p>
+
+<blockquote style="margin:1rem 0;padding-left:1rem;border-left:3px solid var(--rule);color:#3a3634">
+Interestingly, the Qwen3 model has a <b>lower validation loss</b> when <code>&lt;/think&gt;</code> tokens are omitted, but this doesn't translate into better modeling performance. The omission of <code>&lt;/think&gt;</code> makes the results slightly worse in almost all cases.
+</blockquote>
+
+<div class="key">
+<span class="tag">又一次「损失 ≠ 效果」</span>
+<p>去掉 think 标签，<b>验证损失更低</b>（0.3130 vs 0.4043），但<b>准确率略差</b>（44.8% vs 45.0%）。</p>
+<p>为什么？标签是<b>冗余的、易预测的</b>结构（格式固定，模型学起来不费劲），会拉低平均损失；但它们<b>是推理过程的显式边界标记</b>，对模型组织推理有帮助。<b>把易学的部分算进损失会稀释信号。</b></p>
+<p>这是交叉熵作为指标的一个内在局限：<b>它按 token 平均，而不同 token 的「学习价值」差别很大。</b></p>
+</div>
+
+<h2 class="deriv">五、完整训练循环</h2>
+
+<pre><code><span class="tok-kw">for</span> epoch <span class="tok-kw">in</span> <span class="tok-fn">range</span>(<span class="tok-nu">1</span>, epochs + <span class="tok-nu">1</span>):
+    epoch_examples = <span class="tok-fn">list</span>(train_examples)
+    rng.shuffle(epoch_examples)          <span class="tok-cm"># ① 每轮打乱</span>
+    <span class="tok-kw">for</span> example <span class="tok-kw">in</span> epoch_examples:
+        global_step += <span class="tok-nu">1</span>
+        optimizer.zero_grad()
+        loss = compute_example_loss(model, example, device)   <span class="tok-cm"># ② 交叉熵</span>
+        loss.backward()                    <span class="tok-cm"># ③ 反向传播</span>
+        <span class="tok-kw">if</span> grad_clip_norm <span class="tok-kw">is</span> <span class="tok-kw">not</span> <span class="tok-kw">None</span>:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)  <span class="tok-cm"># ④ 梯度裁剪</span>
+        optimizer.step()                  <span class="tok-cm"># ⑤ 更新</span>
+        <span class="tok-kw">if</span> log_every <span class="tok-kw">and</span> global_step % log_every == <span class="tok-nu">0</span>:
+            val_loss = evaluate_examples(model, val_examples, device)  <span class="tok-cm"># ⑥ 验证</span>
+            model.train()
+            ...</code></pre>
+
+<h3>5.1 与 GRPO 训练循环的差异</h3>
+
+<div class="tw">
+<table>
+<thead><tr><th></th><th>GRPO (Ch6)</th><th>蒸馏 (Ch8)</th></tr></thead>
+<tbody>
+<tr><td>数据</td><td>在线采样（贵）</td><td>预生成（离线，一次性）</td></tr>
+<tr><td>同一个样本用几次</td><td>1 次</td><td><b>每个 epoch 一次</b>（2–3 遍）</td></tr>
+<tr><td>Loss</td><td>策略梯度 + clip + KL</td><td>交叉熵</td></tr>
+<tr><td>需 <code>model.eval()</code></td><td>✅ 采样时</td><td>✅ 验证时</td></tr>
+<tr><td>Grad clip</td><td><code>clip_grad_norm_(params, 1.0)</code></td><td>可配置 <code>grad_clip_norm</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="eq-note">
+<b>反复用同一批数据的风险：</b>蒸馏要过 2–3 个 epoch，数据会被重复使用。这是 <b>off-policy</b> 味道的另一种形式——<a href="page-67-detail.html">7.4 讨论的裁剪机制</a>就是为了处理这类复用问题，只是蒸馏里用的是更简单的 early stopping（看验证损失何时趋平）而不是 clip。
+</div>
+
+<h2 class="deriv">六、两章目标函数的统一视角</h2>
+
+<p>把 Ch6 和 Ch8 放在一起，能看到一个清晰的谱系：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th></th><th>SFT / 蒸馏</th><th>GRPO</th><th>RLHF</th></tr></thead>
+<tbody>
+<tr><td>损失形式</td><td>\(-\frac{1}{T}\sum_t \log\pi(y_t)\)</td><td>\(-\frac{1}{N}\sum_i A_i \sum_t \log\pi(y_t)\)</td><td>PPO + 人类偏好奖励</td></tr>
+<tr><td>权重来源</td><td><b>全部 1</b></td><td>\(A_i\)（组内相对）</td><td>人类排序</td></tr>
+<tr><td>监督信号</td><td>teacher 的 token</td><td>verifier 的 0/1</td><td>人</td></tr>
+<tr><td>能否自动验证</td><td>不需要验证</td><td>✅ 可验证</td><td>❌ 需要人</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="key">
+<span class="tag">最关键的一行</span>
+<p><b>GRPO 就是 SFT 加了一个权重 \(A_i\)。</b></p>
+<p>如果所有 \(A_i = 1\)（即「这个回答很好」），GRPO 就退化成对<b>自己采样出来的</b>输出做 SFT——这叫 <b>RFT / rejection sampling fine-tuning</b>，只需要 verifier 判对错，不需要 advantage 归一化。</p>
+<p>而 GRPO 之所以要减去组内均值（<a href="page-58-detail.html">6.7 节</a>），是为了处理「全对或全错」的情况——那时 \(A \equiv 0\)，<b>梯度为零，什么都不学</b>，这是有意的设计。</p>
+</div>
+
+<nav class="deriv-nav">
+<a href="page-58-detail.html"><span class="dir">详解</span>6.8 / 6.9 GRPO 的 sum 与 mean</a>
+<a href="page-70-detail.html"><span class="dir">详解</span>7.5 KL 散度的数学</a>
+<a href="page-48-detail.html"><span class="dir">详解</span>5.5 / 5.6 logprob 与归一化</a>
+<a href="page-78.html"><span class="dir">原文</span>8.6 计算训练与验证损失</a>
+</nav>
+
+</main>
+
+<script defer src="assets/katex/katex.min.js"></script>
+<script defer src="assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>

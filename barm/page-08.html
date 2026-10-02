@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>1.6 Why build reasoning models from scratch? · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-07.html">
+<link rel="next" href="page-09.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 8 页 / 共 108 页</span></div>
+<h2 id="h2-why-build-reasoning-models-from-scratch"><span class="num">1.6</span>Why build reasoning models from scratch?</h2>
+<p>Following the release of DeepSeek-R1 in January 2025, improving the reasoning abilities of LLMs has become one of the hottest topics in AI, and for good reason. Stronger reasoning skills allow LLMs to tackle more complex problems, making them more capable across various tasks that users care about.</p>
+<p>This shift is also reflected in a February 12, 2025, statement from OpenAI’s CEO:</p>
+<p><em>We will next ship GPT-4.5, the model we called Orion internally, as our last non-chain-of-thought model. After that, a top goal for us is to unify o-series models and </em></p>
+<p><em>GPT-series models by creating systems that can use all our tools, know when to think for a long time or not, and generally be useful for a very wide range of tasks.</em></p>
+<p>The preceding quote underlines the major shift among leading LLM providers toward reasoning models. Here, “chain-of-thought” refers to a prompting technique that guides language models to reason step by step to improve their reasoning capabilities; we’ll cover it in more detail in chapters 4 and 5.</p>
+<p>Also noteworthy is the mention of knowing “when to think for a long time or not.” This hints at an important design consideration: reasoning is not always necessary or desirable. For instance, reasoning models are designed for complex tasks such as solving puzzles, advanced math problems, and challenging coding tasks. They are also often useful in agent systems, especially for task decomposition, planning, and choosing which tools to use. They are not necessary for simpler tasks like summarization, translation, or knowledge-based question answering. In fact, using reasoning models for everything can be inefficient and expensive. For instance, they are typically more expensive to use, more verbose, and sometimes more prone to errors due to “overthinking.” Here, the simple rule applies: use the right tool (or type of LLM) for the task.</p>
+<p>Reasoning models are often more expensive than non-reasoning models for two reasons. First, they tend to produce longer outputs because they include intermediate steps that explain how an answer is derived. As figure 1.8 illustrates, LLMs generate text one token at a time, and each token requires a <em>full forward pass</em>. If a reasoning model’s answer is twice as long, generation involves roughly twice as many forward passes, which increases compute costs.</p>
+<figure><a class="zoom" href="assets/figure-1.8.png" tabindex="-1"><img src="assets/figure-1.8.png" alt="" width="953" height="638" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 1.8</span>Token-by-token generation in an LLM. At each step, the LLM takes the full sequence generated so far and predicts the next token, which may represent a word, subword, or punctuation mark, depending on the tokenizer. The newly generated token is appended to the sequence and used as input for the next step. This iterative decoding process is used in both standard language models and reasoning-focused models.</figcaption></figure>
+<p>Second, many reasoning workflows require running the model several times for a single task, such as to sample multiple candidate solutions, call tools, or run a verifier. These additional calls multiply the total number of tokens processed and further increase cost beyond the single-call behavior shown in figure 1.8.</p>
+<p>That’s exactly why it helps to implement these models and methods from scratch. It’s one of the best ways to understand how they work. And if we understand how LLMs and reasoning models work, we can better understand these tradeoffs.</p>
+<h2 id="h2-a-road-map-to-building-reasoning-models-from-scratch"><span class="num">1.7</span>A road map to building reasoning models from scratch</h2>
+<p>Now that we’ve discussed reasoning in LLMs from a bird’s-eye view, the subsequent chapters will guide you through coding and applying reasoning methods from scratch. At a high level, the road map is simple. We’ll start with a conventional LLM, learn how to evaluate its reasoning behavior, and then explore two broad ways to improve it: inference techniques and training techniques. Figure 1.9 illustrates the main steps.</p>
+<figure><a class="zoom" href="assets/figure-1.9.png" tabindex="-1"><img src="assets/figure-1.9.png" alt="" width="1141" height="528" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 1.9</span>A high-level road map of what we’ll build in this book. We’ll start with a conventional LLM, add evaluation methods so we can measure its progress, and then explore two broad families of reasoning improvements: inference techniques and training techniques.</figcaption></figure>
+<p>Stage 1 is an explicit step in figure 1.9 because, in practice, reasoning methods are usually applied to an existing base LLM rather than one trained from scratch. We’ll begin with a conventional LLM that has already been pretrained, and we’ll treat it as the baseline we want to improve.</p>
+<p>Stage 2 implements the evaluation tools needed to tell whether a method actually helps. That’s why stages 3 and 4 loop back to evaluation: after improving reasoning behavior through inference-time methods or additional training, we return to stage 2 to measure whether the change helped.</p>
+<p>Stage 3 improves reasoning behavior at inference time without changing the model weights, while stage 4 improves the model itself through additional training, turning the pretrained LLM into a dedicated reasoning model.</p>
+<p>Figure 1.10 provides more detail and summarizes the different substeps covered in each chapter.</p>
+<figure><a class="zoom" href="assets/figure-1.10.png" tabindex="-1"><img src="assets/figure-1.10.png" alt="" width="1142" height="533" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 1.10</span>A detailed road map of the chapter-level substeps. After loading the base model, we’ll cover benchmark-based and judgment-based evaluation, then inference-time methods such as advanced text generation, voting, and self-refinement, and finally training-time methods based on reinforcement learning and distillation.</figcaption></figure>
+<p>I’m looking forward to the journey ahead and hope you are as well.</p>
+<h3 id="h3-summary">Summary</h3>
+<ul><li>Conventional LLM training occurs in several stages:</li></ul>
+<ul><li> Pretraining, in which the model learns language patterns from vast amounts of text</li></ul>
+<ul><li> Instruction fine-tuning, which improves the model’s responses to user prompts</li></ul>
+<ul><li> Preference tuning, which aligns model outputs with human preferences</li></ul>
+<ul><li>Reasoning methods are applied on top of a conventional LLM.</li></ul>
+<ul><li>Reasoning in LLMs refers to improving a model so that it explicitly generates intermediate steps (chain of thought) before producing a final answer, which often increases accuracy on multistep tasks.</li></ul>
+<ul><li>Reasoning in LLMs is different from rule-based reasoning, and it likely also works differently from human reasoning. Currently, the consensus is that reasoning in LLMs relies on statistical pattern matching.</li></ul>
+<ul><li>Pattern matching in LLMs relies purely on statistical associations learned from data, enabling fluent text generation but lacking explicit logical inference.</li></ul>
+<ul><li>Improving reasoning in LLMs can be achieved in a few ways:</li></ul>
+<ul><li> Inference-time compute scaling improves reasoning without retraining (e.g., chain-of-thought prompting).</li></ul>
+<ul><li> Reinforcement learning involves training models explicitly with reward signals.</li></ul>
+<ul><li> Supervised fine-tuning and distillation, using examples from stronger reasoning models.</li></ul>
+<ul><li>Building reasoning models from scratch provides practical insights into LLM capabilities, limitations, and computational tradeoffs.</li></ul>
+<nav class="pager"><a class="prev" href="page-07.html" rel="prev"><span class="dir">上一页</span><span class="t">1.4 Pattern matching vs. logical reasoning</span></a><a class="next" href="page-09.html" rel="next"><span class="dir">下一页</span><span class="t">Generating text with a pretrained LLM</span></a></nav>
+</main>
+</body>
+</html>

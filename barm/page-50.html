@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>5.8 Coding the self-refinement loop · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-49.html">
+<link rel="next" href="page-51.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 50 页 / 共 108 页</span></div>
+<h2 id="h2-coding-the-self-refinement-loop"><span class="num">5.8</span>Coding the self-refinement loop</h2>
+<p>We’ll now package the previous section’s manual self-refinement steps into a convenient function, simplifying the use of self-refinement and allowing the process to be repeated for a fixed number of iterations.</p>
+<p>In addition, the function will support plugging in the scoring methods we developed earlier in the chapter (heuristic scoring and logprob scoring) to compute a score for each answer (figure 5.21). This score can then be used to decide whether a refined answer should be accepted.</p>
+<figure><a class="zoom" href="assets/figure-5.21.png" tabindex="-1"><img src="assets/figure-5.21.png" alt="" width="1143" height="1004" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 5.21</span>The self-refinement loop with optional scoring. The model produces an initial answer, then critiques it, and generates a revised answer based on the critique. Both answers can be evaluated with scoring functions (such as logprob scoring), and the revised answer is only accepted if its score improves on the previous one.</figcaption></figure>
+<p>In figure 5.21, the revised answer receives a higher logprob score (<code>-0.377</code>) than the initial answer (<code>-1.258</code>), which makes it reasonable to accept the revision. In practice, self-refinement can also produce worse answers, especially when it’s run for multiple iterations. The scorer therefore provides a way to decide whether a revised answer represents an improvement.</p>
+<aside><span class="tag">Note</span>Scoring does not always improve the results. Whether you should use a scorer in self-refinement, and which one you should use, depends on the LLM. You can determine this by experimenting on a benchmark dataset like MATH-500.</aside>
+<p>The complete code, which combines the steps from the previous section and adds an <code>iterations</code> parameter and a scoring function (<code>score_fn</code>) option, is shown in the following listing.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">def</span> self_refinement_loop(
+    model,
+    tokenizer,
+    raw_prompt,
+    device,
+    iterations=<span class="tok-fn">2</span>,
+    max_response_tokens=<span class="tok-fn">2048</span>,
+    max_critique_tokens=<span class="tok-fn">256</span>,
+    score_fn=<span class="tok-kw">None</span>,
+    prompt_renderer=render_prompt,
+    prompt_suffix="",
+    verbose=<span class="tok-kw">False</span>,
+    temperature=<span class="tok-fn">0.7</span>,
+    top_p=<span class="tok-fn">0.9</span>,
+):
+    steps = []
+    prompt = prompt_renderer<span class="tok-kw">(</span>raw_prompt<span class="tok-kw">)</span> + prompt_suffix
+    current_full = generate_text_stream_concat_flex<span class="tok-kw">(</span>
+        model=model,
+        tokenizer=tokenizer,
+        prompt=prompt,
+        device=device,
+        max_new_tokens=max_response_tokens,
+        verbose=<span class="tok-kw">False</span>,
+        generate_func=generate_text_top_p_stream_cache,
+        temperature=temperature,
+        top_p=top_p,
+    <span class="tok-kw">)</span>
+    current_extracted = extract_final_candidate<span class="tok-kw">(</span>
+        current_full, fallback="number_then_full"
+    <span class="tok-kw">)</span>
+    <span class="tok-kw">if</span> score_fn:
+        current_score = score_fn<span class="tok-kw">(</span>answer=current_full, prompt=prompt<span class="tok-kw">)</span>
+    <span class="tok-kw">else</span>:
+        current_score = <span class="tok-fn">0.0</span>
+    <span class="tok-kw">for</span> it <span class="tok-kw">in</span> range<span class="tok-kw">(</span>iterations<span class="tok-kw">)</span>:
+        draft_before_full = current_full
+        draft_before_extracted = current_extracted
+        score_before = current_score
+        critique_prompt = make_critique_prompt<span class="tok-kw">(</span>
+            raw_prompt, draft_before_full
+        <span class="tok-kw">)</span>
+        critique_full = generate_text_stream_concat_flex<span class="tok-kw">(</span>
+            model=model,
+            tokenizer=tokenizer,
+            prompt=critique_prompt,
+            device=device,
+            max_new_tokens=max_critique_tokens,
+            verbose=<span class="tok-kw">False</span>,
+            generate_func=generate_text_top_p_stream_cache,
+            temperature=temperature,
+            top_p=top_p,
+        <span class="tok-kw">)</span>
+        refine_prompt = make_refine_prompt<span class="tok-kw">(</span>
+            raw_prompt, draft_before_full, critique_full
+        <span class="tok-kw">)</span>
+        revised_full = generate_text_stream_concat_flex<span class="tok-kw">(</span>
+            model=model,
+            tokenizer=tokenizer,
+            prompt=refine_prompt,
+            device=device,
+            max_new_tokens=max_response_tokens,
+            verbose=<span class="tok-kw">False</span>,
+            generate_func=generate_text_top_p_stream_cache,
+            temperature=temperature,
+            top_p=top_p,
+        <span class="tok-kw">)</span>
+        revised_extracted = extract_final_candidate<span class="tok-kw">(</span>
+            revised_full, fallback="number_then_full"
+        <span class="tok-kw">)</span>
+        <span class="tok-kw">if</span> score_fn:
+            revised_score = score_fn<span class="tok-kw">(</span>
+                answer=revised_full, prompt=prompt
+            <span class="tok-kw">)</span>
+        <span class="tok-kw">else</span>:
+            revised_score = <span class="tok-fn">0.0</span>
+        step = {
+            "iteration": it + <span class="tok-fn">1</span>,
+            "draft_full": draft_before_full,
+            "draft_extracted": draft_before_extracted,
+            "critique": critique_full,
+            "revised_full": revised_full,
+            "revised_extracted": revised_extracted,
+            "score_before": score_before,
+            "score_after": revised_score,
+        }
+        steps.append<span class="tok-kw">(</span>step<span class="tok-kw">)</span>
+        <span class="tok-kw">if</span> verbose:
+            print<span class="tok-kw">(</span>
+                f"[Refinement {it+<span class="tok-fn">1</span>}/{iterations}]"
+                f"\nCurrent: {draft_before_extracted}"
+                f"\nRevised: {revised_extracted}"
+                f"\nScore before: {score_before:.3f}"
+                f"\nScore after: {revised_score:.3f}"
+                f"\n{'=' * 25}\n"
+            <span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 5.12</span>Self-refinement with multiple iterations and scoring support</figcaption></figure>
+<pre><code class="language-javascript">        <span class="tok-kw">if</span> revised_score &gt;= current_score:
+            current_full = revised_full
+            current_extracted = revised_extracted
+            current_score = revised_score
+    <span class="tok-kw">return</span> {
+        "final_full": current_full,
+        "final_extracted": current_extracted,
+        "steps": steps,
+    }</code></pre>
+<p>The <code>self_refinement_loop</code> function runs the self-refinement procedure from the previous section for one or more iterations (<code>for it in range(iterations)</code>). At the end of each iteration, it compares the revised score to the current score (<code>revised_score &gt;= current_score</code>) and keeps the revised answer only if its score is equal or higher.</p>
+<p>Using a scoring function is optional. When <code>score_fn=None</code> (the default), the score is always set to <code>0.0</code>. Since <code>0.0 &gt;= 0.0</code> evaluates to <code>True</code>, the most recent answer is always accepted when running multiple refinement iterations.</p>
+<p>Then we run the self-refinement loop using the average logprob scorer, <code>avg_logprob_ answer</code>. This function, shown in listing 5.8, takes several arguments (<code>model</code>, <code>tokenizer</code>, <code>prompt</code>, <code>answer</code>, and <code>device</code>). As you can see in the previous listing, the scoring function is called with only two arguments:</p>
+<pre><code class="language-bash"><span class="tok-cm"># ...</span>
+        <span class="tok-kw">if</span> score_fn:
+            revised_score = score_fn<span class="tok-kw">(</span>
+                answer=revised_full, prompt=prompt
+            <span class="tok-kw">)</span>
+<span class="tok-cm"># ...</span></code></pre>
+<p>To make <code>avg_logprob_answer</code> compatible with this <code>score_fn</code> call, we can use the <code>partial</code> function from Python’s built-in <code>functools</code> module to prespecify the remaining arguments.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">from</span> functools <span class="tok-kw">import</span> partial
+avg_logprob_score = partial<span class="tok-kw">(</span>
+    avg_logprob_answer,
+    model=model,
+    tokenizer=tokenizer,
+    device=device
+<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 5.13</span>Creating an average log-probability scorer</figcaption></figure>
+<p>Now we can use the <code>avg_logprob_score</code> function in the self-refinement loop:</p>
+<pre><code class="language-python">torch.manual_seed<span class="tok-kw">(</span><span class="tok-fn">1</span><span class="tok-kw">)</span>
+results_logprob = self_refinement_loop<span class="tok-kw">(</span>
+    model=model,
+    tokenizer=tokenizer,
+    raw_prompt=raw_prompt,
+    device=device,
+    iterations=<span class="tok-fn">2</span>,
+    max_response_tokens=<span class="tok-fn">2048</span>,
+    max_critique_tokens=<span class="tok-fn">256</span>,
+    score_fn=avg_logprob_score,
+    verbose=<span class="tok-kw">True</span>,
+    temperature=<span class="tok-fn">0.7</span>,
+    top_p=<span class="tok-fn">0.9</span>,
+<span class="tok-kw">)</span></code></pre>
+<p>The output is shown here:</p>
+<pre><code class="language-python">[Refinement 1/2]
+Current: 10
+Revised: 83
+Score before: -0.855
+Score after: -0.226
+=========================
+[Refinement 2/2]
+Current: 83
+Revised: 83
+Score before: -0.226
+Score after: -1.320
+=========================</code></pre>
+<p>Looking at the preceding results, we can see that the model corrected the initially incorrect answer (from <code>10</code> to <code>83</code>) in the first iteration, and the score improved from<code>-0.855</code> to <code>-0.226</code>. In the second iteration, the score gets worse, but that’s okay since we already have the correct answer.</p>
+<p>We can also access the final answer extracted from the best-scoring response, typically from its boxed content when present, via <code>results_logprob["final_extracted"]</code>, which in this case returns <code>83</code>. If you are interested in the full answer, use <code>results_logprob["final_full"]</code>. To read through the critiques and longer answers, you can print the <code>results_logprob</code> dictionary, which contains the detailed results for all iterations.</p>
+<nav class="pager"><a class="prev" href="page-49.html" rel="prev"><span class="dir">上一页</span><span class="t">5.7 Self-refinement through iterative feedback</span></a><a class="next" href="page-51.html" rel="next"><span class="dir">下一页</span><span class="t">Exercise 5.5: Using the heuristic score for self-refinement</span></a></nav>
+</main>
+</body>
+</html>

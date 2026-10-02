@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>D.1 Larger dense Qwen3 configurations · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-94.html">
+<link rel="next" href="page-96.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 95 页 / 共 108 页</span></div>
+<h2 id="h2-larger-dense-qwen3-configurations"><span class="num">D.1</span>Larger dense Qwen3 configurations</h2>
+<p>The book’s repository includes configuration dictionaries for several larger Qwen3 models in the <code>reasoning_from_scratch.appendix_c</code> Python library, listed in table D.1. You can also view the source code directly at <a href="https://github.com/rasbt/reasoning-from-scratch/blob/main/reasoning_from_scratch/appendix_c.py">https://github.com/rasbt/reasoning-from-scratch/blob/main/reasoning_from_scratch/appendix_c.py</a>.</p>
+<div class="tw"><table><caption><span class="lbl">Table D.1</span>Qwen3 configurations (larger than 0.6B)</caption><thead><tr><th>Model size</th><th>Configuration Python dictionary</th></tr></thead><tbody><tr><td>1.7B</td><td>QWEN3_CONFIG_1_7B</td></tr><tr><td>4B</td><td>QWEN3_CONFIG_4B</td></tr><tr><td>8B</td><td>QWEN3_CONFIG_8B</td></tr><tr><td>14B</td><td>QWEN3_CONFIG_14B</td></tr><tr><td>32B</td><td>QWEN3_CONFIG_32B</td></tr></tbody></table></div>
+<p>The models listed in table D.1 are the dense Qwen3 variants, similar to the Qwen3 0.6B model used in the book and discussed in appendix C. Here, “dense” means these are not the sparse mixture-of-experts (MoE) variants of Qwen3. MoE models are not supported by this book’s code, but a from-scratch implementation is available here: <a href="https://github.com/rasbt/LLMs-from-scratch/tree/main/ch05/11_qwen3">https://github.com/rasbt/LLMs-from-scratch/tree/main/ch05/11_qwen3</a>.</p>
+<p>Figure D.1 summarizes the differences between the models in table D.1 more visually. As you can see, the different Qwen3 size variants all use the same overall architecture pattern as the 0.6B model from appendix C. They still use token embeddings, grouped-query attention, rotary position embeddings, feedforward layers, and RMS normalization. The differences involve the model dimensions, such as the embedding size, the number of layers, the number of attention heads, and the feedforward hidden dimension.</p>
+<p>Table D.2 lists the estimated memory requirements for loading the models into RAM (and GPU RAM). As a rough lower bound, storing weights in bfloat16 precision (the common default for LLMs) requires about 2 bytes per parameter.</p>
+<div class="tw"><table><caption><span class="lbl">Table D.2</span>Qwen3 model sizes</caption><thead><tr><th>Model size</th><th>Approximate memory for weights in bfloat16</th></tr></thead><tbody><tr><td>1.7B</td><td>About 3.4 GB</td></tr><tr><td>4B</td><td>About 8 GB</td></tr><tr><td>8B</td><td>About 16 GB</td></tr><tr><td>14B</td><td>About 28 GB</td></tr><tr><td>32B</td><td>About 64 GB</td></tr></tbody></table></div>
+<p>The numbers in table D.2 are only approximate lower bounds for the weights themselves. Actual runtime memory use is higher because we also need memory for activations, temporary buffers, the KV cache, and so on. In addition, model loading can temporarily increase memory use because tensors may exist in more than one place while they are being copied into the <code>Qwen3Model</code> instance. See the supplementary materials for my <em>Build A Large Language Model (From Scratch)</em> book for more details: <a href="https://github.com/rasbt/LLMs-from-scratch/tree/main/ch05/08_memory_efficient_weight_loading">https://github.com/rasbt/LLMs-from-scratch/tree/main/ch05/08_memory_efficient_weight_loading</a>.</p>
+<pre><code class="language-python">Sample input text</code></pre>
+<figure><a class="zoom" href="assets/figure-D.1.png" tabindex="-1"><img src="assets/figure-D.1.png" alt="" width="1143" height="1207" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure D.1</span>Comparison of different Qwen3 variants, from 0.6 billion to 32 billion parameters</figcaption></figure>
+<h2 id="h2-downloading-larger-checkpoints-overview"><span class="num">D.2</span>Downloading larger checkpoints overview</h2>
+<p>Unlike the 0.6B checkpoints used in this book, which I converted into PyTorch checkpoints to minimize external code dependencies, larger official Qwen3 models are typically distributed as <code>safetensors</code> files, sometimes split across multiple shards.</p>
+<p>The <code>reasoning-from-scratch</code> Python library provides a helper function, <code>download_ from_huggingface_from_snapshots</code>, to handle this. This function, which we’ll use in the next section, downloads the Hugging Face snapshot into a local directory and then loads either a single <code>model.safetensors</code> file or multiple shards referenced via a <code>model </code></p>
+<pre><code class="language-python">.safetensors.index.json file.</code></pre>
+<p>Because this helper function relies on additional packages that were not required in the earlier chapters, you may need to install them first:</p>
+<pre><code class="language-python">uv add huggingface_hub safetensors</code></pre>
+<p>or</p>
+<pre><code class="language-python">pip install huggingface_hub safetensors</code></pre>
+<p>Once these packages are installed, loading a larger checkpoint follows the same broad pattern as before. You’ll need to download the files, instantiate the model, load the weights, prepare the tokenizer, and then run the text generation, as you’ll see in the next section.</p>
+<h2 id="h2-loading-a-larger-base-model"><span class="num">D.3</span>Loading a larger base model</h2>
+<p>We will now walk through a complete example using the official Qwen3 4B base model. The first step, shown in listing D.1, is to download the model snapshot from the Hugging Face Model hub (<a href="https://huggingface.co/Qwen/Qwen3-4B-Base">https://huggingface.co/Qwen/Qwen3-4B-Base</a>).</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">from</span> pathlib <span class="tok-kw">import</span> Path
+<span class="tok-kw">from</span> reasoning_from_scratch.ch02 <span class="tok-kw">import</span> get_device
+<span class="tok-kw">from</span> reasoning_from_scratch.appendix_c <span class="tok-kw">import</span> (
+    download_from_huggingface_from_snapshots,
+)
+device = get_device<span class="tok-kw">()</span>
+local_dir = Path<span class="tok-kw">(</span><span class="tok-st">"qwen3-4b-base"</span><span class="tok-kw">)</span>
+weights = download_from_huggingface_from_snapshots<span class="tok-kw">(</span>
+    repo_id=<span class="tok-st">"Qwen/Qwen3-4B-Base"</span>,
+    local_dir=local_dir,
+<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing D.1</span>Downloading model weights</figcaption></figure>
+<p>The <code>local_dir</code> path specifies where the snapshot should be stored on disk. In this example, we keep the 4B base model in a dedicated <code>qwen3-4b-base</code> folder so that it stays separate from the smaller <code>qwen3</code> directory used throughout the book.</p>
+<p>Next, we use the code in listing D.2 to instantiate the 4B model and load the Hugging Face weights into the from-scratch <code>Qwen3Model</code> implementation.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.qwen3 <span class="tok-kw">import</span> (
+    Qwen3Model,
+    load_hf_weights_into_qwen,
+)
+<span class="tok-kw">from</span> reasoning_from_scratch.appendix_c <span class="tok-kw">import</span> QWEN3_CONFIG_4B
+model = Qwen3Model<span class="tok-kw">(</span>QWEN3_CONFIG_4B<span class="tok-kw">)</span>
+load_hf_weights_into_qwen<span class="tok-kw">(</span>
+    model,
+    param_config={
+        <span class="tok-st">"n_layers"</span>: QWEN3_CONFIG_4B<span class="tok-kw">[</span><span class="tok-st">"n_layers"</span><span class="tok-kw">]</span>,
+        <span class="tok-st">"hidden_dim"</span>: QWEN3_CONFIG_4B<span class="tok-kw">[</span><span class="tok-st">"hidden_dim"</span><span class="tok-kw">]</span>,
+    },
+    params=weights,
+<span class="tok-kw">)</span>
+model.to<span class="tok-kw">(</span>device<span class="tok-kw">)</span>
+model.eval<span class="tok-kw">()</span></code></pre><figcaption><span class="lbl">Listing D.2</span>Loading weights into Qwen3Model</figcaption></figure>
+<p>The <code>QWEN3_CONFIG_4B</code> dictionary defines the architecture dimensions for the 4B model. The <code>load_hf_weights_into_qwen</code> helper then maps the Hugging Face parameter names into the parameter names used by our own implementation. After that, <code>model.to(device)</code> moves the model to the selected device, and <code>model.eval()</code> switches the model into inference mode.</p>
+<p>After the model is loaded, we prepare the tokenizer.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.qwen3 <span class="tok-kw">import</span> Qwen3Tokenizer
+<span class="tok-kw">import</span> shutil
+tokenizer_src = local_dir / <span class="tok-st">"tokenizer.json"</span>
+tokenizer_path = local_dir / <span class="tok-st">"tokenizer-base.json"</span>
+<span class="tok-kw">if</span> <span class="tok-kw">not</span> tokenizer_path.exists<span class="tok-kw">()</span>:
+    shutil.copyfile<span class="tok-kw">(</span>tokenizer_src, tokenizer_path<span class="tok-kw">)</span>
+tokenizer = Qwen3Tokenizer<span class="tok-kw">(</span>tokenizer_file_path=tokenizer_path<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing D.3</span>Loading the base tokenizer</figcaption></figure>
+<p>The Hugging Face snapshot stores the tokenizer under the generic name <code>tokenizer.json</code>. In listing D.3, we copy it to <code>tokenizer-base.json</code> so that it is easy to distinguish from the reasoning tokenizer that we’ll use in the next section.</p>
+<p>We can now use the model for generation exactly as we did with the smaller 0.6B model in chapter 2.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">import</span> torch
+<span class="tok-kw">from</span> reasoning_from_scratch.ch02 <span class="tok-kw">import</span> (
+    generate_text_basic_stream_cache,
+)
+prompt = <span class="tok-st">"Explain large language models in two sentences."</span></code></pre><figcaption><span class="lbl">Listing D.4</span>Generating text</figcaption></figure>
+<pre><code class="language-python">input_ids = torch.tensor<span class="tok-kw">(</span>
+    tokenizer.encode<span class="tok-kw">(</span>prompt<span class="tok-kw">)</span>,
+    device=device,
+<span class="tok-kw">)</span>.unsqueeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>
+<span class="tok-kw">for</span> token <span class="tok-kw">in</span> generate_text_basic_stream_cache<span class="tok-kw">(</span>
+    model=model,
+    token_ids=input_ids,
+    max_new_tokens=<span class="tok-fn">64</span>,
+    eos_token_id=tokenizer.eos_token_id,
+<span class="tok-kw">)</span>:
+    print<span class="tok-kw">(</span>tokenizer.decode<span class="tok-kw">(</span>token.squeeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>.tolist<span class="tok-kw">())</span>, end=<span class="tok-st">""</span>, flush=<span class="tok-kw">True)</span></code></pre>
+<p>As in chapter 2, we encode the input prompt, add a batch dimension via <code>unsqueeze(0)</code>, and then stream the generated tokens one by one.</p>
+<p>The output is as follows:</p>
+<pre><code class="language-python"> Large language models are artificial intelligence systems that use deep learning
+techniques to understand and generate human-like text. They are trained on vast
+amounts of data and can perform a wide range of natural language processing tasks,
+such as translation, summarization, and question answering.</code></pre>
+<p>This is a nice property of reusing the same <code>Qwen3Model</code> abstraction across model sizes. Once the checkpoint and tokenizer are set up correctly, the inference code looks essentially the same.</p>
+<nav class="pager"><a class="prev" href="page-94.html" rel="prev"><span class="dir">上一页</span><span class="t">C.8 Tokenizer</span></a><a class="next" href="page-96.html" rel="next"><span class="dir">下一页</span><span class="t">D.4 Loading a larger reasoning variant</span></a></nav>
+</main>
+</body>
+</html>

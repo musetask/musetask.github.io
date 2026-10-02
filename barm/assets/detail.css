@@ -1,0 +1,151 @@
+/* 数学推导详解页专用样式（在 assets/style.css 之后加载） */
+
+/* 只在推导页（<body class="detail">）上放宽栏宽，
+   这样原书页面即使也引了本文件，排版也不会被改变 */
+body.detail{--measure:40rem}
+
+/* 公式块：KaTeX display 模式的容器 */
+.katex-display{
+  margin:1.15rem 0 !important;
+  padding:.85rem .6rem;
+  background:#faf8f1;
+  border:1px solid var(--code-edge);
+  border-left:3px solid var(--accent);
+  border-radius:6px;
+  overflow-x:auto;
+  overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior-x:contain;
+  /* 横向可滚动时右侧出现阴影（background-attachment local/scroll 技巧），
+     否则被截断的长公式看起来就像排版坏了 */
+  background-image:
+    linear-gradient(90deg,#faf8f1 30%,rgba(250,248,241,0)),
+    linear-gradient(90deg,rgba(250,248,241,0),#faf8f1 70%),
+    linear-gradient(90deg,rgba(0,0,0,.10),rgba(0,0,0,0)),
+    linear-gradient(90deg,rgba(0,0,0,0),rgba(0,0,0,.10));
+  background-position:left center,right center,left center,right center;
+  background-size:2rem 100%,2rem 100%,.7rem 100%,.7rem 100%;
+  background-repeat:no-repeat;
+  background-attachment:local,local,scroll,scroll;
+}
+/* 行内公式不要撑破行宽 */
+.katex{font-size:1.04em}
+p > .katex{white-space:nowrap}
+
+/* 手动标注：公式旁的解释 */
+.eq-note{
+  margin:.1rem 0 1.3rem;
+  font-size:.94rem;
+  color:var(--mute);
+  padding-left:.1rem;
+}
+.eq-note b{color:var(--ink); font-weight:600}
+
+/* 推导小节标题 */
+h2.deriv{margin-top:2.4rem}
+h2.deriv + p.lead{margin-top:.2rem}
+
+/* 关键结论的高亮条 */
+.key{
+  background:#f2f7f4;
+  border-left:3px solid #3f7a52;
+  border-radius:0 5px 5px 0;
+  padding:.7rem .85rem;
+  margin:0 0 1.1rem;
+}
+.key .tag{
+  font:600 .68rem/1 "Iowan Old Style",serif; letter-spacing:.09em;
+  text-transform:uppercase; color:#3f7a52;
+  display:block; margin-bottom:.3rem;
+}
+.key p:last-child{margin-bottom:0}
+
+/* 陷阱 / 坑 */
+.warn{
+  background:#fdf3ef;
+  border-left:3px solid #b4553f;
+  border-radius:0 5px 5px 0;
+  padding:.7rem .85rem;
+  margin:0 0 1.1rem;
+}
+.warn .tag{
+  font:600 .68rem/1 "Iowan Old Style",serif; letter-spacing:.09em;
+  text-transform:uppercase; color:#b4553f;
+  display:block; margin-bottom:.3rem;
+}
+.warn p:last-child{margin-bottom:0}
+
+/* 推导步骤的编号圆点 */
+ol.steps{counter-reset:st; list-style:none; padding-left:0}
+ol.steps > li{
+  counter-increment:st;
+  position:relative;
+  padding-left:2.1rem;
+  margin:.7rem 0;
+}
+ol.steps > li::before{
+  content:counter(st);
+  position:absolute; left:0; top:.15rem;
+  width:1.5rem; height:1.5rem; line-height:1.5rem;
+  text-align:center;
+  border-radius:50%;
+  background:var(--accent); color:#fff;
+  font-size:.75rem; font-weight:600;
+  font-variant-numeric:tabular-nums;
+}
+
+/* 从原书页面插进去的「补充材料」提示条 */
+aside.detail-link{
+  background:#f3f0ff;
+  border-left:3px solid #5b4b9e;
+  border-radius:0 5px 5px 0;
+  padding:.65rem .8rem;
+  margin:0 0 1.1rem;
+  font-size:.94rem;
+}
+aside.detail-link .tag{
+  font:600 .68rem/1 "Iowan Old Style",serif; letter-spacing:.09em;
+  text-transform:uppercase; color:#5b4b9e;
+  display:block; margin-bottom:.28rem;
+}
+aside.detail-link a{color:#4a3b85; font-weight:600}
+aside.detail-link p:last-child{margin-bottom:0}
+
+/* 符号速查表 */
+.sym{font-size:.92rem}
+.sym td:first-child{width:38%; white-space:nowrap}
+/* 推导页表格：第一列多为短代码/公式，禁止折行以免看起来像排版坏了 */
+body.detail table td:first-child,
+body.detail table th:first-child{white-space:nowrap}
+.sym .katex{font-size:1em}
+
+/* 章节间导航 */
+.deriv-nav{
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));
+  gap:.55rem;
+  margin:2rem 0 0; padding-top:1rem; border-top:1px solid var(--rule);
+}
+.deriv-nav a{
+  display:block; padding:.55rem .7rem;
+  border:1px solid var(--rule); border-radius:8px; background:#fff;
+  color:var(--ink); text-decoration:none; line-height:1.35; font-size:.9rem;
+}
+.deriv-nav a:active{background:var(--soft)}
+.deriv-nav a .dir{
+  display:block; font-size:.68rem; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--mute);
+}
+
+@media (min-width:34rem){
+  body.detail{--measure:44rem}
+  .katex{font-size:1.08em}
+}
+@media (min-width:52rem){
+  body.detail{--measure:48rem}
+  .katex{font-size:1.1em}
+}
+
+/* 打印时展开全部，避免公式被裁 */
+@media print{
+  .katex-display{overflow:visible; background:none}
+}

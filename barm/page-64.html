@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>7.3 Tracking more advanced GRPO performance metrics · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-63.html">
+<link rel="next" href="page-65.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 64 页 / 共 108 页</span></div>
+<h2 id="h2-tracking-more-advanced-grpo-performance-metrics"><span class="num">7.3</span>Tracking more advanced GRPO performance metrics</h2>
+<p>Beyond the small set of basic metrics for monitoring GRPO training runs, several additional metrics can help in understanding the training dynamics, as illustrated in figure 7.5.</p>
+<figure><a class="zoom" href="assets/figure-7.5.png" tabindex="-1"><img src="assets/figure-7.5.png" alt="" width="882" height="703" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 7.5</span>We have analyzed basic GRPO training metrics; we’ll now add more advanced metrics to analyze the training run.</figcaption></figure>
+<p>Two examples of the more advanced metrics mentioned in figure 7.5 are the rollout advantages already computed in the <code>compute_grpo_loss</code> function in chapter 6 and the entropy of the generated sequences.</p>
+<h3 id="h3-advantage-tracking"><span class="num">7.3.1</span>Advantage tracking</h3>
+<p>As part of the GRPO algorithm, we compute so-called <em>advantages</em>, as discussed in chapter 6 and shown in figure 7.6. Beyond their role in the loss computation, these values are useful for analyzing and understanding training dynamics.</p>
+<figure><a class="zoom" href="assets/figure-7.6.png" tabindex="-1"><img src="assets/figure-7.6.png" alt="" width="877" height="957" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 7.6</span>GRPO overview from chapter 6. The advantages are shown in step 3.</figcaption></figure>
+<p>In particular, we compute two summary statistics derived from the advantages shown in figure 7.6, namely, their average value (the sample mean) and their standard deviation.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">import</span> torch
+<span class="tok-kw">def</span> compute_advantage_stats(rewards_list):
+    rewards = torch.tensor<span class="tok-kw">(</span>rewards_list<span class="tok-kw">)</span>
+    advantages = (rewards - rewards.mean<span class="tok-kw">()</span>) / (rewards.std<span class="tok-kw">()</span> + <span class="tok-fn">1e-4</span>)</code></pre><figcaption><span class="lbl">Listing 7.3</span>Computing advantage statistics</figcaption></figure>
+<pre><code class="language-python">    adv_avg = advantages.mean<span class="tok-kw">()</span>.item<span class="tok-kw">()</span>
+    adv_std = advantages.std<span class="tok-kw">()</span>.item<span class="tok-kw">()</span>
+    <span class="tok-kw">return</span> advantages, adv_avg, adv_std</code></pre>
+<p>As a simple illustration, consider a small sample of four reward values, similar to those shown in figure 7.6:</p>
+<pre><code class="language-python">adv, adv_avg, adv_std = compute_advantage_stats<span class="tok-kw">(</span>[<span class="tok-fn">1</span>., <span class="tok-fn">1</span>., <span class="tok-fn">0</span>., <span class="tok-fn">0</span>.]<span class="tok-kw">)</span>
+print<span class="tok-kw">(f</span><span class="tok-st">"Advantages: </span>{adv}<span class="tok-st">"</span><span class="tok-kw">)</span>
+print<span class="tok-kw">(f</span><span class="tok-st">"Advantage mean = </span>{adv_avg:.4f}<span class="tok-st">, std = </span>{adv_std:.4f}<span class="tok-st">"</span><span class="tok-kw">)</span></code></pre>
+<p>The output is as follows:</p>
+<pre><code class="language-python">Advantages: tensor([ 0.8659, 0.8659, -0.8659, -0.8659])
+Advantage mean = 0.0000, std = 0.9998</code></pre>
+<p>Because of how advantages are computed in GRPO, their mean is always zero. In practice, this makes the mean mostly a sanity check that the implementation behaves as expected.</p>
+<p>The standard deviation is more informative. Values close to 1 indicate a well-scaled gradient signal and are usually associated with stable updates. Very small values point to a vanishing learning signal, which often happens when rewards collapse. Very large values indicate overly spiky updates that can destabilize training.</p>
+<p>An extreme case occurs when all rewards in the sampled group are identical. In that case, the normalized advantages are also identical, with a standard deviation of zero. As a result, the policy gradient update becomes zero, and no model weight update occurs. In other words, the model fails to learn from these cases. For example, consider the following scenario:</p>
+<pre><code class="language-python">adv, adv_avg, adv_std = compute_advantage_stats<span class="tok-kw">(</span>[<span class="tok-fn">0</span>., <span class="tok-fn">0</span>., <span class="tok-fn">0</span>., <span class="tok-fn">0</span>.]<span class="tok-kw">)</span>
+print<span class="tok-kw">(f</span><span class="tok-st">"Advantages: </span>{adv}<span class="tok-st">"</span><span class="tok-kw">)</span>
+print<span class="tok-kw">(f</span><span class="tok-st">"Advantage mean = </span>{adv_avg:.4f}<span class="tok-st">, std = </span>{adv_std:.4f}<span class="tok-st">"</span><span class="tok-kw">)</span></code></pre>
+<p>which prints the following outputs:</p>
+<pre><code class="language-python">Advantages: tensor([0., 0., 0., 0.])
+Advantage mean = 0.0000, std = 0.0000</code></pre>
+<p>The outputs are similar if we replace the all-zero rewards in <code>compute_advantage_</code></p>
+<pre><code class="language-python">stats([0., 0., 0., 0.]) with all-one rewards in compute_advantage_stats([1., 1.,
+1., 1.]).</code></pre>
+<p>In practice, it is best to consider the advantage statistics together with the average reward. As mentioned earlier, an average reward of 1.0 is actually a desirable outcome, even though it means that the training signal has disappeared, because the model is answering everything correctly. At this point, it usually makes sense to stop training or to switch to more challenging examples.</p>
+<nav class="pager"><a class="prev" href="page-63.html" rel="prev"><span class="dir">上一页</span><span class="t">7.2.1 Executing a GRPO training run</span></a><a class="next" href="page-65.html" rel="next"><span class="dir">下一页</span><span class="t">7.3.2 Entropy tracking</span></a></nav>
+</main>
+</body>
+</html>

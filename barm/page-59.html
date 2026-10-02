@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>6.9 From advantages to policy updates via the GRPO loss · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-58.html">
+<link rel="next" href="page-60.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 59 页 / 共 108 页</span></div>
+<h2 id="h2-from-advantages-to-policy-updates-via-the-grpo-loss"><span class="num">6.9</span>From advantages to policy updates via the GRPO loss</h2>
+<p>We’ll now implement the fifth stage of the GRPO pipeline, where the previously computed advantages and logprobs are combined into a policy gradient loss. We’ll implement the subsequent weight update (stage 6) later as part of the training loop, as shown in figure 6.17.</p>
+<p>First, we’ll convert the list of rollout logprobs from the previous section into a PyTorch tensor. Then, we’ll compute the policy gradient loss by multiplying each rollout’s sequence-level logprob by its corresponding advantage, taking the mean across rollouts, and applying a negative sign. Because PyTorch optimizers are defined to <em>minimize</em> a loss, objectives that are naturally written as maximization problems must be sign-flipped.</p>
+<figure class="listing"><pre><code class="language-python">logps = torch.stack<span class="tok-kw">(</span>rollout_logps<span class="tok-kw">)</span>
+pg_loss =-(advantages.detach<span class="tok-kw">()</span> * logps).mean<span class="tok-kw">()</span></code></pre><figcaption><span class="lbl">Listing 6.13</span>Computing the policy gradient loss</figcaption></figure>
+<pre><code class="language-python">print<span class="tok-kw">(</span>logps<span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>pg_loss<span class="tok-kw">)</span></code></pre>
+<figure><a class="zoom" href="assets/figure-6.17.png" tabindex="-1"><img src="assets/figure-6.17.png" alt="" width="996" height="1042" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 6.17</span>The fifth stage in the GRPO pipeline computes the policy gradient loss that we’ll use to update the model. Stage 6, the model weight update, will be implemented later as part of the training loop.</figcaption></figure>
+<p>This prints the following for the logprobs:</p>
+<pre><code class="language-python">tensor([
+-7.9243, -20.1546, -16.6130, -23.3677],
+grad_fn=&lt;StackBackward0&gt;)</code></pre>
+<p>The resulting policy gradient loss value is as follows:</p>
+<pre><code class="language-python">tensor(-2.5764, grad_fn=&lt;NegBackward0&gt;)</code></pre>
+<p>Note that we use <code>.detach()</code> on the advantages because they are treated as fixed learning signals during the policy update. This prevents gradients from flowing back through the advantage computation, ensuring that only the model parameters influencing the logprobs are updated.</p>
+<p>In policy gradient methods, we want to maximize the advantage-weighted logprob of the rollouts, since higher log probabilities for high-advantage rollouts improve the policy. By multiplying this objective by −1, we convert the maximization problem into an equivalent minimization problem. Minimizing the negative objective produces the exact same parameter updates as maximizing the original one, while remaining compatible with PyTorch’s optimizer implementations.</p>
+<h3 id="h3-maximization-vs-minimization">Maximization vs. minimization</h3>
+<div class="lead">maximize is the simple scalar value 𝑓(𝑥) = 3. To illustrate sign flipping with a concrete example, suppose the objective we want to Under the maximization view, a larger value is better, so 3 is preferable to 2. PyTorch optimizers minimize, so they would try to reduce this value, which is the opposite of Now, suppose we flip the sign and define the loss as 𝐿(𝑥) = –𝑓(𝑥) = –3. Minimizing 𝐿(𝑥) what we want. is now equivalent to maximizing 𝑓(𝑥). For instance, if 𝐿(𝑥) decreases from −2 to −3, 𝑓(𝑥) increases from 2 to 3.</div>
+<h3 id="h3-mathematical-definition-of-the-policy-gradient-loss">Mathematical definition of the policy gradient loss</h3>
+<div class="lead">If you find it easier to follow the computations via mathematical notation, the policy gradient loss used in GRPO can be written as follows: Here,</div>
+<ul><li>𝑦𝑡</li></ul>
+<div class="lead">(𝑖), …, 𝑦𝑇ᵢ (𝑖) are the tokens of the <em>i</em>-th generated response of length 𝑇𝑖.</div>
+<ul><li>N denotes the number of rollouts.</li></ul>
+<ul><li>𝑦&lt;𝑡</li></ul>
+<div class="lead">(𝑖) represents all previously generated tokens in that response.</div>
+<ul><li>𝑥(𝑖) is the corresponding input prompt.</li><li>𝐴𝑖 is the advantage of the full rollout.</li></ul>
+<div class="lead">The inner sum computes the sequence-level log probability of a rollout, while the outer average computes the advantage-weighted log probabilities across rollouts.</div>
+<h2 id="h2-putting-everything-together-in-a-single-grpo-function"><span class="num">6.10</span>Putting everything together in a single GRPO function</h2>
+<p>We have now completed the most challenging parts of this chapter and walked through each GRPO stage in isolation. Next, we’ll combine the five GRPO stages shown in figure 6.18 into a single <code>compute_grpo_loss</code> function, which we’ll later use as part of the full training loop. (Note that the term “stage” here refers to a conceptual component of the GRPO loss computation, based on how we stepped through the GRPO algorithm; it’s not a training step in the outer optimization loop.)</p>
+<pre><code class="language-python">single compute_grpo_loss function</code></pre>
+<figure><a class="zoom" href="assets/figure-6.18.png" tabindex="-1"><img src="assets/figure-6.18.png" alt="" width="888" height="1086" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 6.18</span>The complete GRPO workflow where (1) multiple rollouts are generated for a prompt, (2) they are assigned correctness rewards, (3) they are converted into group-relative advantages, and (4) they are combined with log probabilities to (5) compute the policy gradient loss. The loss gradients (6) will be computed and used to update the model in the next section.</figcaption></figure>
+<p>The <code>compute_grpo_loss</code> function, which combines all the stages from figure 6.18 that we discussed previously, is shown in the following listing.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">def</span> compute_grpo_loss(
+    model,
+    tokenizer,
+    example,
+    device,
+    num_rollouts=<span class="tok-fn">2</span>,
+    max_new_tokens=<span class="tok-fn">256</span>,
+    temperature=<span class="tok-fn">0.8</span>,
+    top_p=<span class="tok-fn">0.9</span>,
+):
+    <span class="tok-kw">assert</span> num_rollouts &gt;= <span class="tok-fn">2</span>
+    roll_logps, roll_rewards, samples = [], [], []
+    prompt = render_prompt<span class="tok-kw">(</span>example<span class="tok-kw">[</span><span class="tok-st">"problem"</span><span class="tok-kw">])</span>
+    was_training = model.training
+    model.eval<span class="tok-kw">()</span>
+    <span class="tok-kw">for</span> _ <span class="tok-kw">in</span> range<span class="tok-kw">(</span>num_rollouts<span class="tok-kw">)</span>:
+        token_ids, prompt_len, text = sample_response<span class="tok-kw">(</span>
+            model=model,
+            tokenizer=tokenizer,
+            prompt=prompt,
+            device=device,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_p=top_p,
+        <span class="tok-kw">)</span>
+        reward = reward_rlvr<span class="tok-kw">(</span>text, example<span class="tok-kw">[</span><span class="tok-st">"answer"</span><span class="tok-kw">])</span>
+        logp = sequence_logprob<span class="tok-kw">(</span>model, token_ids, prompt_len<span class="tok-kw">)</span>
+        roll_logps.append<span class="tok-kw">(</span>logp<span class="tok-kw">)</span>
+        roll_rewards.append<span class="tok-kw">(</span>reward<span class="tok-kw">)</span>
+        samples.append<span class="tok-kw">(</span>
+            {
+                <span class="tok-st">"text"</span>: text,
+                <span class="tok-st">"reward"</span>: reward,
+                <span class="tok-st">"gen_len"</span>: token_ids.numel<span class="tok-kw">()</span> - prompt_len,
+            }
+        <span class="tok-kw">)</span>
+    <span class="tok-kw">if</span> was_training:
+        model.train<span class="tok-kw">()</span>
+    rewards = torch.tensor<span class="tok-kw">(</span>roll_rewards, device=device<span class="tok-kw">)</span>
+    advantages = (rewards - rewards.mean<span class="tok-kw">()</span>) / (rewards.std<span class="tok-kw">()</span> + <span class="tok-fn">1e-4</span>)
+    logps = torch.stack<span class="tok-kw">(</span>roll_logps<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 6.14</span>Combining all the GRPO stages</figcaption></figure>
+<pre><code class="language-javascript">    pg_loss = -(advantages.detach<span class="tok-kw">()</span> * logps).mean<span class="tok-kw">()</span>
+    loss = pg_loss <span class="tok-cm"># In the next chapter we add a KL term here</span>
+    <span class="tok-kw">return</span> {
+        <span class="tok-st">"loss"</span>: loss.item<span class="tok-kw">()</span>,
+        <span class="tok-st">"pg_loss"</span>: pg_loss.item<span class="tok-kw">()</span>,
+        <span class="tok-st">"rewards"</span>: roll_rewards,
+        <span class="tok-st">"advantages"</span>: advantages.detach<span class="tok-kw">()</span>.cpu<span class="tok-kw">()</span>.tolist<span class="tok-kw">()</span>,
+        <span class="tok-st">"samples"</span>: samples,
+        <span class="tok-st">"loss_tensor"</span>: loss,
+    }</code></pre>
+<p>The <code>compute_grpo_loss</code> function is relatively self-explanatory because it follows the same stages we implemented manually in the previous sections. Note, though, that after stage 1, the code proceeds directly to stages 2 and 4 rather than stages 3 and 4. This is purely an implementation choice that simplifies the code structure by avoiding multiple nested <code>for</code> loops while preserving the same logical sequence of operations.</p>
+<p>Also note that the <code>pg_loss</code> (policy gradient loss) is identical to the overall loss in our examples. I intentionally omitted the KL loss term here; we’ll add it in chapter 7 for completeness. As discussed earlier, GRPO is often reported to perform better on math problems when the KL loss term is omitted, which is why we are adopting this simplified objective here.</p>
+<p>Next, let’s try the new <code>compute_grpo_loss</code> function on an example from the MATH training dataset to ensure that it works. We’ll only sample a small number of rollouts (<code>num_rollouts=2</code>) and generate a relatively small number of tokens (<code>max_new_ tokens=256</code>) for testing purposes. It may still take several seconds for the function to return the results.</p>
+<figure class="listing"><pre><code class="language-python">torch.manual_seed<span class="tok-kw">(</span><span class="tok-fn">123</span><span class="tok-kw">)</span>
+stats = compute_grpo_loss<span class="tok-kw">(</span>
+    model=model,
+    tokenizer=tokenizer,
+    example=math_train<span class="tok-kw">[</span><span class="tok-fn">4</span><span class="tok-kw">]</span>,
+    device=device,
+    num_rollouts=<span class="tok-fn">2</span>,
+    max_new_tokens=<span class="tok-fn">256</span>,
+    temperature=<span class="tok-fn">0.8</span>,
+    top_p=<span class="tok-fn">0.9</span>
+<span class="tok-kw">)</span>
+pprint<span class="tok-kw">(</span>stats<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 6.15</span>Computing GRPO stages on a MATH training example</figcaption></figure>
+<p>The output is as follows:</p>
+<pre><code class="language-python">{<span class="tok-st">'advantages'</span>: [<span class="tok-fn">0.0</span>, <span class="tok-fn">0.0</span>],
+ <span class="tok-st">'loss'</span>: -<span class="tok-fn">0.0</span>,
+ <span class="tok-st">'loss_tensor'</span>: tensor<span class="tok-kw">(</span>-<span class="tok-fn">0</span>., grad_fn=&lt;NegBackward0&gt;<span class="tok-kw">)</span>,
+ <span class="tok-st">'pg_loss'</span>: -<span class="tok-fn">0.0</span>,
+ <span class="tok-st">'rewards'</span>: [<span class="tok-fn">0.0</span>, <span class="tok-fn">0.0</span>],
+ <span class="tok-st">'samples'</span>: [{<span class="tok-st">'gen_len'</span>: <span class="tok-fn">4</span>, <span class="tok-st">'reward'</span>: <span class="tok-fn">0.0</span>, <span class="tok-st">'text'</span>: <span class="tok-st">' 14&lt;|endoftext|&gt;'</span>},
+             {<span class="tok-st">'gen_len'</span>: <span class="tok-fn">256</span>,
+              <span class="tok-st">'reward'</span>: <span class="tok-fn">0.0</span>,
+              <span class="tok-st">'text'</span>: <span class="tok-st">' 4</span>\n<span class="tok-st">'</span>
+                      <span class="tok-st">'To solve the problem, let'</span>s <span class="tok-kw">break</span> it down step by step<span class="tok-st">'</span>
+                      <span class="tok-st">'...'</span>}</code></pre>
+<p>As you can see from the <code>'rewards'</code> and <code>'text'</code> entries in the <code>'samples'</code> field, the model answers incorrectly. As discussed in section 6.4, a correct answer must include <code>\boxed{6}</code>. Since this condition is not met, the reward is zero, which in turn yields zero advantages and a zero loss. In this case, if we were training the model, the gradient would be zero and the model parameters would not be updated.</p>
+<nav class="pager"><a class="prev" href="page-58.html" rel="prev"><span class="dir">上一页</span><span class="t">Mathematical definition of token-level log probabilities</span></a><a class="next" href="page-60.html" rel="next"><span class="dir">下一页</span><span class="t">6.11 Implementing the GRPO training loop</span></a></nav>
+</main>
+</body>
+</html>

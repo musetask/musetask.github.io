@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>8.6 Computing the training and validation losses · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-77.html">
+<link rel="next" href="page-79.html">
+<link rel="stylesheet" href="assets/detail.css">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 78 页 / 共 108 页</span></div>
+<aside class="detail-link"><span class="tag">补充材料</span>这一节的数学推导（公式已用 KaTeX 排版，含逐步手算验证）在 <a href="page-78-detail.html"><b>8.6 交叉熵损失</b></a>。全部推导页的索引见 <a href="math-detail.html">math-detail.html</a>。</aside>
+<h2 id="h2-computing-the-training-and-validation-losses"><span class="num">8.6</span>Computing the training and validation losses</h2>
+<p>Next, we implement the <em>cross-entropy loss</em> that will serve as the training signal during distillation when we implement the training loop later. We will also reuse the same computation on the validation set to monitor progress during training.</p>
+<p>If you have a deep learning background, you may already know cross-entropy from classification tasks. The idea is the same here, except that the target class we want to predict at each position is the next token in the teacher-generated sequence.</p>
+<p>We can connect the cross-entropy loss directly to the log-probability computations from chapters 5 and 6. As discussed there, log probability measures how much probability the model assigns to the correct next token. Higher log probability means the model is more confident in the correct token, and lower log probability means the opposite. Reusing our “The capital of Germany is Berlin” example from previous chapters, figure 8.12 recaps this.</p>
+<p>Cross-entropy is simply the negative average of the token log probabilities shown in figure 8.12. For instance, if –16.6250 is the log probability, the negative log probability is 16.6250, and the negative average log probability (or cross-entropy) is 16.6250/5 = 3.325. Note that the 5 is there because the sequence has 5 target predictions whose log probabilities are being averaged: <code>"capital"</code>, <code>"of"</code>, <code>"Germany"</code>, <code>"is"</code>, and <code>"Berlin"</code>. Similar to log probability, the closer the cross-entropy value is to 0, the better, because the model is more confident in the correct target token.</p>
+<p>The <code>sequence_logprob</code> function from chapter 6 performs the computation shown in figure 8.12, which makes it a useful starting point for understanding how the <em>distillation loss </em>works. In this case, we’ll use the training example at index position <code>5730</code> because it is the shortest example in <code>train_examples</code>, as we can determine via <code>compute_ length(train_examples)</code>, and therefore computes a bit more quickly than the other examples:</p>
+<pre><code class="language-python">token_ids = train_examples<span class="tok-kw">[</span><span class="tok-fn">5730</span><span class="tok-kw">]</span>[<span class="tok-st">"token_ids"</span>]
+prompt_len = train_examples<span class="tok-kw">[</span><span class="tok-fn">5730</span><span class="tok-kw">]</span>[<span class="tok-st">"prompt_len"</span>]</code></pre>
+<figure><a class="zoom" href="assets/figure-8.12.png" tabindex="-1"><img src="assets/figure-8.12.png" alt="" width="1142" height="1129" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 8.12</span>Illustration of token and sequence log probabilities. The log probabilities of the correct next tokens are summed to obtain the sequence log probability, which is the basis for the cross-entropy loss used later in this chapter.</figcaption></figure>
+<p>Instead of reporting the summed log probabilities returned by <code>sequence_logprob</code>, we’ll average them over the number of answer tokens. Summed log probabilities grow with sequence length, so they are not directly comparable across examples with shorter or longer answers. By dividing by the number of answer tokens, we’ll obtain a per-token quantity, which matches the form used by cross-entropy loss. We can compute the number of answer tokens by subtracting <code>prompt_len</code> from the total sequence length.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.ch06 <span class="tok-kw">import</span> sequence_logprob
+tok = torch.tensor<span class="tok-kw">(</span>token_ids, dtype=torch.long, device=device)
+<span class="tok-kw">with</span> torch.no_grad<span class="tok-kw">()</span>:
+    seq_logprob = sequence_logprob<span class="tok-kw">(</span>model, tok, prompt_len<span class="tok-kw">)</span>
+    num_answer_tokens = tok.numel<span class="tok-kw">()</span> - prompt_len
+    avg_logprob = -seq_logprob / num_answer_tokens
+print<span class="tok-kw">(f</span><span class="tok-st">"Average logprob: </span>{avg_logprob:.2f}<span class="tok-st">"</span><span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 8.9</span>Computing average negative log probabilities</figcaption></figure>
+<p>The resulting negative average log probability is 1.68.</p>
+<p>We can now compute the same quantity using PyTorch’s <code>cross_entropy</code> function. Although the function is usually introduced for classification, it’s a natural choice here. For example, the model logits provide the predicted class distribution over the vocabulary, and the target sequence provides the correct class label at each position.</p>
+<p>As in the previous average-logprob calculation, we’ll compute the loss only over the answer tokens and ignore the prompt tokens (the prompt is the context provided as input and not something we want the model to be penalized for reproducing). This is illustrated in figure 8.13.</p>
+<pre><code class="language-python">&lt;|im_end|&gt;.</code></pre>
+<figure><a class="zoom" href="assets/figure-8.13.png" tabindex="-1"><img src="assets/figure-8.13.png" alt="" width="1141" height="681" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 8.13</span>Input for the cross-entropy loss over the answer tokens. The model receives the prompt and answer, shifted by one token, as input, and the answer token logits are compared with the reference answer tokens.</figcaption></figure>
+<p>During distillation, we want the student to learn the teacher’s reasoning trace and final answer conditioned on the prompt. So, as shown in figure 8.13, we discard the logits and targets that correspond only to the prompt portion of the sequence when computing the cross-entropy.</p>
+<figure class="listing"><pre><code class="language-python">input_ids = tok<span class="tok-kw">[</span>:-<span class="tok-fn">1</span><span class="tok-kw">]</span>.unsqueeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>
+target_ids = tok<span class="tok-kw">[</span><span class="tok-fn">1</span>:<span class="tok-kw">]</span>
+logits = model<span class="tok-kw">(</span>input_ids<span class="tok-kw">)</span>.squeeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>
+first_answer_logit_idx = max<span class="tok-kw">(</span>prompt_len - <span class="tok-fn">1</span>, <span class="tok-fn">0</span><span class="tok-kw">)</span>
+answer_logits = logits<span class="tok-kw">[</span>first_answer_logit_idx:<span class="tok-kw">]</span>
+answer_targets = target_ids<span class="tok-kw">[</span>first_answer_logit_idx:<span class="tok-kw">]</span>
+<span class="tok-kw">with</span> torch.no_grad<span class="tok-kw">()</span>:
+    ce_mean_direct = torch.nn.functional.cross_entropy<span class="tok-kw">(</span>
+        answer_logits, answer_targets
+    <span class="tok-kw">)</span>
+print<span class="tok-kw">(f</span><span class="tok-st">"Cross-entropy: </span>{ce_mean_direct:.2f}<span class="tok-st">"</span><span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 8.10</span>Computing cross-entropy loss directly</figcaption></figure>
+<p>The resulting cross-entropy loss is 1.68, which is similar to that in listing 8.9, where we used the <code>sequence_logprob</code> function. In other words, <code>cross_entropy</code> implements the same core calculation in a more optimized way. For training, we’ll therefore use the built-in <code>cross_entropy</code> function rather than our custom log-probability function.</p>
+<p>The <code>compute_example_loss</code> helper in listing 8.11 wraps this logic into a convenient function that calculates the <em>answer-only loss</em> for a single example. “Answer-only loss” means the training loss is computed only on the teacher’s answer tokens, not on the prompt tokens. The following listing puts it all together into a function that applies the whole logic, from target preparation to cross-entropy computation.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">def</span> compute_example_loss(model, example, device):
+    token_ids = example<span class="tok-kw">[</span><span class="tok-st">"token_ids"</span><span class="tok-kw">]</span>
+    prompt_len = example<span class="tok-kw">[</span><span class="tok-st">"prompt_len"</span><span class="tok-kw">]</span>
+    input_ids = torch.tensor<span class="tok-kw">(</span>
+        token_ids<span class="tok-kw">[</span>:-<span class="tok-fn">1</span><span class="tok-kw">]</span>, dtype=torch.long, device=device
+    <span class="tok-kw">)</span>.unsqueeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>
+    target_ids = torch.tensor<span class="tok-kw">(</span>
+        token_ids<span class="tok-kw">[</span><span class="tok-fn">1</span>:<span class="tok-kw">]</span>, dtype=torch.long, device=device
+    <span class="tok-kw">)</span>
+    logits = model<span class="tok-kw">(</span>input_ids<span class="tok-kw">)</span>.squeeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>
+    answer_start = max<span class="tok-kw">(</span>prompt_len - <span class="tok-fn">1</span>, <span class="tok-fn">0</span><span class="tok-kw">)</span>
+    answer_logits = logits<span class="tok-kw">[</span>answer_start:<span class="tok-kw">]</span>
+    answer_targets = target_ids<span class="tok-kw">[</span>answer_start:<span class="tok-kw">]</span></code></pre><figcaption><span class="lbl">Listing 8.11</span>Defining the loss for one distillation example</figcaption></figure>
+<pre><code class="language-python">    loss = torch.nn.functional.cross_entropy<span class="tok-kw">(</span>
+        answer_logits, answer_targets
+    <span class="tok-kw">)</span>
+    <span class="tok-kw">return</span> loss
+<span class="tok-kw">with</span> torch.no_grad<span class="tok-kw">()</span>:
+    loss = compute_example_loss<span class="tok-kw">(</span>
+        model, train_examples<span class="tok-kw">[</span><span class="tok-fn">5730</span><span class="tok-kw">]</span>, device
+    <span class="tok-kw">)</span>
+print<span class="tok-kw">(f</span><span class="tok-st">"Loss: </span>{loss:.2f}<span class="tok-st">"</span><span class="tok-kw">)</span></code></pre>
+<p>The resulting loss is 1.68 again, which indicates that the function in listing 8.11 works as intended.</p>
+<h3 id="h3-batching">Batching</h3>
+<div class="lead">It is possible to process multiple examples in parallel by batching them together. I’ve omitted batching here to keep the implementation compact and lower the resource requirements. Appendix E discusses batching and throughput-oriented execution in more detail for loss computation and training in general.</div>
+<p>Next, we’ll define a small wrapper that iteratively computes the average loss across multiple examples. This will be useful both for quick sanity checks and for tracking the validation loss during training.</p>
+<figure class="listing"><pre><code class="language-python">@torch.no_grad<span class="tok-kw">()</span>
+<span class="tok-kw">def</span> evaluate_examples(model, examples, device):
+    was_training = model.training
+    model.eval<span class="tok-kw">()</span></code></pre><figcaption><span class="lbl">Listing 8.12</span>Evaluating loss across multiple examples</figcaption></figure>
+<pre><code class="language-python">    total_loss = <span class="tok-fn">0.0</span></code></pre>
+<pre><code class="language-python">    num_examples = <span class="tok-fn">0</span>
+    <span class="tok-kw">for</span> example <span class="tok-kw">in</span> examples:
+        loss = compute_example_loss<span class="tok-kw">(</span>model, example, device<span class="tok-kw">)</span>
+        total_loss += loss.item<span class="tok-kw">()</span>
+        num_examples += <span class="tok-fn">1</span>
+    <span class="tok-kw">if</span> was_training:
+        model.train<span class="tok-kw">()</span>
+    <span class="tok-kw">return</span> total_loss / num_examples
+train_loss = evaluate_examples<span class="tok-kw">(</span>model, train_examples<span class="tok-kw">[</span>:<span class="tok-fn">3</span><span class="tok-kw">]</span>, device<span class="tok-kw">)</span>
+print<span class="tok-kw">(f</span><span class="tok-st">"Train loss (3 examples): </span>{train_loss:.2f}<span class="tok-st">"</span><span class="tok-kw">)</span>
+val_loss = evaluate_examples<span class="tok-kw">(</span>model, val_examples<span class="tok-kw">[</span>:<span class="tok-fn">3</span><span class="tok-kw">]</span>, device<span class="tok-kw">)</span>
+print<span class="tok-kw">(f</span><span class="tok-st">"Validation loss (3 examples): </span>{val_loss:.2f}<span class="tok-st">"</span><span class="tok-kw">)</span></code></pre>
+<p>This is the output:</p>
+<pre><code class="language-python">Train loss (3 examples): 0.98
+Validation loss (3 examples): 1.02</code></pre>
+<p>We’ll reuse this evaluation function during training. Ideally, both quantities should decrease over time, which would indicate that the student model is becoming better at matching the teacher-generated target sequences.</p>
+<p>In practice, the <em>training loss</em>, which is the loss computed on the training examples used for optimization, is often noisier because it is measured on the examples currently being optimized and can fluctuate depending on the sample order and recent parameter updates.</p>
+<p>The <em>validation loss</em>, which is measured on a separate held-out validation set rather than on the examples currently being used for optimization, is computed without updating the model weights. As a result, it usually provides a cleaner signal of whether the student is improving in a way that generalizes beyond the training set. For this reason, the validation loss is often the more reliable metric to watch.</p>
+<nav class="pager"><a class="prev" href="page-77.html" rel="prev"><span class="dir">上一页</span><span class="t">8.4.3 Filtering and splitting the dataset</span></a><a class="next" href="page-79.html" rel="next"><span class="dir">下一页</span><span class="t">8.7 Implementing the training loop for distillation</span></a></nav>
+</main>
+</body>
+</html>

@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>数学推导详解 · 6.8 序列 logprob 与 6.9 策略梯度损失 · Build a Reasoning Model</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">数学推导详解 · 6.8 / 6.9</span>
+<a class="nav" href="page-58.html">原文</a>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">对应原文第 57–59 页 · 第 6 章 Training reasoning models with reinforcement learning</span></div>
+
+<h1>6.8 序列 logprob 与 6.9 策略梯度损失：完整数学推导</h1>
+
+<div class="lead">
+这一页把原文 page-58 / page-59 的数学部分完整展开。目标是让你能自己重推出原文给出的每一个数字，而不只是看懂结论。
+覆盖三块：<b>序列 logprob 从哪来</b>、<b>为什么用 sum 而不是 mean</b>、<b>advantage 怎么把奖励变成学习信号</b>。
+</div>
+
+<p>原文在这一节只给了公式和代码，数学推导被压缩成了几句话。下面每一步都补上中间的推理。</p>
+
+<h2 class="deriv">符号约定</h2>
+
+<p>先把后文反复用到的符号一次性定好，后面不再重复解释。</p>
+
+<div class="tw">
+<table class="sym">
+<thead><tr><th>符号</th><th>含义</th></tr></thead>
+<tbody>
+<tr><td>\(x\)</td><td>输入 prompt 的 token 序列，长度 \(P\)（prompt length）</td></tr>
+<tr><td>\(y_t\)</td><td>生成回答中的第 \(t\) 个 token，\(t = 1, \dots, T_i\)</td></tr>
+<tr><td>\(y_{&lt;t}\)</td><td>已生成的全部 token，即 \((y_1, \dots, y_{t-1})\)。注意<b>不包括 prompt</b>，但<b style="color:#3f7a52">条件里始终含 \(x\)</b></td></tr>
+<tr><td>\(T_i\)</td><td>第 \(i\) 个回答的 token 数。<b>各 rollout 长度不同</b>，这是后面 mean / sum 之争的关键</td></tr>
+<tr><td>\(W\)（或 \(\theta\)）</td><td>模型参数。原文用 \(W\)，公式里我沿用 \(\theta\)，两者同一个东西</td></tr>
+<tr><td>\(N\)</td><td>rollout 数量，代码里的 <code>num_rollouts</code></td></tr>
+<tr><td>\(r_i\)</td><td>第 \(i\) 个 rollout 的 reward，由第 3 章的验证器给出 0 或 1</td></tr>
+<tr><td>\(A_i\)</td><td>第 \(i\) 个 rollout 的 advantage，<b>整条序列一个标量</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="eq-note">
+<b>最容易混淆的一点：</b>\(y_{&lt;t}\) 指的是「同一个回答内部已生成的 token」，<b>不包含 prompt</b>；而条件概率里 \(x\) 是<b>始终在场</b>的。写成 \(P(y_t \mid y_{&lt;t}, x, \theta)\) 而不是 \(P(y_t \mid x_{&lt;t}, y_{&lt;t})\)，就是为了体现 prompt 是固定的上下文。
+</div>
+
+<h2 class="deriv">一、logprob 从哪来：链式法则</h2>
+
+<h3>1.1 联合概率 = 条件概率连乘</h3>
+
+<p>给定 prompt \(x\) 和参数 \(\theta\)，模型生成 \(y_1, y_2, \dots, y_T\) 这个特定序列的概率，根据<b>概率链式法则</b>：</p>
+
+\[
+\begin{aligned}
+P(y_1, \dots, y_T \mid x, \theta)
+&= \underbrace{P(y_1 \mid x, \theta)}_{t=1} \cdot \underbrace{P(y_2 \mid y_1, x, \theta)}_{t=2} \cdot \cdots \\[4pt]
+&\quad \cdot \underbrace{P(y_T \mid y_{&lt;T}, x, \theta)}_{t=T}
+\end{aligned}
+\]
+
+<p>注意最后一项的下标是 \(y_{&lt;T}\)，而第一项 \(y_0\) 是空集，所以 \(P(y_1 \mid x, \theta)\) 里的条件里没有 \(y\)。这个结构就是「自回归」的数学含义：<b>第 \(t\) 个 token 的条件分布，依赖前 \(t-1\) 个已确定的 token</b>。</p>
+
+<h3>1.2 为什么必须取对数</h3>
+
+<p>上面这个连乘在数值上是不可用的。考虑一个 265 token 的回答（后面 2.1 节我们会看到，真实例子正好是这个数）。即使每个 token 的概率都相当高，比如 0.9：</p>
+
+\[
+0.9^{265} \approx 10^{-12.3}
+\]
+
+<p>如果再长一点，概率就落到 float64 能表示的范围之外了（float64 最小正规数约 \(10^{-308}\)），再往后会直接下溢成 0。<b>下溢之后你无法区分「几乎不可能」和「真的不可能」，梯度信息彻底丢失。</b></p>
+
+<p>解法是取对数。对数有个恒等式：</p>
+
+\[
+\log(ab) = \log a + \log b
+\]
+
+<p>于是连乘<b>直接变成连加</b>。两边取对数：</p>
+
+\[
+\boxed{\;
+\log P(y_1, \dots, y_T \mid x, \theta)
+= \sum_{t=1}^{T} \log P(y_t \mid y_{&lt;t}, x, \theta)
+\;}
+\]
+
+<div class="key">
+<span class="tag">关键</span>
+<p>这是<b>恒等式，不是近似</b>。它同时解决两件事：数值稳定（加法不会下溢），以及可微（\(\log\) 的导数是 \(1/x\)，非常干净——这正是最大似然估计和交叉熵里必然出现 \(\log\) 的根本原因）。</p>
+<p>右边是一个<b>标量</b>，不是一串数。这就是「序列 logprob」的准确含义：<b>整个生成序列的联合概率的对数</b>。</p>
+</div>
+
+<h3>1.3 每一项具体怎么算</h3>
+
+<p>单 token 的条件概率来自你已经在 GPT-2 那本书里写过的部分，只是换了个说法。模型前向传播最后一步输出层得到一个长度等于词表大小的向量 \(\text{logits}_t \in \mathbb{R}^{|V|}\)，然后 softmax：</p>
+
+\[
+P(y_t \mid y_{&lt;t}, x, \theta)
+= \text{softmax}(\text{logits}_t)_{y_t}
+= \frac{\exp(\text{logits}_t[y_t])}{\sum_{v \in V} \exp(\text{logits}_t[v])}
+\]
+
+<p>其中求和遍历整个词表。本书 Qwen3 0.6B 的词表大小是 151,936。PyTorch 里对应 <code>torch.log_softmax(logits, dim=-1)</code>，它<b>直接</b>返回对数概率，内部用数值稳定技巧实现，没有真的先算 exp 再取 log。</p>
+
+<div class="warn">
+<span class="tag">注意</span>
+<p>这里 \(y_t\) 是一个<b>已经确定的实际 token</b>，不是采样出的候选。模型已经生成完了 \(y_1 \dots y_T\)，现在回头问「当初这一步模型有多确信」。这个量衡量的就是<b>模型对自己已经做出的选择有多意外</b>。</p>
+<p>推论：\(\text{logits}_t[y_t]\) 只是<b>取一个分量</b>，不是取最大值。所以代码里必须用 <code>gather</code> 按索引取值，<b>不能</b>用 <code>argmax</code>——<code>argmax</code> 问的是「当时最想说什么」，<code>gather</code> 问的是「当时实际说了什么」。</p>
+</div>
+
+<h2 class="deriv">二、代码里的那个 \(-1\)</h2>
+
+<p>这是原文最容易卡住的地方。它来自一个结构性事实：<b>因果掩码（causal mask）</b>。</p>
+
+<h3>2.1 错位一格</h3>
+
+<p>自回归模型的第 \(i\) 个位置只能看到 \(0 \dots i\) 的输入（靠下三角 mask 实现）。所以输出层的第 \(i\) 行预测的是<b>位置 \(i+1\)</b> 的 token：</p>
+
+\[
+\text{logits}[i] = \text{「位置 } i+1 \text{ 的 token 在位置 } 0 \dots i \text{ 条件下的分布」}
+\]
+
+<p>设 <code>token_ids</code> 长度为 \(L = P + T\)。那么「位置 \(i\) 的实际 logprob」这个量要从第 \(i-1\) 行取：</p>
+
+\[
+\text{actual\_logp}[i] \;=\; \text{logprobs}\big[i-1,\; \text{token\_ids}[i]\big]
+\]
+
+<p>把索引从 0 开始数，就是：预测行 \(0 \dots L-2\) 配对实际 token 位置 \(1 \dots L-1\)。对应原文 listing 6.11 的 <code>gather</code> 写法：</p>
+
+<pre><code><span class="tok-kw">def</span> <span class="tok-fn">sequence_logprob</span>(model, token_ids, prompt_len):
+    logits = model(token_ids.unsqueeze(<span class="tok-nu">0</span>)).squeeze(<span class="tok-nu">0</span>).float()
+    logprobs = torch.log_softmax(logits, dim=<span class="tok-nu">-1</span>)   <span class="tok-cm"># 形状 [L, |V|]</span>
+
+    selected = logprobs[:<span class="tok-nu">-1</span>].gather(<span class="tok-nu">1</span>, token_ids[<span class="tok-nu">1</span>:].unsqueeze(<span class="tok-nu">-1</span>)).squeeze(<span class="tok-nu">-1</span>)
+    <span class="tok-kw">return</span> torch.sum(selected[prompt_len <span class="tok-nu">-1</span>:])</code></pre>
+
+<div class="tw">
+<table>
+<thead><tr><th>代码片段</th><th>对应数学</th><th>作用</th></tr></thead>
+<tbody>
+<tr><td><code>logprobs[:-1]</code></td><td>取行 \(0 \dots L-2\)</td><td>最后一行没有「下一个 token」，丢弃</td></tr>
+<tr><td><code>.gather(1, token_ids[1:])</code></td><td>\(\text{logprobs}[i-1,\, \text{token\_ids}[i]]\)</td><td><b>错位配对</b>：从每行 151,936 个值里挑出实际生成的那个 token 的标量值</td></tr>
+<tr><td><code>.squeeze(-1)</code></td><td>—</td><td>压掉 gather 产生的 singleton 维度</td></tr>
+<tr><td><code>selected[prompt_len-1:]</code></td><td>下标 \(P-1 \dots L-2\)</td><td>只取生成部分，<b>排除 prompt</b></td></tr>
+<tr><td><code>torch.sum(...)</code></td><td>\(\sum_{t=1}^{T} \log P(y_t \mid y_{&lt;t}, x, \theta)\)</td><td>1.2 节的求和</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>2.2 为什么是 <code>prompt_len - 1</code> 不是 <code>prompt_len</code></h3>
+
+<p>这是最容易写错的一处。上面已经确立：<code>selected[i]</code> 对应<b>位置 \(i+1\)</b> 的 token。生成部分从位置 \(P\) 开始（<code>token_ids[P]</code> 是第一个生成 token），所以要的是位置 \(P, P+1, \dots, L-1\)，对应 <code>selected</code> 的下标：</p>
+
+\[
+P-1,\; P,\; \dots,\; L-2
+\]
+
+<p>也就是切片 <code>selected[prompt_len - 1:]</code>，长度正好 \(T\)。写成 <code>[prompt_len:]</code> 会<b>把 prompt 的最后一个 token 算进生成部分，同时漏掉第一个生成 token</b>。</p>
+
+<p>原文 listing 6.9 用的是更显式的写法：</p>
+
+<pre><code>start = <span class="tok-fn">len</span>(prompt_ids) <span class="tok-nu">-1</span>      <span class="tok-cm"># = P - 1</span>
+end   = full_ids.shape[<span class="tok-nu">0</span>] <span class="tok-nu">-1</span>   <span class="tok-cm"># = L - 1</span>
+t_idx       = torch.arange(start, end)        <span class="tok-cm"># P-1 … L-2</span>
+next_tokens = full_ids[start<span class="tok-nu">+1</span>: end<span class="tok-nu">+1</span>]  <span class="tok-cm"># P … L-1</span>
+next_token_logps = logprobs[t_idx, next_tokens]</code></pre>
+
+<p>两者数学上完全等价，作者说 <i>listing 6.11</i> 是「同样结果的更紧凑、更快版本」。</p>
+
+<h3>2.3 验证一下数字</h3>
+
+<p>原文给了实测：平均 logprob = <code>-0.061279</code>，序列 logprob = <code>-16.239</code>，并说两者关系是 <code>avg × token 数</code>。反推：</p>
+
+\[
+\frac{16.239}{0.061279} \approx 265
+\]
+
+<p>所以答案有 265 个 token，对得上。</p>
+
+<div class="warn">
+<span class="tag">别被这个数字误导</span>
+<p>平均每个 token 的对数概率是 \(-0.06\)，换算成实际概率是 \(\exp(-0.06) \approx 0.94\)。也就是说模型对这个回答<b>极度确信</b>，几乎每一步都是训练时见过的高频模式。</p>
+<p>但这是 <b>base 模型</b>，输出往往是模板化重复的，所以平均 logprob 会高到离谱。<b>高 logprob 不代表答对，只代表「像训练数据」。</b>这正是第 5 章结尾那个反直觉结论的根源——logprob 会偏爱流畅的错误答案。Table 6.1 里 logprob 只能当辅助信号，verifier 永远是第 3 章那个数学等价判定。</p>
+</div>
+
+<h2 class="deriv">三、mean 还是 sum：全章最重要的一个选择</h2>
+
+<div class="lead">
+<code>torch.mean(next_token_logps)</code> 和 <code>torch.sum(next_token_logps)</code>，<b>一个字符的差别</b>，但对应两个完全不同的问题。第 5 章用 mean，第 6 章 GRPO 用 sum，原因值得讲清楚。
+</div>
+
+<h3>3.1 mean 是长度归一化，为了「可比」</h3>
+
+\[
+\text{avg} = \frac{1}{T}\sum_{t=1}^{T} \log P(y_t \mid y_{&lt;t}, x, \theta) = \frac{1}{T}\log P(y_{1:T} \mid x, \theta)
+\]
+
+<p>除以 \(T\) 得到「每 token 的平均惊讶程度」。用途是<b>跨序列比较</b>。看一个具体例子：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>回答</th><th>token 数</th><th>每步平均 logprob</th><th>sum</th><th>mean</th></tr></thead>
+<tbody>
+<tr><td>答案 A</td><td>5</td><td>−0.1</td><td>−0.5</td><td>−0.1</td></tr>
+<tr><td>答案 B</td><td>500</td><td>−0.1</td><td>−50</td><td>−0.1</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>用 sum 判定，答案 B 会被评为「糟糕 100 倍」。但事实上它<b>每一步都和 A 一样好</b>，只是写长了。mean 消除了长度影响，所以可以拿来<b>打分、排序、选优</b>——这正是第 5 章用它当 confidence scorer 的原因（listing 5.8 的 <code>avg_logprob_answer</code>）。</p>
+
+<h3>3.2 sum 是真实联合概率，为了「求导」</h3>
+
+<p>GRPO 里不用 mean，结构上的原因是：<b>GRPO 给每个 rollout 一个 reward、一个 advantage、一个标量 logprob</b>。三个都是标量，长度归一化在这里会破坏配对关系。</p>
+
+<p>看 1.1 节的公式就清楚了。对单个回答求导：</p>
+
+\[
+\frac{\partial}{\partial \theta} \log P(y_{1:T} \mid x, \theta) = \sum_{t=1}^{T} \frac{\partial}{\partial \theta} \log P(y_t \mid y_{&lt;t}, x, \theta)
+\]
+
+<p>这是<b>可加的</b>——每个 token 各贡献一份梯度，\(T\) 越长总梯度越大。GRPO 的 loss 形式是 \(\mathcal{L} \propto A_i \cdot \log\pi_\theta(y^{(i)})\)，代入：</p>
+
+\[
+\frac{\partial \mathcal{L}}{\partial \theta} = A_i \sum_{t=1}^{T_i} \frac{\partial}{\partial \theta}\log P(y_t \mid y_{&lt;t}, x, \theta)
+\]
+
+<div class="tw">
+<table>
+<thead><tr><th>选择</th><th>梯度量级</th><th>后果</th></tr></thead>
+<tbody>
+<tr><td><b>sum</b></td><td>\(\propto T_i\)</td><td>长回答对参数更新影响更大。<b>有偏</b>，但忠实反映「这个完整序列的联合概率有多小」</td></tr>
+<tr><td><b>mean</b></td><td>\(\propto T_i \cdot \frac{1}{T_i} = 1\)，每个 token 权重一样</td><td><b>丢失了「整个序列多不可能」的信息</b>，把长推理和短推理当等价看待</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>原文的解释是：用 mean 会「<i>unintentionally rescale the learning signal in policy optimization and cause longer and shorter responses to contribute unevenly to the update</i>」，而且「<i>that kind of length-based rescaling is not part of the original GRPO formulation</i>」。</p>
+
+<div class="key">
+<span class="tag">一句话</span>
+<p>mean 问的是「这条回答<b>平均每一步</b>像不像训练数据」，适合<b>打分</b>。sum 问的是「模型<b>整体上</b>有多可能生成这条回答」，适合<b>求导</b>。GRPO 需要的是后者。</p>
+</div>
+
+<h3>3.3 推论：长度偏置，以及它如何解释 Ch7 的 reward hacking</h3>
+
+<p>你可能会想：既然 sum 让长答案梯度更大，模型会不会学会疯狂写长？原文给了一个很清醒的分析。</p>
+
+<p>序列 logprob 随 \(T_i\) <b>线性缩放</b>，所以更长的回答得到更负的 logprob。对两个<b>同样好</b>的答案（\(A_i &gt; 0\) 相同），优化 \(A_i \sum_t \log \pi_t\) 时，长序列的 logprob 天生更小，需要更大的参数变动才能改善，而<b>改善空间的绝对值也更小</b>。原文的措辞：</p>
+
+<blockquote style="margin:1rem 0;padding-left:1rem;border-left:3px solid var(--rule);color:#3a3634">
+For two equally good answers, the optimization implicitly favors the shorter one, since it is cheaper in terms of likelihood. Summed logprobs therefore encourage the model to stop earlier unless producing a longer response is justified by a higher reward.
+</blockquote>
+
+<p>也就是：<b>等 reward 下，模型倾向更早停止。</b>这就是为什么原文说序列 logprob「<i>consistent with their role in GRPO when rewards and advantages are applied at the sequence level</i>」。</p>
+
+<div class="warn">
+<span class="tag">这一条能解释 Ch7.6 的失败</span>
+<p>第 7.6 节的 format reward 实验里，作者观察到 <code>reward_avg</code> 一直很高但 <code>eval_acc</code> 掉，figure 7.19 显示这和 <code>avg_response_len</code> 缩短相关。作者的诊断是模型「过度专注于拿格式分」。</p>
+<p>结合本章的推导可以看到<b>两个力量在合谋</b>：格式奖励让模型学会「套 tag 就拿分」，而序列 logprob 的长度效应让它倾向于<b>套完 tag 就早点收工</b>。思考被压缩，答案质量下降——这是 reward hacking，而根因之一是序列级 logprob 的长度偏置。</p>
+</div>
+
+<h3>3.4 四个 rollout 的实测</h3>
+
+<p>原文 listing 6.12 算了四个回答的序列 logprob：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>回答</th><th>reward</th><th>序列 logprob</th><th>观察</th></tr></thead>
+<tbody>
+<tr><td><code>\boxed{83}</code></td><td>1</td><td>−7.92</td><td>最短 → 最高（最不负）</td></tr>
+<tr><td><code>The final answer is 83</code></td><td>0</td><td>−16.61</td><td>—</td></tr>
+<tr><td><code>The correct answer is \boxed{83}</code></td><td>1</td><td>−20.15</td><td>—</td></tr>
+<tr><td><code>We get \boxed{38}</code></td><td>0</td><td>−23.37</td><td><b>唯一含错误数字 38 → 最低</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>两个观察，作者都点出来了：</p>
+
+<ol class="steps">
+<li><b>短 = 高（较不负）</b>。\(\boxed{83}\) 只有几个 token，在 4 个回答里最「便宜」。这就是 3.3 的长度效应。</li>
+<li><b>唯一答错的那个分数最低</b>。这个 base 模型在 4 次里对 3 次，答错那次的 logprob 也最低——<b>「意外」和「错」正相关</b>。因为训练数据里正确的解法是被大量重复的模式，错误数字则罕见。</li>
+</ol>
+
+<h2 class="deriv">四、Advantage：为什么必须做组内归一化</h2>
+
+<h3>4.1 公式与验算</h3>
+
+\[
+A_i = \frac{r_i - \mu_r}{\sigma_r + \epsilon}, \qquad \mu_r = \frac{1}{N}\sum_{j=1}^{N} r_j
+\]
+
+<pre><code>advantages = (rewards - rewards.mean()) / (rewards.std() + <span class="tok-nu">1e-4</span>)</code></pre>
+
+<p>取原文的 <code>r = [1., 1., 0., 0.]</code> 手算：</p>
+
+\[
+\mu_r = \frac{1+1+0+0}{4} = 0.5
+\]
+
+\[
+\sigma_r = \sqrt{\frac{(1-0.5)^2+(1-0.5)^2+(0-0.5)^2+(0-0.5)^2}{4-1}} = \sqrt{\frac{1.0}{3}} \approx 0.5774
+\]
+
+<p>（分母是 \(n-1\)，因为 PyTorch 的 <code>torch.std</code> 默认取<b>无偏估计</b>）</p>
+
+\[
+A_i = \frac{1-0.5}{0.5774} \approx 0.866, \qquad \frac{0-0.5}{0.5774} \approx -0.866
+\]
+
+<p>对上原文输出的 <code>[0.8659, 0.8659, -0.8659, -0.8659]</code>。✓</p>
+
+<h3>4.2 为什么不是直接用 reward 当权重</h3>
+
+<p>这是最值得想清楚的一步。两个理由：</p>
+
+<h4>理由一：绝对奖励没有意义，排序才有意义</h4>
+
+<p>策略梯度定理的形式是：</p>
+
+\[
+\nabla_\theta J(\theta) = \mathbb{E}_{y \sim \pi_\theta(\cdot|x)}\Big[\nabla_\theta \log \pi_\theta(y|x) \cdot A(x,y)\Big]
+\]
+
+<p>其中 <b>advantage</b> 其实是 \(A = Q - V\)：把「绝对好坏」减去「这个状态下平均能拿多少」。减掉 baseline \(V\) 的目的是让梯度只反映<b>「比预期好多少」</b>，而不是在所有状态上无差别地往好的方向推。</p>
+
+<p>跨 prompt 而言 reward 的绝对值<b>不可比</b>：一道题 4 个 rollout 全对（\(r=[1,1,1,1]\)）和另一道题的全错，reward 都是常数 1 或 0，但难度天差地别。</p>
+
+<div class="key">
+<span class="tag">GRPO 的核心简化</span>
+<p>GRPO 把 baseline <b>换成「同一组 rollout 的平均 reward」</b>。这是一个 <b>Monte Carlo 估计的 baseline</b>——不需要训练一个额外的 critic 网络（value network）来拟合 \(V\)，直接用同批其他样本的均值当基线。</p>
+<p>这就是 GRPO 相对 PPO 最大的工程优势：<b>不需要 critic</b>，显存和训练复杂度大幅下降。原文特别加了 Note 强调：<i>the "GR" (group relative) refers to the fact that GRPO generates multiple answers per prompt and compares them relative to each other</i>。</p>
+</div>
+
+<h4>理由二：不中心化会让模型整体漂移</h4>
+
+<p>假设 \(r = [1,1,1,1]\)，全为正。那么 \(\max \log \pi\) 等价于<b>无条件</b>提高这批序列的概率，不管它们到底好不好。碰上全错的组（\(r=[0,0,0,0]\)），损失又变成无条件压低。<b>净效果是模型在两个极端之间来回震荡，学不到方向性。</b></p>
+
+<p>减掉均值后 \(A\) 之和为 0（中心化），梯度就纯粹表达「哪边该升、哪边该降」的<b>相对</b>关系。原文验证了这一点（第 7.3.1 节）：<code>adv_avg</code> 恒为 <code>0.0000</code>，作者说「this metric mainly serves as a sanity check that the implementation behaves as expected」。</p>
+
+<h3>4.3 除以标准差再加一层</h3>
+
+<p>让不同难度题目的信号强度一致。看一个对比：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>reward 向量</th><th>难度</th><th>原始 \(A_i\)（未标准化）</th><th>标准化后 \(A_i\)</th></tr></thead>
+<tbody>
+<tr><td>\([0, 0, 0, 1]\)</td><td>难（只有 1 个对）</td><td>\([-0.25, -0.25, -0.25, 0.75]\)</td><td>\([-0.5, -0.5, -0.5, +1.5]\)</td></tr>
+<tr><td>\([0, 0, 1, 1]\)</td><td>较易（2 个对）</td><td>\([-0.5, -0.5, 0.5, 0.5]\)</td><td>\([-0.866, -0.866, +0.866, +0.866]\)</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>除以标准差后，两组 \(A\) 的标准差都回到约 1（这正是标准化的定义），<b>学习信号强度与题目难度解耦</b>。注意分量不必相同——难例里唯一答对的那个会拿到更大的正优势（\(+1.5\) vs \(+0.866\)），但整体尺度已被拉齐。这解释了为什么第 7 章要监控 <code>adv_std</code>：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>adv_std 范围</th><th>含义</th></tr></thead>
+<tbody>
+<tr><td>接近 1</td><td>信号尺度良好，通常训练稳定</td></tr>
+<tr><td>非常小</td><td>学习信号消失，常伴随 reward collapse（组内全对或全错）</td></tr>
+<tr><td>非常大</td><td>更新过于尖锐，可能破坏训练稳定性</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>4.4 零 advantage：全对或全错</h3>
+
+<p>如果 \(r = [0, 0]\)（原文 listing 6.15 的实际输出就是 <code>'rewards': [0.0, 0.0]</code>）：</p>
+
+\[
+A_i = \frac{0 - 0}{0 + \epsilon} = 0 \quad\Longrightarrow\quad \mathcal{L} = 0 \quad\Longrightarrow\quad \nabla_\theta = 0
+\]
+
+<p>原文：<i>if we were training the model, the gradient would be zero and the model parameters would not be updated.</i></p>
+
+<div class="key">
+<span class="tag">这是 desirable 的</span>
+<p>这组 rollout 里<b>没有可学的信息</b>：4 个全对说明模型已会做这题，4 个全错说明模型完全不知道往哪走。两种情况下梯度为 0 是<b>正确行为</b>——不在无信息的数据上浪费算力，也不引入噪声。</p>
+<p>但它同时是 GRPO <b>数据效率的主要瓶颈</b>：真实训练中大量 prompt 会落入这个区间。这正是 DAPO 的两条改进针对的——<b>过滤零梯度样本</b>、<b>active sampling</b>（超采样那些「有对有错」的组）。</p>
+</div>
+
+<div class="eq-note">
+<b>顺带一提 listing 6.15 的细节：</b>两个 rollout 的 <code>gen_len</code> 分别是 4 和 256。前者 4 个 token 就吐了 <code>&lt;|endoftext|&gt;</code>，后者跑满了 256 上限。这正是 DAPO 那条「<b>filter out 退化的 rollout</b>」要处理的情况。
+</div>
+
+<h2 class="deriv">五、策略梯度损失：把信号接回参数</h2>
+
+<h3>5.1 公式的嵌套结构</h3>
+
+\[
+\mathcal{L}_{\text{pg}} = -\frac{1}{N}\sum_{i=1}^{N} A_i \left[\sum_{t=1}^{T_i} \log \pi_\theta\big(y_t^{(i)} \mid y_{&lt;t}^{(i)}, x^{(i)}\big)\right]
+\]
+
+<div class="eq-note">
+<b>注意这个公式的两层结构，各司其职：</b><br>
+内层 \(\sum_{t=1}^{T_i}\) = <b>序列 logprob</b>（6.8 节算的，对<b>单个回答内部</b>求和，各 \(T_i\) 不同）<br>
+外层 \(\frac{1}{N}\sum_i\) = <b>跨 rollout 平均</b>（对<b>不同的回答</b>平均，\(N\) 相同）
+</div>
+
+<pre><code>logps   = torch.stack(rollout_logps)                    <span class="tok-cm"># 形状 [N]</span>
+pg_loss = -(advantages.detach() * logps).mean()      <span class="tok-cm"># 标量</span></code></pre>
+
+<h3>5.2 三个细节</h3>
+
+<h4>负号：最大化转最小化</h4>
+
+<p>PyTorch 优化器只会<b>最小化</b> loss，而 RL 想要<b>最大化</b>：</p>
+
+\[
+\max_\theta \frac{1}{N}\sum_{i=1}^{N} A_i \log \pi_\theta(y^{(i)} \mid x^{(i)})
+\]
+
+<p>而 \(\max f \iff \min(-f)\)，且是<b>严格等价</b>：\(\nabla(-f) = -\nabla f\)，优化器往负梯度方向走，就等价于往 \(\nabla f\) 方向走。参数更新完全相同。</p>
+
+<h4><code>.detach()</code>：切断梯度</h4>
+
+<p>advantage 来自 reward，reward 是 0/1 的<b>常数</b>（答对就是 1，答错就是 0），数值上是常量，<b>不该有梯度</b>。<code>detach()</code> 把这个节点从计算图摘出来。</p>
+
+<p>如果不 detach，反向传播会试图穿过 advantage 计算回传到 reward，而 reward 又来自生成过程——那等于在「通过修改模型参数来改变奖励」，是在优化 verifier，不是在优化策略。</p>
+
+<p>原文的措辞：<i>they are treated as fixed learning signals during the policy update.</i> <b>记住这个原则：advantage 是给定的学习信号，不是需要优化的东西。</b></p>
+
+<h3>5.3 手算验证</h3>
+
+<p>用 3.4 节的实测数据：</p>
+
+\[
+\begin{aligned}
+\text{logps} &= [-7.9243,\ -20.1546,\ -16.6130,\ -23.3677] \\
+A &= [0.8659,\ 0.8659,\ -0.8659,\ -0.8659]
+\end{aligned}
+\]
+
+\[
+\begin{aligned}
+\mathcal{L}_{\text{pg}} &= -\frac{1}{4}\Big[(-7.9243)(0.8659) + (-20.1546)(0.8659) \\
+&\qquad\qquad\quad + (-16.6130)(-0.8659) + (-23.3677)(-0.8659)\Big] \\[4pt]
+&= -\frac{1}{4}\big[-6.862 - 17.452 + 14.386 + 20.233\big] \\[4pt]
+&= -\frac{10.305}{4} \approx \mathbf{-2.576}
+\end{aligned}
+\]
+
+<p>对上原文的 <code>tensor(-2.5764)</code>。✓</p>
+
+<h3>5.4 逐项读懂这个 \(-2.576\)</h3>
+
+<p>它不是 0，说明当前策略<b>还没达到这组的最优状态</b>。看每一项的符号：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>rollout</th><th>\(A_i\)</th><th>\(\log \pi\)</th><th>乘积</th><th>梯度的作用</th></tr></thead>
+<tbody>
+<tr><td><code>\boxed{83}</code></td><td>+0.87</td><td>−7.92</td><td><b>−6.86</b></td><td>✅ 正确 → <b>推高</b>其概率</td></tr>
+<tr><td><code>The correct answer is \boxed{83}</code></td><td>+0.87</td><td>−20.15</td><td><b>−17.45</b></td><td>✅ 正确 → <b>强烈</b>推高</td></tr>
+<tr><td><code>The final answer is 83</code></td><td>−0.87</td><td>−16.61</td><td><b>+14.39</b></td><td>❌ 错误 → <b>压低</b>其概率</td></tr>
+<tr><td><code>We get \boxed{38}</code></td><td>−0.87</td><td>−23.37</td><td><b>+20.23</b></td><td>❌ 错误 → <b>更强地</b>压低</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>机制一句话：<b>\(A &gt; 0\) 的项在 \(\mathcal{L}\) 里是负数，最小化 \(\mathcal{L}\) 就是把它们往更负推，即最大化 \(\log\pi\)，即提高这批正确回答的概率。\(A &lt; 0\) 的项贡献正数，最小化会压低它。</b></p>
+
+<p>再看第二行：\(-17.45\) 的绝对值比第一行的 \(-6.86\) 大得多。<b>一个又长又正确的回答，拿到的梯度权重远大于一个短而正确的回答。</b>这正是 3.2 和 3.3 讨论的序列级 logprob 效应。</p>
+
+<div class="eq-note">
+<b>由此理解 DAPO 的 token-level loss：</b>它要把外层平均里的 \(1/N\) 重新分配回每个 token，让长回答不再获得不成比例的权重。理解了这一点，你就知道它为什么要改、往哪改。
+</div>
+
+<h2 class="deriv">六、完整版 GRPO（Ch7 补上的两项）</h2>
+
+<p>上面是最简版本，<code>pg_loss</code> 就是总 loss。真实的 GRPO 还要加裁剪和 KL：</p>
+
+\[
+\mathcal{L} = \underbrace{-\frac{1}{N}\sum_{i=1}^{N} \min\Big(\rho_i A_i,\; \mathrm{clip}(\rho_i,\, 1-\epsilon,\, 1+\epsilon)\, A_i\Big)}_{\text{clipped policy ratio}} + \beta \underbrace{\hat{D}_{\text{KL}}\big(\pi_\theta \,\|\, \pi_{\text{ref}}\big)}_{\text{KL 正则}}
+\]
+
+\[
+\text{其中}\quad \rho_i = \frac{\pi_\theta(y^{(i)} \mid x^{(i)})}{\pi_{\theta_{\text{old}}}(y^{(i)} \mid x^{(i)})} = \exp\big(\log\pi_\theta - \log\pi_{\theta_\text{old}}\big)
+\]
+
+<p>这里有个本章埋下的关键点：<b>6.9 算 logprob 时用的是 <code>model.eval()</code> 的同一个模型，没有第二个副本。</b>而 \(\rho_i\) 的分母需要「采样时的策略」\(\pi_{\theta_\text{old}}\)。Ch7 用 <code>inner_epochs</code> 控制这件事：</p>
+
+<div class="warn">
+<span class="tag">为什么 Ch7.2 的 loss 恒为 0</span>
+<p>只做 1 次内层更新（<code>--inner_epochs 1</code>）时，模型还没变，<b>\(\rho_i \equiv 1\)</b>，裁剪项恒等于 1。而因为 advantage 均值为 0、且只有一个优势项，标量 policy loss 就等于 0。</p>
+<p>原文的解释：<i>loss = 0 is a computational artifact caused by the default settings. It mainly reflects that the run uses a single inner epoch and no KL term, which makes the logged scalar loss uninformative.</i> 修复命令是 <code>--kl_coeff 0.001 --inner_epochs 2</code>。</p>
+</div>
+
+<h2 class="deriv">七、全流程与自查</h2>
+
+<pre><code>prompt x
+  │
+  ├─(1) 采样 N 个 rollout ──────────────→ y⁽¹⁾, y⁽²⁾, ..., y⁽ᴺ⁾
+  │                                              │
+  ├─(2) 验证器 reward_rlvr ─────────────→ r = [1, 1, 0, 0]
+  │                                              │
+  ├─(3) 组内归一化 advantage ───────────→ A = [+0.87, +0.87, -0.87, -0.87]
+  │                                              │        第四节
+  ├─(4) 序列 logprob（对 log 概率求和）────→ logπ = [-7.92, -20.15, -16.61, -23.37]
+  │                                              │        第一、三节
+  └─(5) 策略梯度损失 ───────────────────→ L = -mean(A ⊙ logπ) = -2.576
+  │                                              │        第五节
+  └─(6) loss.backward() + optimizer.step()  ← 完整版还要加 clip + KL</code></pre>
+
+<div class="tw">
+<table>
+<thead><tr><th>小节</th><th>数学</th><th>作用</th><th>唯一要记的点</th></tr></thead>
+<tbody>
+<tr><td>6.8</td><td>链式法则 + 取对数</td><td>把「整个序列的可能性」变成可加、可微的标量</td><td>sum 是真实联合概率；mean 是长度归一化</td></tr>
+<tr><td>6.7</td><td>组内中心化 + 标准化</td><td>把绝对奖励变成相对信号，去掉 baseline</td><td>减均值 = 无 critic 的 advantage 估计</td></tr>
+<tr><td>6.9</td><td>加权平均 + 取负</td><td>把信号接回梯度</td><td>更新方向由 \(A_i\) 的<b>符号</b>决定</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>三个自查题</h3>
+
+<p>如果下面三件事你能独立完成，这一章就真的通了：</p>
+
+<ol class="steps">
+<li><b>手推出 −2.576 这个数</b>。能推出来说明 6.9 完全懂了（含符号方向）。</li>
+<li><b>解释为什么是 <code>prompt_len - 1</code> 而不是 <code>prompt_len</code></b>。能说明就懂了 6.8 的错位一格和索引对齐。</li>
+<li><b>说明 <code>rewards=[0,0]</code> 时 loss 为什么是 0，以及这为什么是好事</b>。能说明就懂了 advantage 的全部作用。</li>
+</ol>
+
+<p>剩下的都是实现细节：<code>gather</code> 的用法、<code>torch.std</code> 的无偏性、<code>detach()</code> 的位置。</p>
+
+<nav class="deriv-nav">
+<a href="page-57.html"><span class="dir">原文</span>6.7 组内归一化的起点</a>
+<a href="page-59.html"><span class="dir">原文</span>6.9 策略梯度损失</a>
+<a href="page-48-detail.html"><span class="dir">详解</span>5.6 logprob 打分与长度归一化</a>
+<a href="page-67-detail.html"><span class="dir">详解</span>7.4 裁剪比率的推导</a>
+<a href="page-70-detail.html"><span class="dir">详解</span>7.5 KL 项的方向与失效</a>
+</nav>
+
+</main>
+
+<script defer src="assets/katex/katex.min.js"></script>
+<script defer src="assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>

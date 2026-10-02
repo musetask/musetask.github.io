@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>5.2 Loading a pretrained model · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-40.html">
+<link rel="next" href="page-42.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 41 页 / 共 108 页</span></div>
+<h2 id="h2-loading-a-pretrained-model-2"><span class="num">5.2</span>Loading a pretrained model</h2>
+<p>As in the previous chapter, we’ll begin by loading the model and tokenizer we’ll use throughout this chapter.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">import</span> torch
+<span class="tok-kw">from</span> reasoning_from_scratch.ch02 <span class="tok-kw">import</span> get_device
+<span class="tok-kw">from</span> reasoning_from_scratch.ch03 <span class="tok-kw">import</span> (
+     load_model_and_tokenizer
+)
+device = get_device<span class="tok-kw">()</span>
+device = torch.device<span class="tok-kw">(</span>"cpu"<span class="tok-kw">)</span>
+model, tokenizer = load_model_and_tokenizer<span class="tok-kw">(</span>
+    which_model="base",
+    device=device,
+    use_compile=<span class="tok-kw">False</span>
+<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 5.1</span>Loading the tokenizer and base model</figcaption></figure>
+<p>The preceding code runs on the CPU by default, to ensure results that are generally more consistent with those shown in this chapter. Small numerical differences can still occur on the CPU, depending on the operating system and machine, but these differences are typically smaller and more predictable than those observed across different accelerator backends.</p>
+<p>Sections 5.4 and 5.5 will use computations involving very small numbers with many digits after the decimal point, and these are more sensitive to device choice and low-level implementation details. This is not a problem in practice, but such mismatches can be confusing on a first read-through. For that reason, I recommend starting with the CPU device and considering MPS or CUDA devices later.</p>
+<p>To ensure that the model is loaded correctly, let’s use it with the temperature and top-<em>p</em> sampling code from the previous chapter on a MATH-500 prompt.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.ch03 <span class="tok-kw">import</span> render_prompt
+<span class="tok-kw">from</span> reasoning_from_scratch.ch04 <span class="tok-kw">import</span> (
+    generate_text_stream_concat_flex,
+    generate_text_top_p_stream_cache
+)
+raw_prompt = (
+    "Half the value of $3x-<span class="tok-fn">9</span>$ <span class="tok-kw">is</span> $x+<span class="tok-fn">37</span>$. "
+    "What <span class="tok-kw">is</span> the value of $x$?"
+)
+prompt = render_prompt<span class="tok-kw">(</span>raw_prompt<span class="tok-kw">)</span>
+prompt_cot = prompt + "\n\nExplain step by step."
+torch.manual_seed<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>
+response_1 = generate_text_stream_concat_flex<span class="tok-kw">(</span>
+    model, tokenizer, prompt_cot, device,
+    max_new_tokens=<span class="tok-fn">2048</span>, verbose=<span class="tok-kw">True</span>,
+    generate_func=generate_text_top_p_stream_cache,
+    temperature=<span class="tok-fn">0.9</span>,
+    top_p=<span class="tok-fn">0.9</span>
+<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 5.2</span>Generating text with temperature scaling and top-p sampling</figcaption></figure>
+<p>The model produces the following response:</p>
+<pre><code class="language-bash"> The problem states that half the value of 3x−9 is equal to x+37. We need to
+find the value of \(x\).
+### Step 2: Translate the problem into an equation
+...
+### Final Answer</code></pre>
+<pre><code class="language-python">\[
+\boxed{83}
+\]</code></pre>
+<p>Because we are using temperature scaling and top-<em>p</em> sampling, changing the random seed produces a different response:</p>
+<pre><code class="language-python">torch.manual_seed<span class="tok-kw">(</span><span class="tok-fn">3</span><span class="tok-kw">)</span>
+response_2 = generate_text_stream_concat_flex<span class="tok-kw">(</span>
+    model, tokenizer, prompt_cot, device,
+    max_new_tokens=<span class="tok-fn">2048</span>, verbose=<span class="tok-kw">True</span>,
+    generate_func=generate_text_top_p_stream_cache,
+    temperature=<span class="tok-fn">0.9</span>,
+    top_p=<span class="tok-fn">0.9</span>,
+<span class="tok-kw">)</span></code></pre>
+<p>This time, the model responds as follows:</p>
+<pre><code class="language-python"> We start with the given equation:
+\[
+\frac{1}{2} \times (3x - 9) = x + 37
+\]
+...</code></pre>
+<pre><code class="language-python">Final Answer:</code></pre>
+<pre><code class="language-python">\[
+\boxed{83}
+\]</code></pre>
+<p>In both cases, the model produces the correct final answer (<code>83</code>). The second response is much shorter, which we can confirm by printing the number of characters or tokens in each response:</p>
+<pre><code class="language-python">print<span class="tok-kw">(</span>"Response <span class="tok-fn">1</span> characters:", len<span class="tok-kw">(</span>response_1<span class="tok-kw">))</span>
+print<span class="tok-kw">(</span>"Response <span class="tok-fn">1</span> tokens:", len<span class="tok-kw">(</span>tokenizer.encode<span class="tok-kw">(</span>response_1<span class="tok-kw">)))</span>
+print<span class="tok-kw">(</span>"\nResponse 2 characters:", len(response_2))
+print<span class="tok-kw">(</span>"Response <span class="tok-fn">2</span> tokens:", len<span class="tok-kw">(</span>tokenizer.encode<span class="tok-kw">(</span>response_2<span class="tok-kw">)))</span></code></pre>
+<p>This is the result:</p>
+<pre><code class="language-python">Response 1 characters: 1419
+Response 1 tokens: 534
+Response 2 characters: 533
+Response 2 tokens: 231</code></pre>
+<p>A shorter response is not necessarily better. If two responses reach the same correct answer, judging which is better is not straightforward. It often depends on human preferences regarding clarity, usefulness, and the partial correctness of the intermediate steps.</p>
+<p>Scoring the intermediate steps of a response remains an active research area (see appendix A), and methods such as process reward models, which evaluate the reasoning itself, do not always yield better outputs in practice.</p>
+<p>If the qualitative value of two responses is comparable, one thing is certain: shorter responses are cheaper because they require fewer tokens to be generated, and these responses are therefore preferred.</p>
+<nav class="pager"><a class="prev" href="page-40.html" rel="prev"><span class="dir">上一页</span><span class="t">Choosing temperature and top-p settings</span></a><a class="next" href="page-42.html" rel="next"><span class="dir">下一页</span><span class="t">5.3 Scoring LLM responses with a rule-based score</span></a></nav>
+</main>
+</body>
+</html>

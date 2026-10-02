@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>Who should read this book · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="index.html">
+<link rel="next" href="page-03.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 2 页 / 共 108 页</span></div>
+<h2 id="h2-who-should-read-this-book">Who should read this book</h2>
+<p><em>Build a Reasoning Model (From Scratch)</em> is for machine learning enthusiasts, engineers, researchers, students, and software developers who want a practical understanding of how reasoning models work and how to implement the main techniques behind them. It is written for readers who want to go beyond high-level descriptions and see how these systems are built, evaluated, and improved in code.</p>
+<p>The most important prerequisite is solid Python experience. Prior exposure to machine learning, deep learning, or large language models is helpful, but you do not need to be an expert. The book is intended to be approachable for motivated beginners while still offering enough technical depth for experienced practitioners.</p>
+<p>The book uses math examples frequently because they are practical for reasoning research and easy to verify automatically. However, advanced mathematics is not required. Familiarity with basic algebra and a general comfort level with vectors and matrices is useful, though, to follow some of the code implementations.</p>
+<p>Some prior PyTorch experience may help you move more quickly through the code, but it is not required. The focus of the book is on understanding reasoning methods and implementing them clearly, not on mastering every detail of a deep learning framework. Readers who have already read <em>Build a Large Language Model (From Scratch)</em> may recognize some broader LLM concepts, but this book is fully self-contained.</p>
+<h2 id="h2-how-this-book-is-organized-a-road-map">How this book is organized: A road map</h2>
+<p>This book is organized around a practical development pipeline for reasoning models. We’ll begin with a conventional pretrained LLM, add evaluation so that we can measure progress, and then explore two main ways of improving reasoning: inference-time methods and additional training. Because later chapters build directly on the code and ideas introduced earlier, the book is best read in sequence.</p>
+<p>Chapter 1 introduces the practical meaning of reasoning in the context of LLMs. It explains how reasoning models differ from conventional LLMs, it reviews the standard LLM training pipeline at a high level, and it introduces the main approaches used to improve reasoning.</p>
+<p>Chapter 2 establishes the starting point by loading and using a pretrained base LLM. It covers the coding environment, tokenization, step-by-step text generation, and practical speedups such as key-value caching and model code compilation.</p>
+<p>Chapter 3 adds evaluation. It shows how to extract final answers reliably, verify correctness against reference solutions, and build an evaluation pipeline for math-oriented reasoning tasks.</p>
+<p>With that foundation in place, chapters 4 and 5 focus on inference-time scaling, improving reasoning without changing the model weights. Chapter 4 covers prompt-based reasoning, diverse decoding, and self-consistency. Chapter 5 extends this direction with self-refinement, simple scoring strategies, confidence estimation, and iterative answer improvement.</p>
+<p>Chapters 6 through 8 implement training-time methods. Chapter 6 introduces reinforcement learning for reasoning models, with a focus on reinforcement learning with verifiable rewards (RLVR) and Group Relative Policy Optimization (GRPO). Chapter 7 builds on that implementation by covering practical monitoring, common training-failure modes, reward hacking, and useful extensions such as KL regularization and response-format rewards. Chapter 8 concludes the main text with distillation, showing how to create teacher-generated reasoning datasets, train a smaller student model, and evaluate the distilled result.</p>
+<p>The appendices complement the main chapters. Appendix A provides references and further reading, appendix B summarizes the exercise solutions, appendix C presents the Qwen3 source code used throughout the book, appendix D discusses larger LLM variants, appendix E covers batching and throughput-oriented execution, appendix F surveys additional LLM evaluation approaches, and appendix G shows how to build a chat interface around the model.</p>
+<h2 id="h2-about-the-code">About the code</h2>
+<p>To make it easy to follow along, the code examples in this book are available from the Manning book page at <a href="https://www.manning.com/books/build-a-reasoning-model-from-scratch">https://www.manning.com/books/build-a-reasoning-model-from-scratch</a> as well as in the companion GitHub repository at <a href="https://github.com/rasbt/reasoning-from-scratch">https://github.com/rasbt/reasoning-from-scratch</a>. Solutions to the exercises are summarized in appendix B, and the corresponding code files are linked from the chapter folders in the repository. You can get executable snippets of code from the liveBook (online) version of this book at <a href="https://livebook.manning.com/book/build-a-reasoning-model-from-scratch">https://livebook.manning.com/book/build-a-reasoning-model-from-scratch</a>.</p>
+<p>This book contains many examples of source code both in numbered listings and in line with normal text. In both cases, source code is formatted in a <code>fixed-width</code> <code>font like</code> <code>this</code> to separate it from ordinary text.</p>
+<p>In many cases, the original source code has been reformatted; we’ve added line breaks and reworked indentation to accommodate the available page space in the book. Additionally, comments in the source code have often been removed from the listings when the code is described in the text. Code annotations accompany many of the listings, highlighting important concepts.</p>
+<p>One of the key goals of this book is accessibility, so the code examples have been carefully designed to run efficiently on a regular laptop, without the need for any special hardware. But if you do have access to a GPU, certain sections provide helpful tips on scaling up the datasets and models to take advantage of that extra power.</p>
+<p>The code in the main chapters is designed to be approachable and to run on consumer hardware. The inference and evaluation chapters work well on CPUs and GPUs, while the training-oriented chapters benefit from access to a GPU if you want to reproduce the larger experiments. Throughout the book, we use PyTorch together with a pretrained open source Qwen3 model, and appendix C provides the underlying Qwen3 implementation for readers who want to inspect that code in more detail.</p>
+<h2 id="h2-livebook-discussion-forum">liveBook discussion forum</h2>
+<p>Purchase of <em>Build a Reasoning Model (From Scratch) </em>includes free access to liveBook, Manning’s online reading platform. Using liveBook’s exclusive discussion features, you can attach comments to the book globally or to specific sections or paragraphs. It’s a snap to make notes for yourself, ask and answer technical questions, and receive help from the author and other users. To access the forum, go to <a href="https://livebook.manning.com/book/build-a-reasoning-model-from-scratch/discussion">https://livebook.manning.com/book/build-a-reasoning-model-from-scratch/discussion</a>. </p>
+<p>Manning’s commitment to our readers is to provide a venue where a meaningful dialogue between individual readers and between readers and the author can take place. It is not a commitment to any specific amount of participation on the part of the author, whose contribution to the forum remains voluntary (and unpaid). We suggest you try asking them some challenging questions lest their interest stray! The forum and the archives of previous discussions will be accessible from the publisher’s website as long as the book is in print.</p>
+<h2 id="h2-other-online-resources">Other online resources</h2>
+<p>Interested in the latest AI and large language model (LLM) research trends?</p>
+<ul><li>Check out my blog at <a href="https://magazine.sebastianraschka.com">https://magazine.sebastianraschka.com</a>, where I regularly discuss the latest AI research with a focus on LLMs.</li></ul>
+<p>Need help getting up to speed with deep learning and PyTorch?</p>
+<ul><li>I offer several free courses on my website at <a href="https://sebastianraschka.com/teaching">https://sebastianraschka.com/teaching</a>. These resources can help you quickly get up to speed with the latest techniques.</li></ul>
+<p>Looking for bonus materials related to the book?</p>
+<ul><li>Visit the book’s GitHub repository at <a href="https://github.com/rasbt/reasoning-from-scratch">https://github.com/rasbt/reasoning-from-scratch</a> to find additional resources and examples to supplement your learning.</li></ul>
+<nav class="pager"><a class="prev" href="index.html" rel="prev"><span class="dir">上一页</span><span class="t">开篇</span></a><a class="next" href="page-03.html" rel="next"><span class="dir">下一页</span><span class="t">about the author</span></a></nav>
+</main>
+</body>
+</html>

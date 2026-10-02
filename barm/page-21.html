@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>3.2 Loading a pretrained model to generate text · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-20.html">
+<link rel="next" href="page-22.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 21 页 / 共 108 页</span></div>
+<h2 id="h2-loading-a-pretrained-model-to-generate-text"><span class="num">3.2</span>Loading a pretrained model to generate text</h2>
+<p>In this section, we begin implementing the verifier by loading the pretrained LLM introduced in the previous chapter and configuring it to generate answers. This will lay the foundation for the later steps in figure 3.3, where we’ll extract, normalize, and verify those answers. It will also set up a reusable model-loading path for later chapters, where we’ll compare different reasoning methods and need a consistent way to measure whether they actually improve the model.</p>
+<p>We will use the same pretrained base model that we used in chapter 2. For convenience and reuse in future chapters, we’ll wrap the model-loading logic in a <code>load_ model_and_tokenizer</code> function call, as shown in the following listing.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">from</span> pathlib <span class="tok-kw">import</span> Path
+<span class="tok-kw">import</span> torch
+<span class="tok-kw">from</span> reasoning_from_scratch.ch02 <span class="tok-kw">import</span> (
+    get_device
+)
+<span class="tok-kw">from</span> reasoning_from_scratch.qwen3 <span class="tok-kw">import</span> (
+    download_qwen3_small,
+    Qwen3Tokenizer,
+    Qwen3Model,
+    QWEN_CONFIG_06_B
+)
+<span class="tok-kw">def</span> load_model_and_tokenizer(
+    which_model, device, use_compile, local_dir=<span class="tok-st">"qwen3"</span>
+):
+    <span class="tok-kw">if</span> which_model == <span class="tok-st">"base"</span>:
+        download_qwen3_small<span class="tok-kw">(</span>
+            kind=<span class="tok-st">"base"</span>, tokenizer_only=<span class="tok-kw">False</span>, out_dir=local_dir
+        <span class="tok-kw">)</span>
+        tokenizer_path = Path<span class="tok-kw">(</span>local_dir<span class="tok-kw">)</span> / <span class="tok-st">"tokenizer-base.json"</span>
+        model_path = Path<span class="tok-kw">(</span>local_dir<span class="tok-kw">)</span> / <span class="tok-st">"qwen3-0.6B-base.pth"</span>
+        tokenizer = Qwen3Tokenizer<span class="tok-kw">(</span>tokenizer_file_path=tokenizer_path<span class="tok-kw">)</span>
+    <span class="tok-kw">elif</span> which_model == <span class="tok-st">"reasoning"</span>:
+        download_qwen3_small<span class="tok-kw">(</span>
+            kind=<span class="tok-st">"reasoning"</span>, tokenizer_only=<span class="tok-kw">False</span>, out_dir=local_dir
+        <span class="tok-kw">)</span>
+        tokenizer_path = Path<span class="tok-kw">(</span>local_dir<span class="tok-kw">)</span> / <span class="tok-st">"tokenizer-reasoning.json"</span>
+        model_path = Path<span class="tok-kw">(</span>local_dir<span class="tok-kw">)</span> / <span class="tok-st">"qwen3-0.6B-reasoning.pth"</span></code></pre><figcaption><span class="lbl">Listing 3.1</span>Loading a pretrained model</figcaption></figure>
+<pre><code class="language-python">        tokenizer = Qwen3Tokenizer<span class="tok-kw">(</span>
+            tokenizer_file_path=tokenizer_path,
+            apply_chat_template=<span class="tok-kw">True</span>,
+            add_generation_prompt=<span class="tok-kw">True</span>,
+            add_thinking=<span class="tok-kw">True</span>,
+        <span class="tok-kw">)</span>
+    <span class="tok-kw">else</span>:
+        <span class="tok-kw">raise</span> ValueError<span class="tok-kw">(f</span><span class="tok-st">"Invalid choice: which_model=</span>{which_model}<span class="tok-st">"</span><span class="tok-kw">)</span>
+    model = Qwen3Model<span class="tok-kw">(</span>QWEN_CONFIG_06_B<span class="tok-kw">)</span>
+    model.load_state_dict<span class="tok-kw">(</span>torch.load<span class="tok-kw">(</span>model_path<span class="tok-kw">))</span>
+    model.to<span class="tok-kw">(</span>device<span class="tok-kw">)</span>
+    <span class="tok-kw">if</span> use_compile:
+        torch._dynamo.config.allow_unspec_int_on_nn_module = <span class="tok-kw">True</span>
+        model = torch.compile<span class="tok-kw">(</span>model<span class="tok-kw">)</span>
+    <span class="tok-kw">return</span> model, tokenizer</code></pre>
+<pre><code class="language-bash">WHICH_MODEL = <span class="tok-st">"base"</span>
+device = get_device<span class="tok-kw">()</span>
+<span class="tok-cm"># device = torch.device("cpu")</span>
+model, tokenizer = load_model_and_tokenizer<span class="tok-kw">(</span>
+    which_model=WHICH_MODEL,
+    device=device,
+    use_compile=<span class="tok-kw">False</span>
+<span class="tok-kw">)</span></code></pre>
+<p>By default, listing 3.1 loads the base model, just as in chapter 2. </p>
+<p>An optional variant is the official Qwen3 reasoning model, which the Qwen3 team trained on top of the base model using reasoning-specific methods. This is not the custom reasoning model that we’ll build later in the book. Instead, we’ll use it here as a reference point. You can load it by setting <code>WHICH_MODEL = "reasoning"</code> in listing 3.1, so that you can later compare its evaluation results with those of the base model.</p>
+<p>Now that we have loaded the model, we can use the text generation function from chapter 2 to generate text, as shown in the following listing.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.ch02 <span class="tok-kw">import</span> (
+    generate_text_basic_stream_cache
+)
+prompt = (
+    <span class="tok-kw">r</span><span class="tok-st">"If $a+b=3$ and $ab=\tfrac{13}{6}$, "</span>
+    <span class="tok-kw">r</span><span class="tok-st">"what is the value of $a^2+b^2$?"</span>
+)</code></pre><figcaption><span class="lbl">Listing 3.2</span>Generating model outputs</figcaption></figure>
+<pre><code class="language-python">input_token_ids_tensor = torch.tensor<span class="tok-kw">(</span>
+    tokenizer.encode<span class="tok-kw">(</span>prompt<span class="tok-kw">)</span>,
+    device=device
+<span class="tok-kw">)</span>.unsqueeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span></code></pre>
+<pre><code class="language-python">all_token_ids = []
+<span class="tok-kw">for</span> token <span class="tok-kw">in</span> generate_text_basic_stream_cache<span class="tok-kw">(</span>
+    model=model,
+    token_ids=input_token_ids_tensor,
+    max_new_tokens=<span class="tok-fn">2048</span>,
+    eos_token_id=tokenizer.eos_token_id
+<span class="tok-kw">)</span>:
+    token_id = token.squeeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>
+    decoded_id = tokenizer.decode<span class="tok-kw">(</span>token_id.tolist<span class="tok-kw">())</span>
+    print<span class="tok-kw">(</span>
+        decoded_id,
+        end=<span class="tok-st">""</span>,
+        flush=<span class="tok-kw">True</span>
+    <span class="tok-kw">)</span>
+    all_token_ids.append<span class="tok-kw">(</span>token_id<span class="tok-kw">)</span>
+all_tokens = tokenizer.decode<span class="tok-kw">(</span>all_token_ids<span class="tok-kw">)</span></code></pre>
+<p>In this listing, we start by encoding a simple math problem into token IDs that the model can process. The model then generates tokens one by one in a streaming fashion. We print them immediately as they appear so we can read the output while it’s being generated. At the same time, we collect the generated tokens into a list so that we can later decode them into the final answer string. This pattern of both streaming and collecting tokens is handy because it lets us monitor the generation live while still storing the full answer text (in <code>all_tokens</code>) so we can process it later.</p>
+<p>The response generated by the code in listing 3.2 is as follows:</p>
+<pre><code class="language-python">To find the value of \( a^2 + b^2 \) given that \( a + b = 3 \)
+and \( ab = \frac{13}{6} \), we can use the following algebraic identity:
+\[
+a^2 + b^2 = (a + b)^2 - 2ab
+\]
+**Step 1:** Substitute the given values into the equation.
+\[
+a^2 + b^2 = (3)^2 - 2 \left( \frac{13}{6} \right)
+\]</code></pre>
+<pre><code class="language-python">[<span class="tok-st">...</span>]
+**Final Answer:**
+\[
+\boxed{\dfrac{14}{3}}
+\]</code></pre>
+<p>As you can see from this response, even though we’re using a base model, it provides a reasoning-model-like explanation. This is likely because the Qwen3 team included chain-of-thought data during pretraining, as stated in their technical report. But even though the model shows some reasoning-model-like behavior, adding additional reasoning methods can further improve these capabilities. (Note that the generated response may differ depending on whether you executed the code on a CPU, CUDA, or MPS device.)</p>
+<p>If you’re unfamiliar with the LaTeX syntax commonly used for mathematics, the preceding response may be hard to decipher. In that case, you can use IPython’s <code>Latex</code> class to render it:</p>
+<pre><code class="language-python"><span class="tok-kw">from</span> IPython.display <span class="tok-kw">import</span> Latex, display
+display<span class="tok-kw">(</span>Latex<span class="tok-kw">(</span>all_tokens<span class="tok-kw">))</span></code></pre>
+<p>The result of running the preceding code in a code notebook is shown in figure 3.4.</p>
+<p>**Step 1:** Substitute the given values into the equation.</p>
+<p>2 = (3) 2 −2( 13</p>
+<p>2</p>
+<p>6 )</p>
+<p>**Step2:**Calculate (3)2.</p>
+<p>(3)2 = 9</p>
+<p>13</p>
+<p>6 .</p>
+<p>**Step3:**Calculate 2 ×</p>
+<p>2 × 13</p>
+<p>6 = 26</p>
+<p>6 = 13</p>
+<p>3</p>
+<p>**Step 4:** Subtract the second result from the ﬁrst.</p>
+<p>2 = 9 −13</p>
+<p>2</p>
+<p>3</p>
+<p>**Step 5:** Convert 9 to a fraction with a denominator of 3 to perform the subtraction.</p>
+<p>9 = 27</p>
+<p>3</p>
+<p>2 = 27</p>
+<p>3 −13</p>
+<p>3 = 14</p>
+<p>2</p>
+<p>3</p>
+<p>**FinalAnswer:**</p>
+<p>14</p>
+<p>3</p>
+<figure><a class="zoom" href="assets/figure-3.4.png" tabindex="-1"><img src="assets/figure-3.4.png" alt="" width="810" height="868" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 3.4</span>Rendered response with step-by-step calculations and the final boxed answer</figcaption></figure>
+<p>The final answer shown in figure 3.4 is indeed the correct answer to this problem.</p>
+<h2 id="h2-implementing-a-wrapper-for-easier-text-generation"><span class="num">3.3</span>Implementing a wrapper for easier text generation</h2>
+<p>We have loaded the pretrained LLM and set up the text generation functionality (as illustrated in figure 3.5). Now, for convenience in later sections, we’ll create a wrapper (see listing 3.3) for the text generation function so that we only have to pass in the model, tokenizer, and prompt, along with some additional settings, instead of repeating the tokenization and input preparation steps each time.</p>
+<figure><a class="zoom" href="assets/figure-3.5.png" tabindex="-1"><img src="assets/figure-3.5.png" alt="" width="1114" height="1115" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 3.5</span>In this section, we’ll wrap steps 1 and 2 of the verifier workflow into a reusable text-generation helper. Instead of repeating tokenization and input preparation each time, the wrapper handles prompting and streamed generation and returns the model’s raw LaTeX output.</figcaption></figure>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">def</span> generate_text_stream_concat(
+    model, tokenizer, prompt, device, max_new_tokens,
+    verbose=<span class="tok-kw">False</span>,
+):
+    input_ids = torch.tensor<span class="tok-kw">(</span>
+        tokenizer.encode<span class="tok-kw">(</span>prompt<span class="tok-kw">)</span>, device=device
+        <span class="tok-kw">)</span>.unsqueeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 3.3</span>A wrapper for streamed text generation</figcaption></figure>
+<pre><code class="language-python">    generated_ids = []
+    <span class="tok-kw">for</span> token <span class="tok-kw">in</span> generate_text_basic_stream_cache<span class="tok-kw">(</span>
+        model=model,
+        token_ids=input_ids,
+        max_new_tokens=max_new_tokens,
+        eos_token_id=tokenizer.eos_token_id,
+    <span class="tok-kw">)</span>:
+        next_token_id = token.squeeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>
+        generated_ids.append<span class="tok-kw">(</span>next_token_id.item<span class="tok-kw">())</span></code></pre>
+<pre><code class="language-python">        <span class="tok-kw">if</span> verbose:
+            print<span class="tok-kw">(</span>
+                tokenizer.decode<span class="tok-kw">(</span>next_token_id.tolist<span class="tok-kw">())</span>,
+                end=<span class="tok-st">""</span>,
+                flush=<span class="tok-kw">True</span>
+            <span class="tok-kw">)</span>
+    <span class="tok-kw">return</span> tokenizer.decode<span class="tok-kw">(</span>generated_ids<span class="tok-kw">)</span></code></pre>
+<p>This wrapper function handles the full cycle of text generation: it tokenizes the input prompt, streams new tokens from the model, and then decodes the results into a final string. </p>
+<p>As mentioned before, the optional verbose flag allows us to see tokens as they are generated in real time. The function can be used as follows:</p>
+<pre><code class="language-python">generated_text = generate_text_stream_concat<span class="tok-kw">(</span>
+    model, tokenizer, prompt, device,
+    max_new_tokens=<span class="tok-fn">2048</span>,
+    verbose=<span class="tok-kw">True</span>
+<span class="tok-kw">)</span></code></pre>
+<p>This prints the exact same response you saw in section 3.2:</p>
+<pre><code class="language-python">[...]</code></pre>
+<pre><code class="language-python">**Final Answer:**
+\[
+\boxed{\dfrac{14}{3}}
+\]</code></pre>
+<nav class="pager"><a class="prev" href="page-20.html" rel="prev"><span class="dir">上一页</span><span class="t">3.1 Building a math verifier</span></a><a class="next" href="page-22.html" rel="next"><span class="dir">下一页</span><span class="t">3.4 Extracting the final answer box</span></a></nav>
+</main>
+</body>
+</html>

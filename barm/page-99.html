@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>E.5 Chapter 4: Batched self-consistency sampling · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-98.html">
+<link rel="next" href="page-100.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 99 页 / 共 108 页</span></div>
+<h2 id="h2-chapter-4-batched-self-consistency-sampling"><span class="num">E.5</span>Chapter 4: Batched self-consistency sampling</h2>
+<p>The optional <code>self_consistency_math500_batched.py</code> script for chapter 4 does not mix different prompts into one padded tensor. Instead, it repeats the same prompt <code>num_ samples</code> times and samples several continuations in parallel for self-consistency voting, because parallelizing over the different numbers of samples for each prompt is a natural angle we can take advantage of.</p>
+<p>Because every row starts from the same prompt length, this script can use the regu</p>
+<pre><code class="language-python">lar Qwen3Model from reasoning_from_scratch.qwen3 instead of reasoning_from_scratch</code></pre>
+<p><code>.qwen3_batched</code>. In other words, the batch dimension here is used for multiple sampled rollouts of the same prompt, not for padding together unrelated prompts of different lengths.</p>
+<p>You can download the script as shown next.</p>
+<figure class="listing"><pre><code class="language-python">download_from_github<span class="tok-kw">(</span>
+    "ch04/02_math500-inference-scaling-scripts/"
+    "self_consistency_math500_batched.py"
+<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing E.5</span>Downloading self-consistency sampling with batch support</figcaption></figure>
+<p>To download the nonbatched version instead, simply remove the <code>"_batched"</code> part from the filename in listing E.5.</p>
+<p>We can run the batched script as follows, and the syntax for the nonbatched script is otherwise the same:</p>
+<pre><code class="language-python">uv run self_consistency_math500_batched.py \
+  --which_model base \
+  --temperature 0.9 \
+  --top_p 0.9 \
+  --num_samples 3 \
+  --dataset_size 500 \
+  --prompt_suffix "\n\nExplain step by step."</code></pre>
+<h2 id="h2-chapter-6-batched-grpo-rollouts"><span class="num">E.6</span>Chapter 6: Batched GRPO rollouts</h2>
+<p>Self-refinement in chapter 5 is fundamentally sequential and therefore does not benefit much from simple batching. In principle, you could run self-refinement loops for multiple inputs in parallel, but that is nontrivial to implement and is therefore not part of the book’s supplementary material. Instead, the next batched example appears in the chapter 6 RLVR code.</p>
+<p>In chapter 6, we again use the same prompt for multiple rollouts, so no padding is required. As in section E.5, the code can therefore stay with the regular <code>Qwen3Model</code> class from <code>reasoning_from_scratch.qwen3</code>. The relevant scripts can be fetched as follows.</p>
+<figure class="listing"><pre><code class="language-python">download_from_github<span class="tok-kw">(</span>
+    "ch06/02_rlvr_grpo_scripts_intro/"
+    "rlvr_grpo_original_no_kl_batched.py"
+<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing E.6</span>Downloading the RLVR script with batch support</figcaption></figure>
+<p>As before, to download the single-generation script, simply drop <code>"_batched"</code> from the filename in listing E.6.</p>
+<p>A typical batched run looks like this:</p>
+<pre><code class="language-python">uv run rlvr_grpo_original_no_kl_batched.py \
+  --num_rollouts 8 \
+  --batch_size 4 \
+  --max_new_tokens 512</code></pre>
+<p>Here, <code>--batch_size</code> controls how many rollouts are generated in parallel within one training step. This improves throughput, but it also increases memory pressure, so you </p>
+<pre><code class="language-python">may need to reduce --num_rollouts or --max_new_tokens.</code></pre>
+<h2 id="h2-chapter-8-batched-distillation"><span class="num">E.7</span>Chapter 8: Batched distillation</h2>
+<p>Chapter 8 returns to the padding-aware style from chapter 3 because the distillation examples have different prompt and answer lengths. In other words, we are again batching unrelated examples of different lengths into a single rectangular tensor, which means that masking and padding matter again. You can download the batched training script and fetch a sample training dataset as follows.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.ch08 <span class="tok-kw">import</span> load_distill_data
+download_from_github<span class="tok-kw">(</span>
+    "ch08/04_train_with_distillation/distill_batched.py"
+<span class="tok-kw">)</span>
+_ = load_distill_data<span class="tok-kw">(</span>
+    partition="deepseek-r1-math-train",
+    local_path="deepseek-r1-math-train.json",
+<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing E.7</span>Downloading the distillation script with batch support</figcaption></figure>
+<p>For the nonbatched version, remove the <code>"_batched"</code> part from the filename in listing E.7. A representative run of the batched version looks like this:</p>
+<pre><code class="language-python">uv run distill_batched.py \
+  --data_path deepseek-r1-math-train.json \
+  --dataset_size 500 \
+  --validation_size 10 \
+  --epochs 2 \
+  --use_think_tokens \
+  --batch_size 32</code></pre>
+<p>Here, <code>--batch_size</code> lets us process multiple distillation examples per optimization step. But because training also has to store activations, the resource demands can be much higher than in the chapter 3 evaluator, so chapter 8 introduces the training analogue of the padding-aware batching strategy discussed earlier in this appendix.</p>
+<h2 id="h2-single-sequence-vs-batch-generation"><span class="num">E.8</span>Single-sequence vs. batch generation</h2>
+<p>The supplementary scripts in chapters 3 and 8 batch together different-length examples, so they need padding-aware attention masks and more careful bookkeeping. Chapters 4 and 6 batch repeated copies of the same prompt or rollout setup, so they can stay with the regular model implementation and avoid the more complicated padding logic.</p>
+<p>Either way, batched generation can result in higher throughput and shorter runtimes, at the cost of increased RAM use. Table 8.1 compares single to batched generation using the settings shown in the previous sections.</p>
+<div class="tw"><table><caption><span class="lbl">Table E.1</span>RAM use and runtime comparison</caption><thead><tr><th>Script</th><th>Batch size</th><th>RAM</th><th>H100 total time</th><th>DGX Spark total time</th></tr></thead><tbody><tr><td>1</td><td>-</td><td>1.8 GB</td><td>90 min</td><td>174 min</td></tr><tr><td>2</td><td>64</td><td>23.39 GB</td><td>16 min</td><td>108 min</td></tr><tr><td>3</td><td>-</td><td>1.79 GB</td><td>252 min</td><td>340 min</td></tr></tbody></table></div>
+<pre><code class="language-python">evaluate_math500.py</code></pre>
+<pre><code class="language-python">evaluate_math500_batched.py</code></pre>
+<pre><code class="language-python">self_consistency_math500.py</code></pre>
+<p>432.45 GB129 min243 min</p>
+<pre><code class="language-python">self_consistency_math500_
+batched.py</code></pre>
+<p>5-43.35 GB68 min63 min</p>
+<pre><code class="language-python">rlvr_grpo_original_no_kl.py</code></pre>
+<p>6444.91 GB19 min23 min</p>
+<pre><code class="language-python">rlvr_grpo_original_no_kl_
+batched.py</code></pre>
+<p>7-8.29 GB10 min32 min</p>
+<pre><code class="language-python">distill.py</code></pre>
+<p>848.34 GB9 min28 min</p>
+<pre><code class="language-python">distill_batched.py</code></pre>
+<p>As shown in table E.1, the batched variants are always faster than the single-sequence variants. In most cases, the difference is very noticeable. One exception is distillation (rows 7 and 8), where batching only yields a modest advantage. This could be because the GPU is already well utilized in single-batch mode, and the extra overhead of batched generation from the additional mask generation is not worth it, given the small size of the Qwen3 6-billion-parameter model.</p>
+<h1 id="h1-appendix-f-common-approaches-to-model-evaluation">appendix F Common approaches to model evaluation</h1>
+<h2 id="h2-understanding-the-main-evaluation-methods-for-llms"><span class="num">F.1</span>Understanding the main evaluation methods for LLMs</h2>
+<p>There are four common ways of evaluating trained LLMs in practice: <em>multiple choice</em>, <em>verifiers</em>, <em>leaderboards</em>, and <em>LLM judges</em>, as shown in figure F.1. Research papers, marketing materials, technical reports, and model cards (a term for LLM-specific technical reports) often include results from two or more of these categories.</p>
+<p>As you can see in figure F.1, the four evaluation categories introduced here fall into two groups: <em>benchmark-based evaluation</em> and <em>judgment-based evaluation</em>. Other measures, such as <em>training loss, perplexity</em>, and <em>rewards</em>, are typically used internally during model development. They are covered in the model-training chapters (chapters 6 to 8).</p>
+<nav class="pager"><a class="prev" href="page-98.html" rel="prev"><span class="dir">上一页</span><span class="t">E.3 Padding and attention masks</span></a><a class="next" href="page-100.html" rel="next"><span class="dir">下一页</span><span class="t">F.2 Evaluating answer-choice accuracy</span></a></nav>
+</main>
+</body>
+</html>

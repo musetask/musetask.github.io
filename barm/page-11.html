@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>2.3 Understanding hardware needs and recommendations · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-10.html">
+<link rel="next" href="page-12.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 11 页 / 共 108 页</span></div>
+<h2 id="h2-understanding-hardware-needs-and-recommendations"><span class="num">2.3</span>Understanding hardware needs and recommendations</h2>
+<p>You may have heard that training LLMs is very expensive. For leading LLM companies, it is not uncommon to spend anywhere from $1–$10 million on the low end to more than $50 million on the high end in compute costs to train a new base-model LLM before adding any reasoning techniques.</p>
+<p>For example, the DeepSeek V3 model, which serves as the base checkpoint for the DeepSeek R1 reasoning system, was trained on 2,048 NVIDIA H800 GPUs for about 11 weeks at an estimated cost of US$5.5 million. (DeepSeek V3 is one of the few recent models with a fully transparent compute disclosure.) According to the technical report, the final training run used 14.8 million GPU-hours of compute. The energy usage was roughly 620 MWh, about the amount of electricity an average American household uses in 55 years.</p>
+<p>These resource requirements and the high price tag would make developing an LLM unfeasible for me and most readers. Instead, we will use a relatively small (but capable) pretrained LLM, on top of which we’ll implement reasoning techniques. This smaller LLM is a scaled-down version that otherwise follows the same architecture as contemporary state-of-the-art models. The reasoning methods that we’ll apply are the same as those used by larger LLMs. The difference is that the smaller LLM will let us explore these methods in a budget-friendly way.</p>
+<p>As an analogy, imagine you are curious to learn how cars work. If you are new to cars, you probably wouldn’t start out building an expensive Ferrari right away. Instead, you would start with a more basic car, like a Volkswagen Beetle, which will still teach you a lot about how engines and transmissions work. In fact, I would even say that working on a simpler car would help you <em>better</em> understand how the engine and transmission work because it doesn’t have the complicated refinements of a more expensive car.</p>
+<p>While we’ll use a relatively small model in this book, using, developing, and applying the reasoning techniques are still computationally intensive. The techniques in later chapters, such as chapters 5–8, will benefit from a GPU. You can check whether your computer has a PyTorch-supported GPU by running the following PyTorch code in Python:</p>
+<pre><code class="language-python"><span class="tok-kw">import</span> torch
+print<span class="tok-kw">(f</span><span class="tok-st">"PyTorch version </span>{torch.__version__}<span class="tok-st">"</span><span class="tok-kw">)</span>
+<span class="tok-kw">if</span> torch.cuda.is_available<span class="tok-kw">()</span>:
+    print<span class="tok-kw">(f</span><span class="tok-st">"CUDA/ROCm GPU: </span>{torch.cuda.get_device_name<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>}<span class="tok-st">"</span><span class="tok-kw">)</span>
+<span class="tok-kw">elif</span> torch.xpu.is_available<span class="tok-kw">()</span>:
+    print<span class="tok-kw">(f</span><span class="tok-st">"Intel GPU: </span>{torch.xpu.get_device_name<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>}<span class="tok-st">"</span><span class="tok-kw">)</span>
+<span class="tok-kw">elif</span> torch.backends.mps.is_available<span class="tok-kw">()</span>:
+    print<span class="tok-kw">(</span><span class="tok-st">"Apple Silicon GPU"</span><span class="tok-kw">)</span>
+<span class="tok-kw">else</span>:
+    print<span class="tok-kw">(</span><span class="tok-st">"Only CPU"</span><span class="tok-kw">)</span></code></pre>
+<p>Depending on your machine, the code may return the following results:</p>
+<pre><code class="language-python">PyTorch version 2.10.0
+Only CPU</code></pre>
+<p>Don’t worry if your machine does not have a GPU to run the code. Chapters 2–5 can be run in a reasonable time on a CPU. For some chapters, the code will automatically use an NVIDIA GPU if one is available; otherwise, it will run on the CPU (or an Apple Silicon GPU if recommended for a particular section or chapter). I will provide more information in the relevant sections and chapters. </p>
+<aside><span class="tag">Note</span>If you want GPU acceleration and are unsure which PyTorch build to install, use the official PyTorch install selector (https://pytorch.org/get-started) to choose the correct CPU, CUDA, or ROCm build for your system. For this book, any recent supported PyTorch CUDA build is fine.</aside>
+<p>Like many other AI researchers who work on and with LLMs daily, I don’t have a machine with the necessary GPU hardware to train LLMs at home, so I use cloud resources instead. If you are looking for cloud provider options, my personal preference is Lightning AI Studio (<a href="https://lightning.ai/">https://lightning.ai/</a>) because of its ease of use and feature support, as shown in figure 2.4. Google Colab (<a href="https://colab.research.google.com/">https://colab.research.google.com/</a>) is another good choice.</p>
+<p>As of this writing, Lightning AI also offers users free compute credits after the sign-up and verification process, and these can be used for the different GPU choices shown in figure 2.4. (As I’ve mentioned, a GPU is not needed for this chapter, but if you want to use one, the L4 GPU is more than sufficient.)</p>
+<aside><span class="tag">Note</span>For disclosure: I helped build and launch the Lightning AI platform in 2023, but I no longer have any financial interest in the company. I am not sponsored to recommend it, and I pay for it myself. I use it because I find it the most convenient option. It supports multiple types of GPUs, allows easy switching between them and back to CPU to save costs, and lets me pause or resume environments without redoing the setup.</aside>
+<p>The supplementary code repository contains additional GPU platform recommendations inside the <code>ch02</code> subfolder.</p>
+<figure><a class="zoom" href="assets/figure-2.4.png" tabindex="-1"><img src="assets/figure-2.4.png" alt="" width="1143" height="678" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 2.4</span>An overview of the Lightning AI GPU cloud platform in a web browser. The interface supports Python scripts, Jupyter notebooks, and terminal access, and it lets users switch between CPU and various GPU types based on their compute needs. (Colors were inverted and the image was converted to grayscale for print reproduction.)</figcaption></figure>
+<h3 id="h3-using-pytorch">Using PyTorch</h3>
+<div class="lead">In this section, we imported and used the PyTorch library, which is currently the most widely used general-purpose library. We will use it throughout this book to run and train LLMs, including the reasoning methods we will develop. If you are new to PyTorch, I recommend reading my “PyTorch in One Hour: From Tensors to Training Neural Networks on Multiple GPUs” tutorial to get the most out of this book. It is freely available on my website at https://sebastianraschka.com/teaching/pytorch-1h.</div>
+<nav class="pager"><a class="prev" href="page-10.html" rel="prev"><span class="dir">上一页</span><span class="t">2.2 Setting up the coding environment</span></a><a class="next" href="page-12.html" rel="next"><span class="dir">下一页</span><span class="t">2.4 Preparing input texts for LLMs</span></a></nav>
+</main>
+</body>
+</html>

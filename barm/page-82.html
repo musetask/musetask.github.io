@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>8.10 Conclusions · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-81.html">
+<link rel="next" href="page-83.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 82 页 / 共 108 页</span></div>
+<h2 id="h2-conclusions"><span class="num">8.10</span>Conclusions</h2>
+<p>This completes the main technical material of the book. We’ll now look at some brief pointers on what to try next, how to keep up with this fast-moving field, and where to find additional material.</p>
+<h3 id="h3-what-s-next"><span class="num">8.10.1</span>What’s next</h3>
+<p>A practical next step is to start combining the methods from this book instead of treating them as isolated techniques. For example, you could distill a smaller model from a strong teacher, continue training it with RLVR, and then apply inference-time scaling methods such as self-consistency or self-refinement at deployment time. Running these kinds of comparisons is often the fastest way to develop intuition for which method helps most in a given setting.</p>
+<p>The appendices are also a good place to continue. They cover additional topics such as LLM architecture details, batched execution for higher throughput, and alternative evaluation approaches.</p>
+<p>Lastly, the supplementary code repository (<a href="https://github.com/rasbt/reasoning-from-scratch">https://github.com/rasbt/reasoning-from-scratch</a>) includes bonus material and standalone scripts that are better suited for longer runs and larger experiments than a notebook.</p>
+<h3 id="h3-staying-up-to-date-in-a-fast-moving-field"><span class="num">8.10.2</span>Staying up to date in a fast-moving field</h3>
+<p>I hope this book gave you a clearer picture of how modern reasoning models work in practice.</p>
+<p>Reasoning-model research is moving quickly, and specific algorithms, datasets, and best practices will continue to change, but the core ideas in this book will remain relevant and useful. These include careful model evaluation, distinguishing between inference-time and training-time methods, and understanding how the training losses and reward signals are computed.</p>
+<p>When new methods appear, it helps to map them back to these fundamentals. Many new techniques are best understood as variations or combinations of the building blocks we have implemented here, even when the surrounding training recipe becomes more complex.</p>
+<p>In practice, I recommend several resources. First, you can skim recent machine learning and AI papers on arXiv (<a href="https://arxiv.org/list/cs.LG/recent">https://arxiv.org/list/cs.LG/recent</a>) to spot new training and evaluation ideas early. But be aware that the volume of new papers is now so large that keeping up comprehensively is nearly impossible, so it is usually better to treat arXiv as a way to scan for themes and promising papers than to try to read everything.</p>
+<p>Second, read technical summaries and reports for newly released models, since they often contain the most useful details about prompting conventions, benchmarks, and limitations. These are usually shared directly by the developer on the Hugging Face model hub, announcement blog articles, and social media.</p>
+<p>Third, keep an eye on practitioner discussions on the social media platform X and in communities such as r/LocalLLaMA (<a href="https://www.reddit.com/r/LocalLLaMA/">https://www.reddit.com/r/LocalLLaMA/</a>), where implementation details, replications, and failure cases often show up before they make it into polished papers.</p>
+<p>AI-assistant or “deep research” tools can also be useful for monitoring these sources and summarizing new developments, but they work best as filters rather than substitutes for reading the original papers and model cards.</p>
+<p>I also regularly write about AI and LLM topics on my blog at <a href="https://magazine.sebastianraschka.com">https://magazine.sebastianraschka.com</a>.</p>
+<h3 id="h3-summary-8">Summary</h3>
+<ul><li>Distillation trains a smaller student LLM on outputs produced by a larger teacher LLM.</li></ul>
+<ul><li>Hard distillation is usually more practical than soft distillation because teacher logits are often unavailable and teacher text outputs are much cheaper to store and reuse.</li></ul>
+<ul><li>We used DeepSeek-R1 as the teacher model and Qwen3 0.6B as the student model.</li></ul>
+<ul><li>The distillation dataset was built from the 12,000 MATH training problems that do not overlap with MATH-500.</li></ul>
+<ul><li>Each training sample combines a rendered prompt with the teacher reasoning trace and final answer, optionally separated via <code>&lt;think&gt;...&lt;/think&gt;</code> tags.</li></ul>
+<ul><li>For efficiency, we tokenize the dataset once, filter it by sequence length, and reuse the processed examples across multiple epochs.</li></ul>
+<ul><li>The training objective is answer-only cross-entropy, which is equivalent to the negative average log probability of the correct next tokens.</li></ul>
+<ul><li>A distillation training loop is a standard supervised learning loop that includes shuffling the training examples each epoch, computing the loss, backpropagating, updating the model weights, and tracking validation loss.</li></ul>
+<ul><li>The validation loss is the main signal to watch during training. Additionally, it is useful and recommended that you evaluate checkpoints periodically on benchmark datasets.</li></ul>
+<h1 id="h1-appendix-a-references-and-further-reading">appendix A References and further reading</h1>
+<h2 id="h2-chapter-1-understanding-reasoning-models"><span class="num">A.1</span>Chapter 1: Understanding reasoning models</h2>
+<h3 id="h3-references"><span class="num">A.1.1</span>References</h3>
+<p>This is the announcement article for OpenAI's o1 model, which is regarded as the first LLM-based reasoning model:</p>
+<ul><li>OpenAI, “Introducing OpenAI o1-preview” (Sept. 12, 2024), <a href="https://openai.com/index/introducing-openai-o1-preview/">https://openai.com/index/introducing-openai-o1-preview/</a></li></ul>
+<p>DeepSeek-R1 is the first open source reasoning model to be accompanied by a comprehensive technical report showing that reasoning emerges from reinforcement learning with verifiable rewards (a topic covered in more detail in chapter 5):</p>
+<ul><li>DeepSeek-AI, Daya Guo, Dejian Yang, et al., “DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning” (Jan. 22, 2025), <a href="https://arxiv.org/abs/2501.12948">https://arxiv.org/abs/2501.12948</a></li></ul>
+<p>This is the OpenAI CEO’s comment on the reasoning (“chain-of-thought”) capabilities of future models: “We will next ship GPT-4.5, the model we called Orion internally, as our last non-chain-of-thought model.”</p>
+<ul><li>Sam Altman, post on X (Feb. 12, 2025), <a href="https://x.com/sama/status/1889755723078443244">https://x.com/sama/status/1889755723078443244</a></li></ul>
+<p>A research paper by AI researchers at Apple found that reasoning models are sophisticated (but very capable) pattern matchers:</p>
+<ul><li>Parshin Shojaee, Iman Mirzadeh, Keivan Alizadeh, et al., “The Illusion of Thinking: Understanding the Strengths and Limitations of Reasoning Models via the Lens of Problem Complexity” (Jun. 2025), <a href="https://machinelearning.apple.com/research/illusion-of-thinking">https://machinelearning.apple.com/research/illusion-of-thinking</a></li></ul>
+<p>The following book is an in-depth guide to implementing and training large language models step by step:</p>
+<ul><li>Sebastian Raschka, <em>Build a Large Language Model (From Scratch)</em>, (Manning, 2024), <a href="http://mng.bz/orYv">http://mng.bz/orYv</a></li></ul>
+<h3 id="h3-further-reading"><span class="num">A.1.2</span>Further reading</h3>
+<p>The following article is an introduction to how DeepSeek-R1 works, providing insights into the foundations of reasoning in LLMs:</p>
+<ul><li>Sebastian Raschka, “Understanding Reasoning LLMs” (Feb. 5, 2025), <a href="https://magazine.sebastianraschka.com/p/understanding-reasoning-llms">https://magazine.sebastianraschka.com/p/understanding-reasoning-llms</a></li></ul>
+<nav class="pager"><a class="prev" href="page-81.html" rel="prev"><span class="dir">上一页</span><span class="t">8.8 Evaluating the distilled model</span></a><a class="next" href="page-83.html" rel="next"><span class="dir">下一页</span><span class="t">A.2 Chapter 2: Generating text with a pretrained LLM</span></a></nav>
+</main>
+</body>
+</html>

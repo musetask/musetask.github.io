@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>7.4.2 Training with clipped policy ratios · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/detail.css">
+<link rel="prev" href="page-67.html">
+<link rel="next" href="page-69.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 68 页 / 共 108 页</span></div>
+<aside class="detail-link"><span class="tag">补充材料</span>裁剪策略比率 <code>ratio = exp(new_logps − old_logps)</code> 与 min 悲观界的推导在 <a href="page-67-detail.html"><b>7.4 裁剪策略比率</b></a>。全部推导页的索引见 <a href="math-detail.html">math-detail.html</a>。</aside>
+<h3 id="h3-training-with-clipped-policy-ratios"><span class="num">7.4.2</span>Training with clipped policy ratios</h3>
+<p>We can apply the clipped policy ratio and policy loss computations from listings 7.7 and 7.8 to see if they help stabilize training.</p>
+<p>The modified code can be downloaded from the supplementary materials as follows:</p>
+<pre><code class="language-python">download_from_github<span class="tok-kw">(</span>
+    <span class="tok-st">"ch07/03_rlvr_grpo_scripts_advanced/7_4_plus_clip_ratio.py"</span>
+<span class="tok-kw">)</span></code></pre>
+<p>And we can run it as before:</p>
+<pre><code class="language-python">uv run 7_4_plus_clip_ratio.py \
+    --steps 500 \
+    --max_new_tokens 1024</code></pre>
+<p>As discussed in the previous section, the policy ratio compares logprobs computed under the current policy with those from a previous version of the policy. In practice, this means that we first need a batch of sampled responses whose <code>old_logps</code> are measured under a fixed reference policy. We can then compare those same responses with the current model, which changes during optimization, to form the clipped policy ratio update. </p>
+<p>DeepSeek-R1 does this at large scale by generating a large rollout pool once (8,192 responses), holding those responses fixed, and then stepping through them in 16 minibatches. At a high level, the process is as follows:</p>
+<p>1 Make a copy of the current model as the reference policy.</p>
+<p>2 Sample a big rollout pool using the reference policy.</p>
+<p>3 Split those fixed rollouts into minibatches.</p>
+<p>4 For each minibatch:</p>
+<p>a Compute <code>old_logps</code> under the reference model.</p>
+<p>b Compute <code>new_logps</code> under the current model (which changes after each minibatch update).</p>
+<p>c Update the current model.</p>
+<p>5 Update the reference model.</p>
+<p>Due to resource constraints, we cannot generate as many rollouts and minibatches as DeepSeek-R1 does, so we’ll use a smaller approximation. Instead of generating one huge fixed rollout pool and slicing it into minibatches, we’ll generate a small batch of rollouts, update the model on that batch, and then repeat the process with a fresh batch. The procedure in the <code>7_4_plus_clip_ratio.py</code> script is as follows:</p>
+<p>1 Make a copy of the current model as the reference policy.</p>
+<p>2 Sample eight rollouts using the reference policy.</p>
+<p>3 Then, a Compute <code>old_logps</code> under the reference model.</p>
+<p>b Compute <code>new_logps</code> under the current model.</p>
+<p>c Update the current model.</p>
+<p>4 Repeat steps 2 and 3 (by default, one more time) with different rollouts instead of using minibatches.</p>
+<p>5 Update the reference model.</p>
+<p>In short, DeepSeek-R1 generates a huge rollout pool once and then reuses it across minibatches before refreshing the reference model. In our code, we mimic this idea more cheaply by generating a small batch of rollouts multiple times instead.</p>
+<p>A log file from the <code>7_4_plus_clip_ratio.py</code> training run can be downloaded and visualized as follows:</p>
+<pre><code class="language-python">download_from_github<span class="tok-kw">(</span>
+    <span class="tok-st">"ch07/02_logs/7_4_plus_clip_ratio_metrics.csv"</span>
+<span class="tok-kw">)</span>
+plot_grpo_metrics<span class="tok-kw">(</span>
+    <span class="tok-st">"7_4_plus_clip_ratio_metrics.csv"</span>,
+    columns=[<span class="tok-st">"loss"</span>, <span class="tok-st">"reward_avg"</span>, <span class="tok-st">"avg_response_len"</span>, <span class="tok-st">"eval_acc"</span>]
+<span class="tok-kw">)</span></code></pre>
+<p>Figure 7.13 shows the resulting plot. Compared to the previous training runs, this training with clipped policy ratios is more stable, as there is no visible drop in the average reward or evaluation accuracy around the 400-step mark. </p>
+<p>We could also plot and inspect the other metrics<code>,</code> such as <code>policy_ratio</code>, <code>adv_avg</code>, <code>adv_std</code>, and <code>entropy_avg</code>. I’ll leave that as an exercise for you to try.</p>
+<figure><a class="zoom" href="assets/figure-7.13.png" tabindex="-1"><img src="assets/figure-7.13.png" alt="" width="793" height="725" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 7.13</span>Selected metrics from a GRPO training run using clipped policy ratios</figcaption></figure>
+<h2 id="h2-controlling-how-much-the-model-changes-with-a-kl-term"><span class="num">7.5</span>Controlling how much the model changes with a KL term</h2>
+<p>In chapter 6, we skipped using the KL loss term in the GRPO algorithm to keep the presentation manageable. To complete the GRPO algorithm, we’ll now add the KL loss term, as outlined in figure 7.14.</p>
+<aside><span class="tag">Note</span>If you’re familiar with reinforcement learning, you may recognize that what we implemented up to this point is essentially REINFORCE with group-normalized advantages. (See https://lilianweng.github.io/posts/2018-04-08-policy-gradient/ for information about the REINFORCE method.)</aside>
+<p>KL is short for <em>Kullback–Leibler </em>divergence, and it measures how much the current policy, that is, the LLM being trained, deviates from a reference policy, typically the original model at the start of training. The KL term acts as a constraint (technically called a <em>regularizer</em>) that discourages overly large updates and keeps the model close to its original behavior, preventing drastic or unstable changes. </p>
+<p>This is closely related to the clipped policy ratios we introduced earlier. With clipped policy ratios, we limited how large individual update steps could be. The KL term is another mechanism for controlling how much the model can change. While clipped policy ratios focus on limiting changes between steps, the KL term is often used to control change over the longer training trajectory.</p>
+<figure><a class="zoom" href="assets/figure-7.14.png" tabindex="-1"><img src="assets/figure-7.14.png" alt="" width="1033" height="686" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 7.14</span>Implementing a KL loss term, which is part of the original GRPO algorithm</figcaption></figure>
+<nav class="pager"><a class="prev" href="page-67.html" rel="prev"><span class="dir">上一页</span><span class="t">7.4.1 Computing clipped policy ratios</span></a><a class="next" href="page-69.html" rel="next"><span class="dir">下一页</span><span class="t">7.5.1 Implementing the KL loss term</span></a></nav>
+</main>
+</body>
+</html>

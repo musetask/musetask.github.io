@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>4.4.3 Sampling the next token from a probability distribution · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-33.html">
+<link rel="next" href="page-35.html">
+<link rel="stylesheet" href="assets/detail.css">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 34 页 / 共 108 页</span></div>
+<aside class="detail-link"><span class="tag">补充材料</span>这一节的数学推导（公式已用 KaTeX 排版，含逐步手算验证）在 <a href="page-34-detail.html"><b>4.4 温度缩放与 softmax 采样</b></a>。全部推导页的索引见 <a href="math-detail.html">math-detail.html</a>。</aside>
+<h3 id="h3-sampling-the-next-token-from-a-probability-distribution"><span class="num">4.4.3</span>Sampling the next token from a probability distribution</h3>
+<p>In the previous section, we rescaled the logit values with different temperature values. This lets us influence how the model selects the next token. Before we get to the next-token sampling portion in the next section, we’ll add one more intermediate step: converting the rescaled logits into probability scores, as shown in figure 4.10.</p>
+<p>To demonstrate how rescaled logits are converted into probability scores (step 3.3 of figure 4.10), we’ll use a temperature of 5.0, which will make it easier to visualize the resulting probabilities in a plot. The <code>" Berlin"</code> token, for example, has such a high logit value that it would otherwise dominate the scale, making it difficult to see the probabilities of the surrounding tokens.</p>
+<p>The conversion from rescaled logits to probability scores can be done with a single function call, <code>torch.softmax</code>, as shown in the following listing.</p>
+<figure class="listing"><pre><code class="language-python">rescaled_logits = scale_logits_by_temperature<span class="tok-kw">(</span>next_token_logits, <span class="tok-fn">5.0</span><span class="tok-kw">)</span>
+next_token_probas = torch.softmax<span class="tok-kw">(</span>
+    rescaled_logits, dim=-<span class="tok-fn">1</span>
+<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 4.6</span>Sampling the next token from a probability distribution Step 3.2: Rescale next-token scores</figcaption></figure>
+<p>This <code>torch.softmax</code> function normalizes the logit values to the range from 0 to 1, such that they sum to 1. We can confirm that with the following code:</p>
+<pre><code class="language-python">print<span class="tok-kw">(</span>"Probability sum:", torch.sum<span class="tok-kw">(</span>next_token_probas<span class="tok-kw">))</span></code></pre>
+<figure><a class="zoom" href="assets/figure-4.10.png" tabindex="-1"><img src="assets/figure-4.10.png" alt="" width="1141" height="675" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 4.10</span>Overview of the sampling process for generating tokens. Here, we focus on steps 3.3 and 3.4, where the next-token scores are converted into a probability distribution. The next token will be sampled based on that distribution.</figcaption></figure>
+<p>Additionally, let’s visualize the converted scores by reusing the <code>plot_scores_bar</code> function from listing 4.3:</p>
+<pre><code class="language-python">plot_scores_bar<span class="tok-kw">(</span>
+    next_token_probas, arrow=<span class="tok-kw">False</span>, ylabel="Probability value"
+<span class="tok-kw">)</span></code></pre>
+<p>The resulting plot, now with the probability values on the <em>y</em>-axis, is shown in figure 4.11, where we can see that token ID 19,846 (<code>" Berlin"</code>) has the highest value in this selected vocabulary range. The probability is 0.0003, which we can confirm with the following code:</p>
+<pre><code class="language-python">print<span class="tok-kw">(</span>"Token ID <span class="tok-fn">19</span>,<span class="tok-fn">846</span> probability:", next_token_probas<span class="tok-kw">[</span>:, <span class="tok-fn">19846</span><span class="tok-kw">])</span></code></pre>
+<p>Note that while this 0.0003 value is relatively small, there is no larger value outside the selected vocabulary range in this plot. For instance, using the following code, we can confirm that 0.0003 is indeed the largest value:</p>
+<pre><code class="language-python">print<span class="tok-kw">(</span>"Highest probability:", max<span class="tok-kw">(</span>next_token_probas.squeeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)))</span></code></pre>
+<figure><a class="zoom" href="assets/figure-4.11.png" tabindex="-1"><img src="assets/figure-4.11.png" alt="" width="782" height="582" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 4.11</span>Token probabilities obtained by applying the softmax function to the rescaled logits. The token with the highest probability (corresponding to" Berlin", but with the label omitted for code simplicity) is selected as the next output.</figcaption></figure>
+<p>We can interpret this score as the model’s confidence. This means that the model is more confident in choosing <code>" Berlin"</code> (19,846) as the next token than any other token. The reason the value is so small is that we are using a high temperature, which makes it easier to plot this value next to the other token values. If we change the temperature from 5 to 0.5, the probability score increases from 0.0003 to 0.3398, and the probability scores of the other tokens become even closer to 0.</p>
+<h3 id="h3-the-softmax-function-under-the-hood">The softmax function under the hood</h3>
+<div class="lead">The softmax function converts a vector of raw scores (logits) into a probability distribution where each value lies between 0 and 1 and all values sum to 1. This conversion makes the values easier to interpret and to sample from later. If you are familiar with mathematical notation, the formula behind the softmax funcsoftmax(zᵢ) = exp(zᵢ) / Σⱼ exp(zⱼ) tion is</div>
+<ul><li>z = [z₁, z₂, …, zₙ],</li></ul>
+<div class="lead">Here, z is a vector of real-valued inputs where</div>
+<ul><li>n is the number of elements in the vector.</li><li>i is the index of the current element (1 ≤ i ≤ n).</li><li>j is the index used to sum over all elements (1 ≤ j ≤ n).</li></ul>
+<div class="lead">This produces a normalized probability for each element zᵢ, such that Σᵢ softmax(zᵢ) = 1 In code, the softmax function can be implemented in three lines:</div>
+<pre><code class="language-python"><span class="tok-kw">def</span> softmax_with_temperature(logits, temperature):
+    scaled_logits = logits / temperature
+    <span class="tok-kw">return</span> torch.softmax<span class="tok-kw">(</span>scaled_logits, dim=<span class="tok-fn">0</span><span class="tok-kw">)</span></code></pre>
+<div class="lead">In practice, I prefer to use the <code>torch.softmax</code> function because it has some additional numerical stability improvements to handle very small and very large values more reliably.</div>
+<p>The purpose of converting the logits into these probability scores is that they are somewhat more interpretable, and we can now sample from them using a <code>torch.multinomial</code> function. For instance, if we draw a sample from this probability distribution, we have a 0.03% chance of getting <code>" Berlin"</code> with our temperature setting of 5.0 (and a 33.98% chance of getting <code>" Berlin"</code> with a temperature of 0.5).</p>
+<p>The sampling process, corresponding to step 3.4 in figure 4.10, can be implemented as follows:</p>
+<pre><code class="language-python">torch.manual_seed<span class="tok-kw">(</span><span class="tok-fn">123</span><span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>
+    "Sampled token:",
+    torch.multinomial<span class="tok-kw">(</span>next_token_probas.cpu<span class="tok-kw">()</span>, num_samples=<span class="tok-fn">1</span><span class="tok-kw">)</span>
+<span class="tok-kw">)</span></code></pre>
+<p>This code returns token ID 65,094, which corresponds to the word <code>" mistress"</code>. Note that the word doesn’t make sense in our context, <code>"The</code> <code>capital</code> <code>of</code> <code>Germany</code> <code>is"</code>. In this case, it was selected randomly because of the high-temperature setting, which encourages sampling tokens other than <code>" Berlin"</code>.</p>
+<p>The <code>torch.multinomial</code> function samples vocabulary indices in proportion to their probabilities. In other words, vocabulary indices with higher probabilities are more likely to be sampled. If we repeated the sampling a very large number of times, we would sample the vocabulary index corresponding to the token <code>" Berlin"</code> with a probability of 0.03%, given a temperature of 5.</p>
+<p>Before we look at some additional examples, note that we specified a random seed to make the code in this chapter reproducible. The <code>torch.multinomial()</code> function may still yield different results on CUDA and MPS devices and may even crash when drawing larger numbers of samples (I observed this issue in PyTorch 2.9 on both CUDA and MPS devices), which is why we are running the sampling on the CPU via <code>.cpu()</code>.</p>
+<p>Let’s now sample some more next-token candidates to get a more representative sample.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">def</span> count_samples(probas, num_samples=<span class="tok-fn">1000</span>, threshold=<span class="tok-fn">1</span>, tokenizer=<span class="tok-kw">None</span>):
+    samples = torch.multinomial<span class="tok-kw">(</span>
+        probas.cpu<span class="tok-kw">()</span>, num_samples=num_samples, replacement=<span class="tok-kw">True</span>
+    <span class="tok-kw">)</span>
+    counts = torch.bincount<span class="tok-kw">(</span>samples.squeeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>, minlength=<span class="tok-fn">1</span><span class="tok-kw">)</span>
+    <span class="tok-kw">for</span> i, c <span class="tok-kw">in</span> enumerate<span class="tok-kw">(</span>counts<span class="tok-kw">)</span>:
+        <span class="tok-kw">if</span> c &gt; threshold:
+            <span class="tok-kw">if</span> tokenizer <span class="tok-kw">is</span> <span class="tok-kw">None</span>:
+                print<span class="tok-kw">(</span>f"Vocab index {i}: {c.item<span class="tok-kw">()</span>}x"<span class="tok-kw">)</span>
+            <span class="tok-kw">else</span>:
+                print<span class="tok-kw">(</span>f"'{tokenizer.decode<span class="tok-kw">(</span>[i]<span class="tok-kw">)</span>}': {c.item<span class="tok-kw">()</span>}x"<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 4.7</span>Sampling multiple next-token candidates Draw samples according to probabilities.</figcaption></figure>
+<p>This <code>count_samples</code> function in listing 4.7 samples token indices from a probability distribution and counts how often each token is drawn. It uses <code>torch.multinomial to randomly select </code><code>num_samples</code><code> indices in proportion to their probabilities. The replacement=True</code> setting allows us to draw the same token multiple times.</p>
+<p>Then, <code>torch.bincount</code> counts how often each index appears. It prints only tokens that occur more than a specified threshold so it doesn’t clutter the output with less frequently drawn tokens.</p>
+<nav class="pager"><a class="prev" href="page-33.html" rel="prev"><span class="dir">上一页</span><span class="t">4.4.2 Rescaling token scores (logits) via a temperature parameter</span></a><a class="next" href="page-35.html" rel="next"><span class="dir">下一页</span><span class="t">Multinomial sampling</span></a></nav>
+</main>
+</body>
+</html>

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>Summary · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-51.html">
+<link rel="next" href="page-53.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 52 页 / 共 108 页</span></div>
+<h3 id="h3-summary-5">Summary</h3>
+<ul><li>Self-refinement extends the inference-time scaling ideas from the previous chapter by iteratively critiquing and improving a single answer, rather than relying on multiple independent samples as in self-consistency.</li></ul>
+<ul><li>A simple rule-based scoring function ranks model outputs by rewarding extractable final answers and shorter, more economical completions.</li></ul>
+<ul><li>Next-token scoring quantifies model confidence by converting logits into normalized probabilities and combining these into a sequence-level likelihood.</li></ul>
+<ul><li>Log probabilities replace raw probabilities to avoid numerical underflow and to turn products over many tokens into stable sums and averages.</li></ul>
+<ul><li>These scoring functions are useful beyond self-refinement, such as for breaking ties in self-consistency or implementing best-of-<em>N</em> selection strategies.</li></ul>
+<ul><li>The self-refinement procedure consists of three stages: generating an initial draft, producing a short critique and fix plan, and generating a revised answer. A reusable refinement function automates the self-refinement workflow across multiple iterations (refinement rounds), and it can use score-based acceptance to keep only revisions that do not degrade the computed answer’s score using one of the scoring functions we developed earlier.</li></ul>
+<h1 id="h1-training-reasoning-models-with-reinforcement-learning">Training reasoning models with reinforcement learning</h1>
+<p class="summary">This chapter covers</p>
+<ul><li>The difference between reinforcement learning with human feedback and reinforcement learning with verifiable rewards</li><li>Training reasoning LLMs as a reinforcement learning problem with task-correctness rewards</li><li>Sampling multiple responses per prompt to compute group-relative learning signals</li><li>Updating the LLM weights using group-based policy optimization for improved reasoning</li></ul>
+<p>Reasoning performance and answer accuracy can be improved both by increasing the inference compute budget and by using specific model-training methods. This chapter, as shown in figure 6.1, focuses on reinforcement learning (RL), the most commonly used training method for reasoning models.</p>
+<p>We’ll first go through a general introduction to RL in the context of LLMs. Then we’ll discuss the two most common RL approaches used for LLMs.</p>
+<figure><a class="zoom" href="assets/figure-6.1.png" tabindex="-1"><img src="assets/figure-6.1.png" alt="" width="1141" height="499" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 6.1</span>A model of the topics covered in this book. This chapter focuses on techniques that improve reasoning with additional training (stage 4). Specifically, this chapter covers reinforcement learning (RL).</figcaption></figure>
+<h2 id="h2-introduction-to-rl-for-llms"><span class="num">6.1</span>Introduction to RL for LLMs</h2>
+<p>Inference-time scaling and training-time scaling are two distinct approaches for improving the reasoning performance of LLMs, as illustrated in figure 6.2. Inference-time scaling increases accuracy by spending more computation per generated answer, whereas training-time scaling improves accuracy by investing additional computation during training. This chapter focuses on training-time scaling.</p>
+<p>While figure 6.2 presents inference-time scaling and training-time scaling as separate concepts, in practice they can be combined. For example, after improving a model’s reasoning capabilities through RL, which is the core focus of this chapter, inference-time-scaling techniques such as those introduced in chapters 4 and 5 can be applied to further boost performance.</p>
+<p>RL focuses on how models learn from sequences of actions and their outcomes, with classic examples being agents trained to play chess, Go, or video games. While RL for LLMs builds on this research, it differs in important ways and often resembles familiar LLM-training techniques. Since this book focuses on language models, we will not cover RL in general but instead focus on how RL is applied in LLM training.</p>
+<p>So what does RL mean for LLMs in practice? At a high level, RL is typically applied as a post-training stage on top of a pretrained language model, sometimes after instruction fine-tuning. This setup is illustrated in figure 6.3.</p>
+<p>There are two common RL stages for LLMs: <em>reasoning training</em> and <em>preference tuning</em>. As shown in figure 6.3, RL is usually applied after <em>instruction fine-tuning</em>, and preference tuning often follows reasoning training. </p>
+<figure><a class="zoom" href="assets/figure-6.2.png" tabindex="-1"><img src="assets/figure-6.2.png" alt="" width="1030" height="602" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 6.2</span>Conceptual comparison of inference-time scaling and training-time scaling. Increasing compute at inference improves accuracy by spending more resources per-answer generation, while increasing compute during training improves accuracy by investing more resources up front. Train the LLM to follow basic instructions (e.g., “Summarize this text:…”). Reinforcement learning Pretrained LLM Instruction fine-tuning (RL) Reasoning training Preference tuning with RL with verifiable with RL with human rewards (RLVR) feedback (RLHF) Train the LLM on answer Train the LLM on human preferences correctness for complex to prefer one answer type over tasks (e.g., solve complex another (e.g., prefer a clear math or code problems). answer over a rambling one).</figcaption></figure>
+<figure><a class="zoom" href="assets/figure-6.3.png" tabindex="-1"><img src="assets/figure-6.3.png" alt="" width="1048" height="561" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 6.3</span>Common training stages for LLMs. The ordering of the reasoning training and preference-tuning stages can vary, and some pipelines interleave reasoning and preference tuning rather than strictly sequencing them.</figcaption></figure>
+<p>As the DeepSeek team demonstrated in its DeepSeek-R1 work, though, reasoning-focused RL can also be applied directly to the pretrained base model, skipping both instruction fine-tuning and preference tuning. The resulting model is generally weaker in reasoning accuracy than one that goes through the full training pipeline, but it still exhibits clear, robust reasoning behavior. More importantly, applying reasoning training directly to the base model avoids mixing the effects of multiple training stages, making it easier to attribute any observed improvements specifically to the reasoning training itself.</p>
+<p>Before getting further into the details of how RL is implemented for LLMs, let’s briefly compare RL with pretraining at a conceptual level. During pretraining, an LLM is trained to predict the next token in large amounts of text, and many of the model’s core abilities and emergent behaviors (such as answering knowledge-based questions and following simple instructions) develop at this stage.</p>
+<aside><span class="tag">Note</span>Pretraining is the main focus of my earlier book, Build a Large Language Model (From Scratch), but familiarity with that material is not required to follow this chapter or the rest of this book.</aside>
+<p>Applying RL on top of a pretrained model is attractive because it lets us optimize whole outputs, such as answer correctness or preferences, rather than individual tokens and next-token prediction. In this sense, pretraining mainly builds knowledge, while RL shapes how the model uses that knowledge, including its reasoning behavior.</p>
+<p>As outlined in figure 6.4, the next two subsections provide a high-level overview of how RL is used in LLM training, and they set the context for the method we’ll use in the rest of this chapter.</p>
+<nav class="pager"><a class="prev" href="page-51.html" rel="prev"><span class="dir">上一页</span><span class="t">Exercise 5.5: Using the heuristic score for self-refinement</span></a><a class="next" href="page-53.html" rel="next"><span class="dir">下一页</span><span class="t">6.1.1 The original RL pipeline with human feedback (RLHF)</span></a></nav>
+</main>
+</body>
+</html>

@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>7.2.1 Executing a GRPO training run · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-62.html">
+<link rel="next" href="page-64.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 63 页 / 共 108 页</span></div>
+<h3 id="h3-executing-a-grpo-training-run"><span class="num">7.2.1</span>Executing a GRPO training run</h3>
+<p>The code in chapter 6 was designed to strike a balance between implementing the complete GRPO pipeline and keeping the implementation compact enough to remain readable. For convenience, the book’s supplementary materials include an equivalent script that contains the same code and can be run from the terminal (more on this later): <a href="https://mng.bz/oZxN">https://mng.bz/oZxN</a>. </p>
+<p>For each GRPO improvement introduced in this chapter, we’ll use related reference scripts from the supplementary materials to avoid duplicating large code blocks in the text. The helper function in listing 7.1 will download the relevant scripts from the supplementary materials and save them locally for you to use in this chapter. This will let us avoid repeating long code passages and keep the focus on the main changes in the GRPO implementations.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">from</span> pathlib <span class="tok-kw">import</span> Path
+<span class="tok-kw">import</span> requests
+<span class="tok-kw">def</span> download_from_github(rel_path, out=<span class="tok-kw">None</span>):
+    github_raw_base = (
+        <span class="tok-st">"https://raw.githubusercontent.com/rasbt/"</span>
+        <span class="tok-st">"reasoning-from-scratch/refs/heads/main/"</span>
+    )
+    rel_path = Path<span class="tok-kw">(</span>rel_path<span class="tok-kw">)</span>
+    out = Path<span class="tok-kw">(</span>out<span class="tok-kw">)</span> <span class="tok-kw">if</span> out <span class="tok-kw">is</span> <span class="tok-kw">not</span> <span class="tok-kw">None</span> <span class="tok-kw">else</span> Path<span class="tok-kw">(</span>rel_path.name<span class="tok-kw">)</span>
+    <span class="tok-kw">if</span> out.exists<span class="tok-kw">()</span>:
+        size_kb = out.stat<span class="tok-kw">()</span>.st_size / <span class="tok-fn">1e3</span>
+        print<span class="tok-kw">(f</span><span class="tok-st">"</span>{out}<span class="tok-st">: </span>{size_kb:.1f}<span class="tok-st"> KB (cached)"</span><span class="tok-kw">)</span>
+        <span class="tok-kw">return</span> out
+    r = requests.get<span class="tok-kw">(</span>github_raw_base + rel_path.as_posix<span class="tok-kw">())</span>
+    r.raise_for_status<span class="tok-kw">()</span>
+    out.write_bytes<span class="tok-kw">(</span>r.content<span class="tok-kw">)</span>
+    size_kb = out.stat<span class="tok-kw">()</span>.st_size / <span class="tok-fn">1e3</span>
+    print<span class="tok-kw">(f</span><span class="tok-st">"</span>{out}<span class="tok-st">: </span>{size_kb:.1f}<span class="tok-st"> KB"</span><span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 7.1</span>Helper function to download supplementary materials</figcaption></figure>
+<p>Using the preceding helper function, you can download the script with the GRPO training code from chapter 6 as follows:</p>
+<pre><code class="language-python">download_from_github<span class="tok-kw">(</span>
+    <span class="tok-st">"ch06/02_rlvr_grpo_scripts_intro/rlvr_grpo_original_no_kl.py"</span>
+<span class="tok-kw">)</span></code></pre>
+<p>You should see the following output: <code>rlvr_grpo_original_no_kl.py:</code> <code>13.4</code> <code>KB</code>. If the downloaded file is much smaller than the size listed here, the download may not have completed correctly. In that case, double-check the URLs and see the troubleshooting guide for additional suggestions: <a href="https://github.com/rasbt/reasoning-from-scratch/blob/main/troubleshooting.md">https://github.com/rasbt/reasoning-from-scratch/blob/main/troubleshooting.md</a>. The resulting script can be run from a terminal as shown in figure 7.3.</p>
+<p>It’s also possible to run the training script from a code cell in a Jupyter Notebook by </p>
+<pre><code class="language-python">prepending “!”, that is, !uv run rlvr_grpo_original_no_kl.py.</code></pre>
+<p>If you are not a <code>uv</code> user, replace the <code>uv run</code> shown in figure 7.3 with <code>python</code>, as follows:</p>
+<pre><code class="language-python">python rlvr_grpo_original_no_kl.py \
+--steps <span class="tok-fn">500</span> \
+--max_new_tokens <span class="tok-fn">1024</span></code></pre>
+<figure><a class="zoom" href="assets/figure-7.3.png" tabindex="-1"><img src="assets/figure-7.3.png" alt="" width="1133" height="685" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 7.3</span>Output from a GRPO training run in a terminal, showing several training statistics, such as loss, average reward, tokens/sec throughput, and average response length</figcaption></figure>
+<aside><span class="tag">Tip</span>You can add --show_eta to the preceding code execution command to show an estimate of the script’s total runtime on your machine.</aside>
+<p>If you prefer not to run the training code yourself, which is reasonable given its computational cost, the supplementary materials provide log files from this run. You can download them as follows:</p>
+<pre><code class="language-python">download_from_github<span class="tok-kw">(</span>
+    <span class="tok-st">"ch07/02_logs/ch06_rlvr_grpo_original_no_kl_metrics.txt"</span>
+<span class="tok-kw">)</span>
+download_from_github<span class="tok-kw">(</span>
+    <span class="tok-st">"ch07/02_logs/ch06_rlvr_grpo_original_no_kl_metrics.csv"</span>
+<span class="tok-kw">)</span></code></pre>
+<p>The first file, ending in <code>.txt</code>, is the plain output file that shows output statistics similar to those in figure 7.3. The second file, ending in <code>.csv</code>, is a comma-separated values file that provides more structure for this information, making it easier to extract and plot the data for further analysis.</p>
+<h3 id="h3-inspecting-the-grpo-training-run"><span class="num">7.2.2</span>Inspecting the GRPO training run</h3>
+<p>To inspect the training run, we can plot the results from the log files using Matplotlib. We’ll define a plotting function that we’ll use throughout this chapter.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">import</span> csv
+<span class="tok-kw">import</span> matplotlib.pyplot <span class="tok-kw">as</span> plt
+<span class="tok-kw">def</span> moving_average(values, window_fraction=<span class="tok-fn">0.25</span>):
+    window_size = max<span class="tok-kw">(</span><span class="tok-fn">1</span>, int<span class="tok-kw">(</span>window_fraction * len<span class="tok-kw">(</span>values<span class="tok-kw">)))</span>
+    smoothed = []
+    <span class="tok-kw">for</span> i <span class="tok-kw">in</span> range<span class="tok-kw">(</span>len<span class="tok-kw">(</span>values<span class="tok-kw">))</span>:
+        start_idx = max<span class="tok-kw">(</span><span class="tok-fn">0</span>, i - window_size + <span class="tok-fn">1</span><span class="tok-kw">)</span>
+        window_mean = sum<span class="tok-kw">(</span>values<span class="tok-kw">[</span>start_idx : i + <span class="tok-fn">1</span><span class="tok-kw">])</span> / (i - start_idx + <span class="tok-fn">1</span>)
+        smoothed.append<span class="tok-kw">(</span>window_mean<span class="tok-kw">)</span>
+    <span class="tok-kw">return</span> smoothed
+<span class="tok-kw">def</span> plot_grpo_metrics(csv_path, columns, save_as=<span class="tok-kw">None</span>):
+    data = {name: {<span class="tok-st">"steps"</span>: [], <span class="tok-st">"values"</span>: []} <span class="tok-kw">for</span> name <span class="tok-kw">in</span> columns}
+    <span class="tok-kw">with</span> Path<span class="tok-kw">(</span>csv_path<span class="tok-kw">)</span>.open<span class="tok-kw">(</span>newline=<span class="tok-st">""</span><span class="tok-kw">)</span> <span class="tok-kw">as</span> f:
+        reader = csv.DictReader<span class="tok-kw">(</span>f<span class="tok-kw">)</span>
+        <span class="tok-kw">for</span> row <span class="tok-kw">in</span> reader:
+            <span class="tok-kw">if</span> <span class="tok-kw">not</span> row <span class="tok-kw">or</span> <span class="tok-kw">not</span> row.get<span class="tok-kw">(</span><span class="tok-st">"step"</span><span class="tok-kw">)</span>:
+                <span class="tok-kw">continue</span>
+            step = int<span class="tok-kw">(</span>row<span class="tok-kw">[</span><span class="tok-st">"step"</span><span class="tok-kw">])</span>
+            <span class="tok-kw">for</span> name <span class="tok-kw">in</span> columns:
+                value_str = row.get<span class="tok-kw">(</span>name<span class="tok-kw">)</span>
+                <span class="tok-kw">if</span> value_str:
+                    data<span class="tok-kw">[</span>name<span class="tok-kw">]</span>[<span class="tok-st">"steps"</span>].append<span class="tok-kw">(</span>step<span class="tok-kw">)</span>
+                    data<span class="tok-kw">[</span>name<span class="tok-kw">]</span>[<span class="tok-st">"values"</span>].append<span class="tok-kw">(</span>float<span class="tok-kw">(</span>value_str<span class="tok-kw">))</span>
+    fig, axes = plt.subplots<span class="tok-kw">(</span><span class="tok-fn">2</span>, <span class="tok-fn">2</span>, sharex=<span class="tok-kw">True</span>, figsize=(<span class="tok-fn">6</span>, <span class="tok-fn">4</span>)<span class="tok-kw">)</span>
+    axes = axes.ravel<span class="tok-kw">()</span>
+    <span class="tok-kw">for</span> i, name <span class="tok-kw">in</span> enumerate<span class="tok-kw">(</span>columns<span class="tok-kw">)</span>:
+        steps = data<span class="tok-kw">[</span>name<span class="tok-kw">]</span>[<span class="tok-st">"steps"</span>]
+        values = data<span class="tok-kw">[</span>name<span class="tok-kw">]</span>[<span class="tok-st">"values"</span>]
+        <span class="tok-kw">if</span> <span class="tok-kw">not</span> values:
+            fig.delaxes<span class="tok-kw">(</span>axes<span class="tok-kw">[</span>i<span class="tok-kw">])</span>
+            <span class="tok-kw">continue</span>
+        <span class="tok-kw">if</span> name == <span class="tok-st">"eval_acc"</span>:
+            axes<span class="tok-kw">[</span>i<span class="tok-kw">]</span>.bar<span class="tok-kw">(</span>steps, values, width=<span class="tok-fn">20</span><span class="tok-kw">)</span>
+        <span class="tok-kw">else</span>:
+            axes<span class="tok-kw">[</span>i<span class="tok-kw">]</span>.plot<span class="tok-kw">(</span>steps, values, alpha=<span class="tok-fn">0.4</span><span class="tok-kw">)</span>
+            axes<span class="tok-kw">[</span>i<span class="tok-kw">]</span>.plot<span class="tok-kw">(</span>steps, moving_average<span class="tok-kw">(</span>values<span class="tok-kw">))</span>
+        axes<span class="tok-kw">[</span>i<span class="tok-kw">]</span>.set_ylabel<span class="tok-kw">(</span>name<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 7.2</span>Plotting function to visualize training results from log files</figcaption></figure>
+<pre><code class="language-python">    <span class="tok-kw">for</span> j <span class="tok-kw">in</span> (<span class="tok-fn">2</span>, <span class="tok-fn">3</span>):
+        <span class="tok-kw">if</span> axes<span class="tok-kw">[</span>j<span class="tok-kw">]</span> <span class="tok-kw">in</span> fig.axes:
+            axes<span class="tok-kw">[</span>j<span class="tok-kw">]</span>.set_xlabel<span class="tok-kw">(</span><span class="tok-st">"Step"</span><span class="tok-kw">)</span>
+    plt.tight_layout<span class="tok-kw">()</span>
+    <span class="tok-kw">if</span> save_as <span class="tok-kw">is</span> <span class="tok-kw">not</span> <span class="tok-kw">None</span>:
+        plt.savefig<span class="tok-kw">(</span>save_as<span class="tok-kw">)</span>
+    plt.show<span class="tok-kw">()</span></code></pre>
+<p>The <code>.csv</code> file we downloaded has multiple columns. Using the <code>plot_grpo_metrics</code> function we defined in listing 7.2, we can plot the loss, average reward, average response length, and evaluation accuracy:</p>
+<pre><code class="language-python">plot_grpo_metrics<span class="tok-kw">(</span>
+    <span class="tok-st">"ch06_rlvr_grpo_original_no_kl_metrics.csv"</span>,
+    columns=[<span class="tok-st">"loss"</span>, <span class="tok-st">"reward_avg"</span>, <span class="tok-st">"avg_response_len"</span>, <span class="tok-st">"eval_acc"</span>]
+<span class="tok-kw">)</span></code></pre>
+<p>The resulting plot is shown in figure 7.4.</p>
+<figure><a class="zoom" href="assets/figure-7.4.png" tabindex="-1"><img src="assets/figure-7.4.png" alt="" width="798" height="710" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 7.4</span>The four metrics tracked during the GRPO training run (loss, average reward, average response length, and evaluation accuracy). The orange centerline represents a moving average over the last 25% of values, which helps reveal overall trends in the otherwise noisy training signals. The evaluation accuracy is shown as a bar plot since it is computed only every 50 steps rather than at each step.</figcaption></figure>
+<p>A few general observations stand out in the plots shown in figure 7.4. The average response length should initially increase, ideally, along with an improvement in accuracy, which is largely what we see here, although there is a noticeable decline later in the run, just before step 400. Compared to LLM pretraining, which is outside the scope of this book and is covered in more detail in my previous book, <em>Build A Large Language Model (From Scratch)</em>, the loss value itself is less informative and mainly serves as a sanity check. Overall, the loss should remain relatively stable. Some fluctuations are expected, but the larger spikes that appear halfway through the run are somewhat concerning.</p>
+<p>The average reward should also increase over time. In principle, an average reward of 1.00 means that all sampled responses are correct, which is desirable, but it also means that the training signal has disappeared. At that point, further training is unlikely to be useful, and stopping early can save us time and resources.</p>
+<p>Finally, performance on the external target task, here measured by MATH-500 accuracy, should improve. In this run, accuracy increases at first but then begins to decline, which points to problems and instabilities in the training process.</p>
+<p>In summary, the training run shows fast gains early on, followed by diminishing returns after approximately 50 steps. One likely reason is that the underlying algorithm is not particularly stable over longer runs. Another possible explanation is that later training examples are more difficult, but this would not account for the decline in evaluation accuracy, which is computed from the same 500 MATH-500 test samples every 50 steps.</p>
+<p>Note that the main goal of this section has been to introduce, analyze, and discuss various training metrics. We have focused on some basic ones, and in the next section we’ll extend this list and look at additional metrics that are commonly tracked during GRPO training.</p>
+<h3 id="h3-calculating-evaluation-accuracy">Calculating evaluation accuracy</h3>
+<div class="lead">Evaluation accuracy (<code>eval_acc</code>), here measured on the MATH-500 benchmark, is not tracked by default during training. It can be computed periodically by adding the setting <code>--eval_on_checkpoint 500</code> when running the training script, but this is not recommended because it significantly slows down training. Alternatively, it can be calculated separately after training using the <code>evaluate_math500.py</code> script introduced in chapter 3:</div>
+<pre><code class="language-python">download_from_github<span class="tok-kw">(</span>
+    <span class="tok-st">"ch03/02_math500-verifier-scripts/evaluate_math500.py"</span>
+<span class="tok-kw">)</span></code></pre>
+<div class="lead">The evaluation can then be run as follows for a given checkpoint:</div>
+<pre><code class="language-python">uv run evaluate_math500.py \
+  --dataset_size 500 \
+  --checkpoint_path \
+    "checkpoints/rlvr_grpo_original_no_kl/\
+qwen3-0.6B-rlvr-grpo-step00050.pth"</code></pre>
+<div class="lead">In this run, evaluation accuracy is included in the log file. (If you are not a <code>uv</code> user, replace <code>uv run</code> with <code>python</code>.)</div>
+<nav class="pager"><a class="prev" href="page-62.html" rel="prev"><span class="dir">上一页</span><span class="t">Summary</span></a><a class="next" href="page-64.html" rel="next"><span class="dir">下一页</span><span class="t">7.3 Tracking more advanced GRPO performance metrics</span></a></nav>
+</main>
+</body>
+</html>

@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>数学推导详解 · 7.3 熵与 advantage 统计量 · Build a Reasoning Model</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">数学推导详解 · 7.3 熵</span>
+<a class="nav" href="page-65.html">原文</a>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">对应原文第 64–66 页 · 第 7 章 Improving GRPO for reinforcement learning</span></div>
+
+<h1>7.3 advantage 统计量与熵：完整数学推导</h1>
+
+<div class="lead">
+这一节推导两个<b>诊断指标</b>。它们本身不进入 loss，只用来回答一个问题：<b>训练现在是在进步还是在崩？</b>
+熵尤其重要——它是唯一能提前预警「训练崩溃」的指标，而 7.5 的 KL 失效模式正是靠它被发现的。
+</div>
+
+<h2 class="deriv">一、advantage 统计量</h2>
+
+<h3>1.1 为什么均值和标准差都要看</h3>
+
+<p>优势函数：</p>
+
+\[
+A_i = \frac{r_i - \mu_r}{\sigma_r + \epsilon}
+\]
+
+<pre><code><span class="tok-kw">def</span> <span class="tok-fn">compute_advantage_stats</span>(rewards_list):
+    rewards = torch.tensor(rewards_list)
+    advantages = (rewards - rewards.mean()) / (rewards.std() + <span class="tok-nu">1e-4</span>)
+    adv_avg = advantages.mean().item()
+    adv_std = advantages.std().item()
+    <span class="tok-kw">return</span> advantages, adv_avg, adv_std</code></pre>
+
+<h3>1.2 均值恒为 0（设计使然）</h3>
+
+<div class="tw">
+<table>
+<thead><tr><th>\(r_i\)</th><th>\(A_i\)</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>+0.8659</td></tr>
+<tr><td>1</td><td>+0.8659</td></tr>
+<tr><td>0</td><td>−0.8659</td></tr>
+<tr><td>0</td><td>−0.8659</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>因为分子减的就是同一个均值：</p>
+
+\[
+\begin{aligned}
+\frac{1}{N}\sum_{i=1}^{N} A_i &= \frac{1}{N(\sigma_r+\epsilon)}\sum_{i=1}^{N}(r_i - \mu_r) \\[4pt] &= \frac{1}{N(\sigma_r+\epsilon)}\left(\sum_i r_i - N\mu_r\right) = 0
+\end{aligned}
+\]
+
+<p>对照原文输出：<code>Advantage mean = 0.0000, std = 0.9998</code>。</p>
+
+<div class="key">
+<span class="tag">所以 adv_avg 是纯 sanity check</span>
+<p>原文：<i>Because of how advantages are computed in GRPO, their mean is always zero. In practice, this makes the mean mostly a sanity check that the implementation behaves as expected.</i></p>
+<p>它的唯一作用是<b>查 bug</b>。如果 <code>adv_avg</code> 偏离 0，说明归一化实现有问题。</p>
+</div>
+
+<h3>1.3 标准差才是信息量所在</h3>
+
+<p>由于 \(A_i\) 已经按 \(\sigma_r\) 归一化，<code>adv_std</code> 本质上是在度量<b>组内 reward 的区分度</b>。原文给了明确的解读：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>adv_std</th><th>含义</th><th>训练影响</th></tr></thead>
+<tbody>
+<tr><td>≈ 1.0</td><td>信号尺度良好</td><td>✅ 稳定，通常伴随有效更新</td></tr>
+<tr><td>非常小</td><td>学习信号消失</td><td>⚠️ 常伴随 reward collapse（全对/全错）</td></tr>
+<tr><td>非常大</td><td>更新过于尖锐</td><td>⚠️ 可能破坏训练稳定性</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>原文在 7.3.3 分析实际训练曲线时说：<i>Early in training, we see relatively high variance... Over time, the advantage standard deviation gradually decreases and stabilizes, which means that the rollouts become more similar in quality.</i></p>
+
+<div class="eq-note">
+<b>训练中 adv_std 下降是好事还是坏事？</b>原文的框架里，<b>下降意味着模型输出质量趋于一致</b>（好事），<b>但降到 0 意味着完全没信号</b>（坏事）。所以要看的不是绝对值，而是<b>是否稳定在非零水平</b>。
+</div>
+
+<h2 class="deriv">二、熵（entropy）</h2>
+
+<h3>2.1 定义与直觉</h3>
+
+<p>熵衡量模型生成下一个 token 时的<b>不确定程度</b>：</p>
+
+\[
+H(P) = -\sum_{v=1}^{|V|} P(v) \log P(v)
+\]
+
+<p>两个极端：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>分布</th><th>熵</th><th>行为</th></tr></thead>
+<tbody>
+<tr><td>全部质量集中在一个 token</td><td>\(H = 0\)</td><td>完全确定性，<code>argmax</code> 退化情形</td></tr>
+<tr><td>质量均匀分布</td><td>\(H = \log|V|\)</td><td>完全随机</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>2.2 熵的最大值随词表大小变化</h3>
+
+<p>均匀分布时 \(H = \log |V|\)。这解释了原文的分级标准：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>熵范围</th><th>解释</th></tr></thead>
+<tbody>
+<tr><td>≈ 0 – 0.5</td><td>一个 token 主导，模型高度自信，近似确定性</td></tr>
+<tr><td>≈ 1 – 2</td><td>概率分散在合理数量的 token 上，稳定训练的典型状态</td></tr>
+<tr><td>接近 \(\log|V|\)</td><td>概率铺开到大量 token，高度不确定，近似随机</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="warn">
+<span class="tag">这个分级的适用范围</span>
+<p>原文的例子用 <b>词表大小 7</b>（否则 151,000 维没法画图），此时 \(\log 7 = 1.9459\)。但表 7.3 的分级是按 <b>真实词表 151,936</b> 说的（\(H_{\max} \approx 11.93\)）。两个数不在同一量纲——<b>看熵曲线时不要拿这个 demo 的 1.37 当参照</b>。</p>
+</div>
+
+<h3>2.3 从 logits 算熵</h3>
+
+<pre><code>logits = torch.tensor([<span class="tok-nu">0.6667</span>, <span class="tok-nu">-2.0000</span>, <span class="tok-nu">1.3333</span>, <span class="tok-nu">-0.0000</span>, <span class="tok-nu">-0.6667</span>, <span class="tok-nu">2.0000</span>, <span class="tok-nu">-1.3333</span>])
+
+probs    = torch.softmax(logits, dim=<span class="tok-nu">-1</span>)
+logprobs = torch.log_softmax(logits, dim=<span class="tok-nu">-1</span>)
+entropy  = torch.<span class="tok-fn">sum</span>(-(probs * logprobs))
+<span class="tok-fn">print</span>(<span class="tok-st">"Probs:"</span>, probs)
+<span class="tok-cm"># tensor([0.1295, 0.0090, 0.2522, 0.0665, 0.0341, 0.4912, 0.0175])</span>
+<span class="tok-fn">print</span>(<span class="tok-st">"Entropy:"</span>, entropy)  <span class="tok-cm"># tensor(1.3700)</span></code></pre>
+
+<h3>2.4 验算熵值</h3>
+
+<p>把每项 \(p \cdot \log p\) 列出来：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>\(v\)</th><th>\(p_v\)</th><th>\(\log p_v\)</th><th>\(-p_v \log p_v\)</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>0.1295</td><td>−2.0442</td><td>0.2647</td></tr>
+<tr><td>2</td><td>0.0090</td><td>−4.7109</td><td>0.0424</td></tr>
+<tr><td>3</td><td>0.2522</td><td>−1.3776</td><td>0.3474</td></tr>
+<tr><td>4</td><td>0.0665</td><td>−2.7109</td><td>0.1803</td></tr>
+<tr><td>5</td><td>0.0341</td><td>−3.3776</td><td>0.1152</td></tr>
+<tr><td>6</td><td>0.4912</td><td>−0.7109</td><td>0.3492</td></tr>
+<tr><td>7</td><td>0.0175</td><td>−4.0442</td><td>0.0708</td></tr>
+</tbody>
+</table>
+</div>
+
+\[
+H = 0.2647 + 0.0424 + 0.3474 + 0.1803 + 0.1152 + 0.3492 + 0.0708 = 1.3700
+\]
+
+<p>与原文输出一致。✓</p>
+
+<div class="key">
+<span class="tag">手动 sanity check</span>
+<p>如果只有 1 个 token 且 \(p_1 = 1\)，熵是 0；如果均匀分布 \(p_v = 1/7\)，熵是 \(\log 7 = 1.9459\)。实测 1.37 落在中间，且最大 token 概率 0.4912 明显占优——和原文描述一致。</p>
+</div>
+
+<h3>2.5 熵的非负性</h3>
+
+<p>每一项 \(-p \log p \ge 0\)（因为 \(0 \le p \le 1\) 时 \(\log p \le 0\)），所以 \(H \ge 0\) 恒成立。这就是为什么代码写成 <code>-(probs * logprobs)</code> 而不是 <code>(probs * logprobs)</code>。</p>
+
+<h3>2.6 为什么能只用 logprobs 算 probs</h3>
+
+<p>原文指出：<code>torch.log_softmax</code> 内部等价于 <code>torch.log(torch.softmax())</code>，而 <code>exp</code> 是 <code>log</code> 的逆函数，所以：</p>
+
+\[
+P(v) = \exp(\log P(v))
+\]
+
+<pre><code><span class="tok-fn">print</span>(<span class="tok-st">"Probs:"</span>, torch.exp(logprobs))
+<span class="tok-cm"># 和直接 softmax 得到完全一样的值</span></code></pre>
+
+<h3>2.7 扩展 sequence_logprob 同时返回熵</h3>
+
+<pre><code><span class="tok-kw">def</span> <span class="tok-fn">sequence_logprob_and_entropy</span>(model, token_ids, prompt_len):
+    logits = model(token_ids.unsqueeze(<span class="tok-nu">0</span>)).squeeze(<span class="tok-nu">0</span>).float()
+    logprobs = torch.log_softmax(logits, dim=<span class="tok-nu">-1</span>)
+    targets = token_ids[<span class="tok-nu">1</span>:]
+    selected = logprobs[:<span class="tok-nu">-1</span>].gather(<span class="tok-nu">1</span>, targets.unsqueeze(<span class="tok-nu">-1</span>)).squeeze(<span class="tok-nu">-1</span>)
+    selected_answer_logprobs = selected[prompt_len <span class="tok-nu">-1</span>:]
+    logp_all_steps = torch.<span class="tok-fn">sum</span>(selected_answer_logprobs)
+    <span class="tok-cm"># 熵需要在整个词表上算，不能只取选中 token</span>
+    all_probs = torch.exp(logprobs)
+    entropy = torch.<span class="tok-fn">sum</span>(-(all_probs * logprobs), dim=<span class="tok-nu">-1</span>)
+    ...</code></pre>
+
+<div class="eq-note">
+<b>一个容易忽略的差别：</b>序列 logprob 只关心 <b>实际生成的那个 token</b>（<code>gather</code>），而熵关心 <b>整个词表的分布形状</b>。所以熵必须在 <code>logprobs</code> 的<b>完整 [L, |V|] 矩阵</b>上求，不能先 gather。<b>采样动作 vs 分布形状，两回事。</b>
+</div>
+
+<h2 class="deriv">三、熵作为训练崩溃的早期信号</h2>
+
+<div class="tw">
+<table>
+<thead><tr><th>熵的状态</th><th>诊断</th><th>可能原因</th></tr></thead>
+<tbody>
+<tr><td>极低，接近 0</td><td>训练坍缩（collapse）</td><td>模型停止探索，重复产出相同输出；采样多样性丧失 → self-consistency 失效</td></tr>
+<tr><td>适中（稳定区间）</td><td>✅ 健康</td><td>—</td></tr>
+<tr><td>过大，持续上升</td><td>更新不稳定</td><td>响应随机化；<b>7.5 的 KL 失效模式</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="key">
+<span class="tag">7.5 的 KL 失效就是靠这个指标确诊的</span>
+<p>奖励塌到 0 之后，PG 梯度消失，KL 项成为唯一梯度来源——而它作用在固定采样 token 上，最小化它会<b>压低已采样 token 的概率</b>，让质量流向其他 token，<b>熵上升，输出变随机</b>。</p>
+<p>所以只要你发现 <code>entropy_avg</code> 后期突然飙升，就该怀疑 KL 项或者步长过大。<b>这个指标是诊断工具，不是优化目标。</b></p>
+</div>
+
+<h2 class="deriv">四、四个指标的分工</h2>
+
+<div class="tw">
+<table>
+<thead><tr><th>指标</th><th>衡量</th><th>理想值</th><th>异常意味着</th></tr></thead>
+<tbody>
+<tr><td><code>adv_avg</code></td><td>归一化 sanity check</td><td>恒为 0</td><td>偏离 0 → 实现 bug</td></tr>
+<tr><td><code>adv_std</code></td><td>学习信号强度</td><td>稳定非零</td><td>趋 0 → reward collapse；过大 → 尖峰更新</td></tr>
+<tr><td><code>entropy_avg</code></td><td>输出多样性 / 探索度</td><td>适中且平稳</td><td>趋 0 → 坍缩；飙升 → 随机化</td></tr>
+<tr><td><code>avg_response_len</code></td><td>生成长度（<a href="page-58-detail.html">6.8 长度偏置</a>）</td><td>与准确率同向</td><td>缩短但准确率降 → reward hacking</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="eq-note">
+<b>Ch7 Summary 的原话：</b><i>Interpreting GRPO training requires tracking multiple metrics jointly. Basic metrics such as loss mainly serve as sanity checks and should not be overinterpreted in isolation.</i> —— 单看一个指标无法诊断训练，必须联合观察。
+</div>
+
+<nav class="deriv-nav">
+<a href="page-70-detail.html"><span class="dir">详解</span>7.5 KL 项：熵为何崩塌</a>
+<a href="page-67-detail.html"><span class="dir">详解</span>7.4 裁剪比率</a>
+<a href="page-58-detail.html"><span class="dir">详解</span>6.8 / 6.9 零 advantage 与长度偏置</a>
+<a href="page-64.html"><span class="dir">原文</span>7.3 跟踪高级指标</a>
+</nav>
+
+</main>
+
+<script defer src="assets/katex/katex.min.js"></script>
+<script defer src="assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>

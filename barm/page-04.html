@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>1.1 Defining reasoning in the context of LLMs · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-03.html">
+<link rel="next" href="page-05.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 4 页 / 共 108 页</span></div>
+<h2 id="h2-defining-reasoning-in-the-context-of-llms"><span class="num">1.1</span>Defining reasoning in the context of LLMs</h2>
+<p>In this book, I use the term <em>reasoning</em> in a practical engineering sense rather than a philosophical one. In the context of LLMs, reasoning refers to a model generating intermediate steps before producing its final answer.</p>
+<p>These intermediate steps may appear as visible step-by-step explanations, or they may be enclosed in special tags such as <code>&lt;think&gt;...&lt;/think&gt;</code> and be hidden from the user. In either case, the core idea remains the same. The model is encouraged or trained to use tokens for intermediate problem-solving steps rather than jumping directly to the conclusion.</p>
+<p>Correspondingly, I use <em>reasoning model</em> to mean an LLM that has been improved, either through training or prompting techniques, to produce such intermediate steps, which often increases accuracy on complex tasks such as coding, logical puzzles, and math problems.</p>
+<p>Before we get to the coding portions of this book, I will briefly discuss the main techniques that improve these reasoning behaviors and how they relate to pattern matching and logical reasoning. This will lay the groundwork for later discussions of how LLMs are currently built, how they handle reasoning tasks, and what they are and are not so good at.</p>
+<h3 id="h3-chain-of-thought-cot">Chain-of-thought (CoT)</h3>
+<div class="lead">This style of generating intermediate steps is often referred to as chain of thought (CoT). Researchers and engineers often say that the model “thinks” through the problem step by step, meaning that it makes its intermediate reasoning process explicit and easier to follow. In this book, I use the terms reasoning and thinking in that common engineering sense. This does not imply that LLMs actually reason or think in the same way humans do.</div>
+<p>Figure 1.1 illustrates how a conventional LLM generates the answer to a user’s question. A conventional LLM might not show how it came up with its answer, and while the answer might be correct, it doesn’t help the user understand the process behind it.</p>
+<figure><a class="zoom" href="assets/figure-1.1.png" tabindex="-1"><img src="assets/figure-1.1.png" alt="" width="954" height="404" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 1.1</span>A simplified illustration of how a conventional, nonreasoning LLM might respond to a question with a short answer</figcaption></figure>
+<p>Figure 1.2 illustrates a simple example of multistep (CoT) reasoning in an LLM. The LLM-produced intermediate reasoning steps look very much like a person articulating internal thoughts aloud. How closely these methods (and the resulting reasoning processes) mirror human reasoning remains an open research question, one this book does not attempt to answer.</p>
+<p>While figure 1.2 is a typical example of chain-of-thought reasoning, it’s important to emphasize that LLM reasoning differs from traditional, deterministic reasoning. For instance, a symbolic logic engine or theorem prover follows strict, rule-based steps that guarantee consistency and correctness. It works like following a recipe in which every step is fixed and must produce the same result each time. If you follow the steps exactly, you will always end up with the same dish.</p>
+<figure><a class="zoom" href="assets/figure-1.2.png" tabindex="-1"><img src="assets/figure-1.2.png" alt="" width="932" height="617" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 1.2</span>A simplified illustration of how a reasoning LLM might tackle a multistep reasoning task using a chain of thought. Rather than just recalling a fact, the model combines several intermediate reasoning steps to arrive at the correct conclusion. The intermediate reasoning steps may or may not be shown to the user, depending on the implementation.</figcaption></figure>
+<p>In contrast to a symbolic logic engine, an LLM generates reasoning <em>autoregressively</em>, which means it predicts one token at a time based on statistical patterns in its training data. As a result, the LLM’s “reasoning steps” are not guaranteed to be logically sound, even if they look convincing.</p>
+<p>This book focuses on explaining and implementing the fundamental techniques that improve LLM-based reasoning and make LLMs better at handling complex tasks. </p>
+<p>My hope is that by gaining hands-on experience with these methods, you will be better prepared to understand and improve the reasoning methods being developed and maybe even explore how they compare to human reasoning.</p>
+<h3 id="h3-llm-vs-human-reasoning">LLM vs. human reasoning</h3>
+<div class="lead">Reasoning processes in LLMs may superficially resemble human thought, particularly in how intermediate steps are articulated. But it is important to recognize a key difference: humans can engage in deterministic reasoning by deliberately applying rules of logic or by reasoning over an internal model of the world. Deterministic, here, means that if we start with the same facts and follow the same steps, we will always reach the same conclusion. In contrast, current LLM reasoning is probabilistic, meaning that it generates one token at a time based on statistical patterns in training data, without guarantees of logical consistency.</div>
+<div class="lead">Humans often reason by consciously manipulating concepts, intuitively understanding abstract relationships, or generalizing from a few examples. LLMs, by contrast, work by picking up patterns from huge amounts of text rather than relying on built-in reasoning rules or any kind of conscious thought. In short, although the outputs of reasoning-enhanced LLMs can appear human-like, the underlying mechanisms differ substantially and remain an active area of exploration.</div>
+<nav class="pager"><a class="prev" href="page-03.html" rel="prev"><span class="dir">上一页</span><span class="t">about the author</span></a><a class="next" href="page-05.html" rel="next"><span class="dir">下一页</span><span class="t">1.2 Understanding the standard LLM training pipeline</span></a></nav>
+</main>
+</body>
+</html>

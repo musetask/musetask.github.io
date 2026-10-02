@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>Exercise 3.3: Extending or changing the evaluation dataset · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-85.html">
+<link rel="next" href="page-87.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 86 页 / 共 108 页</span></div>
+<h3 id="h3-exercise-3-3-extending-or-changing-the-evaluation-dataset-2">Exercise 3.3: Extending or changing the evaluation dataset</h3>
+<p>To evaluate the model on a larger dataset, you can simply change <code>math_data[:10]</code> to a different slice or larger number (up to 500) in the following function call:</p>
+<pre><code class="language-python">num_correct, num_examples, acc = evaluate_math500_stream<span class="tok-kw">(</span>
+    model, tokenizer, device,
+    math_data=math_data<span class="tok-kw">[</span>:<span class="tok-fn">10</span><span class="tok-kw">]</span>,
+    max_new_tokens=<span class="tok-fn">2048</span>,
+    verbose=<span class="tok-kw">False</span>
+<span class="tok-kw">)</span></code></pre>
+<p>Table B.2 shows the accuracy values for different dataset sizes. (Since the MATH-500 test set is already shuffled, no additional shuffling was applied.) As you can see, the first 10 examples are not very representative of MATH-500 performance on the full set of 500 examples.</p>
+<div class="tw"><table><caption><span class="lbl">Table B.2</span>Accuracies for different MATH-500 dataset sizes</caption><thead><tr><th>Model</th><th>Device</th><th>Accuracy</th><th>MATH-500 size</th></tr></thead><tbody><tr><td>Base</td><td>CUDA</td><td>30.0%</td><td>10</td></tr><tr><td>Base</td><td>CUDA</td><td>34.0%</td><td>50</td></tr><tr><td>Base</td><td>CUDA</td><td>27.0%</td><td>100</td></tr><tr><td>Base</td><td>CUDA</td><td>15.3%</td><td>500</td></tr><tr><td>Reasoning</td><td>CUDA</td><td>90.0%</td><td>10</td></tr><tr><td>Reasoning</td><td>CUDA</td><td>58.0%</td><td>50</td></tr><tr><td>Reasoning</td><td>CUDA</td><td>56.0%</td><td>100</td></tr><tr><td>Reasoning</td><td>CUDA</td><td>48.2%</td><td>500</td></tr></tbody></table></div>
+<p>We can also create an entirely new dataset in a style similar to MATH-500. For example, this book’s repository includes a dataset in MATH-500 style; we can use it by changing </p>
+<pre><code class="language-python">the filename from math500_test.json to math_new50_exercise.json in the chapter’s</code></pre>
+<p>code (this dataset is included in the book’s GitHub repository at <a href="https://github.com/rasbt/reasoning-from-scratch/tree/main/ch03/01_main-chapter-code">https://github.com/rasbt/reasoning-from-scratch/tree/main/ch03/01_main-chapter-code</a>).</p>
+<p>The performance of the models is as follows:</p>
+<ul><li>Base: 36.0% (18/50)</li></ul>
+<ul><li>Reasoning: 80.0% (40/50)</li></ul>
+<p>On the new 50-example dataset, the base model reaches 36.0% accuracy, which is close to its 34.0% accuracy on the 50-example MATH-500 subset shown in table B.2. The reasoning model reaches 80.0% accuracy on the new dataset, which is higher than its 58.0% accuracy on the same MATH-500 subset. This suggests that the reasoning model’s strong performance is not limited to the original MATH-500 examples. While possible overlap with Qwen3’s training data cannot be ruled out, these results do not show signs of extensive overfitting to MATH-500.</p>
+<h3 id="h3-exercise-3-4-experimenting-with-different-prompt-templates-2">Exercise 3.4: Experimenting with different prompt templates</h3>
+<p>We could use an alternative prompt, similar to the one suggested in the chapter, that uses the word “problem” instead of “question”:</p>
+<pre><code class="language-python"><span class="tok-kw">def</span> render_prompt(prompt):
+    template = (
+        <span class="tok-st">"You are a helpful math assistant.</span>\n<span class="tok-st">"</span>
+        <span class="tok-st">"Solve the problem and write the final "</span>
+        <span class="tok-st">"result on a new line as:</span>\n<span class="tok-st">"</span>
+        <span class="tok-st">"</span>\\<span class="tok-st">boxed</span>{ANSWER}\n\n<span class="tok-st">"</span>
+        <span class="tok-kw">f</span><span class="tok-st">"Problem:</span>\n{prompt}\n\n<span class="tok-st">Answer:"</span>
+    )
+    <span class="tok-kw">return</span> template</code></pre>
+<p>On the 500 examples, using this prompt improves the base model’s performance from 15.3% to 31.2%. It also improves the reasoning model’s performance from 48.2% to 50.0%.</p>
+<p>From these observations, we may conclude that the base model is much more sensitive to the prompt format (likely due to memorizing some prompt-formatted MATH-500 examples from the training set) than the reasoning model. The latter seems largely unaffected.</p>
+<nav class="pager"><a class="prev" href="page-85.html" rel="prev"><span class="dir">上一页</span><span class="t">B.1 Chapter 2</span></a><a class="next" href="page-87.html" rel="next"><span class="dir">下一页</span><span class="t">B.3 Chapter 4</span></a></nav>
+</main>
+</body>
+</html>

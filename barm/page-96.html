@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>D.4 Loading a larger reasoning variant · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-95.html">
+<link rel="next" href="page-97.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 96 页 / 共 108 页</span></div>
+<h2 id="h2-loading-a-larger-reasoning-variant"><span class="num">D.4</span>Loading a larger reasoning variant</h2>
+<p>The same idea also works for larger reasoning-style Qwen3 models. The architecture for a given model size stays the same. Compared to the previous section, only the checkpoint and tokenizer settings change.</p>
+<p>For example, to load the 4B reasoning variant instead of the 4B base variant, we would</p>
+<ul><li>Switch the repository ID from <code>Qwen/Qwen3-4B-Base</code> to <code>Qwen/Qwen3-4B</code></li></ul>
+<pre><code class="language-python">Copy or rename the tokenizer.json file to tokenizer-reasoning.json</code></pre>
+<ul><li>Initialize the tokenizer using the code in listing D.5</li></ul>
+<figure class="listing"><pre><code class="language-python">tokenizer = Qwen3Tokenizer<span class="tok-kw">(</span>
+    tokenizer_file_path=tokenizer_path,
+    apply_chat_template=<span class="tok-kw">True</span>,
+    add_generation_prompt=<span class="tok-kw">True</span>,
+    add_thinking=<span class="tok-kw">True</span>,
+<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing D.5</span>Loading the reasoning tokenizer</figcaption></figure>
+<p>These three tokenizer settings match the chat-style prompt formatting used by the reasoning models, as discussed in chapters 2 and 8. In other words, we still use the same </p>
+<p>4B architecture configuration (<code>QWEN3_CONFIG_4B</code>), but we pair it with the reasoning checkpoint and the reasoning-style tokenizer behavior.</p>
+<p>The rest of the model-loading and model-use code stays the same. We still download the snapshot, instantiate <code>Qwen3Model(QWEN3_CONFIG_4B)</code>, load the weights via <code>load_hf_ weights_into_qwen</code>, move the model to the target device, and generate text using the same streaming function from chapter 2.</p>
+<h2 id="h2-practical-recommendations"><span class="num">D.5</span>Practical recommendations</h2>
+<p>The main point of this appendix is that the same from-scratch model code from appendix C can be reused across larger official Qwen3 checkpoints, provided that you select the matching configuration dictionary and tokenizer setup. This means moving to a larger model is mostly a matter of loading a different checkpoint and configuration rather than learning an entirely new concept.</p>
+<p>If you want to experiment beyond the 4B example shown here, the 1.7B and 8B variants are natural next steps. The 1.7B model is a modest step up from 0.6B if 4B is too resource intensive for your hardware. The 8B model is substantially larger and may produce stronger outputs if your hardware can handle it. </p>
+<h1 id="h1-appendix-e-batching-and-throughput-oriented-execution">appendix E Batching and throughput-oriented execution</h1>
+<p>In the code implemented through the book’s chapters, we usually processed one prompt or example at a time. This kept the code compact and easier to understand, and it also helped keep the resource requirements more manageable. The code in this book is already expensive to run, so adding batching support everywhere would often increase complexity without providing much real benefit, depending on your available hardware.</p>
+<p>That being said, if you have access to relatively modern GPUs with enough memory, batched execution, illustrated in figure E.1, can be very useful. For example, if we want to evaluate many problems, sample several responses per prompt, or train on multiple examples at once, batching can help increase throughput and reduce the overall time required.</p>
+<p>This appendix explains the broad idea behind batching and shows how you can use the batched implementations in the supplementary materials across various chapters.</p>
+<h2 id="h2-why-batching-helps"><span class="num">E.1</span>Why batching helps</h2>
+<p>When we talk about computational performance, it helps to separate the following overall goals:</p>
+<ul><li>Latency: how quickly we get the answer for one prompt</li></ul>
+<ul><li>Throughput: how many prompts we can process in a fixed amount of time</li></ul>
+<p>Single-example generation is often best used for understanding the conceptual implementation of a concept, minimizing latency, and debugging. Batching can be seen</p>
+<pre><code class="language-python"><span class="tok-nu">x = 4</span>
+24
+8.</code></pre>
+<pre><code class="language-python"><span class="tok-nu">Solve 2x + 3 = 11</span>
+Compute 7^2 - 5^2
+Simplify 12/3 + 4
+implify 12/3 +</code></pre>
+<pre><code class="language-python"><span class="tok-nu">x = 4</span></code></pre>
+<pre><code class="language-python">24</code></pre>
+<pre><code class="language-python">8.</code></pre>
+<pre><code class="language-python"><span class="tok-nu">Solve 2x + 3 = 11</span>
+Compute 7^2 - 5^2
+Simplify 12/3 + 4</code></pre>
+<figure><a class="zoom" href="assets/figure-E.1.png" tabindex="-1"><img src="assets/figure-E.1.png" alt="" width="870" height="846" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure E.1</span>An overview of single-example versus batched generation. In batched generation, several prompts are packed into one batch, processed in parallel, and then decoded together to improve throughput.</figcaption></figure>
+<p>as an extension of single-example generation that primarily targets throughput. For example, if we want to evaluate hundreds of problems on MATH-500, generate several self-consistency samples, or train on a larger distillation dataset, batching can reduce total runtime substantially on suitable hardware.</p>
+<p>But batching is not automatically faster on every device. Small models on CPUs or less optimized GPUs may benefit only a little, or not at all, because they introduce additional code complexity, including padding and other overheads, that can offset the gains from batching parallelism.</p>
+<p>Batching is best understood as a throughput optimization, not as a universal speedup.</p>
+<nav class="pager"><a class="prev" href="page-95.html" rel="prev"><span class="dir">上一页</span><span class="t">D.1 Larger dense Qwen3 configurations</span></a><a class="next" href="page-97.html" rel="next"><span class="dir">下一页</span><span class="t">E.2 Running batched generation</span></a></nav>
+</main>
+</body>
+</html>

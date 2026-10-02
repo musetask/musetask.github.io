@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>Working with log probabilities · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/detail.css">
+<link rel="prev" href="page-46.html">
+<link rel="next" href="page-48.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 47 页 / 共 108 页</span></div>
+<aside class="detail-link"><span class="tag">补充材料</span>「log 连乘变连加」的推导与下溢的定量分析在 <a href="page-48-detail.html"><b>5.5 / 5.6 概率到 logprob 详解 · 2</b></a>。全部推导页的索引见 <a href="math-detail.html">math-detail.html</a>。</aside>
+<h3 id="h3-working-with-log-probabilities">Working with log probabilities</h3>
+<div class="lead">When we compute the joint probability of a sequence, we multiply many numbers between 0 and 1:</div>
+<div class="lead">We can write the expanded form as follows: These products quickly become extremely small, which is inconvenient and can cause numerical underflow. When numbers become too tiny, the computer may round them down to zero, and we lose useful information. To avoid this, we often work in log space. Taking the logarithm of the joint probability gives us this: Using the fact that the logarithm of a product is the sum of the logarithms, this expands to In other words, the log probability of a sequence is just the sum of the log probabilities of its individual tokens. This is both numerically more stable and easier to work with. It also matches the values returned by <code>torch.log_softmax</code>, which provides the log probabilities directly. Summing log probabilities is therefore the standard approach in machine learning and AI.</div>
+<p>Implementing the token log probability function is straightforward because it requires only two small changes to the code in listing 5.6: changing <code>torch.softmax</code> to <code>torch </code></p>
+<pre><code class="language-python">.log_softmax and changing torch.prod to torch.sum.</code></pre>
+<aside><span class="tag">Warning</span><code>Using mismatched combinations, such as torch.softmax with torch.sum</code> or <code>torch.log_softmax</code> with <code>torch.prod</code>, is technically possible but mathematically incorrect.</aside>
+<figure class="listing"><pre><code class="language-python">@torch.inference_mode<span class="tok-kw">()</span>
+<span class="tok-kw">def</span> calc_next_token_logprobas(model, tokenizer, prompt, device, show=<span class="tok-kw">True</span>):
+    token_ids = torch.tensor<span class="tok-kw">(</span>tokenizer.encode<span class="tok-kw">(</span>prompt<span class="tok-kw">)</span>, device=device<span class="tok-kw">)</span>
+    logits = model<span class="tok-kw">(</span>token_ids.unsqueeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">))</span>.squeeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>
+    all_logprobas = torch.log_softmax<span class="tok-kw">(</span>logits, dim=-<span class="tok-fn">1</span><span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 5.7</span>Calculating next-token log probabilities</figcaption></figure>
+<pre><code class="language-python">    t_idx = torch.arange<span class="tok-kw">(</span><span class="tok-fn">0</span>, token_ids.shape<span class="tok-kw">[</span><span class="tok-fn">0</span><span class="tok-kw">]</span> - <span class="tok-fn">1</span>, device=device<span class="tok-kw">)</span>
+    next_ids = token_ids<span class="tok-kw">[</span><span class="tok-fn">1</span>:<span class="tok-kw">]</span>
+    next_token_logprobas = all_logprobas<span class="tok-kw">[</span>t_idx, next_ids<span class="tok-kw">]</span>
+    sum_next_token_logprobas = torch.sum<span class="tok-kw">(</span>next_token_logprobas<span class="tok-kw">)</span>
+    <span class="tok-kw">if</span> show:
+        print<span class="tok-kw">(</span>"Next-token log-probabilities:", next_token_logprobas<span class="tok-kw">)</span>
+        print<span class="tok-kw">(</span>"Joint log-probability:", sum_next_token_logprobas<span class="tok-kw">)</span>
+    <span class="tok-kw">else</span>:
+        <span class="tok-kw">return</span> next_token_logprobas, sum_next_token_logprobas</code></pre>
+<p>Let’s now try the updated function on the example prompts from earlier:</p>
+<pre><code class="language-python">calc_next_token_logprobas<span class="tok-kw">(</span>
+        model, tokenizer, device=device,
+        prompt="The capital of Germany <span class="tok-kw">is</span> Berlin"
+    <span class="tok-kw">)</span></code></pre>
+<p>The result is as follows:</p>
+<pre><code class="language-python">Next-token log-probabilities: tensor([-9.6875, -0.7695, -4.0938,
+-0.3008, -1.7812], dtype=torch.bfloat16)
+Joint log-probability: tensor(-16.6250, dtype=torch.bfloat16)</code></pre>
+<p>Now let’s try the second sequence:</p>
+<pre><code class="language-python">calc_next_token_logprobas<span class="tok-kw">(</span>
+        model, tokenizer, device=device,
+        prompt="The capital of Germany <span class="tok-kw">is</span> Bridge"
+    <span class="tok-kw">)</span></code></pre>
+<p>This returns the following:</p>
+<pre><code class="language-python">Next-token log-probabilities: tensor([ -9.6875, -0.7695, -4.0938,
+-0.3008, -15.0000], dtype=torch.bfloat16)
+Joint log-probability: tensor(-29.8750, dtype=torch.bfloat16)</code></pre>
+<p>As you can see, the difference between the <code>"Berlin"</code> and <code>"Bridge"</code> is now much more pronounced (<code>-16.6250</code> and <code>-29.8750</code>), with <code>"Berlin"</code> scoring much higher (better).</p>
+<nav class="pager"><a class="prev" href="page-46.html" rel="prev"><span class="dir">上一页</span><span class="t">Probabilities vs. likelihoods</span></a><a class="next" href="page-48.html" rel="next"><span class="dir">下一页</span><span class="t">5.6 Scoring model confidence with log probabilities</span></a></nav>
+</main>
+</body>
+</html>

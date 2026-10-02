@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>7.5.1 Implementing the KL loss term · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/detail.css">
+<link rel="prev" href="page-68.html">
+<link rel="next" href="page-70.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 69 页 / 共 108 页</span></div>
+<aside class="detail-link"><span class="tag">补充材料</span>KL 正则项的拆解、方向问题与失效模式在 <a href="page-70-detail.html"><b>7.5 KL 正则项与它的失效模式</b></a>。全部推导页的索引见 <a href="math-detail.html">math-detail.html</a>。</aside>
+<h3 id="h3-implementing-the-kl-loss-term"><span class="num">7.5.1</span>Implementing the KL loss term</h3>
+<p>Figure 7.15 shows the KL loss term computation as part of the GRPO algorithm. The KL loss term calculation involves comparing logprobs and reference logprobs. It is computed by summing the differences between these corresponding logprobs. </p>
+<p>A small KL loss term value indicates that the current model and the reference model output relatively similar logprobs, meaning the current model has not changed much compared to the reference model. This is generally desirable for stability, as it prevents large, abrupt shifts in behavior. If the KL loss term remains too small for too long, it may also indicate that learning is limited.</p>
+<p>The resulting KL loss term is then added to the policy gradient loss to compute the total loss, so weight updates that greatly increase divergence from the reference model, even if they result in a high reward, are penalized during training.</p>
+<p>In the clipped policy ratio section, we replaced the reference model in each iteration. For the KL loss term, the reference model used to compute the reference logprobs is the original model at the beginning of training, and it is either kept fixed or replaced relatively rarely (in the case of DeepSeek-R1, every 400 steps).</p>
+<p>The following code illustrates how the <code>compute_grpo_loss</code> function can be modified to include this KL loss term. To avoid code duplication, listing 7.9 does not show the fully modified <code>compute_grpo_loss_with_kl</code> function. It instead focuses on the changes we need to make to the <code>compute_grpo_loss</code> function. The new additions are marked with comments or are located inside the <code>if kl_coeff</code> blocks.</p>
+<figure><a class="zoom" href="assets/figure-7.15.png" tabindex="-1"><img src="assets/figure-7.15.png" alt="" width="1143" height="1258" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 7.15</span>Overview of the GRPO algorithm with the KL loss term calculation added to the right</figcaption></figure>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">import</span> copy</code></pre><figcaption><span class="lbl">Listing 7.9</span>Adding a KL term to the GRPO loss computation</figcaption></figure>
+<pre><code class="language-python">kl_coeff = <span class="tok-fn">0.0</span>
+<span class="tok-kw">if</span> kl_coeff:
+    ref_model = copy.deepcopy<span class="tok-kw">(</span>model<span class="tok-kw">)</span>.to<span class="tok-kw">(</span>device<span class="tok-kw">)</span>
+    ref_model.eval<span class="tok-kw">()</span>
+    <span class="tok-kw">for</span> p <span class="tok-kw">in</span> ref_model.parameters<span class="tok-kw">()</span>:
+        p.requires_grad = <span class="tok-kw">False</span>
+<span class="tok-kw">else</span>:
+    ref_model = <span class="tok-kw">None</span>
+<span class="tok-kw">def</span> compute_grpo_loss_with_kl(
+    model,
+    ref_model,
+    <span class="tok-cm"># ...</span>
+    kl_coeff=<span class="tok-fn">0.02</span>,
+):
+    roll_logps, roll_ref_logps, roll_rewards, samples = [], [], [], []
+    <span class="tok-cm"># ...</span>
+    <span class="tok-kw">for</span> _ <span class="tok-kw">in</span> range<span class="tok-kw">(</span>num_rollouts<span class="tok-kw">)</span>:
+        token_ids, prompt_len, text = sample_response<span class="tok-kw">(</span>
+        <span class="tok-cm"># ...</span>
+        <span class="tok-kw">)</span>
+        <span class="tok-kw">if</span> kl_coeff:
+            <span class="tok-kw">with</span> torch.no_grad<span class="tok-kw">()</span>:
+                ref_logp = sequence_logprob<span class="tok-kw">(</span>
+                    ref_model, token_ids, prompt_len
+                <span class="tok-kw">)</span>
+        <span class="tok-kw">else</span>:
+            ref_logp = <span class="tok-kw">None</span>
+        reward = reward_rlvr<span class="tok-kw">(</span>text, example<span class="tok-kw">[</span><span class="tok-st">"answer"</span><span class="tok-kw">])</span>
+        roll_rewards.append<span class="tok-kw">(</span>reward<span class="tok-kw">)</span>
+        roll_logps.append<span class="tok-kw">(</span>logp<span class="tok-kw">)</span>
+        <span class="tok-kw">if</span> kl_coeff:
+            roll_ref_logps.append<span class="tok-kw">(</span>ref_logp<span class="tok-kw">)</span>
+        <span class="tok-cm"># ...</span>
+    rewards = torch.tensor<span class="tok-kw">(</span>roll_rewards, device=device<span class="tok-kw">)</span>
+    advantages = (rewards - rewards.mean<span class="tok-kw">()</span>) / (rewards.std<span class="tok-kw">()</span> + <span class="tok-fn">1e-4</span>)
+    logps = torch.stack<span class="tok-kw">(</span>roll_logps<span class="tok-kw">)</span>
+    <span class="tok-kw">if</span> kl_coeff:
+        ref_logps = torch.stack<span class="tok-kw">(</span>roll_ref_logps<span class="tok-kw">)</span>.detach<span class="tok-kw">()</span>
+    pg_loss = -(advantages.detach<span class="tok-kw">()</span> * logps).mean<span class="tok-kw">()</span></code></pre>
+<pre><code class="language-python">    <span class="tok-kw">if</span> kl_coeff:
+        kl_loss = kl_coeff * torch.mean<span class="tok-kw">(</span>logps - ref_logps<span class="tok-kw">)</span>
+    <span class="tok-kw">else</span>:
+        kl_loss = torch.tensor<span class="tok-kw">(</span><span class="tok-fn">0.0</span>, device=logps.device<span class="tok-kw">)</span></code></pre>
+<pre><code class="language-python">    loss = pg_loss + kl_loss</code></pre>
+<p>Note that adding the KL loss term increases resource use, since we now need to keep an additional copy of the original model. The strength of this penalty is controlled by <code>kl_coeff</code>. Larger <code>kl_coeff</code> values add a stronger constraint on how far the current policy is allowed to change from the reference model.</p>
+<p>The setting <code>kl_coeff = 0.0</code> at the top of listing 7.9 is included only so that this abbreviated code snippet won’t crash if we run it in a code environment. In practice, <code>kl_coeff</code> is typically a small value between 0.001 and 0.05.</p>
+<h3 id="h3-training-with-a-kl-loss-term"><span class="num">7.5.2</span>Training with a KL loss term</h3>
+<p>The following script from the book’s supplementary materials implements the KL loss term code modification we’ve discussed:</p>
+<pre><code class="language-python">download_from_github<span class="tok-kw">(</span>
+    <span class="tok-st">"ch07/03_rlvr_grpo_scripts_advanced/7_5_plus_kl.py"</span>
+<span class="tok-kw">)</span></code></pre>
+<p>As before, we can run it as follows:</p>
+<pre><code class="language-python">uv run 7_5_plus_kl.py \
+    --steps 500 \
+    --max_new_tokens 1024</code></pre>
+<p>Let’s take a look at the log files from a training run that was executed with the preceding settings:</p>
+<pre><code class="language-python">download_from_github<span class="tok-kw">(</span>
+    <span class="tok-st">"ch07/02_logs/"</span>
+    <span class="tok-st">"7_5_plus_kl_metrics.csv"</span>
+<span class="tok-kw">)</span>
+plot_grpo_metrics<span class="tok-kw">(</span>
+    <span class="tok-st">"7_5_plus_kl_metrics.csv"</span>,
+    columns=[<span class="tok-st">"loss"</span>, <span class="tok-st">"reward_avg"</span>, <span class="tok-st">"avg_response_len"</span>, <span class="tok-st">"eval_acc"</span>]
+<span class="tok-kw">)</span></code></pre>
+<p>The resulting plots are shown in figure 7.16.</p>
+<p>As the accuracy graph at the bottom right shows, the first 50 steps improve the model’s performance noticeably from slightly above 15% accuracy to approximately 40%. We then see a total collapse where the loss values explode and the average reward goes toward 0. This is accompanied by a crash in the evaluation accuracy that also goes toward 0%.</p>
+<figure><a class="zoom" href="assets/figure-7.16.png" tabindex="-1"><img src="assets/figure-7.16.png" alt="" width="790" height="585" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 7.16</span>Selected metrics from a GRPO training run after adding a KL loss term. Here, loss (in the upper left) refers to the total GRPO loss, which is the sum of the policy gradient loss and the KL loss term.</figcaption></figure>
+<p>On manually inspecting the generated responses, we can see that the model eventually started producing nonsensical text and random tokens, such as <code>"framework.raises </code></p>
+<p><code>Self profess(import"</code>. There are a couple of likely reasons for this behavior.</p>
+<p>First, the KL term is computed using summed logprobs over the answer tokens, that </p>
+<pre><code class="language-python">is, kl_loss = kl_coeff * mean(new_logps - ref_logps). Here, new_logps are computed</code></pre>
+<p>under the current trainable policy, while <code>ref_logps</code> are computed under the reference policy, which is the original model at the beginning of training. This reference policy is not the same as the old rollout policy in later training steps. The old policy is a recent snapshot used to generate the sampled responses, whereas the reference policy remains fixed at the initial model.</p>
+<nav class="pager"><a class="prev" href="page-68.html" rel="prev"><span class="dir">上一页</span><span class="t">7.4.2 Training with clipped policy ratios</span></a><a class="next" href="page-70.html" rel="next"><span class="dir">下一页</span><span class="t">KL direction versus rollout sampling</span></a></nav>
+</main>
+</body>
+</html>

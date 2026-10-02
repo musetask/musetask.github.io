@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="generator" content="pdf2html2.py">
+<title>Fine-tuning for classification · Build a Large Language Model (From Scratch)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f5f8f'/%3E%3Cpath d='M9 8h9a4.5 4.5 0 0 1 0 9H9zm0 9h9a4.5 4.5 0 0 1 0 9H9z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="assets/detail.css">
+<script>(function(){try{var t=localStorage.getItem('pdf2html-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn" href="index.html" title="Contents">&#9776;</a>
+  <a class="brand" href="index.html">Fine-tuning for classification</a>
+  <button class="btn" id="themeToggle" aria-label="Toggle dark mode">&#9788;</button>
+</header>
+<main id="main">
+<details class="toc"><summary>本章目录</summary><ul><li class="l2"><a href="#this-chapter-covers-6">This chapter covers</a></li><li class="l2"><a href="#different-categories-of-fine-tuning">6.1 Different categories of fine-tuning</a></li><li class="l3"><a href="#choosing-the-right-approach">Choosing the right approach</a></li><li class="l2"><a href="#preparing-the-dataset">6.2 Preparing the dataset</a></li><li class="l2"><a href="#creating-data-loaders">6.3 Creating data loaders</a></li><li class="l3"><a href="#exercise-6-1-increasing-the-context-length">Exercise 6.1 Increasing the context length</a></li><li class="l2"><a href="#initializing-a-model-with-pretrained-weights">6.4 Initializing a model with pretrained weights</a></li><li class="l2"><a href="#adding-a-classification-head">6.5 Adding a classification head</a></li><li class="l3"><a href="#output-layer-nodes">Output layer nodes</a></li><li class="l3"><a href="#fine-tuning-selected-layers-vs-all-layers">Fine-tuning selected layers vs. all layers</a></li><li class="l3"><a href="#exercise-6-2-fine-tuning-the-whole-model">Exercise 6.2 Fine-tuning the whole model</a></li><li class="l3"><a href="#exercise-6-3-fine-tuning-the-first-vs-last-token">Exercise 6.3 Fine-tuning the first vs. last token</a></li><li class="l2"><a href="#calculating-the-classification-loss-and-accuracy">6.6 Calculating the classification loss and accuracy</a></li><li class="l2"><a href="#fine-tuning-the-model-on-supervised-data">6.7 Fine-tuning the model on supervised data</a></li><li class="l3"><a href="#choosing-the-number-of-epochs">Choosing the number of epochs</a></li><li class="l2"><a href="#using-the-llm-as-a-spam-classifier">6.8 Using the LLM as a spam classifier</a></li><li class="l2"><a href="#summary-6">Summary</a></li></ul></details><h1 id="fine-tuning-for-classification">Fine-tuning for classification<a class="anchor" href="#fine-tuning-for-classification">#</a></h1>
+<h2 id="this-chapter-covers-6">This chapter covers<a class="anchor" href="#this-chapter-covers-6">#</a></h2>
+<p>So far, we have coded the LLM architecture, pretrained it, and learned how to import pretrained weights from an external source, such as OpenAI, into our model. Now we will reap the fruits of our labor by fine-tuning the LLM on a specific target task, such as classifying text. The concrete example we examine is classifying text messages as “spam” or “not spam.” Figure 6.1 highlights the two main ways of fine-tuning an LLM: fine-tuning for classification (step 8) and fine-tuning to follow instructions (step 9).</p>
+<p><strong>169</strong></p>
+<div class="pdfpage" data-page="191">PDF p. 191</div>
+<figure><img src="assets/fig-0123.png" alt="" loading="lazy"><figcaption>Figure 6.1 The three main stages of coding an LLM. This chapter focus on stage 3 (step 8): fine-tuning a  pretrained LLM as a classifier.</figcaption></figure>
+<figure><img src="assets/fig-0124.png" alt="" loading="lazy"><figcaption>Figure 6.2 Two different instruction fine-tuning scenarios. At the top, the model is tasked with determining  whether a given text is spam. At the bottom, the model is given an instruction on how to translate an English  sentence into German.</figcaption></figure>
+<h2 id="different-categories-of-fine-tuning">6.1 Different categories of fine-tuning<a class="anchor" href="#different-categories-of-fine-tuning">#</a></h2>
+<p>The most common ways to fine-tune language models are <em>instruction fine-tuning</em> and <em>classification fine-tuning</em>. Instruction fine-tuning involves training a language model on a set of tasks using specific instructions to improve its ability to understand and execute tasks described in natural language prompts, as illustrated in figure 6.2. </p>
+<p>In classification fine-tuning, a concept you might already be acquainted with if you have a background in machine learning, the model is trained to recognize a specific</p>
+<div class="pdfpage" data-page="192">PDF p. 192</div>
+<figure><img src="assets/fig-0125.png" alt="" loading="lazy"><figcaption>Figure 6.3 A text classification scenario using an LLM. A model fine-tuned for spam  classification does not require further instruction alongside the input. In contrast to  an instruction fine-tuned model, it can only respond with “spam” or “not spam.”</figcaption></figure>
+<p>set of class labels, such as “spam” and “not spam.” Examples of classification tasks extend beyond LLMs and email filtering: they include identifying different species of plants from images; categorizing news articles into topics like sports, politics, and technology; and distinguishing between benign and malignant tumors in medical imaging.</p>
+<p> The key point is that a classification fine-tuned model is restricted to predicting classes it has encountered during its training. For instance, it can determine whether something is “spam” or “not spam,” as illustrated in figure 6.3, but it can’t say anything else about the input text. </p>
+<p>In contrast to the classification fine-tuned model depicted in figure 6.3, an instruction fine-tuned model typically can undertake a broader range of tasks. We can view a classification fine-tuned model as highly specialized, and generally, it is easier to develop a specialized model than a generalist model that works well across various tasks.</p>
+<h3 id="choosing-the-right-approach">Choosing the right approach <a class="anchor" href="#choosing-the-right-approach">#</a></h3>
+<div class="plainbox"><p>Instruction fine-tuning improves a model’s ability to understand and generate responses</p><p>based on specific user instructions. Instruction fine-tuning is best suited for models</p><p>that need to handle a variety of tasks based on complex user instructions, improving</p><p>flexibility and interaction quality. Classification fine-tuning is ideal for projects requir-</p><p>ing precise categorization of data into predefined classes, such as sentiment analy-</p><p>sis or spam detection. </p><p>While instruction fine-tuning is more versatile, it demands larger datasets and greater</p><p>computational resources to develop models proficient in various tasks. In contrast,</p><p>classification fine-tuning requires less data and compute power, but its use is con-</p><p>fined to the specific classes on which the model has been trained.</p></div>
+<div class="pdfpage" data-page="193">PDF p. 193</div>
+<figure><img src="assets/fig-0126.png" alt="" loading="lazy"><figcaption>Figure 6.4 The three-stage process for classification fine-tuning an LLM. Stage 1 involves dataset  preparation. Stage 2 focuses on model setup. Stage 3 covers fine-tuning and evaluating the model.</figcaption></figure>
+<p class="listing-title"><span class="no">Listing 6.1</span><span class="tl">Downloading and unzipping the dataset</span></p>
+<h2 id="preparing-the-dataset">6.2 Preparing the dataset<a class="anchor" href="#preparing-the-dataset">#</a></h2>
+<p>We will modify and classification fine-tune the GPT model we previously implemented and pretrained. We begin by downloading and preparing the dataset, as highlighted in figure 6.4. To provide an intuitive and useful example of classification fine-tuning, we will work with a text message dataset that consists of spam and non-spam messages. </p>
+<aside class="callout note"><p class="lab">NOTE</p><p>Text messages typically sent via phone, not email. However, the same steps also apply to email classification, and interested readers can find links to email spam classification datasets in appendix B.</p></aside>
+<p>The first step is to download the dataset.</p>
+<div class="codeblock"><pre><code><span class="t-kw">import</span> urllib.request
+<span class="t-kw">import</span> zipfile
+<span class="t-kw">import</span> os
+<span class="t-kw">from</span> pathlib <span class="t-kw">import</span> Path
+url <span class="t-op">=</span> <span class="t-str">"https://archive.ics.uci.edu/static/public/228/sms+spam+collection.zip"</span>
+zip_path <span class="t-op">=</span> <span class="t-str">"sms_spam_collection.zip"</span>
+extracted_path <span class="t-op">=</span> <span class="t-str">"sms_spam_collection"</span>
+data_file_path <span class="t-op">=</span> <span class="t-fn">Path</span>(extracted_path) <span class="t-op">/</span> <span class="t-str">"SMSSpamCollection.tsv"</span></code></pre></div>
+<div class="codeblock"><pre><code><span class="t-kw">def</span> <span class="t-fn">download_and_unzip_spam_data</span>(
+ url, zip_path, extracted_path, data_file_path):
+ <span class="t-kw">if</span> data_file_path.<span class="t-fn">exists</span>():</code></pre></div>
+<div class="pdfpage" data-page="194">PDF p. 194</div>
+<figure><img src="assets/fig-0128.png" alt="" loading="lazy"></figure>
+<figure><img src="assets/fig-0127.png" alt="" loading="lazy"><figcaption>Figure 6.5 Preview of the </figcaption></figure>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 3 条</summary><ul><li>Downloads the file</li><li>Unzips the file</li><li>Adds a .tsv file extension</li></ul></details><pre><code> <span class="t-bi">print</span>(f<span class="t-str">"{data_file_path} already exists. Skipping download "</span>
+ <span class="t-str">"and extraction."</span>
+ )
+ <span class="t-kw">return</span>
+ <span class="t-kw">with</span> urllib.request.<span class="t-fn">urlopen</span>(url) <span class="t-kw">as</span> response:
+ <span class="t-kw">with</span> <span class="t-bi">open</span>(zip_path, <span class="t-str">"wb"</span>) <span class="t-kw">as</span> out_file:
+ out_file.<span class="t-fn">write</span>(response.<span class="t-fn">read</span>())
+ <span class="t-kw">with</span> zipfile.<span class="t-fn">ZipFile</span>(zip_path, <span class="t-str">"r"</span>) <span class="t-kw">as</span> zip_ref:
+ zip_ref.<span class="t-fn">extractall</span>(extracted_path)
+ original_file_path <span class="t-op">=</span> <span class="t-fn">Path</span>(extracted_path) <span class="t-op">/</span> <span class="t-str">"SMSSpamCollection"</span>
+ os.<span class="t-fn">rename</span>(original_file_path, data_file_path)
+ <span class="t-bi">print</span>(f<span class="t-str">"File downloaded and saved as {data_file_path}"</span>)</code></pre></div>
+<div class="codeblock"><pre><code><span class="t-fn">download_and_unzip_spam_data</span>(url, zip_path, extracted_path, data_file_path)</code></pre></div>
+<p>After executing the preceding code, the dataset is saved as a tab-separated text file,</p>
+<div class="codeblock"><pre><code>SMSSpamCollection.tsv, <span class="t-kw">in</span> the sms_spam_collection folder. We can load it into a</code></pre></div>
+<div class="codeblock"><pre><code> data_file_path, sep<span class="t-op">=</span><span class="t-str">"\t"</span>, header<span class="t-op">=</span><span class="t-kw">None</span>, names<span class="t-op">=</span>[<span class="t-str">"Label"</span>, <span class="t-str">"Text"</span>]</code></pre></div>
+<p>Figure 6.5 shows the resulting data frame of the spam dataset.</p>
+<div class="codeblock"><pre><code>SMSSpamCollection dataset</code></pre></div>
+<p class="caption">in a pandas DataFrame, showing  class labels (“ham” or “spam”) and  corresponding text messages. The  dataset consists of 5,572 rows  (text messages and labels).</p>
+<p>Let’s examine the class label distribution:</p>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(df[<span class="t-str">"Label"</span>].<span class="t-fn">value_counts</span>())</code></pre></div>
+<div class="pdfpage" data-page="195">PDF p. 195</div>
+<figure><img src="assets/fig-0129.png" alt="" loading="lazy"></figure>
+<p class="listing-title"><span class="no">Listing 6.2</span><span class="tl">Creating a balanced dataset</span></p>
+<p>Executing the previous code, we find that the data contains “ham” (i.e., not spam) far more frequently than “spam”:</p>
+<div class="codeblock"><pre><code>Label
+ham <span class="t-num">4825</span>
+spam <span class="t-num">747</span>
+Name: count, dtype: int64</code></pre></div>
+<p>For simplicity, and because we prefer a small dataset (which will facilitate faster finetuning of the LLM), we choose to undersample the dataset to include 747 instances from each class. </p>
+<aside class="callout note"><p class="lab">NOTE</p><p>There are several other methods to handle class imbalances, but these are beyond the scope of this book. Readers interested in exploring methods for dealing with imbalanced data can find additional information in appendix B.</p></aside>
+<p>We can use the code in the following listing to undersample and create a balanced dataset.</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 3 条</summary><ul><li>Counts the instances of “spam”</li><li>Randomly samples “ham” instances to match the number of “spam” instances</li><li>Combines ham</li></ul></details><pre><code><span class="t-kw">def</span> <span class="t-fn">create_balanced_dataset</span>(df):
+ num_spam <span class="t-op">=</span> df[df[<span class="t-str">"Label"</span>] <span class="t-op">==</span> <span class="t-str">"spam"</span>].shape[<span class="t-num">0</span>]
+ ham_subset <span class="t-op">=</span> df[df[<span class="t-str">"Label"</span>] <span class="t-op">==</span> <span class="t-str">"ham"</span>].<span class="t-fn">sample</span>(
+ num_spam, random_state<span class="t-op">=</span><span class="t-num">123</span>
+ )
+ balanced_df <span class="t-op">=</span> pd.<span class="t-fn">concat</span>([
+ ham_subset, df[df[<span class="t-str">"Label"</span>] <span class="t-op">==</span> <span class="t-str">"spam"</span>]
+ ])
+ <span class="t-kw">return</span> balanced_df
+balanced_df <span class="t-op">=</span> <span class="t-fn">create_balanced_dataset</span>(df) subset <span class="t-kw">with</span> “spam”
+<span class="t-bi">print</span>(balanced_df[<span class="t-str">"Label"</span>].<span class="t-fn">value_counts</span>())</code></pre></div>
+<p>After executing the previous code to balance the dataset, we can see that we now have equal amounts of spam and non-spam messages:</p>
+<div class="codeblock"><pre><code>Label
+ham <span class="t-num">747</span>
+spam <span class="t-num">747</span>
+Name: count, dtype: int64</code></pre></div>
+<p>Next, we convert the “string” class labels <code>"ham"</code> and <code>"spam"</code> into integer class labels 0 and 1, respectively:</p>
+<div class="codeblock"><pre><code>balanced_df[<span class="t-str">"Label"</span>] <span class="t-op">=</span> balanced_df[<span class="t-str">"Label"</span>].<span class="t-bi">map</span>({<span class="t-str">"ham"</span>: <span class="t-num">0</span>, <span class="t-str">"spam"</span>: <span class="t-num">1</span>})</code></pre></div>
+<p>This process is similar to converting text into token IDs. However, instead of using the GPT vocabulary, which consists of more than 50,000 words, we are dealing with just two token IDs: 0 and 1.</p>
+<div class="pdfpage" data-page="196">PDF p. 196</div>
+<p class="listing-title"><span class="no">Listing 6.3</span><span class="tl">Splitting the dataset</span></p>
+<figure><img src="assets/fig-0130.png" alt="" loading="lazy"></figure>
+<ul><li>  Truncate all messages to the length of the shortest message in the dataset or batch.</li><li>  Pad all messages to the length of the longest message in the dataset or batch. The first option is computationally cheaper, but it may result in significant information loss if shorter messages are much smaller than the average or longest messages,</li></ul>
+<p> Next, we create a <code>random_split</code> function to split the dataset into three parts: 70% for training, 10% for validation, and 20% for testing. (These ratios are common in machine learning to train, adjust, and evaluate models.)</p>
+<div class="codeblock"><pre><code><span class="t-kw">def</span> <span class="t-fn">random_split</span>(df, train_frac, validation_frac):</code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 4 条</summary><ul><li>Shuffles the entire DataFrame</li><li>Calculates split indices</li><li>Splits the DataFrame</li><li>Test size is implied to be 0.2 as the remainder.</li></ul></details><pre><code>
+ df <span class="t-op">=</span> df.<span class="t-fn">sample</span>(
+ frac<span class="t-op">=</span><span class="t-num">1</span>, random_state<span class="t-op">=</span><span class="t-num">123</span>
+ ).<span class="t-fn">reset_index</span>(drop<span class="t-op">=</span><span class="t-kw">True</span>)
+ train_end <span class="t-op">=</span> <span class="t-bi">int</span>(<span class="t-bi">len</span>(df) <span class="t-op">*</span> train_frac)
+ validation_end <span class="t-op">=</span> train_end <span class="t-op">+</span> <span class="t-bi">int</span>(<span class="t-bi">len</span>(df) <span class="t-op">*</span> validation_frac)
+
+ train_df <span class="t-op">=</span> df[:train_end]
+ validation_df <span class="t-op">=</span> df[train_end:validation_end]
+ test_df <span class="t-op">=</span> df[validation_end:]
+ <span class="t-kw">return</span> train_df, validation_df, test_df
+train_df, validation_df, test_df <span class="t-op">=</span> <span class="t-fn">random_split</span>( balanced_df, <span class="t-num">0.7</span>, <span class="t-num">0.1</span>)</code></pre></div>
+<p>Let’s save the dataset as CSV (comma-separated value) files so we can reuse it later:</p>
+<div class="codeblock"><pre><code>train_df.<span class="t-fn">to_csv</span>(<span class="t-str">"train.csv"</span>, index<span class="t-op">=</span><span class="t-kw">None</span>)
+validation_df.<span class="t-fn">to_csv</span>(<span class="t-str">"validation.csv"</span>, index<span class="t-op">=</span><span class="t-kw">None</span>)
+test_df.<span class="t-fn">to_csv</span>(<span class="t-str">"test.csv"</span>, index<span class="t-op">=</span><span class="t-kw">None</span>)</code></pre></div>
+<p>Thus far, we have downloaded the dataset, balanced it, and split it into training and evaluation subsets. Now we will set up the PyTorch data loaders that will be used to train the model.</p>
+<h2 id="creating-data-loaders">6.3 Creating data loaders<a class="anchor" href="#creating-data-loaders">#</a></h2>
+<p>We will develop PyTorch data loaders conceptually similar to those we implemented while working with text data. Previously, we utilized a sliding window technique to generate uniformly sized text chunks, which we then grouped into batches for more efficient model training. Each chunk functioned as an individual training instance. However, we are now working with a spam dataset that contains text messages of varying lengths. To batch these messages as we did with the text chunks, we have two primary options:</p>
+<div class="pdfpage" data-page="197">PDF p. 197</div>
+<figure><img src="assets/fig-0131.png" alt="" loading="lazy"><figcaption>Figure 6.6 The input text preparation process. First, each input text message is converted into a sequence of  token IDs. Then, to ensure uniform sequence lengths, shorter sequences are padded with a padding token (in this  case, token ID 50256) to match the length of the longest sequence.</figcaption></figure>
+<p>potentially reducing model performance. So, we opt for the second option, which preserves the entire content of all messages.</p>
+<p> To implement batching, where all messages are padded to the length of the longest message in the dataset, we add padding tokens to all shorter messages. For this purpose, we use <code>"&lt;|endoftext|&gt;"</code> as a padding token. </p>
+<p> However, instead of appending the string <code>"&lt;|endoftext|&gt;"</code> to each of the text messages directly, we can add the token ID corresponding to <code>"&lt;|endoftext|&gt;"</code> to the encoded text messages, as illustrated in figure 6.6. <code>50256</code> is the token ID of the padding token <code>"&lt;|endoftext|&gt;"</code>. We can double-check whether the token ID is correct by encoding the <code>"&lt;|endoftext|&gt;"</code> using the <em>GPT-2 tokenizer</em> from the <code>tiktoken</code> package that we used previously:</p>
+<div class="codeblock"><pre><code><span class="t-kw">import</span> <span class="t-bi">tiktoken</span>
+tokenizer <span class="t-op">=</span> <span class="t-bi">tiktoken</span>.<span class="t-fn">get_encoding</span>(<span class="t-str">"gpt2"</span>)
+<span class="t-bi">print</span>(tokenizer.<span class="t-fn">encode</span>(<span class="t-str">"&lt;|endoftext|&gt;"</span>, allowed_special<span class="t-op">=</span>{<span class="t-str">"&lt;|endoftext|&gt;"</span>}))</code></pre></div>
+<p>Indeed, executing the preceding code returns <code>[50256]</code>.</p>
+<p> We first need to implement a PyTorch <code>Dataset</code>, which specifies how the data is loaded and processed before we can instantiate the data loaders. For this purpose, we define the <code>SpamDataset</code> class, which implements the concepts in figure 6.6. This <code>SpamDataset</code> class handles several key tasks: it identifies the longest sequence in the training dataset, encodes the text messages, and ensures that all other sequences are padded with a <em>padding token</em> to match the length of the longest sequence.</p>
+<div class="pdfpage" data-page="198">PDF p. 198</div>
+<p class="listing-title">Setting up a Pytorch Dataset class Listing 6.4</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 3 条</summary><ul><li>Pretokenizes texts</li><li>Truncates sequences if they are longer than max_length</li><li>Pads sequences to the longest sequence</li></ul></details><pre><code><span class="t-kw">import</span> <span class="t-bi">torch</span>
+<span class="t-kw">from</span> <span class="t-bi">torch</span>.utils.data <span class="t-kw">import</span> Dataset
+<span class="t-kw">class</span> <span class="t-fn">SpamDataset</span>(Dataset):
+ <span class="t-kw">def</span> <span class="t-fn">__init__</span>(<span class="t-kw">self</span>, csv_file, tokenizer, max_length<span class="t-op">=</span><span class="t-kw">None</span>,
+ pad_token_id<span class="t-op">=</span><span class="t-num">50256</span>):
+ <span class="t-kw">self</span>.data <span class="t-op">=</span> pd.<span class="t-fn">read_csv</span>(csv_file)
+
+ <span class="t-kw">self</span>.encoded_texts <span class="t-op">=</span> [
+ tokenizer.<span class="t-fn">encode</span>(text) <span class="t-kw">for</span> text <span class="t-kw">in</span> <span class="t-kw">self</span>.data[<span class="t-str">"Text"</span>]
+ ]
+ <span class="t-kw">if</span> max_length <span class="t-kw">is</span> <span class="t-kw">None</span>:
+ <span class="t-kw">self</span>.max_length <span class="t-op">=</span> <span class="t-kw">self</span>.<span class="t-fn">_longest_encoded_length</span>()
+ <span class="t-kw">else</span>:
+ <span class="t-kw">self</span>.max_length <span class="t-op">=</span> max_length
+
+ <span class="t-kw">self</span>.encoded_texts <span class="t-op">=</span> [
+ encoded_text[:<span class="t-kw">self</span>.max_length]
+ <span class="t-kw">for</span> encoded_text <span class="t-kw">in</span> <span class="t-kw">self</span>.encoded_texts
+ ]
+  <span class="t-kw">self</span>.encoded_texts <span class="t-op">=</span> [
+ encoded_text <span class="t-op">+</span> [pad_token_id] <span class="t-op">*</span>
+ (<span class="t-kw">self</span>.max_length <span class="t-op">-</span> <span class="t-bi">len</span>(encoded_text))
+ <span class="t-kw">for</span> encoded_text <span class="t-kw">in</span> <span class="t-kw">self</span>.encoded_texts
+ ]</code></pre></div>
+<div class="codeblock"><pre><code> <span class="t-kw">def</span> <span class="t-fn">__getitem__</span>(<span class="t-kw">self</span>, index):
+ encoded <span class="t-op">=</span> <span class="t-kw">self</span>.encoded_texts[index]
+ label <span class="t-op">=</span> <span class="t-kw">self</span>.data.iloc[index][<span class="t-str">"Label"</span>]
+ <span class="t-kw">return</span> (
+ <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>(encoded, dtype<span class="t-op">=</span><span class="t-bi">torch</span>.long),
+ <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>(label, dtype<span class="t-op">=</span><span class="t-bi">torch</span>.long)
+ )
+ <span class="t-kw">def</span> <span class="t-fn">__len__</span>(<span class="t-kw">self</span>):
+ <span class="t-kw">return</span> <span class="t-bi">len</span>(<span class="t-kw">self</span>.data)
+ <span class="t-kw">def</span> <span class="t-fn">_longest_encoded_length</span>(<span class="t-kw">self</span>):
+ max_length <span class="t-op">=</span> <span class="t-num">0</span>
+ <span class="t-kw">for</span> encoded_text <span class="t-kw">in</span> <span class="t-kw">self</span>.encoded_texts:
+ encoded_length <span class="t-op">=</span> <span class="t-bi">len</span>(encoded_text)
+ <span class="t-kw">if</span> encoded_length <span class="t-op">&gt;</span> max_length:
+ max_length <span class="t-op">=</span> encoded_length
+ <span class="t-kw">return</span> max_length</code></pre></div>
+<div class="pdfpage" data-page="199">PDF p. 199</div>
+<p>The <code>SpamDataset</code> class loads data from the CSV files we created earlier, tokenizes the text using the GPT-2 tokenizer from <code>tiktoken</code>, and allows us to <em>pad</em> or <em>truncate</em> the sequences to a uniform length determined by either the longest sequence or a predefined maximum length. This ensures each input tensor is of the same size, which is necessary to create the batches in the training data loader we implement next:</p>
+<div class="codeblock"><pre><code>train_dataset <span class="t-op">=</span> <span class="t-fn">SpamDataset</span>(
+ csv_file<span class="t-op">=</span><span class="t-str">"train.csv"</span>,
+ max_length<span class="t-op">=</span><span class="t-kw">None</span>,
+ tokenizer<span class="t-op">=</span>tokenizer
+)</code></pre></div>
+<p>The longest sequence length is stored in the dataset’s <code>max_length</code> attribute. If you are curious to see the number of tokens in the longest sequence, you can use the following code:</p>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(train_dataset.max_length)</code></pre></div>
+<p>The code outputs <code>120</code>, showing that the longest sequence contains no more than 120 tokens, a common length for text messages. The model can handle sequences of up to 1,024 tokens, given its context length limit. If your dataset includes longer texts, you can pass <code>max_length=1024</code> when creating the training dataset in the preceding code to ensure that the data does not exceed the model’s supported input (context) length.</p>
+<p> Next, we pad the validation and test sets to match the length of the longest training sequence. Importantly, any validation and test set samples exceeding the length of the longest training example are truncated using <code>encoded_text[:self.max_length]</code> in the <code>SpamDataset</code> code we defined earlier. This truncation is optional; you can set <code>max_length=None</code> for both validation and test sets, provided there are no sequences exceeding 1,024 tokens in these sets:</p>
+<div class="codeblock"><pre><code>val_dataset <span class="t-op">=</span> <span class="t-fn">SpamDataset</span>(
+ csv_file<span class="t-op">=</span><span class="t-str">"validation.csv"</span>,
+ max_length<span class="t-op">=</span>train_dataset.max_length,
+ tokenizer<span class="t-op">=</span>tokenizer
+)
+test_dataset <span class="t-op">=</span> <span class="t-fn">SpamDataset</span>(
+ csv_file<span class="t-op">=</span><span class="t-str">"test.csv"</span>,
+ max_length<span class="t-op">=</span>train_dataset.max_length,
+ tokenizer<span class="t-op">=</span>tokenizer
+)</code></pre></div>
+<div class="pdfpage" data-page="200">PDF p. 200</div>
+<figure><img src="assets/fig-0132.png" alt="" loading="lazy"></figure>
+<h3 id="exercise-6-1-increasing-the-context-length">Exercise 6.1 Increasing the context length <a class="anchor" href="#exercise-6-1-increasing-the-context-length">#</a></h3>
+<div class="plainbox"><p>Pad the inputs to the maximum number of tokens the model supports and observe</p><p>how it affects the predictive performance.</p></div>
+<p>Using the datasets as inputs, we can instantiate the data loaders similarly to when we were working with text data. However, in this case, the targets represent class labels rather than the next tokens in the text. For instance, if we choose a batch size of 8, each batch will consist of eight training examples of length 120 and the corresponding class label of each example, as illustrated in figure 6.7.</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 3 条</summary><ul><li>Class label array, where 1</li><li>Each text message ispadded to 120 tokens.</li><li>Original message text stands for “spam” and 0 for “ham” (not spam)</li></ul></details><pre><code><span class="t-num">2953</span>, <span class="t-num">644</span>, <span class="t-num">640</span>, ..., <span class="t-num">50256</span>
+<span class="t-num">0</span></code></pre></div>
+<div class="codeblock"><pre><code><span class="t-num">55</span>, <span class="t-num">31180</span>, <span class="t-num">15895</span>, ..., <span class="t-num">50256</span>
+<span class="t-num">1</span></code></pre></div>
+<div class="codeblock"><pre><code><span class="t-num">20266</span>, <span class="t-num">40621</span>, <span class="t-num">15762</span>, ..., <span class="t-num">50256</span>
+<span class="t-num">1</span></code></pre></div>
+<div class="codeblock"><pre><code><span class="t-num">42</span>, <span class="t-num">13</span>, <span class="t-num">314</span>, ..., <span class="t-num">50256</span>
+<span class="t-num">0</span></code></pre></div>
+<p class="caption">Figure 6.7 A single training batch consisting of eight text messages represented as token IDs. Each  text message consists of 120 token IDs. A class label array stores the eight class labels corresponding  to the text messages, which can be either 0 (“not spam”) or 1 (“spam”).</p>
+<div class="pdfpage" data-page="201">PDF p. 201</div>
+<p class="listing-title"><span class="no">Listing 6.5</span><span class="tl">Creating PyTorch data loaders</span></p>
+<p>The code in the following listing creates the training, validation, and test set data loaders that load the text messages and labels in batches of size 8.</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>This setting ensures compatibility with most computers.</li></ul></details><pre><code><span class="t-kw">from</span> <span class="t-bi">torch</span>.utils.data <span class="t-kw">import</span> DataLoader
+num_workers <span class="t-op">=</span> <span class="t-num">0</span>
+batch_size <span class="t-op">=</span> <span class="t-num">8</span>
+<span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)
+train_loader <span class="t-op">=</span> <span class="t-fn">DataLoader</span>(
+ dataset<span class="t-op">=</span>train_dataset,
+ batch_size<span class="t-op">=</span>batch_size,
+ shuffle<span class="t-op">=</span><span class="t-kw">True</span>,
+ num_workers<span class="t-op">=</span>num_workers,
+ drop_last<span class="t-op">=</span><span class="t-kw">True</span>,
+)
+val_loader <span class="t-op">=</span> <span class="t-fn">DataLoader</span>(
+ dataset<span class="t-op">=</span>val_dataset,
+ batch_size<span class="t-op">=</span>batch_size,
+ num_workers<span class="t-op">=</span>num_workers,
+ drop_last<span class="t-op">=</span><span class="t-kw">False</span>,
+)
+test_loader <span class="t-op">=</span> <span class="t-fn">DataLoader</span>(
+ dataset<span class="t-op">=</span>test_dataset,
+ batch_size<span class="t-op">=</span>batch_size,
+ num_workers<span class="t-op">=</span>num_workers,
+ drop_last<span class="t-op">=</span><span class="t-kw">False</span>,
+)</code></pre></div>
+<p>To ensure that the data loaders are working and are, indeed, returning batches of the expected size, we iterate over the training loader and then print the tensor dimensions of the last batch:</p>
+<div class="codeblock"><pre><code><span class="t-kw">for</span> input_batch, target_batch <span class="t-kw">in</span> train_loader:
+ <span class="t-kw">pass</span>
+<span class="t-bi">print</span>(<span class="t-str">"Input batch dimensions:"</span>, input_batch.shape)
+<span class="t-bi">print</span>(<span class="t-str">"Label batch dimensions"</span>, target_batch.shape)</code></pre></div>
+<p>The output is</p>
+<div class="codeblock"><pre><code>Input batch dimensions: <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">8</span>, <span class="t-num">120</span>])
+Label batch dimensions <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">8</span>])</code></pre></div>
+<p>As we can see, the input batches consist of eight training examples with 120 tokens each, as expected. The label tensor stores the class labels corresponding to the eight training examples.</p>
+<p> Lastly, to get an idea of the dataset size, let’s print the total number of batches in each dataset:</p>
+<div class="pdfpage" data-page="202">PDF p. 202</div>
+<figure><img src="assets/fig-0133.png" alt="" loading="lazy"><figcaption>Figure 6.8 The three-stage process for classification fine-tuning the LLM. Having completed stage 1,  preparing the dataset, we now must initialize the LLM, which we will then fine-tune to classify spam  messages.</figcaption></figure>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(f<span class="t-str">"{len(train_loader)} training batches"</span>)
+<span class="t-bi">print</span>(f<span class="t-str">"{len(val_loader)} validation batches"</span>)
+<span class="t-bi">print</span>(f<span class="t-str">"{len(test_loader)} test batches"</span>)</code></pre></div>
+<p>The number of batches in each dataset are</p>
+<div class="codeblock"><pre><code><span class="t-num">130</span> training batches
+<span class="t-num">19</span> validation batches
+<span class="t-num">38</span> test batches</code></pre></div>
+<p>Now that we’ve prepared the data, we need to prepare the model for fine-tuning.</p>
+<h2 id="initializing-a-model-with-pretrained-weights">6.4 Initializing a model with pretrained weights<a class="anchor" href="#initializing-a-model-with-pretrained-weights">#</a></h2>
+<p>We must prepare the model for classification fine-tuning to identify spam messages. We start by initializing our pretrained model, as highlighted in figure 6.8.</p>
+<p>To begin the model preparation process, we employ the same configurations we used to pretrain unlabeled data:</p>
+<div class="codeblock"><pre><code>CHOOSE_MODEL <span class="t-op">=</span> <span class="t-str">"gpt2-small (124M)"</span>
+INPUT_PROMPT <span class="t-op">=</span> <span class="t-str">"Every effort moves"</span></code></pre></div>
+<div class="pdfpage" data-page="203">PDF p. 203</div>
+<figure><img src="assets/fig-0134.png" alt="" loading="lazy"></figure>
+<p class="listing-title"><span class="no">Listing 6.6</span><span class="tl">Loading a pretrained GPT model</span></p>
+<div class="codeblock"><pre><code>BASE_CONFIG <span class="t-op">=</span> {</code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 4 条</summary><ul><li>Vocabulary size</li><li>Context length</li><li>Dropout rate</li><li>Query-key-value bias</li></ul></details><pre><code> <span class="t-str">"vocab_size"</span>: <span class="t-num">50257</span>,
+ <span class="t-str">"context_length"</span>: <span class="t-num">1024</span>,
+ <span class="t-str">"drop_rate"</span>: <span class="t-num">0.0</span>,
+ <span class="t-str">"qkv_bias"</span>: <span class="t-kw">True</span>
+}
+model_configs <span class="t-op">=</span> {
+ <span class="t-str">"gpt2-small (124M)"</span>: {<span class="t-str">"emb_dim"</span>: <span class="t-num">768</span>, <span class="t-str">"n_layers"</span>: <span class="t-num">12</span>, <span class="t-str">"n_heads"</span>: <span class="t-num">12</span>},
+ <span class="t-str">"gpt2-medium (355M)"</span>: {<span class="t-str">"emb_dim"</span>: <span class="t-num">1024</span>, <span class="t-str">"n_layers"</span>: <span class="t-num">24</span>, <span class="t-str">"n_heads"</span>: <span class="t-num">16</span>},
+ <span class="t-str">"gpt2-large (774M)"</span>: {<span class="t-str">"emb_dim"</span>: <span class="t-num">1280</span>, <span class="t-str">"n_layers"</span>: <span class="t-num">36</span>, <span class="t-str">"n_heads"</span>: <span class="t-num">20</span>},
+ <span class="t-str">"gpt2-xl (1558M)"</span>: {<span class="t-str">"emb_dim"</span>: <span class="t-num">1600</span>, <span class="t-str">"n_layers"</span>: <span class="t-num">48</span>, <span class="t-str">"n_heads"</span>: <span class="t-num">25</span>},
+}
+BASE_CONFIG.<span class="t-fn">update</span>(model_configs[CHOOSE_MODEL])</code></pre></div>
+<p>Next, we import the <code>download_and_load_gpt2</code> function from the <code>gpt_download.py</code> file and reuse the <code>GPTModel</code> class and <code>load_weights_into_gpt</code> function from pretraining (see chapter 5) to load the downloaded weights into the GPT model.</p>
+<div class="codeblock"><pre><code><span class="t-kw">from</span> gpt_download <span class="t-kw">import</span> download_and_load_gpt2
+<span class="t-kw">from</span> chapter05 <span class="t-kw">import</span> GPTModel, load_weights_into_gpt
+model_size <span class="t-op">=</span> CHOOSE_MODEL.<span class="t-fn">split</span>(<span class="t-str">" "</span>)[<span class="t-op">-</span><span class="t-num">1</span>].<span class="t-fn">lstrip</span>(<span class="t-str">"("</span>).<span class="t-fn">rstrip</span>(<span class="t-str">")"</span>)
+settings, params <span class="t-op">=</span> <span class="t-fn">download_and_load_gpt2</span>(
+ model_size<span class="t-op">=</span>model_size, models_dir<span class="t-op">=</span><span class="t-str">"gpt2"</span>
+)
+model <span class="t-op">=</span> <span class="t-fn">GPTModel</span>(BASE_CONFIG)
+<span class="t-fn">load_weights_into_gpt</span>(model, params)
+model.<span class="t-fn">eval</span>()</code></pre></div>
+<p>After loading the model weights into the <code>GPTModel</code>, we reuse the text generation utility function from chapters 4 and 5 to ensure that the model generates coherent text:</p>
+<div class="codeblock"><pre><code><span class="t-kw">from</span> chapter04 <span class="t-kw">import</span> generate_text_simple
+<span class="t-kw">from</span> chapter05 <span class="t-kw">import</span> text_to_token_ids, token_ids_to_text
+text_1 <span class="t-op">=</span> <span class="t-str">"Every effort moves you"</span>
+token_ids <span class="t-op">=</span> <span class="t-fn">generate_text_simple</span>(
+ model<span class="t-op">=</span>model,
+ idx<span class="t-op">=</span><span class="t-fn">text_to_token_ids</span>(text_1, tokenizer),
+ max_new_tokens<span class="t-op">=</span><span class="t-num">15</span>,
+ context_size<span class="t-op">=</span>BASE_CONFIG[<span class="t-str">"context_length"</span>]
+)
+<span class="t-bi">print</span>(<span class="t-fn">token_ids_to_text</span>(token_ids, tokenizer))</code></pre></div>
+<p>The following output shows the model generates coherent text, which is indicates that the model weights have been loaded correctly:</p>
+<div class="codeblock"><pre><code>Every effort moves you forward.
+The first step <span class="t-kw">is</span> to understand the importance of your work</code></pre></div>
+<div class="pdfpage" data-page="204">PDF p. 204</div>
+<p>Before we start fine-tuning the model as a spam classifier, let’s see whether the model already classifies spam messages by prompting it with instructions:</p>
+<div class="codeblock"><pre><code>text_2 <span class="t-op">=</span> (
+ <span class="t-str">"Is the following text 'spam'? Answer with 'yes' or 'no':"</span>
+ <span class="t-str">" 'You are a winner you have been specially"</span>
+ <span class="t-str">" selected to receive $1000 cash or a $2000 award.'"</span>
+)
+token_ids <span class="t-op">=</span> <span class="t-fn">generate_text_simple</span>(
+ model<span class="t-op">=</span>model,
+ idx<span class="t-op">=</span><span class="t-fn">text_to_token_ids</span>(text_2, tokenizer),
+ max_new_tokens<span class="t-op">=</span><span class="t-num">23</span>,
+ context_size<span class="t-op">=</span>BASE_CONFIG[<span class="t-str">"context_length"</span>]
+)
+<span class="t-bi">print</span>(<span class="t-fn">token_ids_to_text</span>(token_ids, tokenizer))</code></pre></div>
+<p>The model output is</p>
+<div class="codeblock"><pre><code>Is the following text <span class="t-str">'spam'</span>? Answer <span class="t-kw">with</span> <span class="t-str">'yes'</span> <span class="t-kw">or</span> <span class="t-str">'no'</span>: <span class="t-str">'You are a winner</span>
+you have been specially selected to receive $<span class="t-num">1000</span> cash
+<span class="t-kw">or</span> a $<span class="t-num">2000</span> award.<span class="t-str">'</span>
+The following text <span class="t-str">'spam'</span>? Answer <span class="t-kw">with</span> <span class="t-str">'yes'</span> <span class="t-kw">or</span> <span class="t-str">'no'</span>: <span class="t-str">'You are a winner</span></code></pre></div>
+<p>Based on the output, it’s apparent that the model is struggling to follow instructions. This result is expected, as it has only undergone pretraining and lacks instruction fine-tuning. So, let’s prepare the model for classification fine-tuning.</p>
+<h2 id="adding-a-classification-head">6.5 Adding a classification head<a class="anchor" href="#adding-a-classification-head">#</a></h2>
+<p>We must modify the pretrained LLM to prepare it for classification fine-tuning. To do so, we replace the original output layer, which maps the hidden representation to a vocabulary of 50,257, with a smaller output layer that maps to two classes: <code>0</code> (“not spam”) and <code>1</code> (“spam”), as shown in figure 6.9. We use the same model as before, except we replace the output layer.</p>
+<h3 id="output-layer-nodes">Output layer nodes <a class="anchor" href="#output-layer-nodes">#</a></h3>
+<div class="plainbox"><p>We could technically use a single output node since we are dealing with a binary clas-</p><p>sification task. However, it would require modifying the loss function, as I discuss in</p><p>“Losses Learned—Optimizing Negative Log-Likelihood and Cross-Entropy in PyTorch”</p><p>(<a href="https://mng.bz/NRZ2" rel="noopener">https://mng.bz/NRZ2</a>). Therefore, we choose a more general approach, where the</p><p>number of output nodes matches the number of classes. For example, for a three-</p><p>class problem, such as classifying news articles as “Technology,” “Sports,” or “Pol-</p><p>itics,” we would use three output nodes, and so forth.</p></div>
+<div class="pdfpage" data-page="205">PDF p. 205</div>
+<figure><img src="assets/fig-0135.png" alt="" loading="lazy"><figcaption>The original linear output layer mapped 768 hidden units to 50,257 units (the number of tokens in the vocabulary).</figcaption></figure>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>The GPT model we implemented in chapter 5 and loaded in the previous section</li></ul></details><pre><code>Outputs</code></pre></div>
+<p class="caption">modelGPT</p>
+<p class="caption">Figure 6.9 Adapting a GPT model for spam classification by altering its architecture. Initially, the model’s linear  output layer mapped 768 hidden units to a vocabulary of 50,257 tokens. To detect spam, we replace this layer  with a new output layer that maps the same 768 hidden units to just two classes, representing “spam” and “not  spam.”</p>
+<div class="pdfpage" data-page="206">PDF p. 206</div>
+<p>Before we attempt the modification shown in figure 6.9, let’s print the model architec-</p>
+<p>ture via <code>print(model</code>):</p>
+<div class="codeblock"><pre><code><span class="t-fn">GPTModel</span>(
+ (tok_emb): <span class="t-fn">Embedding</span>(<span class="t-num">50257</span>, <span class="t-num">768</span>)
+ (pos_emb): <span class="t-fn">Embedding</span>(<span class="t-num">1024</span>, <span class="t-num">768</span>)
+ (drop_emb): <span class="t-fn">Dropout</span>(p<span class="t-op">=</span><span class="t-num">0.0</span>, inplace<span class="t-op">=</span><span class="t-kw">False</span>)
+ (trf_blocks): <span class="t-fn">Sequential</span>(
+...
+ (<span class="t-num">11</span>): <span class="t-fn">TransformerBlock</span>(
+ (att): <span class="t-fn">MultiHeadAttention</span>(
+ (W_query): <span class="t-fn">Linear</span>(in_features<span class="t-op">=</span><span class="t-num">768</span>, out_features<span class="t-op">=</span><span class="t-num">768</span>, bias<span class="t-op">=</span><span class="t-kw">True</span>)
+ (W_key): <span class="t-fn">Linear</span>(in_features<span class="t-op">=</span><span class="t-num">768</span>, out_features<span class="t-op">=</span><span class="t-num">768</span>, bias<span class="t-op">=</span><span class="t-kw">True</span>)
+ (W_value): <span class="t-fn">Linear</span>(in_features<span class="t-op">=</span><span class="t-num">768</span>, out_features<span class="t-op">=</span><span class="t-num">768</span>, bias<span class="t-op">=</span><span class="t-kw">True</span>)
+ (out_proj): <span class="t-fn">Linear</span>(in_features<span class="t-op">=</span><span class="t-num">768</span>, out_features<span class="t-op">=</span><span class="t-num">768</span>, bias<span class="t-op">=</span><span class="t-kw">True</span>)
+ (dropout): <span class="t-fn">Dropout</span>(p<span class="t-op">=</span><span class="t-num">0.0</span>, inplace<span class="t-op">=</span><span class="t-kw">False</span>)
+ )
+ (ff): <span class="t-fn">FeedForward</span>(
+ (layers): <span class="t-fn">Sequential</span>(
+ (<span class="t-num">0</span>): <span class="t-fn">Linear</span>(in_features<span class="t-op">=</span><span class="t-num">768</span>, out_features<span class="t-op">=</span><span class="t-num">3072</span>, bias<span class="t-op">=</span><span class="t-kw">True</span>)
+ (<span class="t-num">1</span>): <span class="t-fn">GELU</span>()
+ (<span class="t-num">2</span>): <span class="t-fn">Linear</span>(in_features<span class="t-op">=</span><span class="t-num">3072</span>, out_features<span class="t-op">=</span><span class="t-num">768</span>, bias<span class="t-op">=</span><span class="t-kw">True</span>)
+ )
+ )
+ (norm1): <span class="t-fn">LayerNorm</span>()
+ (norm2): <span class="t-fn">LayerNorm</span>()
+ (drop_resid): <span class="t-fn">Dropout</span>(p<span class="t-op">=</span><span class="t-num">0.0</span>, inplace<span class="t-op">=</span><span class="t-kw">False</span>)
+ )
+ )
+ (final_norm): <span class="t-fn">LayerNorm</span>()
+ (out_head): <span class="t-fn">Linear</span>(in_features<span class="t-op">=</span><span class="t-num">768</span>, out_features<span class="t-op">=</span><span class="t-num">50257</span>, bias<span class="t-op">=</span><span class="t-kw">False</span>)
+)</code></pre></div>
+<p>This output neatly lays out the architecture we laid out in chapter 4. As previously discussed, the <code>GPTModel</code> consists of embedding layers followed by 12 identical <em>transformer</em> <em>blocks</em> (only the last block is shown for brevity), followed by a final <code>LayerNorm</code> and the output layer, <code>out_head</code>. </p>
+<p> Next, we replace the <code>out_head</code> with a new output layer (see figure 6.9) that we will fine-tune.</p>
+<h3 id="fine-tuning-selected-layers-vs-all-layers">Fine-tuning selected layers vs. all layers<a class="anchor" href="#fine-tuning-selected-layers-vs-all-layers">#</a></h3>
+<div class="plainbox"><p>Since we start with a pretrained model, it’s not necessary to fine-tune all model layers.</p><p>In neural network-based language models, the lower layers generally capture basic lan-</p><p>guage structures and semantics applicable across a wide range of tasks and datasets.</p><p>So, fine-tuning only the last layers (i.e., layers near the output), which are more specific</p><p>to nuanced linguistic patterns and task-specific features, is often sufficient to adapt the</p><p>model to new tasks. A nice side effect is that it is computationally more efficient to fine-</p><p>tune only a small number of layers. Interested readers can find more information,</p><p>including experiments, on which layers to fine-tune in appendix B.</p></div>
+<div class="pdfpage" data-page="207">PDF p. 207</div>
+<p class="listing-title"><span class="no">Listing 6.7</span><span class="tl">Adding a classification layer</span></p>
+<p>To get the model ready for classification fine-tuning, we first <em>freeze</em> the model, meaning that we make all layers nontrainable:</p>
+<div class="codeblock"><pre><code><span class="t-kw">for</span> param <span class="t-kw">in</span> model.<span class="t-fn">parameters</span>():
+ param.requires_grad <span class="t-op">=</span> <span class="t-kw">False</span></code></pre></div>
+<p>Then, we replace the output layer (<code>model.out_head</code>), which originally maps the layer inputs to 50,257 dimensions, the size of the vocabulary (see figure 6.9).</p>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)
+num_classes <span class="t-op">=</span> <span class="t-num">2</span>
+model.out_head <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-bi">nn</span>.<span class="t-fn">Linear</span>(
+ in_features<span class="t-op">=</span>BASE_CONFIG[<span class="t-str">"emb_dim"</span>],
+ out_features<span class="t-op">=</span>num_classes
+)</code></pre></div>
+<p>To keep the code more general, we use <code>BASE_CONFIG["emb_dim"]</code>, which is equal to 768 in the <code>"gpt2-small</code> <code>(124M)"</code> model. Thus, we can also use the same code to work with the larger GPT-2 model variants.</p>
+<p> This new <code>model.out_head</code> output layer has its <code>requires_grad</code> attribute set to <code>True</code> by default, which means that it’s the only layer in the model that will be updated during training. Technically, training the output layer we just added is sufficient. However, as I found in experiments, fine-tuning additional layers can noticeably improve the predictive performance of the model. (For more details, refer to appendix B.) We also configure the last transformer block and the final <code>LayerNorm</code> module, which connects this block to the output layer, to be trainable, as depicted in figure 6.10.</p>
+<p> To make the final <code>LayerNorm</code> and last transformer block trainable, we set their</p>
+<div class="codeblock"><pre><code>respective requires_grad to <span class="t-kw">True</span>:
+<span class="t-kw">for</span> param <span class="t-kw">in</span> model.trf_blocks[<span class="t-op">-</span><span class="t-num">1</span>].<span class="t-fn">parameters</span>():
+ param.requires_grad <span class="t-op">=</span> <span class="t-kw">True</span>
+<span class="t-kw">for</span> param <span class="t-kw">in</span> model.final_norm.<span class="t-fn">parameters</span>():
+ param.requires_grad <span class="t-op">=</span> <span class="t-kw">True</span></code></pre></div>
+<h3 id="exercise-6-2-fine-tuning-the-whole-model">Exercise 6.2 Fine-tuning the whole model <a class="anchor" href="#exercise-6-2-fine-tuning-the-whole-model">#</a></h3>
+<div class="plainbox"><p>Instead of fine-tuning just the final transformer block, fine-tune the entire model and</p><p>assess the effect on predictive performance.</p></div>
+<p>Even though we added a new output layer and marked certain layers as trainable or nontrainable, we can still use this model similarly to how we have previously. For</p>
+<div class="pdfpage" data-page="208">PDF p. 208</div>
+<figure><img src="assets/fig-0136.png" alt="" loading="lazy"><figcaption>Figure 6.10 The GPT model includes 12 repeated transformer blocks. Alongside the output layer, we set the final </figcaption></figure>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 4 条</summary><ul><li>The GPT model we We make the output layer,</li><li>implemented in chapter 5 final LayerNorm, and the last</li><li>and loaded in the previous transformer block trainable</li><li>section</li></ul></details><pre><code>Outputs</code></pre></div>
+<p class="caption">modelGPT</p>
+<p class="caption">Transformer block</p>
+<p><code>LayerNorm</code><strong> and the last transformer block as trainable. The remaining 11 transformer blocks and the embedding </strong></p>
+<p class="caption">layers are kept nontrainable.</p>
+<p>instance, we can feed it an example text identical to our previously used example text:</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>shape: (batch_size, num_tokens)</li></ul></details><pre><code>inputs <span class="t-op">=</span> tokenizer.<span class="t-fn">encode</span>(<span class="t-str">"Do you have time"</span>)
+inputs <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>(inputs).<span class="t-fn">unsqueeze</span>(<span class="t-num">0</span>)
+<span class="t-bi">print</span>(<span class="t-str">"Inputs:"</span>, inputs)
+<span class="t-bi">print</span>(<span class="t-str">"Inputs dimensions:"</span>, inputs.shape)</code></pre></div>
+<div class="pdfpage" data-page="209">PDF p. 209</div>
+<p>The print output shows that the preceding code encodes the inputs into a tensor consisting of four input tokens:</p>
+<div class="codeblock"><pre><code>Inputs: <span class="t-fn">tensor</span>([[<span class="t-num">5211</span>, <span class="t-num">345</span>, <span class="t-num">423</span>, <span class="t-num">640</span>]])
+Inputs dimensions: <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">1</span>, <span class="t-num">4</span>])</code></pre></div>
+<p>Then, we can pass the encoded token IDs to the model as usual:</p>
+<div class="codeblock"><pre><code><span class="t-kw">with</span> <span class="t-bi">torch</span>.<span class="t-fn">no_grad</span>():
+ outputs <span class="t-op">=</span> <span class="t-fn">model</span>(inputs)
+<span class="t-bi">print</span>(<span class="t-str">"Outputs:\n"</span>, outputs)
+<span class="t-bi">print</span>(<span class="t-str">"Outputs dimensions:"</span>, outputs.shape)</code></pre></div>
+<p>The output tensor looks like the following:</p>
+<div class="codeblock"><pre><code>Outputs:
+ <span class="t-fn">tensor</span>([[[<span class="t-op">-</span><span class="t-num">1.5854</span>, <span class="t-num">0.9904</span>],
+ [<span class="t-op">-</span><span class="t-num">3.7235</span>, <span class="t-num">7.4548</span>],
+ [<span class="t-op">-</span><span class="t-num">2.2661</span>, <span class="t-num">6.6049</span>],
+ [<span class="t-op">-</span><span class="t-num">3.5983</span>, <span class="t-num">3.9902</span>]]])
+Outputs dimensions: <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">1</span>, <span class="t-num">4</span>, <span class="t-num">2</span>])</code></pre></div>
+<p>A similar input would have previously produced an output tensor of <code>[1,</code> <code>4,</code> <code>50257]</code>, where <code>50257</code> represents the vocabulary size. The number of output rows corresponds to the number of input tokens (in this case, four). However, each output’s embedding dimension (the number of columns) is now 2 instead of 50,257 since we replaced the output layer of the model.</p>
+<p> Remember that we are interested in fine-tuning this model to return a class label indicating whether a model input is “spam” or “not spam.” We don’t need to finetune all four output rows; instead, we can focus on a single output token. In particular, we will focus on the last row corresponding to the last output token, as shown in figure 6.11.</p>
+<p> To extract the last output token from the output tensor, we use the following code:</p>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(<span class="t-str">"Last output token:"</span>, outputs[:, <span class="t-op">-</span><span class="t-num">1</span>, :])</code></pre></div>
+<p>This prints</p>
+<div class="codeblock"><pre><code>Last output token: <span class="t-fn">tensor</span>([[<span class="t-op">-</span><span class="t-num">3.5983</span>, <span class="t-num">3.9902</span>]])</code></pre></div>
+<p>We still need to convert the values into a class-label prediction. But first, let’s understand why we are particularly interested in the last output token only.</p>
+<p> We have already explored the attention mechanism, which establishes a relationship between each input token and every other input token, and the concept of a <em>causal</em> <em>attention mask</em>, commonly used in GPT-like models (see chapter 3). This mask restricts a</p>
+<div class="pdfpage" data-page="210">PDF p. 210</div>
+<figure><img src="assets/fig-0137.png" alt="" loading="lazy"><figcaption>Figure 6.11 The GPT model with a four-token example input and output. The output tensor consists of  two columns due to the modified output layer. We are only interested in the last row corresponding to  the last token when fine-tuning the model for spam classification.</figcaption></figure>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 5 条</summary><ul><li>A 4 × 2–dimensional tensor</li><li>The last row corresponds</li><li>The number of rows correspondsto the number of input tokens, to the last token.</li><li>as discussed in chapter 4.</li><li>The GPT model we implemented in chapter 5 and loaded in the previous section</li></ul></details><pre><code>[[<span class="t-op">-</span><span class="t-num">1.5854</span>, <span class="t-num">0.9904</span>],
+[<span class="t-op">-</span><span class="t-num">3.7235</span>, <span class="t-num">7.4548</span>],
+[<span class="t-op">-</span><span class="t-num">2.2661</span>, <span class="t-num">6.6049</span>],
+[<span class="t-op">-</span><span class="t-num">3.5983</span>, <span class="t-num">3.9902</span>]]</code></pre></div>
+<p class="caption">modelGPT</p>
+<div class="pdfpage" data-page="211">PDF p. 211</div>
+<figure><img src="assets/fig-0138.png" alt="" loading="lazy"><figcaption>Figure 6.12 The causal attention  mechanism, where the attention scores  between input tokens are displayed in a  matrix format. The empty cells indicate  masked positions due to the causal attention  mask, preventing tokens from attending to  future tokens. The values in the cells  represent attention scores; the last token, </figcaption></figure>
+<p>token’s focus to its current position and the those before it, ensuring that each token can only be influenced by itself and the preceding tokens, as illustrated in figure 6.12.</p>
+<aside class="sidenote">The last token is the only token with an attention score to all other tokens.</aside>
+<p><code>time</code><strong>, is the only one that computes </strong></p>
+<p class="caption">attention scores for all preceding tokens.</p>
+<p>Given the causal attention mask setup in figure 6.12, the last token in a sequence accumulates the most information since it is the only token with access to data from all the previous tokens. Therefore, in our spam classification task, we focus on this last token during the fine-tuning process.</p>
+<p> We are now ready to transform the last token into class label predictions and calculate the model’s initial prediction accuracy. Subsequently, we will fine-tune the model for the spam classification task.</p>
+<h3 id="exercise-6-3-fine-tuning-the-first-vs-last-token">Exercise 6.3 Fine-tuning the first vs. last token <a class="anchor" href="#exercise-6-3-fine-tuning-the-first-vs-last-token">#</a></h3>
+<div class="plainbox"><p>Try fine-tuning the first output token. Notice the changes in predictive performance</p><p>compared to fine-tuning the last output token.</p></div>
+<h2 id="calculating-the-classification-loss-and-accuracy">6.6 Calculating the classification loss and accuracy<a class="anchor" href="#calculating-the-classification-loss-and-accuracy">#</a></h2>
+<aside class="detail-link"><span class="tag">数学推导详解</span>argmax 与 softmax 等价性的证明、准确率为何不可微、0.693 这个随机基线，见 <a href="12-fine-tuning-for-classification-detail.html"><b>6.6–6.7 分类损失与 argmax</b></a>。全部推导页的索引见 <a href="math-detail.html">math-detail.html</a>。</aside>
+<p>Only one small task remains before we fine-tune the model: we must implement the model evaluation functions used during fine-tuning, as illustrated in figure 6.13.</p>
+<p> Before implementing the evaluation utilities, let’s briefly discuss how we convert the model outputs into class label predictions. We previously computed the token ID of the next token generated by the LLM by converting the 50,257 outputs into probabilities via the <code>softmax</code> function and then returning the position of the highest probability via the <code>argmax</code> function. We take the same approach here to calculate whether the model outputs a “spam” or “not spam” prediction for a given input, as shown in figure 6.14. The only difference is that we work with 2-dimensional instead of 50,257dimensional outputs. </p>
+<div class="pdfpage" data-page="212">PDF p. 212</div>
+<figure><img src="assets/fig-0139.png" alt="" loading="lazy"><figcaption>Figure 6.13 The three-stage process for classification fine-tuning the LLM.  We've completed the first six steps. We are now ready to undertake the last step  of stage 2: implementing the functions to evaluate the model’s performance to  classify spam messages before, during, and after the fine-tuning.</figcaption></figure>
+<figure><img src="assets/fig-0140.png" alt="" loading="lazy"><figcaption>Index position:</figcaption></figure>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 7 条</summary><ul><li>Input text</li><li>Outputs corresponding</li><li>1. Convert outputs to</li><li>The predicted</li><li>message to the last row (token)</li><li>softmax probabilities.</li><li>labels</li></ul></details><pre><code>[ <span class="t-num">0.99</span>, <span class="t-num">0.01</span> ]<span class="t-num">10</span></code></pre></div>
+<p class="caption">LLM</p>
+<div class="codeblock"><pre><code>[ <span class="t-num">3.5983</span>, <span class="t-op">-</span><span class="t-num">3.9902</span> ]</code></pre></div>
+<div class="codeblock"><pre><code>[ <span class="t-num">0.01</span>, <span class="t-num">0.99</span> ]<span class="t-num">11</span></code></pre></div>
+<p class="caption">LLM</p>
+<div class="codeblock"><pre><code>[ <span class="t-op">-</span><span class="t-num">3.9846</span>, <span class="t-num">5.2940</span> ]</code></pre></div>
+<div class="codeblock"><pre><code><span class="t-num">0</span> <span class="t-num">1</span></code></pre></div>
+<p class="caption">Figure 6.14 The model outputs corresponding to the last token are converted into probability scores for each  input text. The class labels are obtained by looking up the index position of the highest probability score. The  model predicts the spam labels incorrectly because it has not yet been trained.</p>
+<div class="pdfpage" data-page="213">PDF p. 213</div>
+<p class="listing-title"><span class="no">Listing 6.8</span><span class="tl">Calculating the classification accuracy</span></p>
+<p>Let’s consider the last token output using a concrete example:</p>
+<p><code>print("Last output token:", outputs[:, -1, :])</code></p>
+<p>The values of the tensor corresponding to the last token are</p>
+<p><code>Last output token: tensor([[-3.5983, 3.9902]])</code></p>
+<p>We can obtain the class label:</p>
+<div class="codeblock"><pre><code>probas <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">softmax</span>(outputs[:, <span class="t-op">-</span><span class="t-num">1</span>, :], dim<span class="t-op">=-</span><span class="t-num">1</span>)
+label <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">argmax</span>(probas)
+<span class="t-bi">print</span>(<span class="t-str">"Class label:"</span>, label.<span class="t-fn">item</span>())</code></pre></div>
+<p>In this case, the code returns <code>1</code>, meaning the model predicts that the input text is “spam.” Using the <code>softmax</code> function here is optional because the largest outputs directly correspond to the highest probability scores. Hence, we can simplify the code without using softmax:</p>
+<div class="codeblock"><pre><code>logits <span class="t-op">=</span> outputs[:, <span class="t-op">-</span><span class="t-num">1</span>, :]
+label <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">argmax</span>(logits)
+<span class="t-bi">print</span>(<span class="t-str">"Class label:"</span>, label.<span class="t-fn">item</span>())</code></pre></div>
+<p>This concept can be used to compute the classification accuracy, which measures the percentage of correct predictions across a dataset.</p>
+<p> To determine the classification accuracy, we apply the <code>argmax</code>-based prediction code to all examples in the dataset and calculate the proportion of correct predictions by defining a <code>calc_accuracy_loader</code> function.</p>
+<div class="codeblock"><pre><code><span class="t-kw">def</span> <span class="t-fn">calc_accuracy_loader</span>(data_loader, model, device, num_batches<span class="t-op">=</span><span class="t-kw">None</span>):
+ model.<span class="t-fn">eval</span>()
+ correct_predictions, num_examples <span class="t-op">=</span> <span class="t-num">0</span>, <span class="t-num">0</span>
+ <span class="t-kw">if</span> num_batches <span class="t-kw">is</span> <span class="t-kw">None</span>:
+ num_batches <span class="t-op">=</span> <span class="t-bi">len</span>(data_loader)
+ <span class="t-kw">else</span>:
+ num_batches <span class="t-op">=</span> <span class="t-bi">min</span>(num_batches, <span class="t-bi">len</span>(data_loader))
+ <span class="t-kw">for</span> i, (input_batch, target_batch) <span class="t-kw">in</span> <span class="t-bi">enumerate</span>(data_loader):
+ <span class="t-kw">if</span> i <span class="t-op">&lt;</span> num_batches:
+ input_batch <span class="t-op">=</span> input_batch.<span class="t-fn">to</span>(device)
+ target_batch <span class="t-op">=</span> target_batch.<span class="t-fn">to</span>(device)</code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>Logits of last output token</li></ul></details><pre><code> <span class="t-kw">with</span> <span class="t-bi">torch</span>.<span class="t-fn">no_grad</span>(): logits <span class="t-op">=</span> <span class="t-fn">model</span>(input_batch)[:, <span class="t-op">-</span><span class="t-num">1</span>, :]
+ predicted_labels <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">argmax</span>(logits, dim<span class="t-op">=-</span><span class="t-num">1</span>)
+ num_examples <span class="t-op">+=</span> predicted_labels.shape[<span class="t-num">0</span>]
+ correct_predictions <span class="t-op">+=</span> (
+ (predicted_labels <span class="t-op">==</span> target_batch).<span class="t-bi">sum</span>().<span class="t-fn">item</span>()
+ )
+ <span class="t-kw">else</span>:
+ <span class="t-kw">break</span>
+ <span class="t-kw">return</span> correct_predictions <span class="t-op">/</span> num_examples</code></pre></div>
+<div class="pdfpage" data-page="214">PDF p. 214</div>
+<p>Let’s use the function to determine the classification accuracies across various datasets estimated from 10 batches for efficiency:</p>
+<div class="codeblock"><pre><code>device <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">device</span>(<span class="t-str">"cuda"</span> <span class="t-kw">if</span> <span class="t-bi">torch</span>.cuda.<span class="t-fn">is_available</span>() <span class="t-kw">else</span> <span class="t-str">"cpu"</span>)
+model.<span class="t-fn">to</span>(device)
+<span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)
+train_accuracy <span class="t-op">=</span> <span class="t-fn">calc_accuracy_loader</span>(
+ train_loader, model, device, num_batches<span class="t-op">=</span><span class="t-num">10</span>
+)
+val_accuracy <span class="t-op">=</span> <span class="t-fn">calc_accuracy_loader</span>(
+ val_loader, model, device, num_batches<span class="t-op">=</span><span class="t-num">10</span>
+)
+test_accuracy <span class="t-op">=</span> <span class="t-fn">calc_accuracy_loader</span>(
+ test_loader, model, device, num_batches<span class="t-op">=</span><span class="t-num">10</span>
+)
+<span class="t-bi">print</span>(f<span class="t-str">"Training accuracy: {train_accuracy*100:.2f}%"</span>)
+<span class="t-bi">print</span>(f<span class="t-str">"Validation accuracy: {val_accuracy*100:.2f}%"</span>)
+<span class="t-bi">print</span>(f<span class="t-str">"Test accuracy: {test_accuracy*100:.2f}%"</span>)</code></pre></div>
+<p>Via the <code>device</code> setting, the model automatically runs on a GPU if a GPU with Nvidia CUDA support is available and otherwise runs on a CPU. The output is</p>
+<div class="codeblock"><pre><code>Training accuracy: <span class="t-num">46.25</span><span class="t-op">%</span>
+Validation accuracy: <span class="t-num">45.00</span><span class="t-op">%</span>
+Test accuracy: <span class="t-num">48.75</span><span class="t-op">%</span></code></pre></div>
+<p>As we can see, the prediction accuracies are near a random prediction, which would be 50% in this case. To improve the prediction accuracies, we need to fine-tune the model.</p>
+<p> However, before we begin fine-tuning the model, we must define the loss function we will optimize during training. Our objective is to maximize the spam classification accuracy of the model, which means that the preceding code should output the correct class labels: <code>0</code> for non-spam and <code>1</code> for spam. </p>
+<p> Because classification accuracy is not a differentiable function, we use crossentropy loss as a proxy to maximize accuracy. Accordingly, the <code>calc_loss_batch</code> function remains the same, with one adjustment: we focus on optimizing only the last</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>Logits of last output token</li></ul></details><pre><code>token, <span class="t-fn">model</span>(input_batch)[:, <span class="t-op">-</span><span class="t-num">1</span>, :], rather than <span class="t-bi">all</span> tokens, <span class="t-fn">model</span>(input_batch):
+<span class="t-kw">def</span> <span class="t-fn">calc_loss_batch</span>(input_batch, target_batch, model, device):
+ input_batch <span class="t-op">=</span> input_batch.<span class="t-fn">to</span>(device)
+ target_batch <span class="t-op">=</span> target_batch.<span class="t-fn">to</span>(device)
+ logits <span class="t-op">=</span> <span class="t-fn">model</span>(input_batch)[:, <span class="t-op">-</span><span class="t-num">1</span>, :]</code></pre></div>
+<div class="pdfpage" data-page="215">PDF p. 215</div>
+<p class="listing-title"><span class="no">Listing 6.9</span><span class="tl">Calculating the classification loss</span></p>
+<div class="codeblock"><pre><code> loss <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-bi">nn</span>.functional.<span class="t-fn">cross_entropy</span>(logits, target_batch)
+ <span class="t-kw">return</span> loss</code></pre></div>
+<p>We use the <code>calc_loss_batch</code> function to compute the loss for a single batch obtained from the previously defined data loaders. To calculate the loss for all batches in a data loader, we define the <code>calc_loss_loader</code> function as before.</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>Ensures number of batches doesn’t exceed batches in data loader</li></ul></details><pre><code><span class="t-kw">def</span> <span class="t-fn">calc_loss_loader</span>(data_loader, model, device, num_batches<span class="t-op">=</span><span class="t-kw">None</span>):
+ total_loss <span class="t-op">=</span> <span class="t-num">0.</span>
+ <span class="t-kw">if</span> <span class="t-bi">len</span>(data_loader) <span class="t-op">==</span> <span class="t-num">0</span>:
+ <span class="t-kw">return</span> <span class="t-bi">float</span>(<span class="t-str">"nan"</span>)
+ <span class="t-kw">elif</span> num_batches <span class="t-kw">is</span> <span class="t-kw">None</span>:
+ num_batches <span class="t-op">=</span> <span class="t-bi">len</span>(data_loader)
+ <span class="t-kw">else</span>:
+ num_batches <span class="t-op">=</span> <span class="t-bi">min</span>(num_batches, <span class="t-bi">len</span>(data_loader))
+ <span class="t-kw">for</span> i, (input_batch, target_batch) <span class="t-kw">in</span> <span class="t-bi">enumerate</span>(data_loader):
+ <span class="t-kw">if</span> i <span class="t-op">&lt;</span> num_batches:
+ loss <span class="t-op">=</span> <span class="t-fn">calc_loss_batch</span>(
+ input_batch, target_batch, model, device
+ )
+ total_loss <span class="t-op">+=</span> loss.<span class="t-fn">item</span>()
+ <span class="t-kw">else</span>:
+ <span class="t-kw">break</span>
+ <span class="t-kw">return</span> total_loss <span class="t-op">/</span> num_batches</code></pre></div>
+<p>Similar to calculating the training accuracy, we now compute the initial loss for each data set:</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>Disables gradient tracking for efficiency because we are not training yet</li></ul></details><pre><code><span class="t-kw">with</span> <span class="t-bi">torch</span>.<span class="t-fn">no_grad</span>():
+ train_loss <span class="t-op">=</span> <span class="t-fn">calc_loss_loader</span>(
+ train_loader, model, device, num_batches<span class="t-op">=</span><span class="t-num">5</span>
+ )
+ val_loss <span class="t-op">=</span> <span class="t-fn">calc_loss_loader</span>(val_loader, model, device, num_batches<span class="t-op">=</span><span class="t-num">5</span>)
+ test_loss <span class="t-op">=</span> <span class="t-fn">calc_loss_loader</span>(test_loader, model, device, num_batches<span class="t-op">=</span><span class="t-num">5</span>)
+<span class="t-bi">print</span>(f<span class="t-str">"Training loss: {train_loss:.3f}"</span>)
+<span class="t-bi">print</span>(f<span class="t-str">"Validation loss: {val_loss:.3f}"</span>)
+<span class="t-bi">print</span>(f<span class="t-str">"Test loss: {test_loss:.3f}"</span>)</code></pre></div>
+<p>The initial loss values are</p>
+<div class="codeblock"><pre><code>Training loss: <span class="t-num">2.453</span>
+Validation loss: <span class="t-num">2.583</span>
+Test loss: <span class="t-num">2.322</span></code></pre></div>
+<p>Next, we will implement a training function to fine-tune the model, which means adjusting the model to minimize the training set loss. Minimizing the training set loss will help increase the classification accuracy, which is our overall goal.</p>
+<div class="pdfpage" data-page="216">PDF p. 216</div>
+<figure><img src="assets/fig-0141.png" alt="" loading="lazy"><figcaption>Figure 6.15 A typical training loop for training deep neural networks in  PyTorch consists of several steps, iterating over the batches in the training  set for several epochs. In each loop, we calculate the loss for each training  set batch to determine loss gradients, which we use to update the model  weights to minimize the training set loss.</figcaption></figure>
+<h2 id="fine-tuning-the-model-on-supervised-data">6.7 Fine-tuning the model on supervised data<a class="anchor" href="#fine-tuning-the-model-on-supervised-data">#</a></h2>
+<p>We must define and use the training function to fine-tune the pretrained LLM and improve its spam classification accuracy. The training loop, illustrated in figure 6.15, is the same overall training loop we used for pretraining; the only difference is that we calculate the classification accuracy instead of generating a sample text to evaluate the model.</p>
+<p>The training function implementing the concepts shown in figure 6.15 also closely mirrors the <code>train_model_simple</code> function used for pretraining the model. The only two distinctions are that we now track the number of training examples seen (<code>examples_seen</code>) instead of the number of tokens, and we calculate the accuracy after each epoch instead of printing a sample text.</p>
+<div class="pdfpage" data-page="217">PDF p. 217</div>
+<p class="listing-title"><span class="no">Listing 6.10</span><span class="tl">Fine-tuning the model to classify spam</span></p>
+<figure><img src="assets/fig-0142.png" alt="" loading="lazy"></figure>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 3 条</summary><ul><li>Initialize lists to track losses and examples seen</li><li>Main training loop</li><li>Sets model to training mode</li></ul></details><pre><code><span class="t-kw">def</span> <span class="t-fn">train_classifier_simple</span>(
+ model, train_loader, val_loader, optimizer, device,
+ num_epochs, eval_freq, eval_iter):
+ train_losses, val_losses, train_accs, val_accs <span class="t-op">=</span> [], [], [], []
+ examples_seen, global_step <span class="t-op">=</span> <span class="t-num">0</span>, <span class="t-op">-</span><span class="t-num">1</span>
+ <span class="t-kw">for</span> epoch <span class="t-kw">in</span> <span class="t-bi">range</span>(num_epochs):  model.<span class="t-fn">train</span>()</code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>Resets loss gradients from the previous batch iteration</li></ul></details><pre><code> <span class="t-kw">for</span> input_batch, target_batch <span class="t-kw">in</span> train_loader:
+ optimizer.<span class="t-fn">zero_grad</span>()
+ loss <span class="t-op">=</span> <span class="t-fn">calc_loss_batch</span>(
+ input_batch, target_batch, model, device</code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 6 条</summary><ul><li>Calculates loss gradients</li><li>Updates model weights using loss gradients</li><li>New: tracks examples</li><li>Optional instead of tokens</li><li>evaluation step</li><li>Calculates accuracy after each epoch</li></ul></details><pre><code> )
+ loss.<span class="t-fn">backward</span>()
+ optimizer.<span class="t-fn">step</span>()
+ examples_seen <span class="t-op">+=</span> input_batch.shape[<span class="t-num">0</span>]
+ global_step <span class="t-op">+=</span> <span class="t-num">1</span>
+
+ <span class="t-kw">if</span> global_step <span class="t-op">%</span> eval_freq <span class="t-op">==</span> <span class="t-num">0</span>:
+ train_loss, val_loss <span class="t-op">=</span> <span class="t-fn">evaluate_model</span>(
+ model, train_loader, val_loader, device, eval_iter)
+ train_losses.<span class="t-fn">append</span>(train_loss)
+ val_losses.<span class="t-fn">append</span>(val_loss)
+ <span class="t-bi">print</span>(f<span class="t-str">"Ep {epoch+1} (Step {global_step:06d}): "</span>
+ f<span class="t-str">"Train loss {train_loss:.3f}, "</span>
+ f<span class="t-str">"Val loss {val_loss:.3f}"</span>
+ )
+
+ train_accuracy <span class="t-op">=</span> <span class="t-fn">calc_accuracy_loader</span>(
+ train_loader, model, device, num_batches<span class="t-op">=</span>eval_iter
+ )
+ val_accuracy <span class="t-op">=</span> <span class="t-fn">calc_accuracy_loader</span>(
+ val_loader, model, device, num_batches<span class="t-op">=</span>eval_iter
+ )
+ <span class="t-bi">print</span>(f<span class="t-str">"Training accuracy: {train_accuracy*100:.2f}% | "</span>, end<span class="t-op">=</span><span class="t-str">""</span>)
+ <span class="t-bi">print</span>(f<span class="t-str">"Validation accuracy: {val_accuracy*100:.2f}%"</span>)
+ train_accs.<span class="t-fn">append</span>(train_accuracy)
+ val_accs.<span class="t-fn">append</span>(val_accuracy)
+ <span class="t-kw">return</span> train_losses, val_losses, train_accs, val_accs, examples_seen</code></pre></div>
+<p>The <code>evaluate_model</code> function is identical to the one we used for pretraining:</p>
+<div class="codeblock"><pre><code><span class="t-kw">def</span> <span class="t-fn">evaluate_model</span>(model, train_loader, val_loader, device, eval_iter):
+ model.<span class="t-fn">eval</span>()
+ <span class="t-kw">with</span> <span class="t-bi">torch</span>.<span class="t-fn">no_grad</span>():
+ train_loss <span class="t-op">=</span> <span class="t-fn">calc_loss_loader</span>(
+ train_loader, model, device, num_batches<span class="t-op">=</span>eval_iter
+ )
+ val_loss <span class="t-op">=</span> <span class="t-fn">calc_loss_loader</span>(
+ val_loader, model, device, num_batches<span class="t-op">=</span>eval_iter
+ )
+ model.<span class="t-fn">train</span>()
+ <span class="t-kw">return</span> train_loss, val_loss</code></pre></div>
+<div class="pdfpage" data-page="218">PDF p. 218</div>
+<p>Next, we initialize the optimizer, set the number of training epochs, and initiate the training using the <code>train_classifier_simple</code> function. The training takes about 6 minutes on an M3 MacBook Air laptop computer and less than half a minute on a V100 or A100 GPU:</p>
+<div class="codeblock"><pre><code><span class="t-kw">import</span> time
+start_time <span class="t-op">=</span> time.<span class="t-fn">time</span>()
+<span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)
+optimizer <span class="t-op">=</span> <span class="t-bi">torch</span>.optim.<span class="t-fn">AdamW</span>(model.<span class="t-fn">parameters</span>(), lr<span class="t-op">=</span><span class="t-num">5e</span><span class="t-op">-</span><span class="t-num">5</span>, weight_decay<span class="t-op">=</span><span class="t-num">0.1</span>)
+num_epochs <span class="t-op">=</span> <span class="t-num">5</span>
+train_losses, val_losses, train_accs, val_accs, examples_seen <span class="t-op">=</span> \
+ <span class="t-fn">train_classifier_simple</span>(
+ model, train_loader, val_loader, optimizer, device,
+ num_epochs<span class="t-op">=</span>num_epochs, eval_freq<span class="t-op">=</span><span class="t-num">50</span>,
+ eval_iter<span class="t-op">=</span><span class="t-num">5</span>
+ )
+end_time <span class="t-op">=</span> time.<span class="t-fn">time</span>()
+execution_time_minutes <span class="t-op">=</span> (end_time <span class="t-op">-</span> start_time) <span class="t-op">/</span> <span class="t-num">60</span>
+<span class="t-bi">print</span>(f<span class="t-str">"Training completed in {execution_time_minutes:.2f} minutes."</span>)</code></pre></div>
+<p>The output we see during the training is as follows:</p>
+<div class="codeblock"><pre><code>Ep <span class="t-num">1</span> (Step <span class="t-num">000000</span>): Train loss <span class="t-num">2.153</span>, Val loss <span class="t-num">2.392</span>
+Ep <span class="t-num">1</span> (Step <span class="t-num">000050</span>): Train loss <span class="t-num">0.617</span>, Val loss <span class="t-num">0.637</span>
+Ep <span class="t-num">1</span> (Step <span class="t-num">000100</span>): Train loss <span class="t-num">0.523</span>, Val loss <span class="t-num">0.557</span>
+Training accuracy: <span class="t-num">70.00</span><span class="t-op">%</span> <span class="t-op">|</span> Validation accuracy: <span class="t-num">72.50</span><span class="t-op">%</span>
+Ep <span class="t-num">2</span> (Step <span class="t-num">000150</span>): Train loss <span class="t-num">0.561</span>, Val loss <span class="t-num">0.489</span>
+Ep <span class="t-num">2</span> (Step <span class="t-num">000200</span>): Train loss <span class="t-num">0.419</span>, Val loss <span class="t-num">0.397</span>
+Ep <span class="t-num">2</span> (Step <span class="t-num">000250</span>): Train loss <span class="t-num">0.409</span>, Val loss <span class="t-num">0.353</span>
+Training accuracy: <span class="t-num">82.50</span><span class="t-op">%</span> <span class="t-op">|</span> Validation accuracy: <span class="t-num">85.00</span><span class="t-op">%</span>
+Ep <span class="t-num">3</span> (Step <span class="t-num">000300</span>): Train loss <span class="t-num">0.333</span>, Val loss <span class="t-num">0.320</span>
+Ep <span class="t-num">3</span> (Step <span class="t-num">000350</span>): Train loss <span class="t-num">0.340</span>, Val loss <span class="t-num">0.306</span>
+Training accuracy: <span class="t-num">90.00</span><span class="t-op">%</span> <span class="t-op">|</span> Validation accuracy: <span class="t-num">90.00</span><span class="t-op">%</span>
+Ep <span class="t-num">4</span> (Step <span class="t-num">000400</span>): Train loss <span class="t-num">0.136</span>, Val loss <span class="t-num">0.200</span>
+Ep <span class="t-num">4</span> (Step <span class="t-num">000450</span>): Train loss <span class="t-num">0.153</span>, Val loss <span class="t-num">0.132</span>
+Ep <span class="t-num">4</span> (Step <span class="t-num">000500</span>): Train loss <span class="t-num">0.222</span>, Val loss <span class="t-num">0.137</span>
+Training accuracy: <span class="t-num">100.00</span><span class="t-op">%</span> <span class="t-op">|</span> Validation accuracy: <span class="t-num">97.50</span><span class="t-op">%</span>
+Ep <span class="t-num">5</span> (Step <span class="t-num">000550</span>): Train loss <span class="t-num">0.207</span>, Val loss <span class="t-num">0.143</span>
+Ep <span class="t-num">5</span> (Step <span class="t-num">000600</span>): Train loss <span class="t-num">0.083</span>, Val loss <span class="t-num">0.074</span>
+Training accuracy: <span class="t-num">100.00</span><span class="t-op">%</span> <span class="t-op">|</span> Validation accuracy: <span class="t-num">97.50</span><span class="t-op">%</span>
+Training completed <span class="t-kw">in</span> <span class="t-num">5.65</span> minutes.</code></pre></div>
+<div class="pdfpage" data-page="219">PDF p. 219</div>
+<p class="listing-title"><span class="no">Listing 6.11</span><span class="tl">Plotting the classification loss</span></p>
+<figure><img src="assets/fig-0144.png" alt="" loading="lazy"></figure>
+<figure><img src="assets/fig-0143.png" alt="" loading="lazy"><figcaption>Figure 6.16 The model’s training and  validation loss over the five training  epochs. Both the training loss,  represented by the solid line, and the  validation loss, represented by the  dashed line, sharply decline in the first  epoch and gradually stabilize toward the  fifth epoch. This pattern indicates good  learning progress and suggests that the  model learned from the training data  while generalizing well to the unseen  validation data.</figcaption></figure>
+<p>We then use Matplotlib to plot the loss function for the training and validation set.</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 2 条</summary><ul><li>Plots training and validation loss</li><li>against epochs</li></ul></details><pre><code><span class="t-kw">import</span> matplotlib.pyplot <span class="t-kw">as</span> plt
+<span class="t-kw">def</span> <span class="t-fn">plot_values</span>(
+ epochs_seen, examples_seen, train_values, val_values,
+ label<span class="t-op">=</span><span class="t-str">"loss"</span>):
+ fig, ax1 <span class="t-op">=</span> plt.<span class="t-fn">subplots</span>(figsize<span class="t-op">=</span>(<span class="t-num">5</span>, <span class="t-num">3</span>))
+
+ ax1.<span class="t-fn">plot</span>(epochs_seen, train_values, label<span class="t-op">=</span>f<span class="t-str">"Training {label}"</span>)
+ ax1.<span class="t-fn">plot</span>(
+ epochs_seen, val_values, linestyle<span class="t-op">=</span><span class="t-str">"-."</span>,
+ label<span class="t-op">=</span>f<span class="t-str">"Validation {label}"</span>
+ )
+ ax1.<span class="t-fn">set_xlabel</span>(<span class="t-str">"Epochs"</span>)
+ ax1.<span class="t-fn">set_ylabel</span>(label.<span class="t-fn">capitalize</span>())</code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 4 条</summary><ul><li>Creates a second x-axis for</li><li>examples seen</li><li>Invisible plot for aligning ticks</li><li>Adjusts layout to make room</li></ul></details><pre><code> ax1.<span class="t-fn">legend</span>()
+
+ ax2 <span class="t-op">=</span> ax1.<span class="t-fn">twiny</span>()
+ ax2.<span class="t-fn">plot</span>(examples_seen, train_values, alpha<span class="t-op">=</span><span class="t-num">0</span>)
+ ax2.<span class="t-fn">set_xlabel</span>(<span class="t-str">"Examples seen"</span>)
+ fig.<span class="t-fn">tight_layout</span>()  plt.<span class="t-fn">savefig</span>(f<span class="t-str">"{label}-plot.pdf"</span>)
+ plt.<span class="t-fn">show</span>()
+epochs_tensor <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">linspace</span>(<span class="t-num">0</span>, num_epochs, <span class="t-bi">len</span>(train_losses))
+examples_seen_tensor <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">linspace</span>(<span class="t-num">0</span>, examples_seen, <span class="t-bi">len</span>(train_losses))
+<span class="t-fn">plot_values</span>(epochs_tensor, examples_seen_tensor, train_losses, val_losses)</code></pre></div>
+<p>Figure 6.16 plots the resulting loss curves.</p>
+<div class="pdfpage" data-page="220">PDF p. 220</div>
+<figure><img src="assets/fig-0145.png" alt="" loading="lazy"><figcaption>Figure 6.17 Both the training accuracy (solid line) and the validation  accuracy (dashed line) increase substantially in the early epochs and  then plateau, achieving almost perfect accuracy scores of 1.0. The  close proximity of the two lines throughout the epochs suggests that  the model does not overfit the training data very much.</figcaption></figure>
+<p>As we can see based on the sharp downward slope in figure 6.16, the model is learning well from the training data, and there is little to no indication of overfitting; that is, there is no noticeable gap between the training and validation set losses.</p>
+<h3 id="choosing-the-number-of-epochs">Choosing the number of epochs <a class="anchor" href="#choosing-the-number-of-epochs">#</a></h3>
+<div class="plainbox"><p>Earlier, when we initiated the training, we set the number of epochs to five. The num-</p><p>ber of epochs depends on the dataset and the task’s difficulty, and there is no uni-</p><p>versal solution or recommendation, although an epoch number of five is usually a</p><p>good starting point. If the model overfits after the first few epochs as a loss plot (see</p><p>figure 6.16), you may need to reduce the number of epochs. Conversely, if the trend-</p><p>line suggests that the validation loss could improve with further training, you should</p><p>increase the number of epochs. In this concrete case, five epochs is a reasonable</p><p>number as there are no signs of early overfitting, and the validation loss is close to 0.</p></div>
+<p>Using the same <code>plot_values</code> function, let’s now plot the classification accuracies:</p>
+<div class="codeblock"><pre><code>epochs_tensor <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">linspace</span>(<span class="t-num">0</span>, num_epochs, <span class="t-bi">len</span>(train_accs))
+examples_seen_tensor <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">linspace</span>(<span class="t-num">0</span>, examples_seen, <span class="t-bi">len</span>(train_accs))
+<span class="t-fn">plot_values</span>(
+ epochs_tensor, examples_seen_tensor, train_accs, val_accs,
+ label<span class="t-op">=</span><span class="t-str">"accuracy"</span>
+)</code></pre></div>
+<p>Figure 6.17 graphs the resulting accuracy. The model achieves a relatively high training and validation accuracy after epochs 4 and 5. Importantly, we previously set <code>eval_iter=5</code></p>
+<div class="pdfpage" data-page="221">PDF p. 221</div>
+<p>when using the <code>train_classifier_simple</code> function, which means our estimations of training and validation performance are based on only five batches for efficiency during training. </p>
+<p> Now we must calculate the performance metrics for the training, validation, and test sets across the entire dataset by running the following code, this time without defining the <code>eval_iter</code> value:</p>
+<div class="codeblock"><pre><code>train_accuracy <span class="t-op">=</span> <span class="t-fn">calc_accuracy_loader</span>(train_loader, model, device)
+val_accuracy <span class="t-op">=</span> <span class="t-fn">calc_accuracy_loader</span>(val_loader, model, device)
+test_accuracy <span class="t-op">=</span> <span class="t-fn">calc_accuracy_loader</span>(test_loader, model, device)
+<span class="t-bi">print</span>(f<span class="t-str">"Training accuracy: {train_accuracy*100:.2f}%"</span>)
+<span class="t-bi">print</span>(f<span class="t-str">"Validation accuracy: {val_accuracy*100:.2f}%"</span>)
+<span class="t-bi">print</span>(f<span class="t-str">"Test accuracy: {test_accuracy*100:.2f}%"</span>)</code></pre></div>
+<p>The resulting accuracy values are</p>
+<div class="codeblock"><pre><code>Training accuracy: <span class="t-num">97.21</span><span class="t-op">%</span>
+Validation accuracy: <span class="t-num">97.32</span><span class="t-op">%</span>
+Test accuracy: <span class="t-num">95.67</span><span class="t-op">%</span></code></pre></div>
+<p>The training and test set performances are almost identical. The slight discrepancy between the training and test set accuracies suggests minimal overfitting of the training data. Typically, the validation set accuracy is somewhat higher than the test set accuracy because the model development often involves tuning hyperparameters to perform well on the validation set, which might not generalize as effectively to the test set. This situation is common, but the gap could potentially be minimized by adjusting the model’s settings, such as increasing the dropout rate (<code>drop_rate</code>) or the <code>weight_</code> <code>decay</code> parameter in the optimizer configuration.</p>
+<h2 id="using-the-llm-as-a-spam-classifier">6.8 Using the LLM as a spam classifier<a class="anchor" href="#using-the-llm-as-a-spam-classifier">#</a></h2>
+<p>Having fine-tuned and evaluated the model, we are now ready to classify spam messages (see figure 6.18). Let’s use our fine-tuned GPT-based spam classification model. The following <code>classify_review</code> function follows data preprocessing steps similar to those we used in the <code>SpamDataset</code> implemented earlier. Then, after processing text into token IDs, the function uses the model to predict an integer class label, similar to what we implemented in section 6.6, and then returns the corresponding class name.</p>
+<div class="pdfpage" data-page="222">PDF p. 222</div>
+<figure><img src="assets/fig-0146.png" alt="" loading="lazy"><figcaption>Figure 6.18 The three-stage process for classification fine-tuning our LLM. Step  10 is the final step of stage 3—using the fine-tuned model to classify new spam  messages.</figcaption></figure>
+<p class="listing-title"><span class="no">Listing 6.12</span><span class="tl">Using the model to classify new texts</span></p>
+<figure><img src="assets/fig-0147.png" alt="" loading="lazy"></figure>
+<figure><img src="assets/fig-0148.png" alt="" loading="lazy"></figure>
+<div class="codeblock"><pre><code><span class="t-kw">def</span> <span class="t-fn">classify_review</span>(
+ text, model, tokenizer, device, max_length<span class="t-op">=</span><span class="t-kw">None</span>,
+ pad_token_id<span class="t-op">=</span><span class="t-num">50256</span>):
+ model.<span class="t-fn">eval</span>()</code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 2 条</summary><ul><li>Prepares inputs to the model</li><li>Truncates sequences if they are too long</li></ul></details><pre><code> input_ids <span class="t-op">=</span> tokenizer.<span class="t-fn">encode</span>(text)
+ supported_context_length <span class="t-op">=</span> model.pos_emb.weight.shape[<span class="t-num">1</span>]
+ input_ids <span class="t-op">=</span> input_ids[:<span class="t-bi">min</span>(  max_length, supported_context_length
+ )]
+ input_ids <span class="t-op">+=</span> [pad_token_id] <span class="t-op">*</span> (max_length <span class="t-op">-</span> <span class="t-bi">len</span>(input_ids))
+</code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 6 条</summary><ul><li>Pads sequences</li><li>Adds batch to the longest</li><li>dimension sequence</li><li>Models inference without gradient tracking</li><li>Returns the classified result</li><li>Logits of the last output token</li></ul></details><pre><code> input_tensor <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>(
+ input_ids, device<span class="t-op">=</span>device
+ ).<span class="t-fn">unsqueeze</span>(<span class="t-num">0</span>)
+
+ <span class="t-kw">with</span> <span class="t-bi">torch</span>.<span class="t-fn">no_grad</span>():
+ logits <span class="t-op">=</span> <span class="t-fn">model</span>(input_tensor)[:, <span class="t-op">-</span><span class="t-num">1</span>, :]
+ predicted_label <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">argmax</span>(logits, dim<span class="t-op">=-</span><span class="t-num">1</span>).<span class="t-fn">item</span>()
+ <span class="t-kw">return</span> <span class="t-str">"spam"</span> <span class="t-kw">if</span> predicted_label <span class="t-op">==</span> <span class="t-num">1</span> <span class="t-kw">else</span> <span class="t-str">"not spam"</span></code></pre></div>
+<div class="pdfpage" data-page="223">PDF p. 223</div>
+<ul><li>  There are different strategies for fine-tuning LLMs, including classification fine-tuning and instruction fine-tuning.</li><li>  Classification fine-tuning involves replacing the output layer of an LLM via a small classification layer.</li><li>  In the case of classifying text messages as “spam” or “not spam,” the new classification layer consists of only two output nodes. Previously, we used the number of output nodes equal to the number of unique tokens in the vocabulary (i.e., 50,256).</li><li>  Instead of predicting the next token in the text as in pretraining, classification fine-tuning trains the model to output a correct class label—for example, “spam” or “not spam.”</li><li>  The model input for fine-tuning is text converted into token IDs, similar to pretraining.</li></ul>
+<p>Let’s try this <code>classify_review</code> function on an example text: </p>
+<div class="codeblock"><pre><code>text_1 <span class="t-op">=</span> (
+ <span class="t-str">"You are a winner you have been specially"</span>
+ <span class="t-str">" selected to receive $1000 cash or a $2000 award."</span>
+)
+<span class="t-bi">print</span>(<span class="t-fn">classify_review</span>(
+ text_1, model, tokenizer, device, max_length<span class="t-op">=</span>train_dataset.max_length
+))</code></pre></div>
+<p>The resulting model correctly predicts <code>"spam"</code>. Let’s try another example:</p>
+<div class="codeblock"><pre><code>text_2 <span class="t-op">=</span> (
+ <span class="t-str">"Hey, just wanted to check if we're still on"</span>
+ <span class="t-str">" for dinner tonight? Let me know!"</span>
+)
+<span class="t-bi">print</span>(<span class="t-fn">classify_review</span>(
+ text_2, model, tokenizer, device, max_length<span class="t-op">=</span>train_dataset.max_length
+))</code></pre></div>
+<p>The model again makes a correct prediction and returns a “not spam” label.</p>
+<p> Finally, let’s save the model in case we want to reuse the model later without having to train it again. We can use the <code>torch.save</code> method:</p>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.<span class="t-fn">save</span>(model.<span class="t-fn">state_dict</span>(), <span class="t-str">"review_classifier.pth"</span>)</code></pre></div>
+<p>Once saved, the model can be loaded:</p>
+<div class="codeblock"><pre><code>model_state_dict <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">load</span>(<span class="t-str">"review_classifier.pth, map_location=device"</span>)
+model.<span class="t-fn">load_state_dict</span>(model_state_dict)</code></pre></div>
+<h2 id="summary-6">Summary<a class="anchor" href="#summary-6">#</a></h2>
+<div class="pdfpage" data-page="224">PDF p. 224</div>
+<ul><li>  Before fine-tuning an LLM, we load the pretrained model as a base model.</li><li>  Evaluating a classification model involves calculating the classification accuracy (the fraction or percentage of correct predictions).</li><li>  Fine-tuning a classification model uses the same cross entropy loss function as when pretraining the LLM.</li></ul>
+<div class="pdfpage" data-page="225">PDF p. 225</div>
+<ul><li>  The instruction fine-tuning process of LLMs</li><li>  Preparing a dataset for supervised instruction  fine-tuning</li><li>  Organizing instruction data in training batches</li><li>  Loading a pretrained LLM and fine-tuning it to  follow human instructions</li><li>  Extracting LLM-generated instruction responses  for evaluation</li><li>  Evaluating an instruction-fine-tuned LLM</li></ul><div class="colophon"><p>由 <code>pdf2html2.py</code> 从 <code>bllm2.pdf</code> 转换。插图为原书矢量图按区域渲染的截图，代码块带语法高亮，连字符断词已按全书词表还原。</p></div>
+</main>
+<nav class="chapnav" aria-label="Chapter navigation"><div class="chapnav-inner">
+<a class="prev" href="11-pretraining-on-unlabeled-data.html"><span class="lbl">上一章</span><span class="nm">Pretraining on unlabeled data</span></a><a class="next" href="13-fine-tuning-to-follow-instructions.html"><span class="lbl">下一章</span><span class="nm">Fine-tuning to follow instructions</span></a>
+</div></nav>
+<script src="app.js"></script>
+</body>
+</html>

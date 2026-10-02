@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>6.11 Implementing the GRPO training loop · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-60.html">
+<link rel="next" href="page-62.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 61 页 / 共 108 页</span><span class="cur">6.11 Implementing the GRPO training loop</span></div>
+<p>The loss values should not be over-interpreted. Steps with <code>reward_avg=0.000</code> produce a near-zero loss because all rollouts receive the same reward, resulting in vanishing group-relative advantages and little to no gradient signal. Larger loss magnitudes, such as at step 3 (see row 4 in the preceding output), simply reflect bigger relative differences between rollouts and are typical for GRPO-style objectives, especially at the beginning of training.</p>
+<p>Ideally, we want to see two main trends over time:</p>
+<p>1 The average reward should increase when averaged over many steps, as the model learns to produce more accurate responses.</p>
+<p>2 The reasoning accuracy should improve (we’ll evaluate this in the next section). The online code for the book contains a slightly more sophisticated version of the script that also includes an option to evaluate the model periodically on subsets of the MATH-500 test dataset to see whether the model is improving on the target task: <a href="https://github.com/rasbt/reasoning-from-scratch/tree/main/ch06/02_rlvr_grpo_scripts_intro">https://github.com/rasbt/reasoning-from-scratch/tree/main/ch06/02_rlvr_grpo_ scripts_intro</a>.</p>
+<h3 id="h3-batched-training">Batched training</h3>
+<div class="lead">RL can be relatively resource-intensive because we have to generate multiple (long) rollouts via the LLMs for each training step. For this reason, the implementation does not support batching. If you have access to multiple GPUs, you can use the optional version of this code, with batch and multi-GPU support: https://github.com/rasbt/reasoning-from-scratch/tree/main/ch06/02_rlvr_grpo_scripts_intro. This version trains the model faster.</div>
+<h2 id="h2-loading-and-evaluating-saved-model-checkpoints"><span class="num">6.12</span>Loading and evaluating saved model checkpoints</h2>
+<p>Now we’ll discuss how to load the saved checkpoints from the RLVR training run in the previous section (see figure 6.21). We’ll also evaluate the model on the MATH-500 dataset.</p>
+<p>The saved checkpoints can be loaded using the PyTorch state dict approach described in chapter 2, where <code>model_path</code> points to the corresponding .pth checkpoint file:</p>
+<pre><code class="language-python">model.load_state_dict<span class="tok-kw">(</span>torch.load<span class="tok-kw">(</span><span class="tok-st">"qwen3-0.6B-rlvr-grpo-step00050.pth"</span><span class="tok-kw">))</span></code></pre>
+<h3 id="h3-downloading-rlvr-checkpoints">Downloading RLVR checkpoints</h3>
+<div class="lead">If you prefer not to run the GRPO training loop locally because of its runtime cost, you can instead download my pretrained checkpoints. These can be fetched either </div>
+<div class="lead">manually or directly from Python using the following helper function, which downloads the selected checkpoint and makes it available for evaluation or further experimentation:</div>
+<pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.qwen3 <span class="tok-kw">import</span> download_qwen3_grpo_checkpoints
+download_qwen3_grpo_checkpoints<span class="tok-kw">(</span>grpo_type=<span class="tok-st">"no_kl"</span>, step=<span class="tok-st">"00050"</span><span class="tok-kw">)</span></code></pre>
+<div class="lead">Note that this checkpoint was created with settings similar to those in listing 6.17, except that <code>num_rollouts=4</code> was changed to <code>num_rollouts=8</code>.</div>
+<figure><a class="zoom" href="assets/figure-6.21.png" tabindex="-1"><img src="assets/figure-6.21.png" alt="" width="1087" height="734" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 6.21</span>We’ll now load the saved model checkpoints and evaluate them.</figcaption></figure>
+<p>These checkpoints are fully compatible with the model evaluation utilities introduced in chapter 3, which allow us to evaluate RL-trained models using the same MATH-500 verification pipeline.</p>
+<p>For convenience, you can reuse the evaluation script provided in the chapter 3 bonus materials (https://github.com/rasbt/reasoning-from-scratch/blob/main/ch03/02_math500-verifier-scripts/evaluate_math500.py) to run evaluations on the </p>
+<p>MATH-500 dataset by specifying the desired checkpoint path. For example, to evaluate the <code>qwen3-0.6B-rlvr-grpo-step00050.pth </code>checkpoint file, you can run the aforementioned script as follows:</p>
+<pre><code class="language-python">uv run evaluate_math500.py \
+--dataset_size 500 \
+--which_model base \
+--checkpoint_path "qwen3-0.6B-rlvr-grpo-step00050.pth"</code></pre>
+<p>(If you are not a <code>uv</code> user, replace <code>uv run</code> with <code>python</code>.)</p>
+<p>Table 6.1 compares the original base and reasoning models (rows 1 and 2) to the base model we trained via GRPO in this chapter (rows 3–5). </p>
+<div class="tw"><table><caption><span class="lbl">Table 6.1</span>MATH-500 task accuracy for different base and reasoning models</caption><thead><tr><th></th><th>Method</th><th>Step</th><th>Max tokens</th><th>Num rollouts</th><th>Accuracy</th><th>Average tokens</th></tr></thead><tbody><tr><td>1</td><td>Base model (chapter 3)</td><td>-</td><td>-</td><td>-</td><td>15.2%</td><td>78.85</td></tr><tr><td>2</td><td>Reasoning model (chapter 3)</td><td>-</td><td>-</td><td>-</td><td>48.2%</td><td>1369.79</td></tr><tr><td>3</td><td>GRPO (this chapter)</td><td>50</td><td>256</td><td>4</td><td>43.2%</td><td>560.22</td></tr><tr><td>4</td><td>GRPO (this chapter)</td><td>50</td><td>512</td><td>4</td><td>45.6%</td><td>579.81</td></tr><tr><td>5</td><td>GRPO (this chapter)</td><td>50</td><td>512</td><td>8</td><td>47.4%</td><td>586.11</td></tr></tbody></table></div>
+<p>The accuracy column in table 6.1 refers to the accuracy on the full 500-sample MATH-500 dataset we used in chapter 3. </p>
+<p>The max tokens column identifies the number of tokens allowed per rollout during training. If the number is 512, this encourages the LLM to provide the final boxed answer within that 512-token limit; otherwise, it will not receive a reward during training. The evaluation code was run with a maximum token limit of 2,048, allowing the LLM to generate longer responses during evaluation.</p>
+<p>The average tokens column shows the average response length in the evaluation on the MATH-500 dataset. As you can see, compared to the reference reasoning model (row 2), our GRPO models generate shorter responses on average, as expected because of the token-length restriction during training.</p>
+<p>Note that the DeepSeek-R1 team observed that responses grow longer over the course of training as the model begins to write intermediate (chain of thought) explanations. To maximize accuracy, it makes sense not to restrict token length too aggressively during training. Longer token lengths, especially when coupled with multiple rollouts, require more computational resources, which is why we capped them at a lower value in this chapter.</p>
+<p>As shown in table 6.1, training the reasoning model via GRPO results in 47.4% accuracy (row 5), which is close to the accuracy of the official Qwen3 0.6B reasoning model on MATH-500. The model’s accuracy could be further improved by increasing the response length, sampling more rollouts per prompt, and training for additional steps. The next chapter will introduce practical tips and techniques for monitoring and improving GRPO training outcomes.</p>
+<p>We trained the model for only 50 steps, which already appears sufficient to unlock reasoning behavior in the base model. In my experiments, training for longer does not necessarily improve performance and can even reduce accuracy, since the original </p>
+<p>GRPO formulation can be unstable over longer runs.</p>
+<p>It’s also worth keeping in mind that this chapter implemented a simplified GRPO variant without the KL regularization term. In the next chapter, we’ll return to the full </p>
+<p>GRPO objective, add the KL term back in, and discuss common improvements for making training more stable over longer runs.</p>
+<p>If you’re interested, you can find and download additional checkpoints ranging from </p>
+<p>50 to 9,000 at https://huggingface.co/rasbt/qwen3-from-scratch-grpo-checkpoints/tree/main/grpo_original_no_kl.</p>
+<nav class="pager"><a class="prev" href="page-60.html" rel="prev"><span class="dir">上一页</span><span class="t">6.11 Implementing the GRPO training loop</span></a><a class="next" href="page-62.html" rel="next"><span class="dir">下一页</span><span class="t">Summary</span></a></nav>
+</main>
+</body>
+</html>

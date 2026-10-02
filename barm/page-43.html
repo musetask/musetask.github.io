@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>Exercise 5.2: Using the heuristic scorer in a best-of-N setup · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-42.html">
+<link rel="next" href="page-44.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 43 页 / 共 108 页</span></div>
+<h3 id="h3-exercise-5-2-using-the-heuristic-scorer-in-a-best-of-n-setup">Exercise 5.2: Using the heuristic scorer in a best-of-N setup</h3>
+<div class="lead">Modify the self-consistency implementation so that the final answer is chosen using the heuristic scorer rather than majority voting. Generate N candidate answers for each problem (where N = 2 or higher), score each candidate with the heuristic scorer, and select the one with the highest score as the final prediction. (If we use a scorer instead of majority vote, the method is called best-of-N in the literature, as opposed to self-consistency.) Apply this method to a small subset of MATH-500 and compare the results to both plain best-of-N and the self-consistency tiebreaker from exercise 5.1.</div>
+<p>Note that the scorer includes several parameters chosen by intuition, which is why we refer to it as a heuristic score. To optimize the extraction and brevity reward settings, we could plug this scorer into the self-consistency or best-of-<em>N</em> methods from exercises 5.1 and 5.2 and evaluate which settings yield higher accuracy on a benchmark dataset such as MATH-500.</p>
+<p>As a practical rule of thumb, increase the extraction-related bonuses if the scorer too often prefers answers whose final result is hard to parse. Increase the brevity pressure if the scorer keeps favoring long, rambling answers that do not improve the final result. On the other hand, if the scorer starts preferring overly short but incomplete answers, reduce the brevity penalty or increase the reward for clearly extractable final answers. Thinking about these tradeoffs is often more useful than focusing on the exact numeric values in isolation.</p>
+<nav class="pager"><a class="prev" href="page-42.html" rel="prev"><span class="dir">上一页</span><span class="t">5.3 Scoring LLM responses with a rule-based score</span></a><a class="next" href="page-44.html" rel="next"><span class="dir">下一页</span><span class="t">5.4 Understanding token probability scores</span></a></nav>
+</main>
+</body>
+</html>

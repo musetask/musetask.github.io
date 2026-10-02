@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>8.8 Evaluating the distilled model · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-79.html">
+<link rel="next" href="page-81.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 80 页 / 共 108 页</span></div>
+<h2 id="h2-evaluating-the-distilled-model"><span class="num">8.8</span>Evaluating the distilled model</h2>
+<p>Now that we’ve implemented the training loop, the final stage is evaluating the distilled model, as shown in figure 8.16.</p>
+<figure><a class="zoom" href="assets/figure-8.16.png" tabindex="-1"><img src="assets/figure-8.16.png" alt="" width="1142" height="630" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 8.16</span>Now we’ll evaluate the distilled model on the MATH-500 test set.</figcaption></figure>
+<p>Instead of running the full distillation process inside the notebook, you can download a convenience script from the chapter’s supplementary materials. As in the previous chapter on RLVR, it is often convenient to keep the notebook focused on the core ideas and move the longer-running training job into a standalone script:</p>
+<pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.ch07 <span class="tok-kw">import</span> download_from_github
+download_from_github<span class="tok-kw">(</span>
+    <span class="tok-st">"ch08/04_train_with_distillation/distill.py"</span>
+<span class="tok-kw">)</span></code></pre>
+<p>After downloading the script with the preceding code, you can run it as follows in a code terminal (if you are not a <code>uv</code> user, replace <code>uv run</code> with <code>python</code>):</p>
+<pre><code class="language-python">uv run distill.py \
+--data_path deepseek-r1-math-train.json \
+--validation_size 25 \
+--epochs 3 \
+--lr 1e-5 \
+--max_seq_len 2048 \
+--use_think_tokens \
+--grad_clip 1.0</code></pre>
+<p>Using these settings, the full training run takes about 3 hours and 5 minutes on a DGX Spark and uses roughly 15.02 GB of GPU memory. (This is relatively modest compared with the earlier RLVR runs because most of the expensive work has already been moved into the one-time teacher data generation step.) If you do not want to run the training yourself, you can download the resulting metrics file and inspect it directly:</p>
+<pre><code class="language-python">download_from_github<span class="tok-kw">(</span>
+    <span class="tok-st">"ch08/03_logs/deepseek-r1-2048_distill_metrics.csv"</span>
+<span class="tok-kw">)</span></code></pre>
+<p>The following listing implements a utility function to visualize the training metrics stored in the CSV file.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">import</span> csv
+<span class="tok-kw">import</span> matplotlib.pyplot <span class="tok-kw">as</span> plt</code></pre><figcaption><span class="lbl">Listing 8.15</span>Plotting distillation losses from a CSV log</figcaption></figure>
+<pre><code class="language-python"><span class="tok-kw">def</span> plot_distill_metrics(csv_path=<span class="tok-st">"train_distill_metrics.csv"</span>):
+    total_steps, train_losses, val_losses, epoch_bounds = [], [], [], {}</code></pre>
+<pre><code class="language-python">    <span class="tok-kw">with</span> open<span class="tok-kw">(</span>csv_path, newline=<span class="tok-st">""</span>, encoding=<span class="tok-st">"utf-8"</span><span class="tok-kw">)</span> <span class="tok-kw">as</span> f:
+        <span class="tok-kw">for</span> row <span class="tok-kw">in</span> csv.DictReader<span class="tok-kw">(</span>f<span class="tok-kw">)</span>:
+            step = int<span class="tok-kw">(</span>row<span class="tok-kw">[</span><span class="tok-st">"total_steps"</span><span class="tok-kw">])</span>
+            epoch = int<span class="tok-kw">(</span>row<span class="tok-kw">[</span><span class="tok-st">"epoch"</span><span class="tok-kw">])</span></code></pre>
+<pre><code class="language-python">            total_steps.append<span class="tok-kw">(</span>step<span class="tok-kw">)</span>
+            train_losses.append<span class="tok-kw">(</span>float<span class="tok-kw">(</span>row<span class="tok-kw">[</span><span class="tok-st">"train_loss"</span><span class="tok-kw">]))</span>
+            val_losses.append<span class="tok-kw">(</span>float<span class="tok-kw">(</span>row<span class="tok-kw">[</span><span class="tok-st">"val_loss"</span><span class="tok-kw">]))</span>
+            epoch_bounds.setdefault<span class="tok-kw">(</span>epoch, [step, step]<span class="tok-kw">)</span>[<span class="tok-fn">1</span>] = step
+    fig, ax = plt.subplots<span class="tok-kw">(</span>figsize=(<span class="tok-fn">7</span>, <span class="tok-fn">4</span>)<span class="tok-kw">)</span>
+    ax.plot<span class="tok-kw">(</span>total_steps, train_losses, label=<span class="tok-st">"train_loss"</span>, alpha=<span class="tok-fn">0.3</span><span class="tok-kw">)</span>
+    ax.plot<span class="tok-kw">(</span>total_steps, val_losses, label=<span class="tok-st">"val_loss"</span><span class="tok-kw">)</span>
+    ax.set_xlabel<span class="tok-kw">(</span><span class="tok-st">"Total Steps"</span><span class="tok-kw">)</span>
+    ax.set_ylabel<span class="tok-kw">(</span><span class="tok-st">"Loss"</span><span class="tok-kw">)</span>
+    ax.legend<span class="tok-kw">()</span>
+    epoch_axis = ax.secondary_xaxis<span class="tok-kw">(</span><span class="tok-st">"bottom"</span><span class="tok-kw">)</span>
+    epoch_axis.spines<span class="tok-kw">[</span><span class="tok-st">"bottom"</span><span class="tok-kw">]</span>.set_position<span class="tok-kw">(</span>(<span class="tok-st">"outward"</span>, <span class="tok-fn">45</span>)<span class="tok-kw">)</span>
+    epochs = sorted<span class="tok-kw">(</span>epoch_bounds<span class="tok-kw">)</span>
+    epoch_axis.set_xticks<span class="tok-kw">(</span>
+        [
+            (epoch_bounds<span class="tok-kw">[</span>epoch<span class="tok-kw">]</span>[<span class="tok-fn">0</span>] + epoch_bounds<span class="tok-kw">[</span>epoch<span class="tok-kw">]</span>[<span class="tok-fn">1</span>]) / <span class="tok-fn">2</span>
+            <span class="tok-kw">for</span> epoch <span class="tok-kw">in</span> epochs
+        ]
+    <span class="tok-kw">)</span>
+    epoch_axis.set_xticklabels<span class="tok-kw">(</span>epochs<span class="tok-kw">)</span>
+    epoch_axis.set_xlabel<span class="tok-kw">(</span><span class="tok-st">"Epoch"</span><span class="tok-kw">)</span>
+    plt.tight_layout<span class="tok-kw">()</span>
+    plt.show<span class="tok-kw">()</span>
+plot_distill_metrics<span class="tok-kw">(</span><span class="tok-st">"deepseek-r1-2048_distill_metrics.csv"</span><span class="tok-kw">)</span></code></pre>
+<p>The resulting plot is shown in figure 8.17.</p>
+<figure><a class="zoom" href="assets/figure-8.17.png" tabindex="-1"><img src="assets/figure-8.17.png" alt="" width="882" height="494" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 8.17</span>The training and validation losses of a 3-epoch distillation training run on DeepSeek-R1 reasoning traces</figcaption></figure>
+<p>The training-loss curve and validation-loss curve shown in figure 8.17 should be interpreted slightly differently. The training loss is computed for each training example during training at the current step, whereas the validation loss is computed on a small, fixed, held-out set. The validation curve is therefore less noisy and is the more informative signal here. We could also compute the training loss on a subset of examples, similar to the validation loss, but this would slow down training. The training loss is much less important than the validation loss for estimating training progress.</p>
+<p>As we would hope, the validation loss drops sharply at first and then begins to flatten out, indicating that the model is learning from the distillation data but that additional training yields diminishing returns. We could experiment with a larger learning rate or a different schedule to train more aggressively, but overall the curve looks healthy.</p>
+<p>Just as in chapter 7, we can evaluate saved checkpoints with the verifier-based utilities from chapter 3. The following command downloads the evaluation script from the supplementary materials:</p>
+<pre><code class="language-python">download_from_github<span class="tok-kw">(</span>
+    <span class="tok-st">"ch03/02_math500-verifier-scripts/evaluate_math500.py"</span>
+<span class="tok-kw">)</span></code></pre>
+<p>Evaluate the distilled checkpoint on MATH-500 using the reasoning tokenizer in a code terminal, as follows:</p>
+<pre><code class="language-python">uv run evaluate_math500.py \
+--dataset_size 500 \
+--which_model reasoning \
+--max_new_tokens 4096 \
+--checkpoint_path \
+"run_11/checkpoints/distill/qwen3-0.6B-distill-step06682-epoch1.pth"</code></pre>
+<p>For the later checkpoints from the same DeepSeek-R1 run, replace <code>...step06682 </code></p>
+<pre><code class="language-python">-epoch1.pth with ...step13364-epoch2.pth, ...step20046-epoch3.pth, and so on.</code></pre>
+<p>The evaluation results for the DeepSeek-R1 run used in this chapter are summarized in table 8.1. For reference, I’ve also included a second run trained on Qwen3 235B-A22B teacher outputs (a 235-billion-parameter Qwen3 model).</p>
+<div class="tw"><table><caption><span class="lbl">Table 8.1</span>MATH-500 task accuracy for different model checkpoints</caption><thead><tr><th></th><th>Method</th><th>Epoch</th><th>Final validation loss</th><th>MATH-500 accuracy</th></tr></thead><tbody><tr><td>1</td><td>Base Qwen3 0.6B (chapter 3)</td><td>-</td><td>-</td><td>15.2%</td></tr><tr><td>2</td><td>Reasoning Qwen3 0.6B (chapter 3)</td><td>-</td><td>-</td><td>48.2%</td></tr><tr><td>3</td><td>DeepSeek-R1</td><td></td><td>0.5436</td><td>30.6%</td></tr><tr><td>4</td><td>DeepSeek-R1</td><td></td><td>0.5349</td><td>32.4%</td></tr><tr><td>5</td><td>DeepSeek-R1</td><td></td><td>0.5343</td><td>33.6%</td></tr><tr><td>6</td><td>Qwen3 235B-A22B</td><td>1</td><td>0.4043</td><td>45.0%</td></tr><tr><td>7</td><td>Qwen3 235B-A22B</td><td>2</td><td>0.3963</td><td>43.8%</td></tr><tr><td>8</td><td>Qwen3 235B-A22B</td><td>3</td><td>0.3948</td><td>44.2%</td></tr></tbody></table></div>
+<p>Based on the results for the DeepSeek-R1 run shown in table 8.1, the MATH-500 accuracy improves from 30.6% after the first epoch to 33.6% after the third epoch, while the validation loss decreases from 0.5436 to 0.5343. This matches the earlier learning curve in figure 8.17, where the student clearly learns from the teacher-generated reasoning traces, but the gains begin to taper off after the initial improvement.</p>
+<p>The Qwen3 235B-A22B run performs noticeably better in this setup. One likely reason is that the teacher and student come from the same model family, which means that the tokenizer, prompting conventions, and overall response style are more closely aligned. This can make the teacher targets easier for the smaller Qwen3 student to imitate.</p>
+<p>Considering the MATH-500 accuracy of 45% (row 6), our distillation recipe reaches nearly the same performance as the reasoning reference model (48.2%, row 2), which is itself a distilled model but was trained on a much larger dataset generated by Qwen3 235B-A22B. This is the main tradeoff of distillation.</p>
+<nav class="pager"><a class="prev" href="page-79.html" rel="prev"><span class="dir">上一页</span><span class="t">8.7 Implementing the training loop for distillation</span></a><a class="next" href="page-81.html" rel="next"><span class="dir">下一页</span><span class="t">8.8 Evaluating the distilled model</span></a></nav>
+</main>
+</body>
+</html>

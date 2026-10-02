@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>B.5 Chapter 6 · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-88.html">
+<link rel="next" href="page-90.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 89 页 / 共 108 页</span></div>
+<h2 id="h2-chapter-6"><span class="num">B.5</span>Chapter 6</h2>
+<h3 id="h3-exercise-6-1-adding-format-aware-reward-shaping-2">Exercise 6.1: Adding format-aware reward shaping</h3>
+<p>We can assign a partial reward (score 0.5) if no <code>"\boxed{}"</code> answer is found, using the <code>fallback="number_then_full"</code> fallback we coded in chapter 3, as follows:</p>
+<pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.ch03 <span class="tok-kw">import</span> (
+    extract_final_candidate, grade_answer
+)
+<span class="tok-kw">def</span> reward_rlvr(answer_text, ground_truth):
+    <span class="tok-cm"># 1) Try to extract a boxed answer</span>
+    boxed = extract_final_candidate<span class="tok-kw">(</span>
+        answer_text, fallback=<span class="tok-kw">None</span>
+    <span class="tok-kw">)</span>
+    <span class="tok-kw">if</span> boxed:
+        correct = grade_answer<span class="tok-kw">(</span>boxed, ground_truth<span class="tok-kw">)</span>
+        <span class="tok-kw">return</span> <span class="tok-fn">1.0</span> <span class="tok-kw">if</span> correct <span class="tok-kw">else</span> <span class="tok-fn">0.0</span>
+    <span class="tok-cm"># 2) If no boxed answer is found, look for number</span>
+    unboxed = extract_final_candidate<span class="tok-kw">(</span>
+        answer_text, fallback=<span class="tok-st">"number_then_full"</span>
+    <span class="tok-kw">)</span>
+    <span class="tok-kw">if</span> unboxed:
+        correct = grade_answer<span class="tok-kw">(</span>unboxed, ground_truth<span class="tok-kw">)</span>
+        <span class="tok-kw">return</span> <span class="tok-fn">0.5</span> <span class="tok-kw">if</span> correct <span class="tok-kw">else</span> <span class="tok-fn">0.0</span>
+    <span class="tok-kw">return</span> <span class="tok-fn">0.0</span></code></pre>
+<p>When plugged into the chapter 6 code and trained under the same settings, the partial-reward variant achieves lower accuracy (37.8%) than the standard GRPO setup (47.4%), despite using a similar number of tokens on average, as shown in table B.5.</p>
+<div class="tw"><table><caption><span class="lbl">Table B.5</span>MATH-500 accuracies for strict and partial rewards</caption><thead><tr><th></th><th>Method</th><th>Step</th><th>Max tokens</th><th>Num rollouts</th><th>Accuracy</th><th>Average tokens</th></tr></thead><tbody><tr><td>1</td><td>GRPO (chapter 6)</td><td>50</td><td>512</td><td>8</td><td>47.4%</td><td>586.11</td></tr><tr><td>2</td><td>GRPO partial rewards (exercise 6.1)</td><td>50</td><td>512</td><td>8</td><td>37.8%</td><td>550.33</td></tr></tbody></table></div>
+<h3 id="h3-exercise-6-2-zero-advantage-cases-2">Exercise 6.2: Zero-advantage cases</h3>
+<p>If the rewards are all equal (for instance, they are all 0 or all 1), the advantages will all be 0 because subtracting the mean removes the shared reward value and leaves only zeros, as you can see here:</p>
+<pre><code class="language-python"><span class="tok-kw">import</span> torch
+rollout_rewards = [<span class="tok-fn">0</span>., <span class="tok-fn">0</span>., <span class="tok-fn">0</span>., <span class="tok-fn">0</span>.]
+rewards = torch.tensor<span class="tok-kw">(</span>rollout_rewards<span class="tok-kw">)</span>
+advantages = (rewards - rewards.mean<span class="tok-kw">()</span>) / (rewards.std<span class="tok-kw">()</span> + <span class="tok-fn">1e-4</span>)
+print<span class="tok-kw">(</span>advantages<span class="tok-kw">)</span>
+This returns tensor([0., 0., 0., 0.]).</code></pre>
+<p>Similarly, if we change the rollout rewards to <code>rollout_rewards = [0., 0., 0., 0.]</code>, we get the same all-zero tensor, <code>tensor([0., 0., 0., 0.])</code>.</p>
+<p>rewards are 1, then 𝑟𝑖 - 𝜇𝑖 = 0 for all <em>i</em> rollouts. As a result, the policy gradient is zero, and </p>
+<p>In short, if all rewards in a group are identical, for example, all rewards are 0 or all the model parameters are not updated for that prompt.</p>
+<p>This behavior is intentional. If all rollouts are equally bad or equally good, there is no relative signal to tell the model which behavior to reinforce or suppress. Intuitively, if the model answers all the questions correctly, there is no need to update it. Conversely, if the model answers all the questions incorrectly, we don’t want to update the model to reinforce that behavior.</p>
+<h2 id="h2-chapter-7"><span class="num">B.6</span>Chapter 7</h2>
+<h3 id="h3-exercise-7-1-testing-the-think-format-reward-2">Exercise 7.1: Testing the &lt;think&gt; format reward</h3>
+<p>The following code checks that the format reward is zero if the <code>&lt;think&gt;</code> tokens are used incorrectly:</p>
+<pre><code class="language-python"><span class="tok-kw">from</span> pathlib <span class="tok-kw">import</span> Path
+<span class="tok-kw">import</span> torch
+<span class="tok-kw">from</span> reasoning_from_scratch.qwen3 <span class="tok-kw">import</span> Qwen3Tokenizer
+<span class="tok-kw">from</span> reasoning_from_scratch.qwen3 <span class="tok-kw">import</span> download_qwen3_small
+<span class="tok-kw">from</span> reasoning_from_scratch.ch07 <span class="tok-kw">import</span> reward_format</code></pre>
+<pre><code class="language-python">download_qwen3_small<span class="tok-kw">(</span>
+    kind=<span class="tok-st">"reasoning"</span>, tokenizer_only=<span class="tok-kw">True</span>, out_dir=<span class="tok-st">"qwen3"</span>
+<span class="tok-kw">)</span>
+tokenizer_path = Path<span class="tok-kw">(</span><span class="tok-st">"qwen3"</span><span class="tok-kw">)</span> / <span class="tok-st">"tokenizer-reasoning.json"</span>
+tokenizer = Qwen3Tokenizer<span class="tok-kw">(</span>tokenizer_file_path=tokenizer_path<span class="tok-kw">)</span>
+prompt = <span class="tok-st">"Calculate ..."</span>
+<span class="tok-kw">def</span> check_case(name, rollout):
+    token_ids = tokenizer.encode<span class="tok-kw">(</span>prompt + rollout<span class="tok-kw">)</span>
+    prompt_len = len<span class="tok-kw">(</span>tokenizer.encode<span class="tok-kw">(</span>prompt<span class="tok-kw">))</span>
+    reward = reward_format<span class="tok-kw">(</span>
+        token_ids=torch.tensor<span class="tok-kw">(</span>token_ids<span class="tok-kw">)</span>,
+        prompt_len=prompt_len,
+    <span class="tok-kw">)</span>
+    print<span class="tok-kw">(f</span><span class="tok-st">"</span>{name}<span class="tok-st">: </span>{reward}<span class="tok-st">"</span><span class="tok-kw">)</span>
+<span class="tok-cm"># 1) Correct case</span>
+check_case<span class="tok-kw">(</span>
+    <span class="tok-st">"Correct order"</span>,
+    <span class="tok-st">"Let's ... &lt;think&gt; ... &lt;/think&gt; ..."</span>
+<span class="tok-kw">)</span>
+<span class="tok-cm"># 2) Typo in tag</span>
+check_case<span class="tok-kw">(</span>
+    <span class="tok-st">"Typo in &lt;think&gt;"</span>,
+    <span class="tok-st">"Let's ... &lt;thnik&gt; ... &lt;/think&gt; ..."</span>
+<span class="tok-kw">)</span>
+<span class="tok-cm"># 3) Reversed order</span>
+check_case<span class="tok-kw">(</span>
+    <span class="tok-st">"Reversed order"</span>,
+    <span class="tok-st">"Let's ... &lt;/think&gt; ... &lt;think&gt; ..."</span>
+<span class="tok-kw">)</span>
+<span class="tok-cm"># 4) Missing one tag</span>
+check_case<span class="tok-kw">(</span>
+    <span class="tok-st">"Missing &lt;/think&gt;"</span>,
+    <span class="tok-st">"Let's ... &lt;think&gt; ..."</span>
+<span class="tok-kw">)</span></code></pre>
+<p>The output is as follows, indicating that the function requires correct <code>&lt;think&gt;</code>... <code>&lt;/think&gt;</code> tag usage to award a reward of 1.0:</p>
+<pre><code class="language-python">Correct order: 1.0
+Typo in &lt;think&gt;: 0.0
+Reversed order: 0.0
+Missing &lt;/think&gt;: 0.0</code></pre>
+<h3 id="h3-exercise-7-2-making-the-format-reward-conditional-2">Exercise 7.2: Making the format reward conditional</h3>
+<p>The implementation of the conditional reward is very simple; in the chapter, we discussed implementing the overall reward as follows:</p>
+<pre><code class="language-python">reward = rlvr_reward + format_reward_weight * format_reward</code></pre>
+<p>This is one way to disable the reward when the correctness reward (<code>rlvr_reward</code>) is 0.0:</p>
+<pre><code class="language-python"><span class="tok-kw">if</span> conditional_reward:
+    format_reward *= rlvr_reward
+reward = rlvr_reward + format_reward_weight * format_reward</code></pre>
+<p>To use this in practice, you can run the <code>7_6_plus_format_reward.py</code> script, which we used in section 7.6, with the <code>--conditional_reward</code> flag enabled.</p>
+<p>You can download the log file of this run (using settings similar to those in section 7.6) and plot it as follows:</p>
+<pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.ch07 <span class="tok-kw">import</span> download_from_github
+<span class="tok-kw">from</span> reasoning_from_scratch.ch07 <span class="tok-kw">import</span> plot_grpo_metrics
+download_from_github<span class="tok-kw">(</span>
+    <span class="tok-st">"ch07/02_logs/7_6_plus_format_reward_conditional_metrics.csv"</span>
+<span class="tok-kw">)</span>
+plot_grpo_metrics<span class="tok-kw">(</span>
+    <span class="tok-st">"7_6_plus_format_reward_conditional_metrics.csv"</span>,
+    columns=[<span class="tok-st">"loss"</span>, <span class="tok-st">"reward_avg"</span>, <span class="tok-st">"avg_response_len"</span>, <span class="tok-st">"eval_acc"</span>],
+<span class="tok-kw">)</span></code></pre>
+<figure><a class="zoom" href="assets/figure-B.1.png" tabindex="-1"><img src="assets/figure-B.1.png" alt="" width="1141" height="667" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure B.1</span>Basic metrics from a GRPO training run with a conditional format reward</figcaption></figure>
+<p>The plots in figure B.1 show that the evaluation accuracy and reward average take a big hit but seem to recover. Overall, despite the performance crash, this looks more stable than before, and the trend indicates that performance would improve further with longer training. </p>
+<p>The previous plot focused on the main training metrics. To inspect the effect of the conditional format reward more directly, we can plot additional metrics from the same run:</p>
+<pre><code class="language-python">plot_grpo_metrics<span class="tok-kw">(</span>
+    <span class="tok-st">"7_6_plus_format_reward_conditional_metrics.csv"</span>,
+    columns=[<span class="tok-st">"reward_avg"</span>, <span class="tok-st">"format_reward_avg"</span>, <span class="tok-st">"adv_std"</span>, <span class="tok-st">"entropy_avg"</span>],
+<span class="tok-kw">)</span></code></pre>
+<figure><a class="zoom" href="assets/figure-B.2.png" tabindex="-1"><img src="assets/figure-B.2.png" alt="" width="821" height="727" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure B.2</span>Additional metrics from a GRPO training run with a conditional format reward</figcaption></figure>
+<p>In figure B.2, we see the average format reward mimicking the average reward graph almost perfectly, which is a good sanity check that the conditional logic is working. The average format reward also shows how much of the total reward is coming from the format term on the subset of correct answers.</p>
+<p>As we can see, though, since the average format reward graph echoes the average reward one, it’s mainly a bonus. It looks like it’s always awarded if the model is correct; this makes sense because the trained reasoning model already knows how to use <code>&lt;think&gt;...&lt;/think&gt;</code> tags correctly, and we can see that it doesn’t unlearn this ability.</p>
+<p>The entropy increase is still a bit troubling, though, and could hint at training instabilities that could be addressed by other means (like tighter clipping with smaller </p>
+<pre><code class="language-python">clip_eps).</code></pre>
+<nav class="pager"><a class="prev" href="page-88.html" rel="prev"><span class="dir">上一页</span><span class="t">B.4 Chapter 5</span></a><a class="next" href="page-90.html" rel="next"><span class="dir">下一页</span><span class="t">B.7 Chapter 8</span></a></nav>
+</main>
+</body>
+</html>

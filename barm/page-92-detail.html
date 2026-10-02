@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>数学推导详解 · C.3 Rotary position embeddings · Build a Reasoning Model</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">数学推导详解 · C.3 RoPE</span>
+<a class="nav" href="page-92.html">原文</a>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">对应原文第 92 页 · 附录 C From scratch to Qwen3</span></div>
+
+<h1>C.3 旋转位置编码：两种写法为什么等价</h1>
+
+<div class="lead">
+原文明确指出 RoPE 有两种「数学上等价」的实现——<b>split-halves</b>（本书与 Hugging Face 用的）和 <b>interleaved</b>（原论文与 Llama 官方代码用的），并说「两者编码相同的相对位置，只是维度配对方式不同」，但<b>没有给出任何证明</b>。这一页补上：先写旋转的数学形式，再证明相对位置性质，最后<b>严格证明两种布局等价</b>。
+</div>
+
+<h2 class="deriv">一、旋转矩阵与相对位置</h2>
+
+<h3>1.1 二维旋转</h3>
+
+<p>最基本的事实是：二维向量乘一个形如</p>
+
+\[
+R(\theta) = \begin{pmatrix} \cos\theta & -\sin\theta \\ \sin\theta & \cos\theta \end{pmatrix}
+\]
+
+<p>的矩阵，等于把它<b>转 \(\theta\) 角</b>，且<b>长度不变</b>（\(\det R = \cos^2\theta + \sin^2\theta = 1\)，即 \(R\) 是正交矩阵，满足 \(R^\top R = I\)）。这两条性质是后面一切结论的来源。</p>
+
+<h3>1.2 把 \(d\) 维向量拆成 \(d/2\) 个二维块</h3>
+
+<p>RoPE 的核心构造是：把 \(d\) 维 query/key 向量拆成 \(d/2\) 个二元组，第 \(i\) 个二元组用<b>自己的角度</b> \(\theta_i\) 转。位置 \(m\) 处，角度是</p>
+
+\[
+\theta_i(m) = m \cdot \omega_i,
+\qquad
+\omega_i = \theta_{\text{base}}^{-2i/d} = 10000^{-2i/d},\quad i = 0,1,\dots,\tfrac{d}{2}-1
+\]
+
+<p>于是 \(d\) 维的旋转是一个<b>分块对角</b>矩阵，每个 \(2\times 2\) 块是不同角度的旋转：</p>
+
+\[
+R(m) = \operatorname{diag}\big(R(\theta_0(m)),\, R(\theta_1(m)),\, \dots,\, R(\theta_{d/2-1}(m))\big)
+\]
+
+<p>RoPE 做的事就一句话：<b>\(\mathbf{q}_m \leftarrow R(m)\,\mathbf{q}\)，\(\mathbf{k}_n \leftarrow R(n)\,\mathbf{k}\)</b>。</p>
+
+<h3>1.3 关键定理：注意力分数只依赖相对位置</h3>
+
+<p>查询位置 \(m\)、键位置 \(n\) 的 attention 分数是旋转后的内积：</p>
+
+\[
+\mathbf{q}_m^\top \mathbf{k}_n = \mathbf{q}^\top R(m)^\top R(n)\, \mathbf{k}
+\]
+
+<p>关键在于 \(R(m)^\top = R(-m)\)，且两个旋转相乘等于角度相加的旋转：</p>
+
+\[
+R(-m)R(n) = R(-m + n) = R(n - m)
+\]
+
+<p>所以：</p>
+
+\[
+\boxed{\;\mathbf{q}_m^\top \mathbf{k}_n \;=\; \mathbf{q}^\top R(n-m)\, \mathbf{k}\;}
+\]
+
+<div class="key">
+<span class="tag">绝对位置全部消掉了</span>
+<p>右边<b>完全没有 \(m\) 和 \(n\) 的绝对值</b>，只差 \(n - m\)。这就是「RoPE 编码的是相对位置」的严格含义：把整个序列左移若干位，所有 attention 分数不变。</p>
+<p>它换来了两个实际好处：<b>(1)</b> 训练时见过的相对距离在推理时自动外推——不像绝对位置嵌入那样超出训练长度就完全失效；<b>(2)</b> 与 KV cache 天然兼容——每个 token 入库时按自己的绝对位置转一次即可，缓存里存的是已旋转的 \(k\)，复用时无需再处理（对应 listing C.4 里的 <code>apply_rope(keys_new, cos, sin, offset=start_pos)</code>）。</p>
+</div>
+
+<div class="warn">
+<span class="tag">相对位置是有方向的</span>
+<p>\(n - m\) 而不是 \(|n - m|\)。因为因果掩码下 \(n \le m\)，实际取值都是非正的。也就是说 query 永远「看到自己左边」的距离；<b>如果交换 query 和 key 的位置，分数一般会变</b>（\(f(-(n-m)) \ne f(n-m)\)）。所以 RoPE 不能简单地当成一个对称的句法距离来用。</p>
+</div>
+
+<h2 class="deriv">二、频率 \(\omega_i\) 的设计</h2>
+
+<p>为什么要取 \(\omega_i = 10000^{-2i/d}\) 而不是均匀的？关键是每个块能分辨的<b>最小距离</b>：角度每变化 \(\pi\) 才转过半个周期，所以第 \(i\) 个维度的「波长」是</p>
+
+\[
+\lambda_i = \frac{2\pi}{\omega_i} = 2\pi \cdot 10000^{2i/d}
+\]
+
+<p>取 \(d = 64\)（Qwen3 0.6B：emb_dim 1024 ÷ 16 heads = head_dim 64），<code>context_length = 4096</code>（listing C.3 的默认值）：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>\(i\)</th><th>\(\omega_i = 10000^{-2i/64}\)</th><th>波长 \(\lambda_i\)（token）</th><th>在 \(m = 4096\) 处的角度</th></tr></thead>
+<tbody>
+<tr><td>0</td><td>1.000000</td><td>6.3</td><td>4096.0 rad（绕了几百圈）</td></tr>
+<tr><td>1</td><td>0.749894</td><td>8.4</td><td>3071.6 rad</td></tr>
+<tr><td>2</td><td>0.562341</td><td>11.2</td><td>2303.4 rad</td></tr>
+<tr><td>4</td><td>0.316228</td><td>19.9</td><td>1295.3 rad</td></tr>
+<tr><td>8</td><td>0.100000</td><td>62.8</td><td>409.6 rad</td></tr>
+<tr><td>16</td><td>0.010000</td><td>628.3</td><td>41.0 rad</td></tr>
+<tr><td>24</td><td>0.001000</td><td>6,283.2</td><td>4.1 rad</td></tr>
+<tr><td>31</td><td>0.000133</td><td>47,117.2</td><td>0.5 rad（几乎没转）</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="key">
+<span class="tag">多尺度的位置编码</span>
+<p>高频维度（\(i\) 小）转得飞快，负责<b>局部</b>顺序——相邻两个词的区分；低频维度（\(i\) 大）转得极慢，负责<b>全局</b>顺序——相距几千个 token 的位置区分。整套机制等价于同时使用多个不同尺度的「相对位置特征」，用 \(d/2\) 个正交基把这 \(d/2\) 个尺度装进同一个向量里。</p>
+<p>这正是绝对正弦位置编码（Vaswani et al. 2017）的思路，<b>RoPE 的贡献是把它从「加到输入上」变成「旋转 q/k」</b>——而正是这个改变带来了第 1.3 节的相对位置性质。</p>
+</div>
+
+<div class="eq-note">
+<b>为什么 <code>theta_base = 10000</code>：</b>它决定了频率梯度的陡峭程度。base 越大，高频维度越少、低频维度越多，模型越善于长程。base 太小则所有维度都转得太快，\(d/2\) 个尺度挤在短距离内。10000 是原论文在 512–8192 长度上选的经验值，Qwen3 把它带到 40,960 的上下文上。
+</div>
+
+<h2 class="deriv">三、手算：listing C.3 的角度表</h2>
+
+<p>listing C.3 里最绕的一行是：</p>
+
+<pre><code>inv_freq = 1.0 / (theta_base ** (
+    torch.arange(0, head_dim, 2, dtype=dtype)[: (head_dim // 2)].float()
+    / head_dim
+))</code></pre>
+
+<p>拆开看：<code>torch.arange(0, 64, 2)</code> 得到 <code>[0, 2, 4, ..., 62]</code>，除以 <code>head_dim = 64</code> 得 <code>[0, 1/32, 1/16, ..., 31/32]</code>，取负号再以 10000 为底做幂：</p>
+
+\[
+\omega_i = 10000^{-\,2i/64} = 10^{-4\cdot(2i/64)} = 10^{-i/8}
+\]
+
+<p>用 \(d = 64\) 核对：\(i = 0 \Rightarrow 10^0 = 1\)；\(i = 8 \Rightarrow 10^{-1} = 0.1\)；\(i = 16 \Rightarrow 10^{-2} = 0.01\)；\(i = 31 \Rightarrow 10^{-3.875} \approx 1.334\times 10^{-4}\)。与上表一致。</p>
+
+<p>接下来的 <code>angles = positions[:, None] * inv_freq[None, :]</code> 就是外积，直接给出 \(m\omega_i\)；<code>angles = torch.cat([angles, angles], dim=1)</code> 把 \(d/2\) 列复制成 \(d\) 列——<b>这正是 split-halves 布局的来源</b>：前一半和后一半用完全相同的角度，所以代码里 <code>cos</code>、<code>sin</code> 的长度是 <code>head_dim</code> 而不是 <code>head_dim/2</code>。</p>
+
+<h2 class="deriv">四、apply_rope 的三行代码在做什么</h2>
+
+<pre><code>x1 = x[..., : head_dim // 2]   <span class="tok-cm"># 前一半</span>
+x2 = x[..., head_dim // 2:]   <span class="tok-cm"># 后一半</span>
+rotated = torch.cat((-x2, x1), dim=-1)
+x_rotated = (x * cos) + (rotated * sin)</code></pre>
+
+<p>设前半段为 \((x_0, x_1, \dots, x_{d/2-1})\)，后半段为 \((x_{d/2}, \dots, x_{d-1})\)，且 <code>cos</code>、<code>sin</code> 各为 \([c_0,c_1,\dots,c_{d/2-1},c_0,c_1,\dots,c_{d/2-1}]\)。那么输出是：</p>
+
+\[
+\begin{aligned}
+y_i &= x_i c_i + (-x_{i+d/2})\, s_i = x_i\cos\theta_i - x_{i+d/2}\sin\theta_i, && i < \tfrac d2\\
+y_{i+d/2} &= x_{i+d/2} c_i + x_i\, s_i = x_{i+d/2}\cos\theta_i + x_i\sin\theta_i
+\end{aligned}
+\]
+
+<p>这<b>恰好</b>就是第 1.2 节的分块旋转矩阵 \(R(m)\) 作用在 \(\mathbf{x}\) 上的结果，其中第 \(i\) 个二维块是 \(\binom{x_i}{x_{i+d/2}}\)。所以 split-halves 布局下，<b>被配成一对的是「前半段第 \(i\) 个」和「后半段第 \(i\) 个」</b>。</p>
+
+<h2 class="deriv">五、两种布局为什么等价（严格证明）</h2>
+
+<h3>5.1 两种布局的配对规则</h3>
+
+<p>同一个频率列表 \([\omega_0, \omega_1, \dots]\)，两种布局把它挂到维度上的方式不同：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>布局</th><th>第 \(i\) 个频率配到的两个维度</th><th>\(\cos\) 向量长什么样</th></tr></thead>
+<tbody>
+<tr><td><b>interleaved</b>（原论文 / Llama）</td><td>\((2i,\ 2i+1)\)<br>相邻维度成对</td><td>\([c_0, c_0, c_1, c_1, c_2, c_2, \dots]\)</td></tr>
+<tr><td><b>split-halves</b>（本书 / HF）</td><td>\((i,\ i + d/2)\)<br>前后两半对应位置成对</td><td>\([c_0, c_1, c_2, \dots, c_0, c_1, c_2, \dots]\)</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>这就是原文图里 <code>cos cos cos cos sin sin sin sin</code> 与 <code>cos sin cos sin cos sin cos sin</code> 的区别。</p>
+
+<h3>5.2 证明</h3>
+
+<p>引入<b>置换矩阵</b> \(P\)，它把 interleaved 的布局重排成分块对角的 split-halves 布局：\(P\) 就是把维度 1 与 \(d/2\) 对调、维度 2 与 \(d/2+1\) 对调……的那个「完美洗牌」。它满足两个性质：</p>
+
+<ul>
+<li>\(P^\top = P\)，\(P^\top P = I\)（<b>正交</b>，因此不改变内积）；</li>
+<li>\(R_{\text{split}} = P\,R_{\text{inter}}\,P^\top\)——两个旋转矩阵只是彼此的<b>重排版本</b>，因为 \(R(\theta)\) 是分块对角的，重排块顺序仍是同类矩阵。</li>
+</ul>
+
+<p>于是对 query 和 key <b>同时</b>做变换：</p>
+
+\[
+R_{\text{split}}\,\mathbf{q} = P R_{\text{inter}} P^\top \mathbf{q},
+\qquad
+R_{\text{split}}\,\mathbf{k} = P R_{\text{inter}} P^\top \mathbf{k}
+\]
+
+<p>它们的内积为：</p>
+
+\[
+\begin{aligned}
+(R_{\text{split}}\mathbf{q})^\top (R_{\text{split}}\mathbf{k})
+&= \mathbf{q}^\top P^\top \underbrace{P R_{\text{inter}}^\top P\,P R_{\text{inter}} P^\top}_{=\,R_{\text{inter}}^\top P^\top P R_{\text{inter}} = R_{\text{inter}}^\top R_{\text{inter}} = I}\mathbf{k}\\
+&= \mathbf{q}^\top R_{\text{inter}}^\top R_{\text{inter}}\mathbf{k}
+= (R_{\text{inter}}\mathbf{q})^\top (R_{\text{inter}}\mathbf{k})
+\end{aligned}
+\]
+
+<p>\(\mathbf{q}^\top\mathbf{k}\) 在中间那一坨里<b>完全抵消</b>了。也就是说：<b>两种布局给出逐元素相同的 attention logits</b>，因此逐元素相同的 softmax 权重、逐元素相同的输出。</p>
+
+<div class="key">
+<span class="tag">等价性的真正含义</span>
+<p>严格地说，两种实现产生的旋转后向量<b>不同</b>（维度被重排了），等价的是 <b>attention 分数</b>。这个区别很重要：如果你在训练中用 split-halves、在部署时换成 interleaved，而且<b>没有</b>用 P 重排权重（<code>W_query</code> / <code>W_key</code> 的输出行），模型输出会完全错乱——即使数学「等价」。所以实践中换实现必须连权重一起重排。原文只说「数学上等价」不涉及这一点，值得留意。</p>
+</div>
+
+<h3>5.3 手算验证（\(d = 4\)）</h3>
+
+<p>取 \(\theta_{\text{base}} = 10000\)、\(d = 4\)，则 \(\omega_0 = 1.0\)，\(\omega_1 = 10000^{-1/2} = 0.01\)。设 query 向量 \(\mathbf{q} = [1, 2, 3, 4]\)，key 向量 \(\mathbf{k} = [0.5, -1, 2, 0.25]\)。先各自验证相对位置性质，再验证「重排后」的等价性：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>位置差</th><th>split-halves</th><th>interleaved（同一 \(\mathbf{q},\mathbf{k}\)）</th><th>interleaved（作用在 \(P\mathbf{q}, P\mathbf{k}\) 上）</th></tr></thead>
+<tbody>
+<tr><td>\(m = 0,\ n = 3\)</td><td>−7.640041</td><td>+8.981546</td><td>−7.640041</td></tr>
+<tr><td>\(m = 5,\ n = 8\)</td><td>−7.640041</td><td>+8.981546</td><td>−7.640041</td></tr>
+<tr><td>\(m = 100,\ n = 103\)</td><td>−7.640041</td><td>+8.981546</td><td>−7.640041</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>三件事一次看清：</p>
+<ol class="steps">
+<li><b>每一列内部三行相同</b>——相对位置性质成立：序列左移 5 格或 100 格，只要间距仍是 3，分数一动不动。</li>
+<li><b>前两列不相等</b>——对同一组 \(\mathbf{q},\mathbf{k}\) 直接换布局，分数会变。这不矛盾：两种布局配对的维度不同，旋转作用在不同的二维平面上。</li>
+<li><b>第一列 = 第三列</b>——先用置换 \(P\) 把向量重排成另一布局的配对（\([x_0,x_1,x_2,x_3]\mapsto[x_0,x_2,x_1,x_3]\)），再做 interleaved 旋转，分数就和 split-halves 逐位相同。这正是 5.2 节证明的内容：<b>等价的是「布局 + 对应的权重重排」，不是「同一向量换个写法」。</b></li>
+</ol>
+
+<h2 class="deriv">六、常见误解</h2>
+
+<div class="warn">
+<span class="tag">三个容易搞错的地方</span>
+<p><b>1. RoPE 不是「加」到表示上，而是「转」q/k。</b>它作用在 attention 的输入上，不在残差流上，因此不会像绝对位置嵌入那样污染后续层。</p>
+<p><b>2. 不需要外推训练，就自动获得外推能力——但有上限。</b>相对位置性质让长度外推成为可能，可一旦 \(n - m\) 超过训练时见过的最大相对距离，低频维度仍未转过半个周期，注意力会退化。真正的长上下文通常还需要 NTK-aware scaling、YaRN 之类的频率缩放。</p>
+<p><b>3. 频率列表和配对方式是两个独立问题。</b>调 <code>theta_base</code> 改的是频率；换 interleaved / split-halves 改的是配对。原文把它们并排展示，容易让人以为只是写法不同；实际上第 5.2 节的证明说明配对方式<b>只要两边一致就完全不影响</b>，而频率则直接决定模型能分辨多大的距离。</p>
+</div>
+
+<h2 class="deriv">七、与后续章节的连接</h2>
+
+<ol class="steps">
+<li><b>C.4 GQA</b> — listing C.4 里 <code>apply_rope</code> 分别作用在 queries 和 keys_new 上，之后才算 attention score。</li>
+<li><b>第 6 章 KL 正则</b> — RoPE 位置不同 ⇒ 注意力分布不同 ⇒ logprob 不同。<b>比较新旧策略的 logprob 时位置必须一致</b>，否则 KL 项会把位置噪声算成分布偏移。</li>
+<li><b>第 2 章 KV cache</b> — <code>offset=start_pos</code> 参数是 RoPE 与 KV cache 的接口：缓存的 k 已按其绝对位置旋转过，取用时直接拼上即可。</li>
+</ol>
+
+<nav class="deriv-nav">
+<a href="page-91-detail.html"><span class="dir">详解</span>上一页：C.1 RMSNorm</a>
+<a href="page-92.html"><span class="dir">原文</span>C.3 旋转位置编码</a>
+<a href="math-detail.html"><span class="dir">索引</span>全部数学推导详解</a>
+</nav>
+
+</main>
+
+<script defer src="assets/katex/katex.min.js"></script>
+<script defer src="assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>

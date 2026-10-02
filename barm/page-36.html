@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>4.5.1 Selecting a subset of top-p tokens · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-35.html">
+<link rel="next" href="page-37.html">
+<link rel="stylesheet" href="assets/detail.css">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 36 页 / 共 108 页</span></div>
+<aside class="detail-link"><span class="tag">补充材料</span>这一节的数学推导（公式已用 KaTeX 排版，含逐步手算验证）在 <a href="page-36-detail.html"><b>4.5 top-p（nucleus）过滤</b></a>。全部推导页的索引见 <a href="math-detail.html">math-detail.html</a>。</aside>
+<h3 id="h3-selecting-a-subset-of-top-p-tokens"><span class="num">4.5.1</span>Selecting a subset of top-p tokens</h3>
+<p>Before we implement the top-<em>p</em> filter, let’s introduce a simple toy dataset that will make the temperature-scaling and -sampling process easier to illustrate. To start, let’s assume the model’s and tokenizer’s vocabularies have only 10 entries, rather than 151,936.</p>
+<figure class="listing"><pre><code class="language-python">toy_logits = torch.tensor<span class="tok-kw">(</span>
+    [-<span class="tok-fn">0.7</span>, -<span class="tok-fn">3.0</span>, <span class="tok-fn">0.1</span>, -<span class="tok-fn">1.2</span>, <span class="tok-fn">2.0</span>, -<span class="tok-fn">1.0</span>, -<span class="tok-fn">0.5</span>, -<span class="tok-fn">2.0</span>, <span class="tok-fn">0.3</span>, <span class="tok-fn">1.5</span>]
+<span class="tok-kw">)</span>
+toy_logits_scaled = scale_logits_by_temperature<span class="tok-kw">(</span>toy_logits, <span class="tok-fn">1.0</span><span class="tok-kw">)</span>
+toy_probas = torch.softmax<span class="tok-kw">(</span>toy_logits_scaled, dim=-<span class="tok-fn">1</span><span class="tok-kw">)</span>
+plt.bar<span class="tok-kw">(</span>
+    torch.arange<span class="tok-kw">(</span>len<span class="tok-kw">(</span>toy_probas<span class="tok-kw">))</span>, toy_probas,
+    alpha=<span class="tok-fn">0.5</span>
+<span class="tok-kw">)</span>
+plt.ylim<span class="tok-kw">(</span>[<span class="tok-fn">0</span>, <span class="tok-fn">1</span>]<span class="tok-kw">)</span>
+plt.xlabel<span class="tok-kw">(</span>"Vocabulary index"<span class="tok-kw">)</span>
+plt.ylabel<span class="tok-kw">(</span>"Probability"<span class="tok-kw">)</span>
+plt.show<span class="tok-kw">()</span></code></pre><figcaption><span class="lbl">Listing 4.9</span>Temperature scaling and sampling with toy data</figcaption></figure>
+<p>Note that the <code>toy_logits</code> variable holds example values for the next-token logit scores from the <code>model(token_ids,</code> <code>cache=cache)[:,</code> <code>-1]</code> call in listing 4.8, assuming that the vocabulary size is 10. </p>
+<p>The resulting bar plot in figure 4.13 shows the next-token logit scores after they are rescaled to probabilities.</p>
+<figure><a class="zoom" href="assets/figure-4.13.png" tabindex="-1"><img src="assets/figure-4.13.png" alt="" width="705" height="542" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 4.13</span>Example of token probabilities before top-p filtering. The distribution includes many low-probability tokens, which will later be truncated by applying a cumulative probability threshold.</figcaption></figure>
+<p>So far, this is basically a recap of the previous section. Now we’ll add the first two top-<em>p</em> filtering steps (steps 4.1 and 4.2) illustrated in figure 4.12. This involves sorting the probability scores in descending order and computing the cumulative sum.</p>
+<figure class="listing"><pre><code class="language-python">sorted_probas, sorted_idx = torch.sort<span class="tok-kw">(</span>toy_probas, descending=<span class="tok-kw">True)</span>
+cumsum = torch.cumsum<span class="tok-kw">(</span>sorted_probas, dim=-<span class="tok-fn">1</span><span class="tok-kw">)</span>
+plt.bar<span class="tok-kw">(</span>
+    torch.arange<span class="tok-kw">(</span>len<span class="tok-kw">(</span>sorted_probas<span class="tok-kw">))</span>, sorted_probas,
+        alpha=<span class="tok-fn">0.5</span>
+<span class="tok-kw">)</span>
+plt.step<span class="tok-kw">(</span>
+    torch.arange<span class="tok-kw">(</span>len<span class="tok-kw">(</span>cumsum<span class="tok-kw">))</span>, cumsum,
+    where="mid", color="C1", label="Cumulative sum"
+<span class="tok-kw">)</span>
+plt.ylim<span class="tok-kw">(</span>[<span class="tok-fn">0</span>, <span class="tok-fn">1</span>]<span class="tok-kw">)</span>
+plt.xlabel<span class="tok-kw">(</span>"Token rank <span class="tok-kw">(</span>sorted by probability<span class="tok-kw">)</span>"<span class="tok-kw">)</span>
+plt.ylabel<span class="tok-kw">(</span>"Probability"<span class="tok-kw">)</span>
+plt.show<span class="tok-kw">()</span></code></pre><figcaption><span class="lbl">Listing 4.10</span>Computing the cumulative probability sum</figcaption></figure>
+<p>The <code>torch.cumsum</code> function used in listing 4.10 computes the cumulative sum of elements along a given dimension. In this example, it takes the sorted token probabilities and adds them up step by step, so that each position in the result represents the total probability accumulated up to that token.</p>
+<p>For instance, the first element equals the highest probability, the second equals the sum of the top two, and so on, until the final value reaches 1. This is best explained by looking at the cumulative step plot produced by the code in listing 4.10 and shown in figure 4.14.</p>
+<figure><a class="zoom" href="assets/figure-4.14.png" tabindex="-1"><img src="assets/figure-4.14.png" alt="" width="705" height="542" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 4.14</span>Visualization of sorted token probabilities and their cumulative sum. This step prepares for top-p filtering by showing how probabilities accumulate when ordered from highest to lowest, which helps determine where to set the cutoff threshold.</figcaption></figure>
+<p>Now that we have the cumulative probability sum, we can implement the core top-<em>p</em> filtering step. The <em>p</em> in top-<em>p</em> stands for <em>probability</em>, and top-<em>p</em> can be translated as “keep the smallest set of tokens whose cumulative probability stays below or equal to <em>p</em>.” The following listing shows a simple implementation of top-<em>p</em> filtering.</p>
+<figure class="listing"><pre><code class="language-python">top_p = <span class="tok-fn">0.8</span>
+keep_mask = cumsum &lt;= top_p
+n_kept = torch.sum<span class="tok-kw">(</span>keep_mask<span class="tok-kw">)</span>.item<span class="tok-kw">()</span>
+print<span class="tok-kw">(</span>"Cumulative sum:", cumsum<span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>"Tokens kept:", n_kept<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 4.11</span>A simple-top-p filtering rule</figcaption></figure>
+<p>In code, this is implemented as <code>keep_mask</code> <code>=</code> <code>cumsum</code> <code>&lt;=</code> <code>top_p</code>, which marks all tokens whose cumulative probability mass does not yet exceed the threshold <em>p</em> (here defined as <code>top_p=0.8</code>). The number of retained tokens is then computed and assigned to the variable <code>n_kept</code>. The output follows:</p>
+<pre><code class="language-python">Cumulative sum: tensor([0.4538, 0.7290, 0.8119, 0.8798,
+0.9170, 0.9475, 0.9701, 0.9886, 0.9969, 1.0000])
+Tokens kept: 2</code></pre>
+<p>Looking at the returned cumulative probabilities, the second entry (<code>0.7290</code>) is just below the top-<em>p</em> threshold of <code>0.8</code>, and the third entry (<code>0.8119</code>) exceeds it, which is why only the first two tokens are kept.</p>
+<p>A more common variant of top-<em>p</em> filtering includes the token that exceeds the threshold, as shown in the next listing.</p>
+<figure class="listing"><pre><code class="language-python">keep_mask = (cumsum - sorted_probas) &lt; top_p
+n_kept = keep_mask.sum<span class="tok-kw">()</span>.item<span class="tok-kw">()</span>
+print<span class="tok-kw">(</span>"Tokens kept:", n_kept<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 4.12</span>A common top-p filtering variant</figcaption></figure>
+<p>This code returns 3 as the number of tokens kept. This follows the definition of top-<em>p</em> filtering: the smallest set of tokens is kept such that the cumulative probability mass is at least <em>p</em>.</p>
+<p>Let’s illustrate this top filtering with a plot.</p>
+<figure class="listing"><pre><code class="language-python">plt.bar<span class="tok-kw">(</span>
+    torch.arange<span class="tok-kw">(</span>len<span class="tok-kw">(</span>sorted_probas<span class="tok-kw">))</span>, sorted_probas,
+    alpha=<span class="tok-fn">0.5</span>, label="Sorted probabilities"
+<span class="tok-kw">)</span>
+plt.step<span class="tok-kw">(</span>
+    torch.arange<span class="tok-kw">(</span>len<span class="tok-kw">(</span>cumsum<span class="tok-kw">))</span>, cumsum, where="mid",
+    color="darkorange", label="Cumulative sum"
+<span class="tok-kw">)</span>
+plt.axhline<span class="tok-kw">(</span>
+    top_p, color="red", linestyle="--",
+    label=f"top_p = {top_p}"
+<span class="tok-kw">)</span>
+plt.axvline<span class="tok-kw">(</span>
+    n_kept - <span class="tok-fn">0.5</span>, color="gray", linestyle=":",
+    label=f"Top-p cutoff at {n_kept} tokens"
+<span class="tok-kw">)</span>
+plt.xlabel<span class="tok-kw">(</span>"Token rank <span class="tok-kw">(</span>sorted by probability<span class="tok-kw">)</span>"<span class="tok-kw">)</span>
+plt.ylabel<span class="tok-kw">(</span>"Probability"<span class="tok-kw">)</span>
+plt.legend<span class="tok-kw">()</span>
+plt.grid<span class="tok-kw">(</span>alpha=<span class="tok-fn">0.3</span><span class="tok-kw">)</span>
+plt.ylim<span class="tok-kw">(</span><span class="tok-fn">0</span>, <span class="tok-fn">1.05</span><span class="tok-kw">)</span>
+plt.show<span class="tok-kw">()</span></code></pre><figcaption><span class="lbl">Listing 4.13</span>Visualizing top-p filtering</figcaption></figure>
+<p>The plot produced by executing the code in listing 4.13 is shown in figure 4.15. This plot shows the <code>top_p</code> <code>=</code> <code>0.8</code> threshold value (the dashed horizontal line) that defines which tokens are kept. In this case, the cumulative sum of the first two tokens is below the threshold, so we exclude all other tokens to the right of the cutoff (the vertical dotted line).</p>
+<figure><a class="zoom" href="assets/figure-4.15.png" tabindex="-1"><img src="assets/figure-4.15.png" alt="" width="787" height="598" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 4.15</span>Top-p (nucleus) filtering. Tokens are sorted by probability, and the smallest subset whose cumulative probability exceeds the threshold (p = 0.8) is kept for sampling.</figcaption></figure>
+<p>To implement this threshold cutoff, we can use the following code, which first zeroes out all values to the right of the cutoff (the vertical dashed line in figure 4.15) and then restores the original sorting order.</p>
+<figure class="listing"><pre><code class="language-python">kept_sorted = torch.where<span class="tok-kw">(</span>
+    keep_mask, sorted_probas,
+    torch.zeros_like<span class="tok-kw">(</span>sorted_probas<span class="tok-kw">)</span>
+<span class="tok-kw">)</span>
+filtered = torch.zeros_like<span class="tok-kw">(</span>toy_probas<span class="tok-kw">)</span>.scatter<span class="tok-kw">(</span><span class="tok-fn">0</span>, sorted_idx, kept_sorted<span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>filtered<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 4.14</span>Applying top-p filtering</figcaption></figure>
+<p>The resulting tensor follows:</p>
+<pre><code class="language-python">tensor([0.0000, 0.0000, 0.0000, 0.0000, 0.4538, 0.0000, 0.0000, 0.0000,
+0.0829, 0.2752])</code></pre>
+<p>You can see that all values except the ones at index positions 4, 8, and 9 are zeroed out. This means that if we now use the multinomial function, only those three tokens will be considered. </p>
+<p>Finally, we renormalize these values so that they sum to one again:</p>
+<pre><code class="language-python">denom = torch.sum<span class="tok-kw">(</span>filtered<span class="tok-kw">)</span>.clamp_min<span class="tok-kw">(</span><span class="tok-fn">1e-12</span><span class="tok-kw">)</span>
+renormalized = filtered / denom
+print<span class="tok-kw">(</span>renormalized<span class="tok-kw">)</span></code></pre>
+<p>The resulting normalized tensor is as follows:</p>
+<pre><code class="language-python">tensor([0.0000, 0.0000, 0.0000, 0.0000, 0.5589, 0.0000, 0.0000, 0.0000,
+0.1021, 0.3390])</code></pre>
+<p>The goal of this top-<em>p</em> filtering is to remove tokens with low probabilities so they aren’t sampled later. This helps reduce nonsensical token responses in a given context.</p>
+<nav class="pager"><a class="prev" href="page-35.html" rel="prev"><span class="dir">上一页</span><span class="t">Multinomial sampling</span></a><a class="next" href="page-37.html" rel="next"><span class="dir">下一页</span><span class="t">4.5.2 Adding a top-p filter to the text generation function</span></a></nav>
+</main>
+</body>
+</html>

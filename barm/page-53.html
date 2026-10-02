@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>6.1.1 The original RL pipeline with human feedback (RLHF) · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/detail.css">
+<link rel="prev" href="page-52.html">
+<link rel="next" href="page-54.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 53 页 / 共 108 页</span></div>
+<aside class="detail-link"><span class="tag">补充材料</span>这一节 RLHF 的数学推导（Bradley–Terry 奖励模型损失、PPO 目标函数、KL 为什么必须存在）在 <a href="page-53-detail.html"><b>6.1.1 RLHF 与 PPO</b></a>。全部推导页的索引见 <a href="math-detail.html">math-detail.html</a>。</aside>
+<h3 id="h3-the-original-rl-pipeline-with-human-feedback-rlhf"><span class="num">6.1.1</span>The original RL pipeline with human feedback (RLHF)</h3>
+<p>In 2022, the InstructGPT paper “Training language models to follow instructions with human feedback” (<a href="https://arxiv.org/abs/2203.02155">https://arxiv.org/abs/2203.02155</a>) introduced reinforcement learning with human feedback (RLHF), a training approach that uses human preference labels to modify model behavior. In fact, RLHF was a key ingredient in turning GPT-3 into the original model used in ChatGPT, which arguably made LLMs broadly popular in 2022.</p>
+<p>At a high level, RLHF is the most popular method for implementing the preference-tuning stage. Before RLHF, LLMs were primarily trained through pretraining and, in some cases, supervised fine-tuning, both of which are based on next-token prediction objectives. RLHF moves beyond this token-level optimization and instead optimizes models on whole outputs (in this case, RLHF optimizes for how humans rank and evaluate LLM outputs).</p>
+<p>To make this more concrete, consider the following prompt: “I am looking to buy a laptop for programming and everyday use. What should I consider?”</p>
+<figure><a class="zoom" href="assets/figure-6.4.png" tabindex="-1"><img src="assets/figure-6.4.png" alt="" width="1073" height="844" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 6.4</span>Road map of this chapter. After this section’s brief introduction to RL for LLMs, we’ll discuss the difference between two RL stages, RLHF and RLVR. In the rest of the chapter, we’ll focus on implementing RLVR using the GRPO algorithm.</figcaption></figure>
+<p>The model might generate two candidate responses:</p>
+<ul><li>Response A: “You should consider the CPU, RAM, storage, GPU, screen resolution, battery life, keyboard quality, port selection, thermal design, and price.” Response B: “For programming and everyday use, focus on a fast CPU, at least 16 GB of RAM, and an SSD with at least 256 GB storage. A comfortable keyboard and good battery life also matter. A GPU may only matter if you plan to train small LLMs locally.”</li></ul>
+<p>Both responses mention relevant points, but a human data annotator might prefer response B because it is more concrete and specific to the use case stated in the prompt. In RLHF, such pairwise preferences are collected across many prompts and used to train the model to favor responses that humans consistently rank higher.</p>
+<p>As shown in figure 6.5, RLHF has two main steps: (1) training a reward model (which is itself an LLM), and (2) using that reward model to score the target LLM outputs and fine-tune it.</p>
+<pre><code class="language-python">&gt;
+&gt;
+=</code></pre>
+<figure><a class="zoom" href="assets/figure-6.5.png" tabindex="-1"><img src="assets/figure-6.5.png" alt="" width="1128" height="902" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 6.5</span>A two-stage overview of reinforcement learning with human feedback (RLHF). First, a reward model is trained on human-ranked responses to assign a preference score to each. Second, the LLM is updated using these reward scores within an RL objective to encourage preferred responses and discourage less desirable ones.</figcaption></figure>
+<p>The first step in RLHF is training a <em>reward model</em>, as illustrated in the top subpanel of figure 6.5. Here, we have the LLM generate multiple responses per prompt (for example, using the temperature scaling and top-<em>p</em> filtering approach explained in chapter 4) and ask human annotators to rank the answers from best to worst based on human preference.</p>
+<p>These human preferences are converted into training targets for the reward model using a statistical preference model that maps pairwise comparisons to relative quality scores. The reward model, which is usually a separate model initialized from a pretrained LLM, is trained to output a single-number (scalar) reward score for each response that reflects its perceived quality. The idea is that the reward model can automatically score new model outputs, eliminating the need for human annotation at every training step.</p>
+<p>The second step in RLHF trains the LLM on the reward scores the reward model assigns to its answers (for example, a bad answer may receive –2, and a good answer may receive +2).</p>
+<p>We’re discussing RLHF here because it can be viewed as a precursor to reasoning-focused RL methods such as reinforcement learning with verifiable rewards (RLVR). While the source of the training signals for RLHF and RLVR differs, the underlying structure of the pipeline (generating responses, scoring them, and updating the model via RL) is closely related.</p>
+<h3 id="h3-from-human-feedback-to-verifiable-rewards"><span class="num">6.1.2</span>From human feedback to verifiable rewards</h3>
+<p>RLHF can be fairly involved because it requires training an additional reward model, which is often a large LLM that is also expensive to train. Reinforcement learning with verifiable rewards (RLVR) simplifies this setup by replacing the LLM reward model with verifiable rewards, which are computed deterministically and without human annotation. For example, the math verifier introduced in chapter 3 is a verifiable reward generator for math problems. Given a math problem (and a correct solution), a math verifier automatically checks whether a generated solution’s final answer matches the ground truth and assigns a corresponding reward: 1 for a correct response and 0 for an incorrect one.</p>
+<p>In RLVR, the two-step RLHF pipeline shown in figure 6.5 collapses into a single training loop that resembles step 2 in RLHF: the model generates responses, the verifier assigns rewards, and these rewards are used directly to update the model. This simplified RLVR training procedure is outlined in figure 6.6.</p>
+<figure><a class="zoom" href="assets/figure-6.6.png" tabindex="-1"><img src="assets/figure-6.6.png" alt="" width="999" height="501" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 6.6</span>Overview of RLVR. The LLM generates a response that is evaluated by a deterministic verifier, such as the math verifier from chapter 3, which assigns a correctness label that’s used as a reward signal within an RL objective to update the model.</figcaption></figure>
+<p>The popularity of RLVR can largely be traced to the success of DeepSeek-R1 in 2025 (<a href="https://arxiv.org/abs/2501.12948">https://arxiv.org/abs/2501.12948</a>), which demonstrated that strong reasoning performance can be achieved without relying on human preference data or a learned reward model. DeepSeek-R1 trained reasoning behavior by using automatically verifiable rewards, including correctness checks for math problems (similar to our verifier in chapter 3) and code compilation and execution for code-related tasks.</p>
+<p>Code execution is outside the scope of this book because it would require training the LLM in a secure execution environment. That would mean compiling and running model-generated code inside an isolated sandbox so it cannot access the host system, private files, or external services in unsafe ways, making the setup considerably more complex than solving math problems. Either way, the idea behind verifying math tasks (checking whether an answer is correct as a binary label) and code compilation (checking whether code compiles, also as a binary label) is similar, and the RLVR training algorithm would be identical.</p>
+<p>To summarize, RLVR offers several practical advantages over RLHF. First, it removes the need to train and maintain a separate reward model, which is often comparable in size and cost to the base LLM. </p>
+<p>Second, RLVR requires access to reliable verification signals, which restricts it to certain domains, such as math and code. But verifiable rewards are deterministic and reproducible, meaning they produce the same result every time for the same output, which avoids the noise and inconsistency that arise in human preference annotations.</p>
+<p>Finally, RLVR scales naturally to large training sets because, given a reference solution, rewards can be computed automatically for any number of model-generated answers without additional human labeling effort.</p>
+<nav class="pager"><a class="prev" href="page-52.html" rel="prev"><span class="dir">上一页</span><span class="t">Summary</span></a><a class="next" href="page-54.html" rel="next"><span class="dir">下一页</span><span class="t">6.2 RLVR using GRPO</span></a></nav>
+</main>
+</body>
+</html>

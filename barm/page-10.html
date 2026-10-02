@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>2.2 Setting up the coding environment · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-09.html">
+<link rel="next" href="page-11.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 10 页 / 共 108 页</span></div>
+<h2 id="h2-setting-up-the-coding-environment"><span class="num">2.2</span>Setting up the coding environment</h2>
+<p>We’ll look at two main ways to set up your Python coding environment so you can follow along with the examples in this book: a straightforward <code>pip</code>-based setup and a <code>uv</code>-based workflow. I recommend reading through this section before deciding which option is best for you. If you already have a Python environment set up (with Python 3.10 or newer), the simplest way to install dependencies is to use Python’s package installer (<code>pip</code>) in your terminal. If you have downloaded the code from the publisher’s website, use the <code>requirements.txt</code> file to install the Python libraries required for this book:</p>
+<pre><code class="language-python">pip install -r requirements.txt</code></pre>
+<p>Alternatively, to install the required packages directly without downloading the <code>requirements.txt</code> file, use this command:</p>
+<pre><code class="language-python">pip install -r https://raw.githubusercontent.com/\
+rasbt/reasoning-from-scratch/refs/heads/main/requirements.txt</code></pre>
+<h3 id="h3-python-packages-used-in-this-chapter">Python packages used in this chapter</h3>
+<div class="lead">If you prefer to install only the packages used in this chapter, you can start with the following command:</div>
+<pre><code class="language-python">pip install torch&gt;=2.10.0 tokenizers&gt;=0.22.2 reasoning-from-scratch</code></pre>
+<div class="lead">PyTorch installation can be platform- and hardware-specific, especially if you want GPU acceleration. If the preceding command does not install the right build for your system, I recommend using the installation selector on the official PyTorch website (https://pytorch.org/get-started/locally/) and then installing the remaining packages separately:</div>
+<ul><li><code>torch</code> refers to PyTorch, a widely used deep learning library that provides tools for building and training neural networks.</li><li><code>tokenizers</code> is a library that provides efficient tokenization algorithms used to prepare input data for LLMs.</li><li><code>reasoning-from-scratch</code> is a custom library that I developed for this book. It includes all the code examples used throughout the chapters, along with additional utility functions we will be using.</li></ul>
+<p>While <code>pip</code> is the canonical way to install Python packages, my preferred way to use </p>
+<p>Python is with the widely recommended <code>uv</code> Python package and project manager instead. Like many others, I now recommend <code>uv</code> because it is significantly faster and handles dependency resolution more reliably than <code>pip</code>. It also creates isolated environments automatically and comes with its own Python executable (but will use the system Python if a compatible version is already installed), so it’s a great option if you do not have Python installed on your system yet. Figure 2.3 outlines the four-step process, from installing <code>uv</code> to getting ready to execute the code in this chapter.</p>
+<p>Figure 2.3 shows the installation and use of <code>uv</code> in a macOS terminal, but it’s also supported on Linux and Windows:</p>
+<p>1 To install <code>uv</code>, run the installer for your OS from the official website: https://docs.astral.sh/uv/getting-started/installation/.</p>
+<p>2 Next, clone the GitHub repo:</p>
+<pre><code class="language-python">git clone --depth 1 https://github.com/rasbt/reasoning-from-scratch.git</code></pre>
+<p>Here, the <code>--depth 1</code> option tells <code>git</code> to perform a shallow clone, which means it only downloads the latest version of the code without the full version history. This makes the download faster and uses less space.</p>
+<figure><a class="zoom" href="assets/figure-2.3.png" tabindex="-1"><img src="assets/figure-2.3.png" alt="" width="1143" height="640" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 2.3</span>Installing and using the uv Python package and project manager via the macOS terminal</figcaption></figure>
+<p>If you don’t have <code>git</code> installed, you can manually download the source code repository from the publisher’s website or by opening this link in your browser: <a href="https://github.com/rasbt/reasoning-from-scratch/archive/refs/heads/main.zip">https://github.com/rasbt/reasoning-from-scratch/archive/refs/heads/main.zip</a> (unzip it after downloading).</p>
+<p>3 In the terminal, navigate to the <code>reasoning-from-scratch</code> folder.</p>
+<p>4 Inside the <code>reasoning-from-scratch</code> folder, execute</p>
+<pre><code class="language-python">uv run jupyter lab</code></pre>
+<p>This command launches JupyterLab, where you can open a blank Jupyter notebook to type and run code, or you can open the chapter 2 notebook that contains all the code covered in this chapter. (You don’t need to create or activate a virtual environment first.)</p>
+<p>Python script files can be executed via <code>uv</code> <code>run</code> <code>script-name.py.</code> This command also sets up a local virtual environment (usually inside an invisible <code>.venv/</code> folder) and automatically installs all dependencies from the <code>pyproject.toml</code> file in the <code>reasoning-from-scratch</code> folder, so manually installing code dependencies via the requirements file is not needed. However, if you plan to install additional packages, you can use the following command:</p>
+<pre><code class="language-python">uv add packagename</code></pre>
+<p>The supplementary code repository contains additional installation instructions and details inside the <code>ch02</code> subfolder if you need them.</p>
+<nav class="pager"><a class="prev" href="page-09.html" rel="prev"><span class="dir">上一页</span><span class="t">Generating text with a pretrained LLM</span></a><a class="next" href="page-11.html" rel="next"><span class="dir">下一页</span><span class="t">2.3 Understanding hardware needs and recommendations</span></a></nav>
+</main>
+</body>
+</html>

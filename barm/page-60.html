@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>6.11 Implementing the GRPO training loop · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-59.html">
+<link rel="next" href="page-61.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 60 页 / 共 108 页</span></div>
+<h2 id="h2-implementing-the-grpo-training-loop"><span class="num">6.11</span>Implementing the GRPO training loop</h2>
+<p>We now have all the necessary components in place to implement the full GRPO training loop. In this final section of the chapter, we’ll bring everything together to train the model via RLVR using the GRPO algorithm, as illustrated in figure 6.19.</p>
+<figure><a class="zoom" href="assets/figure-6.19.png" tabindex="-1"><img src="assets/figure-6.19.png" alt="" width="1088" height="733" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 6.19</span>We’ll now implement the training loop to update the model weights.</figcaption></figure>
+<p>The training loop consists of eight main stages, as shown in figure 6.20. Most of these stages are standard components of a typical PyTorch training loop for deep neural networks, including LLMs. The only stage specific to reasoning models is stage 4, where we compute the GRPO loss rather than the standard classification loss used in many other types of deep neural networks and in LLM pretraining.</p>
+<figure><a class="zoom" href="assets/figure-6.20.png" tabindex="-1"><img src="assets/figure-6.20.png" alt="" width="825" height="828" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 6.20</span>Outline of the training loop. The overall structure follows a standard deep learning training loop. The key difference lies in how the loss is computed; instead of a standard supervised objective, the loss is obtained via the GRPO stages (stage 4).</figcaption></figure>
+<p>Before discussing the eight stages one by one, it’s helpful to first see how they are implemented in code. Listing 6.16 shows the full training loop illustrated in figure 6.20.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">import</span> time
+<span class="tok-kw">def</span> train_rlvr_grpo(
+    model,
+    tokenizer,
+    math_data,
+    device,
+    steps=<span class="tok-kw">None</span>,
+    num_rollouts=<span class="tok-fn">2</span>,
+    max_new_tokens=<span class="tok-fn">256</span>,
+    temperature=<span class="tok-fn">0.8</span>,
+    top_p=<span class="tok-fn">0.9</span>,
+    lr=<span class="tok-fn">1e-5</span>,
+    checkpoint_every=<span class="tok-fn">50</span>,
+    checkpoint_dir=<span class="tok-st">"."</span>,
+    csv_log_path=<span class="tok-kw">None</span>,
+):
+    <span class="tok-kw">if</span> steps <span class="tok-kw">is</span> <span class="tok-kw">None</span>:
+        steps = len<span class="tok-kw">(</span>math_data<span class="tok-kw">)</span>
+    optimizer = torch.optim.AdamW<span class="tok-kw">(</span>model.parameters<span class="tok-kw">()</span>, lr=lr<span class="tok-kw">)</span>
+    model.train<span class="tok-kw">()</span>
+    current_step = <span class="tok-fn">0</span>
+    <span class="tok-kw">if</span> csv_log_path <span class="tok-kw">is</span> <span class="tok-kw">None</span>:
+        timestamp = time.strftime<span class="tok-kw">(</span><span class="tok-st">"%Y%m</span>%d<span class="tok-st">_%H%M%S"</span><span class="tok-kw">)</span>
+        csv_log_path = <span class="tok-kw">f</span><span class="tok-st">"train_rlvr_grpo_metrics_</span>{timestamp}<span class="tok-st">.csv"</span>
+    csv_log_path = Path<span class="tok-kw">(</span>csv_log_path<span class="tok-kw">)</span>
+    <span class="tok-kw">try</span>:
+        <span class="tok-kw">for</span> step <span class="tok-kw">in</span> range<span class="tok-kw">(</span>steps<span class="tok-kw">)</span>:
+            optimizer.zero_grad<span class="tok-kw">()</span>
+            current_step = step + <span class="tok-fn">1</span>
+            example = math_data<span class="tok-kw">[</span>step % len<span class="tok-kw">(</span>math_data<span class="tok-kw">)]</span>
+            stats = compute_grpo_loss<span class="tok-kw">(</span>
+                model=model,
+                tokenizer=tokenizer,
+                example=example,
+                device=device,
+                num_rollouts=num_rollouts,
+                max_new_tokens=max_new_tokens,
+                temperature=temperature,
+                top_p=top_p,
+            <span class="tok-kw">)</span>
+            stats<span class="tok-kw">[</span><span class="tok-st">"loss_tensor"</span><span class="tok-kw">]</span>.backward<span class="tok-kw">()</span>
+            torch.nn.utils.clip_grad_norm_<span class="tok-kw">(</span>model.parameters<span class="tok-kw">()</span>, <span class="tok-fn">1.0</span><span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 6.16</span>Implementing the RLVR training loop</figcaption></figure>
+<pre><code class="language-python">            optimizer.step<span class="tok-kw">()</span></code></pre>
+<pre><code class="language-python">            reward_avg = torch.tensor<span class="tok-kw">(</span>stats<span class="tok-kw">[</span><span class="tok-st">"rewards"</span><span class="tok-kw">])</span>.mean<span class="tok-kw">()</span>.item<span class="tok-kw">()</span>
+            step_tokens = sum<span class="tok-kw">(</span>
+                sample<span class="tok-kw">[</span><span class="tok-st">"gen_len"</span><span class="tok-kw">]</span> <span class="tok-kw">for</span> sample <span class="tok-kw">in</span> stats<span class="tok-kw">[</span><span class="tok-st">"samples"</span><span class="tok-kw">]</span>
+            <span class="tok-kw">)</span>
+            avg_response_len = (
+                step_tokens / len<span class="tok-kw">(</span>stats<span class="tok-kw">[</span><span class="tok-st">"samples"</span><span class="tok-kw">])</span> <span class="tok-kw">if</span> stats<span class="tok-kw">[</span><span class="tok-st">"samples"</span><span class="tok-kw">]</span> <span class="tok-kw">else</span> <span class="tok-fn">0.0</span>
+            )
+            append_csv_metrics<span class="tok-kw">(</span>
+                csv_log_path, current_step, steps,
+                stats<span class="tok-kw">[</span><span class="tok-st">"loss"</span><span class="tok-kw">]</span>, reward_avg, avg_response_len,
+            <span class="tok-kw">)</span>
+            print<span class="tok-kw">(</span>
+                <span class="tok-kw">f</span><span class="tok-st">"[Step </span>{current_step}<span class="tok-st">/</span>{steps}<span class="tok-st">] "</span>
+                <span class="tok-kw">f</span><span class="tok-st">"loss=</span>{stats<span class="tok-kw">[</span><span class="tok-st">'loss'</span><span class="tok-kw">]</span>:.4f} <span class="tok-st">"</span>
+                <span class="tok-kw">f</span><span class="tok-st">"reward_avg=</span>{reward_avg:.3f} <span class="tok-st">"</span>
+                <span class="tok-kw">f</span><span class="tok-st">"avg_resp_len=</span>{avg_response_len:.1f}<span class="tok-st">"</span>
+            <span class="tok-kw">)</span></code></pre>
+<pre><code class="language-python">            <span class="tok-kw">if</span> checkpoint_every <span class="tok-kw">and</span> current_step % checkpoint_every == <span class="tok-fn">0</span>:
+                ckpt_path = save_checkpoint<span class="tok-kw">(</span>
+                    model=model,
+                    checkpoint_dir=checkpoint_dir,
+                    step=current_step,
+                <span class="tok-kw">)</span>
+                print<span class="tok-kw">(f</span><span class="tok-st">"Saved checkpoint to </span>{ckpt_path}<span class="tok-st">"</span><span class="tok-kw">)</span></code></pre>
+<pre><code class="language-python">    <span class="tok-kw">except</span> KeyboardInterrupt:
+        ckpt_path = save_checkpoint<span class="tok-kw">(</span>
+            model=model,
+            checkpoint_dir=checkpoint_dir,
+            step=max<span class="tok-kw">(</span><span class="tok-fn">1</span>, current_step<span class="tok-kw">)</span>,
+            suffix=<span class="tok-st">"interrupt"</span>,
+        <span class="tok-kw">)</span>
+        print<span class="tok-kw">(f</span><span class="tok-st">"</span>\n<span class="tok-st">KeyboardInterrupt. Saved checkpoint to </span>{ckpt_path}<span class="tok-st">"</span><span class="tok-kw">)</span>
+        <span class="tok-kw">return</span> model
+    <span class="tok-kw">return</span> model</code></pre>
+<pre><code class="language-python"><span class="tok-kw">def</span> save_checkpoint(model, checkpoint_dir, step, suffix=<span class="tok-st">""</span>):
+    checkpoint_dir = Path<span class="tok-kw">(</span>checkpoint_dir<span class="tok-kw">)</span>
+    checkpoint_dir.mkdir<span class="tok-kw">(</span>parents=<span class="tok-kw">True</span>, exist_ok=<span class="tok-kw">True)</span>
+    suffix = <span class="tok-kw">f</span><span class="tok-st">"-</span>{suffix}<span class="tok-st">"</span> <span class="tok-kw">if</span> suffix <span class="tok-kw">else</span> <span class="tok-st">""</span>
+    ckpt_path = (
+        checkpoint_dir /
+        <span class="tok-kw">f</span><span class="tok-st">"qwen3-0.6B-rlvr-grpo-step</span>{step:05d}{suffix}<span class="tok-st">.pth"</span>
+    )
+    torch.save<span class="tok-kw">(</span>model.state_dict<span class="tok-kw">()</span>, ckpt_path<span class="tok-kw">)</span>
+    <span class="tok-kw">return</span> ckpt_path</code></pre>
+<pre><code class="language-python"><span class="tok-kw">def</span> append_csv_metrics(
+    csv_log_path, step_idx, total_steps,
+    loss, reward_avg, avg_response_len,
+):
+    <span class="tok-kw">if</span> <span class="tok-kw">not</span> csv_log_path.exists<span class="tok-kw">()</span>:
+        csv_log_path.write_text<span class="tok-kw">(</span>
+            <span class="tok-st">"step,total_steps,loss,reward_avg,avg_response_len</span>\n<span class="tok-st">"</span>,
+            encoding=<span class="tok-st">"utf-8"</span>,
+        <span class="tok-kw">)</span>
+    <span class="tok-kw">with</span> csv_log_path.open<span class="tok-kw">(</span><span class="tok-st">"a"</span>, encoding=<span class="tok-st">"utf-8"</span><span class="tok-kw">)</span> <span class="tok-kw">as</span> f:
+        f.write<span class="tok-kw">(</span>
+            <span class="tok-kw">f</span><span class="tok-st">"</span>{step_idx}<span class="tok-st">,</span>{total_steps}<span class="tok-st">,</span>{loss:.6f}<span class="tok-st">,</span>{reward_avg:.6f}<span class="tok-st">,"</span>
+            <span class="tok-kw">f</span><span class="tok-st">"</span>{avg_response_len:.6f}\n<span class="tok-st">"</span>
+        <span class="tok-kw">)</span></code></pre>
+<p>This function implements the full RLVR training loop using GRPO. As mentioned earlier, except for stage 4 (the GRPO loss computation), the structure mirrors a conventional PyTorch training loop where we reset gradients, backpropagate a loss, optionally clip gradients, update parameters via an optimizer step, log metrics, and periodically save checkpoints. (We save the model checkpoints, which are snapshots of the model weights, so we can load, evaluate, and use them later, as we’ll discuss in the next section.)</p>
+<aside><span class="tag">Tip</span>For a general introduction to training neural networks in PyTorch, see sections 3-8 of my “PyTorch in One Hour: From Tensors to Training Neural Networks on Multiple GPUs” article (https://sebastianraschka.com/teaching/pytorch-1h/).</aside>
+<p>The key difference here, compared with other standard training loops, is how the loss is constructed. Instead of a standard supervised objective, which is used for most neural networks, including classifiers and for pretraining LLMs, the training signal is computed via the GRPO algorithm as part of the RLVR procedure.</p>
+<p>Let’s now run the code and train the model. Earlier, we hardcoded the PyTorch device to <code>"cpu"</code> so that all intermediate results closely match those shown in the book, since <code>"mps"</code> and <code>"cuda"</code> devices can introduce small floating-point differences. Training on a CPU is very slow, though.</p>
+<p>For convenience, the following listing includes two lines that automatically select and activate the appropriate device before the <code>train_rlvr_grpo()</code> function call. For instance, it will automatically switch to <code>"cuda"</code> or <code>"mps"</code> simply by running the code in the following listing.</p>
+<figure class="listing"><pre><code class="language-python">device = get_device<span class="tok-kw">()</span>
+model.to<span class="tok-kw">(</span>device<span class="tok-kw">)</span>
+torch.manual_seed<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>
+train_rlvr_grpo<span class="tok-kw">(</span>
+    model=model,
+    tokenizer=tokenizer,
+    math_data=math_train,
+    device=device,
+    steps=<span class="tok-fn">50</span>,
+    num_rollouts=<span class="tok-fn">4</span>,
+    max_new_tokens=<span class="tok-fn">512</span>,
+    temperature=<span class="tok-fn">0.8</span>,
+    top_p=<span class="tok-fn">0.9</span>,
+    lr=<span class="tok-fn">1e-5</span>,
+    checkpoint_every=<span class="tok-fn">5</span>,
+    checkpoint_dir=<span class="tok-st">"."</span>,
+<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 6.17</span>Training the model</figcaption></figure>
+<p>Let’s briefly talk about these settings before we inspect the results. The <code>temperature</code> and <code>top_p</code> settings were set within a common range that encourages some diversity in the answers while still producing coherent text for this model. You can change these settings and see how they affect the results (commonly used ranges are 0.7-0.9).</p>
+<p>The number of steps is relatively small, at 50, even though the dataset contains 12,000 entries. This is simply to keep the runtime reasonable, and it can be increased. Even with 50 steps, though, it is sufficient for good results.</p>
+<p>The learning rate (<code>lr</code>) can be tweaked, but it is in a reasonable range and works well.</p>
+<p>The number of rollouts (<code>num_rollouts=4</code>) and allowed tokens (<code>max_new_tokens=512</code>) are relatively small to reduce resource requirements. If you experience out-of-memory errors, you can further reduce these values, such as by setting <code>num_rollouts=2</code> and <code>max_ new_tokens=64</code>, for testing purposes.</p>
+<p>With the current <code>checkpoint_every=5</code> setting, the model is saved every 5 steps, and each checkpoint requires approximately 1.5 GB of disk space. For longer runs, I recommend setting this number to 50 or 100. Here, it is purposefully small for testing. Also note that an additional checkpoint should be created if the training run is manually interrupted, such as by interrupting the Jupyter notebook execution with the </p>
+<pre><code class="language-python">"Interrupt the kernel" button.</code></pre>
+<p>Let’s take a brief look at the run’s output (where I interrupted the 50-step run at step 7):</p>
+<pre><code class="language-python">Using Apple Silicon GPU (MPS)
+[Step 1/50] loss=-0.0000 reward_avg=0.000 avg_resp_len=88.0
+[Step 2/50] loss=-0.0000 reward_avg=0.000 avg_resp_len=7.5
+[Step 3/50] loss=-0.0000 reward_avg=0.000 avg_resp_len=6.5
+[Step 4/50] loss=0.0909 reward_avg=0.250 avg_resp_len=6.5
+[Step 5/50] loss=1.1001 reward_avg=0.500 avg_resp_len=300.5
+Saved checkpoint to qwen3-0.6B-rlvr-grpo-step00005.pth
+KeyboardInterrupt. Saved checkpoint to qwen3-0.6B-rlvr-grpo-step00006-interrupt.pth</code></pre>
+<p>You can see that both the loss and reward values fluctuate, which is normal in RL training.</p>
+<p>We’ve printed the average reward, which indicates the proportion of sampled responses that are correct. With our <code>num_rollouts=4</code> setting, a <code>reward_avg</code> of 0.5 means that 2 of the 4 rollouts received a positive reward. Similarly, values of 0.25 and 0.0 indicate one or zero correct responses, respectively.</p>
+<nav class="pager"><a class="prev" href="page-59.html" rel="prev"><span class="dir">上一页</span><span class="t">6.9 From advantages to policy updates via the GRPO loss</span></a><a class="next" href="page-61.html" rel="next"><span class="dir">下一页</span><span class="t">6.11 Implementing the GRPO training loop</span></a></nav>
+</main>
+</body>
+</html>

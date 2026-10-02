@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>数学推导详解 · 索引 · Build a Reasoning Model</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">数学推导详解 · 索引</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">Build a Reasoning Model (From Scratch) · 补充材料</span></div>
+
+<h1>数学推导详解</h1>
+
+<div class="lead">
+原书把数学推导压缩在几句话和几个公式里。这一组补充页面把中间步骤全部展开，<b>公式用 KaTeX 正确排版</b>，可以横向滚动查看。
+建议用法：<b>先读原文那一页，卡住了再来看对应的推导页</b>，或者反过来先看推导再回原文核对代码。
+</div>
+
+<h2>第 6 章 · GRPO 核心（最重要）</h2>
+
+<ol class="toc">
+<li class="l1">
+<a href="page-58-detail.html">
+<span class="n">6.7</span>
+<span class="t"><b>advantage 组内归一化</b><br>
+<span style="color:var(--mute);font-size:.86em">组内 z-score 的推导、<code>std + 1e-4</code> 这个小量在防什么、<code>rewards=[0,0]</code> 时梯度为什么恰好为零、以及 <b>adv_avg 为什么恒为 0</b>（附证明）。</span>
+</span>
+<span class="pg">p57</span>
+</a>
+</li>
+<li class="l1">
+<a href="page-58-detail.html">
+<span class="n">6.8 / 6.9</span>
+<span class="t"><b>序列 logprob 与策略梯度损失</b><br>
+<span style="color:var(--mute);font-size:.86em">链式法则 → 取对数 → 代码里的 <code>prompt_len - 1</code> → mean vs sum → 加权平均。含 <b>−2.5764</b> 和 <b>0.8659</b> 的完整手算验证。原文最密集的一页。</span>
+</span>
+<span class="pg">p58–59</span>
+</a>
+</li>
+<li class="l1">
+<a href="page-53-detail.html">
+<span class="n">6.1.1</span>
+<span class="t"><b>RLHF：偏好目标、奖励模型与 PPO</b><br>
+<span style="color:var(--mute);font-size:.86em">补第 6 章开头那段没有公式的推导。成对偏好如何变成标量奖励（Bradley–Terry 损失）、PPO 目标函数的三项、<b>KL 为什么必须存在</b>，以及 RLVR 到底删掉了哪一步。</span>
+</span>
+<span class="pg">p53</span>
+</a>
+</li>
+<li class="l1">
+<a href="page-54-detail.html">
+<span class="n">6.2</span>
+<span class="t"><b>GRPO 目标函数：从策略梯度到公式</b><br>
+<span style="color:var(--mute);font-size:.86em">补图 6.9 里那个只在图上出现过的公式。逐项拆解 min / clip / ρ / Â、<b>GRPO 相比 PPO 到底省了什么</b>、以及 <code>1/|o|</code> 这个 token 级平均项为什么是 DAPO 和 Dr. GRPO 的战场。</span>
+</span>
+<span class="pg">p54</span>
+</a>
+</li>
+</ol>
+
+<h2>第 4 章 · 采样机制</h2>
+
+<ol class="toc">
+<li class="l1">
+<a href="page-34-detail.html">
+<span class="n">4.4</span>
+<span class="t"><b>温度缩放与 softmax 采样</b><br>
+<span style="color:var(--mute);font-size:.86em">logits 为什么不能直接当概率、softmax 的数值稳定性、温度如何改变概率比（用 P₁/P₂ = exp(Δ/T) 解释）。self-consistency 的前提。</span>
+</span>
+<span class="pg">p32–35</span>
+</a>
+</li>
+<li class="l1">
+<a href="page-36-detail.html">
+<span class="n">4.5</span>
+<span class="t"><b>top-p（nucleus）过滤</b><br>
+<span style="color:var(--mute);font-size:.86em">累积质量的定义、<code>cumsum - probs</code> 这个技巧的推导、为什么用 <code>&lt;</code>、置零与重归一化、top-p 与 temperature 如何配合。</span>
+</span>
+<span class="pg">p35–37</span>
+</a>
+</li>
+<li class="l1">
+<a href="page-35-detail.html">
+<span class="n">4.6</span>
+<span class="t"><b>多项式抽样</b><br>
+<span style="color:var(--mute);font-size:.86em">补 4.4 推导没走完的最后一步：<code>P(x_i) = p_i</code> 本身、<b>「0.40 是 0.10 的 4 倍」这句话的严格含义</b>、<code>torch.multinomial</code> 的确切语义、逆 CDF 与 Gumbel-max 两种实现，以及 <b>435/1000 那次实验为什么恰好符合理论值</b>（z = 0.96）。</span>
+</span>
+<span class="pg">p35</span>
+</a>
+</li>
+</ol>
+
+<h2>第 5 章 · logprob 与打分</h2>
+
+<ol class="toc">
+<li class="l1">
+<a href="page-48-detail.html">
+<span class="n">5.5–5.6</span>
+<span class="t"><b>概率到 logprob 与置信度打分</b><br>
+<span style="color:var(--mute);font-size:.86em">下溢的定量分析、概率 vs 似然、Berlin/Bridge 对照实验、排除 prompt 与平均的两个改动，以及「logprob 是坏的置信度」这个关键实验结论。</span>
+</span>
+<span class="pg">p46–48</span>
+</a>
+</li>
+</ol>
+
+<h2>第 7 章 · GRPO 工程化</h2>
+
+<ol class="toc">
+<li class="l1">
+<a href="page-65-detail.html">
+<span class="n">7.3</span>
+<span class="t"><b>advantage 统计量与熵</b><br>
+<span style="color:var(--mute);font-size:.86em">为什么 adv_avg 恒为 0（附证明）、adv_std 的诊断含义、熵的定义与上下界、1.3700 的逐项验算、熵作为训练崩溃的早期信号。</span>
+</span>
+<span class="pg">p64–66</span>
+</a>
+</li>
+<li class="l1">
+<a href="page-67-detail.html">
+<span class="n">7.4</span>
+<span class="t"><b>裁剪策略比率</b><br>
+<span style="color:var(--mute);font-size:.86em">off-policy 问题、ρ = exp(logπ − logπ_old) 的推导、为什么用比率而非概率（长度无关）、min 的悲观界机制、20.09 → 11.00 的裁剪、clip_eps 取值谱系。</span>
+</span>
+<span class="pg">p66–68</span>
+</a>
+</li>
+<li class="l1">
+<a href="page-70-detail.html">
+<span class="n">7.5</span>
+<span class="t"><b>KL 正则项与它的失效模式</b><br>
+<span style="color:var(--mute);font-size:.86em">KL 散度拆成三项、方向问题（new−ref 而非 old−new）、为什么这是 sampled surrogate 而非精确 KL、<b>reward 崩塌后 KL 独大导致熵升、输出随机化</b>的完整机理，以及为什么数学任务上直接关掉。</span>
+</span>
+<span class="pg">p68–70</span>
+</a>
+</li>
+</ol>
+
+<h2>第 8 章 · 蒸馏</h2>
+
+<ol class="toc">
+<li class="l1">
+<a href="page-78-detail.html">
+<span class="n">8.6</span>
+<span class="t"><b>交叉熵损失</b><br>
+<span style="color:var(--mute);font-size:.86em">从序列 logprob 到 CE 的转换（16.6250/5 = 3.325）、为什么蒸馏必须用 mean 而 GRPO 用 sum、<code>cross_entropy</code> API 的正确用法、硬蒸馏 vs 软蒸馏、<b>「验证损失更低但准确率更差」这个反直觉结果</b>。</span>
+</span>
+<span class="pg">p78–79</span>
+</a>
+</li>
+</ol>
+
+<h2>附录 C · 从零实现 Qwen3</h2>
+
+<ol class="toc">
+<li class="l1">
+<a href="page-91-detail.html">
+<span class="n">C.1</span>
+<span class="t"><b>RMSNorm：定义式与手算验证</b><br>
+<span style="color:var(--mute);font-size:.86em">图 C.2 里那个「均值 0.77、方差 0.41」到底怎么来的，六个数字逐步手算。含一个容易算错的坑（除的是 <b>RMS</b> 不是标准差）、恒等式 <b>mean² + var = 1</b>、以及 RMSNorm 真正保证的不变量是<b>平方均值为 1</b>。</span>
+</span>
+<span class="pg">p91</span>
+</a>
+</li>
+<li class="l1">
+<a href="page-92-detail.html">
+<span class="n">C.3</span>
+<span class="t"><b>旋转位置编码：两种写法为什么等价</b><br>
+<span style="color:var(--mute);font-size:.86em">分块旋转矩阵、<b>attention 分数只依赖相对位置的定理与证明</b>、split-halves 与 interleaved 的严格等价性证明（置换矩阵在 q·k 里抵消）、频率 <code>ω = 10000^(-2i/d)</code> 的多尺度直觉与波长表。</span>
+</span>
+<span class="pg">p92</span>
+</a>
+</li>
+</ol>
+
+<h2>附录 F · 延伸讨论</h2>
+
+<ol class="toc">
+<li class="l1">
+<a href="page-102-detail.html">
+<span class="n">F.4</span>
+<span class="t"><b>Elo 评级</b><br>
+<span style="color:var(--mute);font-size:.86em">预期胜率的 logistic 形式、<b>400 这个常数的含义</b>、<code>k = 32</code> 的作用（相当于排行榜的学习率），以及 <b>6 场比赛的逐场手算</b>，完整复现 1043.7 / 1015.2 / 1000.7 / 940.4。最后解释顺序效应的成因，以及 Elo 与 Bradley–Terry 的关系。</span>
+</span>
+<span class="pg">p102</span>
+</a>
+</li>
+</ol>
+
+<h2>建议的阅读顺序</h2>
+
+<div class="lead">
+如果你的目标是<b>真正读懂 GRPO</b>（而不是跑通代码），按这个顺序：
+</div>
+
+<ol class="steps">
+<li><b>5.5 / 5.6</b> — 先建立 logprob 的直觉，尤其是「logprob 是坏的置信度」这条。它会在第 3 步和第 6 步反复出现。</li>
+<li><b>6.7–6.9</b> — 全书核心。三条独立知识线：链式法则、组内归一化、加权平均。</li>
+<li><b>8.6</b> — 回头看 sum vs mean 在监督学习里为什么反过来。理解了两个场景的差异，就真正掌握了「聚合方式」这件事。</li>
+<li><b>4.4 / 4.5</b> — 采样机制。知道 temperature 和 top-p 在动什么，才能理解 self-consistency 的参数为什么这么调。</li>
+<li><b>7.3</b> — 熵。诊断工具，也是第 6 步的钥匙。</li>
+<li><b>7.4 → 7.5</b> — 最后读。裁剪和 KL 是稳定训练的补丁，而 7.5 的失效模式需要前面所有的概念才能看懂。</li>
+</ol>
+
+<div class="eq-note" style="margin-top:1rem">
+<b>只想读附录？</b> <a href="page-91-detail.html">C.1 RMSNorm</a>、<a href="page-92-detail.html">C.3 RoPE</a>、<a href="page-102-detail.html">F.4 Elo</a> 三页与第 6 章完全独立，可以按任意顺序读。它们分别对应三种不同类型的推导：<b>归一化的代数恒等式</b>、<b>矩阵与等价性证明</b>、<b>逐场递推的手算</b>。
+</div>
+
+<h2>三个自查题</h2>
+
+<div class="lead">
+如果这三道题你能独立答对，GRPO 这一章就真的通了。
+</div>
+
+<ol class="steps">
+<li>手推出 <b>−2.5764</b> 这个 loss 值，并解释每一项的符号决定了梯度的什么方向。<br>
+<span style="color:var(--mute);font-size:.9em">→ 见 <a href="page-58-detail.html">6.9 详解 · 5.4</a></span></li>
+<li>解释为什么 <code>sequence_logprob</code> 里是 <code>prompt_len - 1</code> 而不是 <code>prompt_len</code>。<br>
+<span style="color:var(--mute);font-size:.9em">→ 见 <a href="page-58-detail.html">6.8 详解 · 2.2</a></span></li>
+<li>说明 <code>rewards=[0,0]</code> 时 loss 为什么是 0，以及<b>这为什么是好事</b>。<br>
+<span style="color:var(--mute);font-size:.9em">→ 见 <a href="page-58-detail.html">6.7 详解 · 4.4</a></span></li>
+</ol>
+
+<nav class="deriv-nav">
+<a href="page-58-detail.html"><span class="dir">直接开始</span>6.7–6.9 GRPO 核心推导</a>
+<a href="page-48-detail.html"><span class="dir">前置</span>5.5 / 5.6 logprob 基础</a>
+</nav>
+
+</main>
+
+<script defer src="assets/katex/katex.min.js"></script>
+<script defer src="assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>5.7 Self-refinement through iterative feedback · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-48.html">
+<link rel="next" href="page-50.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 49 页 / 共 108 页</span></div>
+<h2 id="h2-self-refinement-through-iterative-feedback"><span class="num">5.7</span>Self-refinement through iterative feedback</h2>
+<p>Having introduced several methods for scoring LLM answers, let’s now get to the core inference-scaling technique of this chapter, <em>self-refinement</em> (figure 5.19). We’ll first introduce self-refinement and walk through the process manually. In the next section, as shown in figure 5.19, we’ll automate the self-refinement loop and add support for the scoring methods developed earlier in the chapter (the heuristic scorer and the average logprob scorer).</p>
+<figure><a class="zoom" href="assets/figure-5.19.png" tabindex="-1"><img src="assets/figure-5.19.png" alt="" width="1030" height="494" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 5.19</span>The final step in our workflow, where the logprob scorer we developed earlier is used in the self-refinement method</figcaption></figure>
+<p>Self-refinement is a technique in which the LLM analyzes and refines its own answers. As shown in figure 5.20, the LLM starts with an initial answer to the prompt, as in regular LLM usage. Then it critiques the answer and refines it.</p>
+<p>The self-refinement procedure in figure 5.20 may look complicated at first, but it’s essentially just a sequential application of the text generation function to different prompts and inputs. Let’s walk through it step by step with a code example.</p>
+<aside><span class="tag">Note</span>In this example, we won’t use chain-of-thought prompting. In practice, though, you can combine self-refinement with chain-of-thought prompting when working with a base model.</aside>
+<p>We’ll start with the base prompt and the answer (steps 1 and 2 in figure 5.20), based on the code from section 5.2.</p>
+<figure><a class="zoom" href="assets/figure-5.20.png" tabindex="-1"><img src="assets/figure-5.20.png" alt="" width="1142" height="1059" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 5.20</span>The self-refinement process. The LLM first produces an initial answer to the prompt, and then receives a critique prompt that asks it to analyze its own response and produce a short critique with a plan to refine the answer. In the final step, the model is given a refine prompt that contains the original question, its draft answer, and the critique, and it generates a revised answer that incorporates the suggested improvements.</figcaption></figure>
+<figure class="listing"><pre><code class="language-python">raw_prompt = (
+    "Half the value of $3x-<span class="tok-fn">9</span>$ <span class="tok-kw">is</span> $x+<span class="tok-fn">37</span>$. "
+    "What <span class="tok-kw">is</span> the value of $x$?"
+)
+prompt = render_prompt<span class="tok-kw">(</span>raw_prompt<span class="tok-kw">)</span>
+torch.manual_seed<span class="tok-kw">(</span><span class="tok-fn">123</span><span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 5.9</span>Base prompt and answer</figcaption></figure>
+<pre><code class="language-python">initial_response = generate_text_stream_concat_flex<span class="tok-kw">(</span>
+    model, tokenizer, prompt, device,
+    max_new_tokens=<span class="tok-fn">2048</span>, verbose=<span class="tok-kw">True</span>,
+    generate_func=generate_text_top_p_stream_cache,
+    temperature=<span class="tok-fn">0.7</span>,
+    top_p=<span class="tok-fn">0.9</span>,
+<span class="tok-kw">)</span></code></pre>
+<p>The LLM responds with <code>" \boxed{18}"</code>, which is incorrect (the correct answer is <code>83</code>).</p>
+<p>Next, we have the LLM critique the answer. To do this, we write a critique prompt that includes the original question (<code>raw_prompt</code>) and the answer (<code>draft</code>), as shown in steps 3 and 4 in figure 5.20. </p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">def</span> make_critique_prompt(raw_prompt, draft):
+    <span class="tok-kw">return</span> (
+        "You are a meticulous reviewer. Identify logical errors, missing "
+        "steps, <span class="tok-kw">or</span> arithmetic mistakes. If the answer seems correct, "
+        "say so briefly. Then propose a concise plan to fix issues.\n\n"
+        f"Question:\n{raw_prompt}\n\n"
+        f"Draft answer:\n{draft}\n\n"
+        "Write a short critique <span class="tok-kw">and</span> bullet-point fix plan "
+        "(under ~<span class="tok-fn">120</span> words).\n"
+        "Critique:"
+    )</code></pre><figcaption><span class="lbl">Listing 5.10</span>Critique prompt and refinement plan</figcaption></figure>
+<pre><code class="language-python">critique_prompt = make_critique_prompt<span class="tok-kw">(</span>raw_prompt, initial_response<span class="tok-kw">)</span>
+torch.manual_seed<span class="tok-kw">(</span><span class="tok-fn">123</span><span class="tok-kw">)</span>
+critique = generate_text_stream_concat_flex<span class="tok-kw">(</span>
+    model, tokenizer, critique_prompt, device,
+    max_new_tokens=<span class="tok-fn">2048</span>, verbose=<span class="tok-kw">True</span>,
+    generate_func=generate_text_top_p_stream_cache,
+    temperature=<span class="tok-fn">0.7</span>,
+    top_p=<span class="tok-fn">0.9</span>,
+<span class="tok-kw">)</span></code></pre>
+<p>The preceding critique prompt lets the LLM write an elaborate critique that even contains the correct answer itself:</p>
+<pre><code class="language-javascript"> The question seems to have a logical error in its setup. The statement
+"Half the value of $3x-9$ is $x+37$" is incorrect because half of $3x-
+9$ should be $(3x-9)/2$, not $3x-9$. The equation should be $\frac{1}{2}
+(3x-9) = x + 37$.
+Fix Plan:
+1. Correct the equation to $\frac{1}{2}(3x-9) = x + 37$.
+2. Multiply both sides by 2 to eliminate the fraction: $3x - 9 = 2(x + 37)$.
+3. Distribute the 2 on the right side: $3x - 9 = 2x + 74$.
+4. Subtract $2x$ from both sides: $x - 9 = 74$.
+5. Add 9 to both sides: $x = 83$.</code></pre>
+<p> Note that the critique can contain factual errors. For instance, it says <code>"The</code> <code>question itself</code> <code>is</code> <code>incomplete"</code>, which is not true, yet it still proceeds with a correct plan for a fix. This is important because, in self-refinement, a critique can be useful even if parts of it are wrong, as long as it pushes the model toward a better revision overall.</p>
+<p>Finally, we use this refinement prompt to revise the original answer (steps 5 and 6 in figure 5.20).</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">def</span> make_refine_prompt(raw_prompt, draft, critique):
+    <span class="tok-kw">return</span> (
+        "Revise the answer using the critique. Keep it concise <span class="tok-kw">and</span> "
+        "end <span class="tok-kw">with</span> a final boxed result: \\boxed{ANSWER}\n\n"
+        f"Question:\n{raw_prompt}\n\n"
+        f"Previous answer:\n{draft}\n\n"
+        f"Critique:\n{critique}\n\n"
+        "Revised answer:"
+    )
+refine_prompt = make_refine_prompt<span class="tok-kw">(</span>raw_prompt, initial_response, critique<span class="tok-kw">)</span>
+torch.manual_seed<span class="tok-kw">(</span><span class="tok-fn">123</span><span class="tok-kw">)</span>
+revised_answer = generate_text_stream_concat_flex<span class="tok-kw">(</span>
+    model, tokenizer, refine_prompt, device,
+    max_new_tokens=<span class="tok-fn">2048</span>, verbose=<span class="tok-kw">True</span>,
+    generate_func=generate_text_top_p_stream_cache,
+    temperature=<span class="tok-fn">0.7</span>,
+    top_p=<span class="tok-fn">0.9</span>,
+<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 5.11</span>Answer refinement</figcaption></figure>
+<p>While the base model is not the best instruction follower, the refinement prompt gets the LLM to generate the correct answer:</p>
+<pre><code class="language-python">...
+ \boxed{83}
+Final result: The value of $x$ is \boxed{83}.</code></pre>
+<p>This example illustrates a single refinement loop. In practice, it’s common to repeat this loop for multiple iterations. Next, we’ll code a function to automate this process.</p>
+<nav class="pager"><a class="prev" href="page-48.html" rel="prev"><span class="dir">上一页</span><span class="t">5.6 Scoring model confidence with log probabilities</span></a><a class="next" href="page-50.html" rel="next"><span class="dir">下一页</span><span class="t">5.8 Coding the self-refinement loop</span></a></nav>
+</main>
+</body>
+</html>

@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="generator" content="pdf2html2.py">
+<title>appendix A Introduction to PyTorch · Build a Large Language Model (From Scratch)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f5f8f'/%3E%3Cpath d='M9 8h9a4.5 4.5 0 0 1 0 9H9zm0 9h9a4.5 4.5 0 0 1 0 9H9z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="assets/detail.css">
+<script>(function(){try{var t=localStorage.getItem('pdf2html-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn" href="index.html" title="Contents">&#9776;</a>
+  <a class="brand" href="index.html">appendix A Introduction to PyTorch</a>
+  <button class="btn" id="themeToggle" aria-label="Toggle dark mode">&#9788;</button>
+</header>
+<main id="main">
+<details class="toc"><summary>本章目录</summary><ul><li class="l2"><a href="#a-1-what-is-pytorch">A.1 What is PyTorch?</a></li><li class="l3"><a href="#a-1-1-the-three-core-components-of-pytorch">A.1.1 The three core components of PyTorch</a></li><li class="l3"><a href="#a-1-2-defining-deep-learning">A.1.2 Defining deep learning</a></li><li class="l3"><a href="#a-1-3-installing-pytorch">A.1.3 Installing PyTorch</a></li><li class="l3"><a href="#python-version">Python version</a></li><li class="l3"><a href="#pytorch-and-torch">PyTorch and Torch</a></li><li class="l3"><a href="#pytorch-on-apple-silicon">PyTorch on Apple Silicon</a></li><li class="l3"><a href="#exercise-a-1">Exercise A.1</a></li><li class="l3"><a href="#exercise-a-2">Exercise A.2</a></li><li class="l2"><a href="#a-2-understanding-tensors">A.2 Understanding tensors</a></li><li class="l3"><a href="#pytorch-with-a-numpy-like-api">PyTorch with a NumPy-like API</a></li><li class="l3"><a href="#a-2-1-scalars-vectors-matrices-and-tensors">A.2.1 Scalars, vectors, matrices, and tensors</a></li><li class="l3"><a href="#a-2-2-tensor-data-types">A.2.2 Tensor data types</a></li><li class="l3"><a href="#a-2-3-common-pytorch-tensor-operations">A.2.3 Common PyTorch tensor operations</a></li><li class="l2"><a href="#a-3-seeing-models-as-computation-graphs">A.3 Seeing models as computation graphs</a></li><li class="l2"><a href="#a-4-automatic-differentiation-made-easy">A.4 Automatic differentiation made easy</a></li><li class="l2"><a href="#a-5-implementing-multilayer-neural-networks">A.5 Implementing multilayer neural networks</a></li><li class="l2"><a href="#a-6-setting-up-efficient-data-loaders">A.6 Setting up efficient data loaders</a></li><li class="l2"><a href="#a-7-a-typical-training-loop">A.7 A typical training loop</a></li><li class="l3"><a href="#exercise-a-3">Exercise A.3</a></li></ul></details><h1 id="appendix-a-introduction-to-pytorch">appendix A Introduction to PyTorch<a class="anchor" href="#appendix-a-introduction-to-pytorch">#</a></h1>
+<p>This appendix is designed to equip you with the necessary skills and knowledge to put deep learning into practice and implement large language models (LLMs) from scratch. PyTorch, a popular Python-based deep learning library, will be our primary tool for this book. I will guide you through setting up a deep learning workspace armed with PyTorch and GPU support. </p>
+<p> Then you’ll learn about the essential concept of tensors and their usage in PyTorch. We will also delve into PyTorch’s automatic differentiation engine, a feature that enables us to conveniently and efficiently use backpropagation, which is a crucial aspect of neural network training.</p>
+<p> This appendix is meant as a primer for those new to deep learning in PyTorch. While it explains PyTorch from the ground up, it’s not meant to be an exhaustive coverage of the PyTorch library. Instead, we’ll focus on the PyTorch fundamentals we will use to implement LLMs. If you are already familiar with deep learning, you may skip this appendix and directly move on to chapter 2.</p>
+<h2 id="a-1-what-is-pytorch">A.1 What is PyTorch?<a class="anchor" href="#a-1-what-is-pytorch">#</a></h2>
+<p>PyTorch (<a href="https://pytorch.org/" rel="noopener">https://pytorch.org/</a>) is an open source Python-based deep learning library. According to <em>Papers With Code </em>(<a href="https://paperswithcode.com/trends" rel="noopener">https://paperswithcode.com/trends</a>), a platform that tracks and analyzes research papers, PyTorch has been the most widely used deep learning library for research since 2019 by a wide margin. And, according to the <em>Kaggle Data Science and Machine Learning Survey 2022</em> (<a href="https://www.kaggle" rel="noopener">https://www.kaggle</a> .com/c/kaggle-survey-2022), the number of respondents using PyTorch is approximately 40%, which grows every year.</p>
+<p> One of the reasons PyTorch is so popular is its user-friendly interface and efficiency. Despite its accessibility, it doesn’t compromise on flexibility, allowing advanced users to tweak lower-level aspects of their models for customization and</p>
+<p><strong>251</strong></p>
+<div class="pdfpage" data-page="273">PDF p. 273</div>
+<figure><img src="assets/fig-0179.png" alt="" loading="lazy"></figure>
+<p>optimization. In short, for many practitioners and researchers, PyTorch offers just the right balance between usability and features. </p>
+<h3 id="a-1-1-the-three-core-components-of-pytorch">A.1.1 The three core components of PyTorch<a class="anchor" href="#a-1-1-the-three-core-components-of-pytorch">#</a></h3>
+<p>PyTorch is a relatively comprehensive library, and one way to approach it is to focus on its three broad components, summarized in figure A.1. </p>
+<aside class="sidenote">PyTorch implements a PyTorch includes utilities to</aside>
+<aside class="sidenote">tensor (array) library for differentiate computations</aside>
+<aside class="sidenote">efficient computing. automatically</aside>
+<div class="plainbox"><p><sup>2</sup><sup> Automatic</sup></p></div>
+<aside class="sidenote">PyTorch’s deep learning utilities make use of its</aside>
+<div class="plainbox"><p>3</p></div>
+<p class="caption">Figure A.1 PyTorch’s three main components include a tensor library as  a fundamental building block for computing, automatic differentiation for  model optimization, and deep learning utility functions, making it easier to  implement and train deep neural network models.</p>
+<p>First, PyTorch is a <em>tensor library</em> that extends the concept of the array-oriented programming library NumPy with the additional feature that accelerates computation on GPUs, thus providing a seamless switch between CPUs and GPUs. Second, PyTorch is an <em>automatic differentiation engine</em>, also known as autograd, that enables the automatic computation of gradients for tensor operations, simplifying backpropagation and model optimization. Finally, PyTorch is a <em>deep learning library</em>. It offers modular, flexible, and efficient building blocks, including pretrained models, loss functions, and optimizers, for designing and training a wide range of deep learning models, catering to both researchers and developers.</p>
+<h3 id="a-1-2-defining-deep-learning">A.1.2 Defining deep learning<a class="anchor" href="#a-1-2-defining-deep-learning">#</a></h3>
+<p>In the news, LLMs are often referred to as AI models. However, LLMs are also a type of deep neural network, and PyTorch is a deep learning library. Sound confusing? Let’s take a brief moment and summarize the relationship between these terms before we proceed. </p>
+<p> <em>AI</em> is fundamentally about creating computer systems capable of performing tasks that usually require human intelligence. These tasks include understanding natural language, recognizing patterns, and making decisions. (Despite significant progress, AI is still far from achieving this level of general intelligence.)</p>
+<div class="pdfpage" data-page="274">PDF p. 274</div>
+<figure><img src="assets/fig-0180.png" alt="" loading="lazy"><figcaption>Figure A.2 Deep learning is a  subcategory of machine learning  focused on implementing deep neural  networks. Machine learning is a  subcategory of AI that is concerned  with algorithms that learn from data. AI  is the broader concept of machines  being able to perform tasks that  typically require human intelligence.</figcaption></figure>
+<p> <em>Machine learning</em> represents a subfield of AI, as illustrated in figure A.2, that focuses on developing and improving learning algorithms. The key idea behind machine learning is to enable computers to learn from data and make predictions or decisions without being explicitly programmed to perform the task. This involves developing algorithms that can identify patterns, learn from historical data, and improve their performance over time with more data and feedback.</p>
+<aside class="sidenote">Deep learning is machine learning with neural networks that have many layers.</aside>
+<p>Machine learning has been integral in the evolution of AI, powering many of the advancements we see today, including LLMs. Machine learning is also behind technologies like recommendation systems used by online retailers and streaming services, email spam filtering, voice recognition in virtual assistants, and even self-driving cars. The introduction and advancement of machine learning have significantly enhanced AI’s capabilities, enabling it to move beyond strict rule-based systems and adapt to new inputs or changing environments.</p>
+<p> <em>Deep learning</em> is a subcategory of machine learning that focuses on the training and application of deep neural networks. These deep neural networks were originally inspired by how the human brain works, particularly the interconnection between many neurons. The “deep” in deep learning refers to the multiple hidden layers of artificial neurons or nodes that allow them to model complex, nonlinear relationships in the data. Unlike traditional machine learning techniques that excel at simple pattern recognition, deep learning is particularly good at handling unstructured data like images, audio, or text, so it is particularly well suited for LLMs.</p>
+<p> The typical predictive modeling workflow (also referred to as <em>supervised learning</em>) in machine learning and deep learning is summarized in figure A.3. </p>
+<p> Using a learning algorithm, a model is trained on a training dataset consisting of examples and corresponding labels. In the case of an email spam classifier, for example, the training dataset consists of emails and their “spam” and “not spam” labels that a human identified. Then the trained model can be used on new observations (i.e., new emails) to predict their unknown label (“spam” or “not spam”). Of course, we also want to add a model evaluation between the training and inference stages to</p>
+<div class="pdfpage" data-page="275">PDF p. 275</div>
+<figure><img src="assets/fig-0181.png" alt="" loading="lazy"><figcaption>Figure A.3 The supervised learning workflow for predictive modeling  consists of a training stage where a model is trained on labeled examples  in a training dataset. The trained model can then be used to predict the  labels of new observations.</figcaption></figure>
+<div class="plainbox"><p>TRAINING</p></div>
+<aside class="sidenote">In supervised learning, we train a model on a labeled dataset.</aside>
+<div class="plainbox"><p>INFERENCE</p></div>
+<p>ensure that the model satisfies our performance criteria before using it in a real-world application.</p>
+<p> If we train LLMs to classify texts, the workflow for training and using LLMs is similar to that depicted in figure A.3. If we are interested in training LLMs to generate texts, which is our main focus, figure A.3 still applies. In this case, the labels during pretraining can be derived from the text itself (the next-word prediction task introduced in chapter 1). The LLM will generate entirely new text (instead of predicting labels), given an input prompt during inference.</p>
+<h3 id="a-1-3-installing-pytorch">A.1.3 Installing PyTorch<a class="anchor" href="#a-1-3-installing-pytorch">#</a></h3>
+<p>PyTorch can be installed just like any other Python library or package. However, since PyTorch is a comprehensive library featuring CPU- and GPU-compatible codes, the installation may require additional explanation.</p>
+<h3 id="python-version">Python version <a class="anchor" href="#python-version">#</a></h3>
+<div class="plainbox"><p>Many scientific computing libraries do not immediately support the newest version of</p><p>Python. Therefore, when installing PyTorch, it’s advisable to use a version of Python</p><p>that is one or two releases older. For instance, if the latest version of Python is 3.13,</p><p>using Python 3.11 or 3.12 is recommended.</p></div>
+<div class="pdfpage" data-page="276">PDF p. 276</div>
+<figure><img src="assets/fig-0184.png" alt="" loading="lazy"></figure>
+<figure><img src="assets/fig-0182.png" alt="" loading="lazy"></figure>
+<figure><img src="assets/fig-0183.png" alt="" loading="lazy"><figcaption>Figure A.4 Access the PyTorch installation recommendation on https://pytorch.org to customize and select the  installation command for your system.</figcaption></figure>
+<p>For instance, there are two versions of PyTorch: a leaner version that only supports CPU computing and a full version that supports both CPU and GPU computing. If your machine has a CUDA-compatible GPU that can be used for deep learning (ideally, an NVIDIA T4, RTX 2080 Ti, or newer), I recommend installing the GPU version. Regardless, the default command for installing PyTorch in a code terminal is:</p>
+<div class="codeblock"><pre><code>pip install <span class="t-bi">torch</span></code></pre></div>
+<p>Suppose your computer supports a CUDA-compatible GPU. In that case, it will automatically install the PyTorch version that supports GPU acceleration via CUDA, assuming the Python environment you’re working on has the necessary dependencies (like <code>pip</code>) installed.</p>
+<aside class="callout note"><p class="lab">NOTE</p><p>As of this writing, PyTorch has also added experimental support for AMD GPUs via ROCm. See <a href="https://pytorch.org" rel="noopener">https://pytorch.org</a> for additional instructions. </p></aside>
+<p>To explicitly install the CUDA-compatible version of PyTorch, it’s often better to specify the CUDA you want PyTorch to be compatible with. PyTorch’s official website (<a href="https://pytorch.org" rel="noopener">https://pytorch.org</a>) provides the commands to install PyTorch with CUDA support for different operating systems. Figure A.4 shows a command that will also install PyTorch, as well as the <code>torchvision</code> and <code>torchaudio</code> libraries, which are optional for this book.</p>
+<aside class="sidenote">Select the latest stable version.</aside>
+<div class="pdfpage" data-page="277">PDF p. 277</div>
+<p>I use PyTorch 2.4.0 for the examples, so I recommend that you use the following command to install the exact version to guarantee compatibility with this book:</p>
+<div class="codeblock"><pre><code>pip install <span class="t-bi">torch</span><span class="t-op">==</span><span class="t-num">2.4.0</span></code></pre></div>
+<p>However, as mentioned earlier, given your operating system, the installation command might differ slightly from the one shown here. Thus, I recommend that you visit <a href="https://pytorch.org" rel="noopener">https://pytorch.org</a> and use the installation menu (see figure A.4) to select the installation command for your operating system. Remember to replace <code>torch</code> with <code>torch==2.4.0</code> in the command.</p>
+<p> To check the version of PyTorch, execute the following code in PyTorch:</p>
+<div class="codeblock"><pre><code><span class="t-kw">import</span> <span class="t-bi">torch</span>
+<span class="t-bi">torch</span>.__version__</code></pre></div>
+<p>This prints</p>
+<div class="codeblock"><pre><code><span class="t-str">'2.4.0'</span></code></pre></div>
+<h3 id="pytorch-and-torch">PyTorch and Torch <a class="anchor" href="#pytorch-and-torch">#</a></h3>
+<div class="plainbox"><p>The Python library is named PyTorch primarily because it’s a continuation of the Torch</p><p>library but adapted for Python (hence, “PyTorch”). “Torch” acknowledges the library’s</p><p>roots in Torch, a scientific computing framework with wide support for machine learn-</p><p>ing algorithms, which was initially created using the Lua programming language.</p></div>
+<p>If you are looking for additional recommendations and instructions for setting up your Python environment or installing the other libraries used in this book, visit the supplementary GitHub repository of this book at <a href="https://github.com/rasbt/" rel="noopener">https://github.com/rasbt/</a> LLMs-from-scratch.</p>
+<p> After installing PyTorch, you can check whether your installation recognizes your built-in NVIDIA GPU by running the following code in Python:</p>
+<div class="codeblock"><pre><code><span class="t-kw">import</span> <span class="t-bi">torch</span>
+<span class="t-bi">torch</span>.cuda.<span class="t-fn">is_available</span>()</code></pre></div>
+<p>This returns</p>
+<div class="codeblock"><pre><code><span class="t-kw">True</span></code></pre></div>
+<p>If the command returns <code>True</code>, you are all set. If the command returns <code>False</code>, your computer may not have a compatible GPU, or PyTorch does not recognize it. While GPUs are not required for the initial chapters in this book, which are focused on implementing LLMs for educational purposes, they can significantly speed up deep learning–related computations.</p>
+<div class="pdfpage" data-page="278">PDF p. 278</div>
+<div class="tablewrap"><table><tr><td>notebook–like environment is Google Colab (<a href="https://colab.research.google.com" rel="noopener">https://colab.research.google.com</a>),which provides time-limited access to GPUs as of this writing. Using the Runtimemenu, it is possible to select a GPU, as shown in the screenshot in figure A.5.</td><td>&nbsp;</td></tr><tr><td><strong>Access this menu by clicking Change</strong><strong>runtime type in the Runtime tab.</strong></td><td>&nbsp;</td></tr><tr><td><strong>Select GPU instead of TPU or CPU</strong></td><td>&nbsp;</td></tr><tr><td><strong>If an A100 GPU is not available,</strong><strong>it’s ok to choose a different GPU.</strong></td><td>&nbsp;</td></tr></table></div>
+<p> If you don’t have access to a GPU, there are several cloud computing providers</p>
+<p class="caption">Figure A.5 Select a GPU device for Google Colab under the Runtime/Change Runtime Type menu.</p>
+<h3 id="pytorch-on-apple-silicon">PyTorch on Apple Silicon <a class="anchor" href="#pytorch-on-apple-silicon">#</a></h3>
+<div class="plainbox"><p>If you have an Apple Mac with an Apple Silicon chip (like the M1, M2, M3, or newer</p><p>models), you can use its capabilities to accelerate PyTorch code execution. To use</p><p>your Apple Silicon chip for PyTorch, you first need to install PyTorch as you normally</p><p>would. Then, to check whether your Mac supports PyTorch acceleration with its Apple</p><p>Silicon chip, you can run a simple code snippet in Python:</p></div>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(<span class="t-bi">torch</span>.backends.mps.<span class="t-fn">is_available</span>())</code></pre></div>
+<div class="plainbox"><p>If it returns <code>True</code>, it means that your Mac has an Apple Silicon chip that can be used</p><p>to accelerate PyTorch code.</p></div>
+<h3 id="exercise-a-1">Exercise A.1<a class="anchor" href="#exercise-a-1">#</a></h3>
+<div class="plainbox"><p>Install and set up PyTorch on your computer</p></div>
+<h3 id="exercise-a-2">Exercise A.2<a class="anchor" href="#exercise-a-2">#</a></h3>
+<div class="plainbox"><p>Run the supplementary code at <a href="https://mng.bz/o05v" rel="noopener">https://mng.bz/o05v</a> that checks whether your envi-</p><p>ronment is set up correctly. </p></div>
+<div class="pdfpage" data-page="279">PDF p. 279</div>
+<figure><img src="assets/fig-0187.png" alt="" loading="lazy"></figure>
+<h2 id="a-2-understanding-tensors">A.2 Understanding tensors<a class="anchor" href="#a-2-understanding-tensors">#</a></h2>
+<p>Tensors represent a mathematical concept that generalizes vectors and matrices to potentially higher dimensions. In other words, tensors are mathematical objects that can be characterized by their order (or rank), which provides the number of dimensions. For example, a scalar (just a number) is a tensor of rank 0, a vector is a tensor of rank 1, and a matrix is a tensor of rank 2, as illustrated in figure A.6.</p>
+<div class="codeblock"><pre><code><span class="t-num">2</span>
+<span class="t-num">1</span>
+<span class="t-num">1</span> <span class="t-num">7</span> <span class="t-num">2</span> <span class="t-num">3</span></code></pre></div>
+<p class="caption">Figure A.6 Tensors with different </p>
+<div class="codeblock"><pre><code><span class="t-num">3</span>
+<span class="t-num">3</span> <span class="t-num">3</span> <span class="t-num">4</span> <span class="t-num">9</span></code></pre></div>
+<p class="caption">ranks. Here 0D corresponds to  rank 0, 1D to rank 1, and 2D to  rank 2. A three-dimensional  vector, which consists of three  elements, is still a rank 1 tensor.</p>
+<p>From a computational perspective, tensors serve as data containers. For instance, they hold multidimensional data, where each dimension represents a different feature. Tensor libraries like PyTorch can create, manipulate, and compute with these arrays efficiently. In this context, a tensor library functions as an array library. </p>
+<p> PyTorch tensors are similar to NumPy arrays but have several additional features that are important for deep learning. For example, PyTorch adds an automatic differentiation engine, simplifying <em>computing gradients</em> (see section A.4). PyTorch tensors also support GPU computations to speed up deep neural network training (see section A.8).</p>
+<h3 id="pytorch-with-a-numpy-like-api">PyTorch with a NumPy-like API <a class="anchor" href="#pytorch-with-a-numpy-like-api">#</a></h3>
+<div class="plainbox"><p>PyTorch adopts most of the NumPy array API and syntax for its tensor operations. If</p><p>you are new to NumPy, you can get a brief overview of the most relevant concepts via</p><p>my article “Scientific Computing in Python: Introduction to NumPy and Matplotlib” at</p><p><a href="https://sebastianraschka.com/blog/2020/numpy-intro.html" rel="noopener">https://sebastianraschka.com/blog/2020/numpy-intro.html</a>. </p></div>
+<h3 id="a-2-1-scalars-vectors-matrices-and-tensors">A.2.1 Scalars, vectors, matrices, and tensors<a class="anchor" href="#a-2-1-scalars-vectors-matrices-and-tensors">#</a></h3>
+<p>As mentioned earlier, PyTorch tensors are data containers for array-like structures. A scalar is a zero-dimensional tensor (for instance, just a number), a vector is a onedimensional tensor, and a matrix is a two-dimensional tensor. There is no specific term for higher-dimensional tensors, so we typically refer to a three-dimensional tensor as just a 3D tensor, and so forth. We can create objects of PyTorch’s <code>Tensor</code> class using the <code>torch.tensor</code> function as shown in the following listing.</p>
+<div class="pdfpage" data-page="280">PDF p. 280</div>
+<p class="listing-title"><span class="no">Listing A.1</span><span class="tl">Creating PyTorch tensors</span></p>
+<figure><img src="assets/fig-0188.png" alt="" loading="lazy"></figure>
+<div class="codeblock"><pre><code><span class="t-kw">import</span> <span class="t-bi">torch</span></code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 4 条</summary><ul><li>Creates a zero-dimensional tensor (scalar) from a Python integer</li><li>Creates a one-dimensional tensor (vector) from a Python list</li><li>Creates a two-dimensional tensor from a nested Python list</li><li>Creates a three-dimensional tensor from a nested Python list</li></ul></details><pre><code>tensor0d <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>(<span class="t-num">1</span>)
+tensor1d <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>([<span class="t-num">1</span>, <span class="t-num">2</span>, <span class="t-num">3</span>])
+tensor2d <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>([[<span class="t-num">1</span>, <span class="t-num">2</span>],
+ [<span class="t-num">3</span>, <span class="t-num">4</span>]])
+tensor3d <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>([[[<span class="t-num">1</span>, <span class="t-num">2</span>], [<span class="t-num">3</span>, <span class="t-num">4</span>]],
+ [[<span class="t-num">5</span>, <span class="t-num">6</span>], [<span class="t-num">7</span>, <span class="t-num">8</span>]]])</code></pre></div>
+<h3 id="a-2-2-tensor-data-types">A.2.2 Tensor data types<a class="anchor" href="#a-2-2-tensor-data-types">#</a></h3>
+<p>PyTorch adopts the default 64-bit integer data type from Python. We can access the data type of a tensor via the <code>.dtype</code> attribute of a tensor:</p>
+<div class="codeblock"><pre><code>tensor1d <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>([<span class="t-num">1</span>, <span class="t-num">2</span>, <span class="t-num">3</span>])
+<span class="t-bi">print</span>(tensor1d.dtype)</code></pre></div>
+<p>This prints</p>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.int64</code></pre></div>
+<p>If we create tensors from Python floats, PyTorch creates tensors with a 32-bit precision by default:</p>
+<div class="codeblock"><pre><code>floatvec <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>([<span class="t-num">1.0</span>, <span class="t-num">2.0</span>, <span class="t-num">3.0</span>])
+<span class="t-bi">print</span>(floatvec.dtype)</code></pre></div>
+<p>The output is</p>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.float32</code></pre></div>
+<p>This choice is primarily due to the balance between precision and computational efficiency. A 32-bit floating-point number offers sufficient precision for most deep learning tasks while consuming less memory and computational resources than a 64-bit floatingpoint number. Moreover, GPU architectures are optimized for 32-bit computations, and using this data type can significantly speed up model training and inference.</p>
+<p> Moreover, it is possible to change the precision using a tensor’s <code>.to</code> method. The following code demonstrates this by changing a 64-bit integer tensor into a 32-bit float tensor:</p>
+<div class="codeblock"><pre><code>floatvec <span class="t-op">=</span> tensor1d.<span class="t-fn">to</span>(<span class="t-bi">torch</span>.float32)
+<span class="t-bi">print</span>(floatvec.dtype)</code></pre></div>
+<p>This returns</p>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.float32</code></pre></div>
+<div class="pdfpage" data-page="281">PDF p. 281</div>
+<p>For more information about different tensor data types available in PyTorch, check the official documentation at <a href="https://pytorch.org/docs/stable/tensors.html" rel="noopener">https://pytorch.org/docs/stable/tensors.html</a>.</p>
+<h3 id="a-2-3-common-pytorch-tensor-operations">A.2.3 Common PyTorch tensor operations<a class="anchor" href="#a-2-3-common-pytorch-tensor-operations">#</a></h3>
+<p>Comprehensive coverage of all the different PyTorch tensor operations and commands is outside the scope of this book. However, I will briefly describe relevant operations as we introduce them throughout the book.</p>
+<p> We have already introduced the <code>torch.tensor()</code> function to create new tensors: </p>
+<div class="codeblock"><pre><code>tensor2d <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>([[<span class="t-num">1</span>, <span class="t-num">2</span>, <span class="t-num">3</span>],
+ [<span class="t-num">4</span>, <span class="t-num">5</span>, <span class="t-num">6</span>]])
+<span class="t-bi">print</span>(tensor2d)</code></pre></div>
+<p>This prints</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[<span class="t-num">1</span>, <span class="t-num">2</span>, <span class="t-num">3</span>],
+ [<span class="t-num">4</span>, <span class="t-num">5</span>, <span class="t-num">6</span>]])</code></pre></div>
+<p>In addition, the <code>.shape</code> attribute allows us to access the shape of a tensor:</p>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(tensor2d.shape)</code></pre></div>
+<p>The output is</p>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">3</span>])</code></pre></div>
+<p>As you can see, <code>.shape</code> returns <code>[2,</code> <code>3]</code>, meaning the tensor has two rows and three columns. To reshape the tensor into a 3 × 2 tensor, we can use the <code>.reshape</code> method:</p>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(tensor2d.<span class="t-fn">reshape</span>(<span class="t-num">3</span>, <span class="t-num">2</span>))</code></pre></div>
+<p>This prints</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[<span class="t-num">1</span>, <span class="t-num">2</span>],
+ [<span class="t-num">3</span>, <span class="t-num">4</span>],
+ [<span class="t-num">5</span>, <span class="t-num">6</span>]])</code></pre></div>
+<p>However, note that the more common command for reshaping tensors in PyTorch is</p>
+<div class="codeblock"><pre><code>.<span class="t-fn">view</span>():
+<span class="t-bi">print</span>(tensor2d.<span class="t-fn">view</span>(<span class="t-num">3</span>, <span class="t-num">2</span>))</code></pre></div>
+<p>The output is</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[<span class="t-num">1</span>, <span class="t-num">2</span>],
+ [<span class="t-num">3</span>, <span class="t-num">4</span>],
+ [<span class="t-num">5</span>, <span class="t-num">6</span>]])</code></pre></div>
+<p>Similar to <code>.reshape</code> and <code>.view</code>, in several cases, PyTorch offers multiple syntax options for executing the same computation. PyTorch initially followed the original Lua Torch syntax convention but then, by popular request, added syntax to make it similar to NumPy. (The subtle difference between <code>.view()</code> and <code>.reshape()</code> in PyTorch lies in their handling of memory layout: <code>.view()</code> requires the original data to be contiguous and will fail if it isn’t, whereas <code>.reshape()</code> will work regardless, copying the data if necessary to ensure the desired shape.)</p>
+<div class="pdfpage" data-page="282">PDF p. 282</div>
+<p> Next, we can use <code>.T</code> to transpose a tensor, which means flipping it across its diagonal. Note that this is similar to reshaping a tensor, as you can see based on the following result:</p>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(tensor2d.T)</code></pre></div>
+<p>The output is</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[<span class="t-num">1</span>, <span class="t-num">4</span>],
+ [<span class="t-num">2</span>, <span class="t-num">5</span>],
+ [<span class="t-num">3</span>, <span class="t-num">6</span>]])</code></pre></div>
+<p>Lastly, the common way to multiply two matrices in PyTorch is the <code>.matmul</code> method:</p>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(tensor2d.<span class="t-fn">matmul</span>(tensor2d.T))</code></pre></div>
+<p>The output is</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[<span class="t-num">14</span>, <span class="t-num">32</span>],
+ [<span class="t-num">32</span>, <span class="t-num">77</span>]])</code></pre></div>
+<p>However, we can also adopt the <code>@</code> operator, which accomplishes the same thing more compactly:</p>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(tensor2d @ tensor2d.T)</code></pre></div>
+<p>This prints</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[<span class="t-num">14</span>, <span class="t-num">32</span>],
+ [<span class="t-num">32</span>, <span class="t-num">77</span>]])</code></pre></div>
+<p>As mentioned earlier, I introduce additional operations when needed. For readers who’d like to browse through all the different tensor operations available in PyTorch (we won’t need most of these), I recommend checking out the official documentation at <a href="https://pytorch.org/docs/stable/tensors.html" rel="noopener">https://pytorch.org/docs/stable/tensors.html</a>.</p>
+<h2 id="a-3-seeing-models-as-computation-graphs">A.3 Seeing models as computation graphs<a class="anchor" href="#a-3-seeing-models-as-computation-graphs">#</a></h2>
+<p>Now let’s look at PyTorch’s automatic differentiation engine, also known as autograd. PyTorch’s autograd system provides functions to compute gradients in dynamic computational graphs automatically. </p>
+<p> A computational graph is a directed graph that allows us to express and visualize mathematical expressions. In the context of deep learning, a computation graph lays</p>
+<div class="pdfpage" data-page="283">PDF p. 283</div>
+<p class="listing-title">Listing A.2</p>
+<figure><img src="assets/fig-0190.png" alt="" loading="lazy"></figure>
+<p class="listing-title">A logistic regression forward pass</p>
+<figure><img src="assets/fig-0189.png" alt="" loading="lazy"><figcaption>Figure A.7 A logistic regression forward pass as a computation graph. The input feature  x1 is multiplied by a model weight w1 and passed through an activation function σ after  adding the bias. The loss is computed by comparing the model output a with a given label y.</figcaption></figure>
+<p>out the sequence of calculations needed to compute the output of a neural network— we will need this to compute the required gradients for backpropagation, the main training algorithm for neural networks.</p>
+<p> Let’s look at a concrete example to illustrate the concept of a computation graph. The code in the following listing implements the forward pass (prediction step) of a simple logistic regression classifier, which can be seen as a single-layer neural network. It returns a score between 0 and 1, which is compared to the true class label (0 or 1) when computing the loss.</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 6 条</summary><ul><li>This import statement is a common convention in PyTorch to prevent long lines of code.</li><li>Input feature</li><li>Weight parameter</li><li>Bias unit</li><li>Net input</li><li>Activation and output</li></ul></details><pre><code><span class="t-kw">import</span> <span class="t-bi">torch</span>.<span class="t-bi">nn</span>.functional <span class="t-kw">as</span> F <span class="t-kw">True</span> label
+y <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>([<span class="t-num">1.0</span>])
+x1 <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>([<span class="t-num">1.1</span>])
+w1 <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>([<span class="t-num">2.2</span>])
+b <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>([<span class="t-num">0.0</span>])
+z <span class="t-op">=</span> x1 <span class="t-op">*</span> w1 <span class="t-op">+</span> b
+a <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">sigmoid</span>(z)
+loss <span class="t-op">=</span> F.<span class="t-fn">binary_cross_entropy</span>(a, y)</code></pre></div>
+<p>If not all components in the preceding code make sense to you, don’t worry. The point of this example is not to implement a logistic regression classifier but rather to illustrate how we can think of a sequence of computations as a computation graph, as shown in figure A.7. </p>
+<p>In fact, PyTorch builds such a computation graph in the background, and we can use this to calculate gradients of a loss function with respect to the model parameters (here <em>w</em>1 and <em>b</em>) to train the model.</p>
+<div class="pdfpage" data-page="284">PDF p. 284</div>
+<figure><img src="assets/fig-0191.png" alt="" loading="lazy"><figcaption>Figure A.8 The most common way of computing the loss gradients in a  computation graph involves applying the chain rule from right to left, also called  reverse-model automatic differentiation or backpropagation. We start from the  output layer (or the loss itself) and work backward through the network to the input  layer. We do this to compute the gradient of the loss with respect to each parameter  (weights and biases) in the network, which informs how we update these  parameters during training.</figcaption></figure>
+<h2 id="a-4-automatic-differentiation-made-easy">A.4 Automatic differentiation made easy<a class="anchor" href="#a-4-automatic-differentiation-made-easy">#</a></h2>
+<aside class="detail-link"><span class="tag">数学推导详解</span>手算原书没推导的那两个梯度 <code>-0.0898</code> / <code>-0.0817</code>，以及 sigmoid 导数为何饱和，见 <a href="14-appendix-a-introduction-to-pytorch-detail.html"><b>A.3–A.4 链式法则与自动微分</b></a>。全部推导页的索引见 <a href="math-detail.html">math-detail.html</a>。</aside>
+<p>If we carry out computations in PyTorch, it will build a computational graph internally by default if one of its terminal nodes has the <code>requires_grad</code> attribute set to <code>True</code>. This is useful if we want to compute gradients. Gradients are required when training neural networks via the popular backpropagation algorithm, which can be considered an implementation of the <em>chain rule</em> from calculus for neural networks, illustrated in figure A.8.</p>
+<div class="plainbox"><p><strong>P</strong><strong>ARTIAL</strong><strong> </strong><strong>DERIVATIVES</strong><strong> </strong><strong>AND</strong><strong> </strong><strong>GRADIENTS</strong><strong> </strong></p></div>
+<p>Figure A.8 shows partial derivatives, which measure the rate at which a function changes with respect to one of its variables. A <em>gradient</em> is a vector containing all of the partial derivatives of a multivariate function, a function with more than one variable as input.</p>
+<p> If you are not familiar with or don’t remember the partial derivatives, gradients, or chain rule from calculus, don’t worry. On a high level, all you need to know for this book is that the chain rule is a way to compute gradients of a loss function given the model’s parameters in a computation graph. This provides the information needed to update each parameter to minimize the loss function, which serves as a proxy for measuring the</p>
+<div class="pdfpage" data-page="285">PDF p. 285</div>
+<p class="listing-title"><span class="no">Listing A.3</span><span class="tl">Computing gradients via autograd</span></p>
+<p>model’s performance using a method such as gradient descent. We will revisit the computational implementation of this training loop in PyTorch in section A.7.</p>
+<p> How is this all related to the automatic differentiation (autograd) engine, the second component of the PyTorch library mentioned earlier? PyTorch’s autograd engine constructs a computational graph in the background by tracking every operation performed on tensors. Then, calling the <code>grad</code> function, we can compute the gradient of the loss concerning the model parameter <code>w1</code>, as shown in the following listing.</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>By default, PyTorch destroys the computation graph after calculating the gradients to free memory. However, since we will reuse this computation graph shortly, we set retain_graph=True so that it stays in memory.</li></ul></details><pre><code><span class="t-kw">import</span> <span class="t-bi">torch</span>.<span class="t-bi">nn</span>.functional <span class="t-kw">as</span> F
+<span class="t-kw">from</span> <span class="t-bi">torch</span>.autograd <span class="t-kw">import</span> grad
+y <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>([<span class="t-num">1.0</span>])
+x1 <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>([<span class="t-num">1.1</span>])
+w1 <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>([<span class="t-num">2.2</span>], requires_grad<span class="t-op">=</span><span class="t-kw">True</span>)
+b <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>([<span class="t-num">0.0</span>], requires_grad<span class="t-op">=</span><span class="t-kw">True</span>)
+z <span class="t-op">=</span> x1 <span class="t-op">*</span> w1 <span class="t-op">+</span> b
+a <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">sigmoid</span>(z)
+loss <span class="t-op">=</span> F.<span class="t-fn">binary_cross_entropy</span>(a, y)
+grad_L_w1 <span class="t-op">=</span> <span class="t-fn">grad</span>(loss, w1, retain_graph<span class="t-op">=</span><span class="t-kw">True</span>)
+grad_L_b <span class="t-op">=</span> <span class="t-fn">grad</span>(loss, b, retain_graph<span class="t-op">=</span><span class="t-kw">True</span>)</code></pre></div>
+<p>The resulting values of the loss given the model’s parameters are</p>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(grad_L_w1)
+<span class="t-bi">print</span>(grad_L_b)</code></pre></div>
+<p>This prints</p>
+<div class="codeblock"><pre><code>(<span class="t-fn">tensor</span>([<span class="t-op">-</span><span class="t-num">0.0898</span>]),)
+(<span class="t-fn">tensor</span>([<span class="t-op">-</span><span class="t-num">0.0817</span>]),)</code></pre></div>
+<p>Here, we have been using the grad function manually, which can be useful for experimentation, debugging, and demonstrating concepts. But, in practice, PyTorch provides even more high-level tools to automate this process. For instance, we can call <code>.backward</code> on the loss, and PyTorch will compute the gradients of all the leaf nodes in the graph, which will be stored via the tensors’ <code>.grad</code> attributes:</p>
+<div class="codeblock"><pre><code>loss.<span class="t-fn">backward</span>()
+<span class="t-bi">print</span>(w1.grad)
+<span class="t-bi">print</span>(b.grad)</code></pre></div>
+<p>The outputs are</p>
+<div class="codeblock"><pre><code>(<span class="t-fn">tensor</span>([<span class="t-op">-</span><span class="t-num">0.0898</span>]),)
+(<span class="t-fn">tensor</span>([<span class="t-op">-</span><span class="t-num">0.0817</span>]),)</code></pre></div>
+<div class="pdfpage" data-page="286">PDF p. 286</div>
+<figure><img src="assets/fig-0192.png" alt="" loading="lazy"><figcaption>Figure A.9 A multilayer perceptron with two hidden layers. Each node represents  a unit in the respective layer. For illustration purposes, each layer has a very small  number of nodes.</figcaption></figure>
+<p>I’ve provided you with a lot of information, and you may be overwhelmed by the calculus concepts, but don’t worry. While this calculus jargon is a means to explain PyTorch’s autograd component, all you need to take away is that PyTorch takes care of the calculus for us via the <code>.backward</code> method—we won’t need to compute any derivatives or gradients by hand.</p>
+<h2 id="a-5-implementing-multilayer-neural-networks">A.5 Implementing multilayer neural networks<a class="anchor" href="#a-5-implementing-multilayer-neural-networks">#</a></h2>
+<p>Next, we focus on PyTorch as a library for implementing deep neural networks. To provide a concrete example, let’s look at a multilayer perceptron, a fully connected neural network, as illustrated in figure A.9.</p>
+<p>When implementing a neural network in PyTorch, we can subclass the <code>torch.nn.Module</code> class to define our own custom network architecture. This <code>Module</code> base class provides a lot of functionality, making it easier to build and train models. For instance, it allows us to encapsulate layers and operations and keep track of the model’s parameters. </p>
+<p> Within this subclass, we define the network layers in the <code>__init__</code> constructor and specify how the layers interact in the forward method. The forward method describes how the input data passes through the network and comes together as a computation graph. In contrast, the backward method, which we typically do not need to implement ourselves, is used during training to compute gradients of the loss function given the model parameters (see section A.7). The code in the following listing implements a</p>
+<div class="pdfpage" data-page="287">PDF p. 287</div>
+<figure><img src="assets/fig-0193.png" alt="" loading="lazy"></figure>
+<p class="listing-title"><span class="no">Listing A.4</span><span class="tl">A multilayer perceptron with two hidden layers</span></p>
+<figure><img src="assets/fig-0194.png" alt="" loading="lazy"></figure>
+<p>classic multilayer perceptron with two hidden layers to illustrate a typical usage of the</p>
+<p><code>Module</code> class.</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>Coding the number of inputs and outputs as variables allows us to reuse the same code for datasets with different numbers of features and classes</li></ul></details><pre><code><span class="t-kw">class</span> <span class="t-fn">NeuralNetwork</span>(<span class="t-bi">torch</span>.<span class="t-bi">nn</span>.Module):
+ <span class="t-kw">def</span> <span class="t-fn">__init__</span>(<span class="t-kw">self</span>, num_inputs, num_outputs):
+ <span class="t-fn">super</span>().<span class="t-fn">__init__</span>()
+ <span class="t-kw">self</span>.layers <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-bi">nn</span>.<span class="t-fn">Sequential</span>(
+ <span class="t-com"># 1st hidden layer
+ torch.nn.Linear(num_inputs, 30),</span></code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 5 条</summary><ul><li>The Linear layer takes the number of input and output</li><li>nodes as arguments.</li><li>Nonlinear activation functions are placed between the hidden layers.</li><li>The number of output nodes of one hidden layer has to match the number of inputs of the next layer.</li><li>The outputs of the last layer are called logits.</li></ul></details><pre><code> <span class="t-bi">torch</span>.<span class="t-bi">nn</span>.<span class="t-fn">ReLU</span>(),
+ <span class="t-com"># 2nd hidden layer
+ torch.nn.Linear(30, 20),
+ torch.nn.ReLU(),
+ # output layer
+ torch.nn.Linear(20, num_outputs),
+ )
+ def forward(self, x):
+ logits = self.layers(x)
+ return logits</span></code></pre></div>
+<p>We can then instantiate a new neural network object as follows:</p>
+<div class="codeblock"><pre><code>model <span class="t-op">=</span> <span class="t-fn">NeuralNetwork</span>(<span class="t-num">50</span>, <span class="t-num">3</span>)</code></pre></div>
+<p>Before using this new <code>model</code> object, we can call <code>print</code> on the model to see a summary of its structure:</p>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(model)</code></pre></div>
+<p>This prints</p>
+<div class="codeblock"><pre><code><span class="t-fn">NeuralNetwork</span>(
+ (layers): <span class="t-fn">Sequential</span>(
+ (<span class="t-num">0</span>): <span class="t-fn">Linear</span>(in_features<span class="t-op">=</span><span class="t-num">50</span>, out_features<span class="t-op">=</span><span class="t-num">30</span>, bias<span class="t-op">=</span><span class="t-kw">True</span>)
+ (<span class="t-num">1</span>): <span class="t-fn">ReLU</span>()
+ (<span class="t-num">2</span>): <span class="t-fn">Linear</span>(in_features<span class="t-op">=</span><span class="t-num">30</span>, out_features<span class="t-op">=</span><span class="t-num">20</span>, bias<span class="t-op">=</span><span class="t-kw">True</span>)
+ (<span class="t-num">3</span>): <span class="t-fn">ReLU</span>()
+ (<span class="t-num">4</span>): <span class="t-fn">Linear</span>(in_features<span class="t-op">=</span><span class="t-num">20</span>, out_features<span class="t-op">=</span><span class="t-num">3</span>, bias<span class="t-op">=</span><span class="t-kw">True</span>)
+ )
+)</code></pre></div>
+<p>Note that we use the <code>Sequential</code> class when we implement the <code>NeuralNetwork</code> class. <code>Sequential</code> is not required, but it can make our life easier if we have a series of layers we want to execute in a specific order, as is the case here. This way, after instantiating <code>self.layers</code> <code>=</code> <code>Sequential(...)</code> in the <code>__init__</code> constructor, we just have to call the <code>self.layers</code> instead of calling each layer individually in the <code>NeuralNetwork</code>’s</p>
+<div class="pdfpage" data-page="288">PDF p. 288</div>
+<p><code>forward</code> method.</p>
+<p> Next, let’s check the total number of trainable parameters of this model:</p>
+<div class="codeblock"><pre><code>num_params <span class="t-op">=</span> <span class="t-bi">sum</span>(p.<span class="t-fn">numel</span>() <span class="t-kw">for</span> p <span class="t-kw">in</span> model.<span class="t-fn">parameters</span>() <span class="t-kw">if</span> p.requires_grad)
+<span class="t-bi">print</span>(<span class="t-str">"Total number of trainable model parameters:"</span>, num_params)</code></pre></div>
+<p>This prints</p>
+<div class="codeblock"><pre><code>Total number of trainable model parameters: <span class="t-num">2213</span></code></pre></div>
+<p>Each parameter for which <code>requires_grad=True</code> counts as a trainable parameter and will be updated during training (see section A.7).</p>
+<p> In the case of our neural network model with the preceding two hidden layers, these trainable parameters are contained in the <code>torch.nn.Linear</code> layers. A <code>Linear</code> layer multiplies the inputs with a weight matrix and adds a bias vector. This is sometimes referred to as a <em>feedforward</em> or <em>fully connected</em> layer. </p>
+<p> Based on the <code>print(model)</code> call we executed here, we can see that the first <code>Linear</code> layer is at index position 0 in the layers attribute. We can access the corresponding weight parameter matrix as follows:</p>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(model.layers[<span class="t-num">0</span>].weight)</code></pre></div>
+<p>This prints</p>
+<div class="codeblock"><pre><code>Parameter containing:
+<span class="t-fn">tensor</span>([[ <span class="t-num">0.1174</span>, <span class="t-op">-</span><span class="t-num">0.1350</span>, <span class="t-op">-</span><span class="t-num">0.1227</span>, ..., <span class="t-num">0.0275</span>, <span class="t-op">-</span><span class="t-num">0.0520</span>, <span class="t-op">-</span><span class="t-num">0.0192</span>],
+ [<span class="t-op">-</span><span class="t-num">0.0169</span>, <span class="t-num">0.1265</span>, <span class="t-num">0.0255</span>, ..., <span class="t-op">-</span><span class="t-num">0.1247</span>, <span class="t-num">0.1191</span>, <span class="t-op">-</span><span class="t-num">0.0698</span>],
+ [<span class="t-op">-</span><span class="t-num">0.0973</span>, <span class="t-op">-</span><span class="t-num">0.0974</span>, <span class="t-op">-</span><span class="t-num">0.0739</span>, ..., <span class="t-op">-</span><span class="t-num">0.0068</span>, <span class="t-op">-</span><span class="t-num">0.0892</span>, <span class="t-num">0.1070</span>],
+ ...,
+ [<span class="t-op">-</span><span class="t-num">0.0681</span>, <span class="t-num">0.1058</span>, <span class="t-op">-</span><span class="t-num">0.0315</span>, ..., <span class="t-op">-</span><span class="t-num">0.1081</span>, <span class="t-op">-</span><span class="t-num">0.0290</span>, <span class="t-op">-</span><span class="t-num">0.1374</span>],
+ [<span class="t-op">-</span><span class="t-num">0.0159</span>, <span class="t-num">0.0587</span>, <span class="t-op">-</span><span class="t-num">0.0916</span>, ..., <span class="t-op">-</span><span class="t-num">0.1153</span>, <span class="t-num">0.0700</span>, <span class="t-num">0.0770</span>],
+ [<span class="t-op">-</span><span class="t-num">0.1019</span>, <span class="t-num">0.1345</span>, <span class="t-op">-</span><span class="t-num">0.0176</span>, ..., <span class="t-num">0.0114</span>, <span class="t-op">-</span><span class="t-num">0.0559</span>, <span class="t-op">-</span><span class="t-num">0.0088</span>]],
+ requires_grad<span class="t-op">=</span><span class="t-kw">True</span>)</code></pre></div>
+<p>Since this large matrix is not shown in its entirety, let’s use the <code>.shape</code> attribute to show its dimensions:</p>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(model.layers[<span class="t-num">0</span>].weight.shape)</code></pre></div>
+<p>The result is</p>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">30</span>, <span class="t-num">50</span>])</code></pre></div>
+<p>(Similarly, you could access the bias vector via <code>model.layers[0].bias</code>.)</p>
+<p> The weight matrix here is a 30 × 50 matrix, and we can see that <code>requires_grad</code> is set to <code>True</code>, which means its entries are trainable—this is the default setting for weights and biases in <code>torch.nn.Linear</code>. </p>
+<div class="pdfpage" data-page="289">PDF p. 289</div>
+<p> If you execute the preceding code on your computer, the numbers in the weight matrix will likely differ from those shown. The model weights are initialized with small random numbers, which differ each time we instantiate the network. In deep learning, initializing model weights with small random numbers is desired to break symmetry during training. Otherwise, the nodes would be performing the same operations and updates during backpropagation, which would not allow the network to learn complex mappings from inputs to outputs.</p>
+<p> However, while we want to keep using small random numbers as initial values for our layer weights, we can make the random number initialization reproducible by seeding PyTorch’s random number generator via <code>manual_seed</code>:</p>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)
+model <span class="t-op">=</span> <span class="t-fn">NeuralNetwork</span>(<span class="t-num">50</span>, <span class="t-num">3</span>)
+<span class="t-bi">print</span>(model.layers[<span class="t-num">0</span>].weight)</code></pre></div>
+<p>The result is</p>
+<div class="codeblock"><pre><code>Parameter containing:
+<span class="t-fn">tensor</span>([[<span class="t-op">-</span><span class="t-num">0.0577</span>, <span class="t-num">0.0047</span>, <span class="t-op">-</span><span class="t-num">0.0702</span>, ..., <span class="t-num">0.0222</span>, <span class="t-num">0.1260</span>, <span class="t-num">0.0865</span>],
+ [ <span class="t-num">0.0502</span>, <span class="t-num">0.0307</span>, <span class="t-num">0.0333</span>, ..., <span class="t-num">0.0951</span>, <span class="t-num">0.1134</span>, <span class="t-op">-</span><span class="t-num">0.0297</span>],
+ [ <span class="t-num">0.1077</span>, <span class="t-op">-</span><span class="t-num">0.1108</span>, <span class="t-num">0.0122</span>, ..., <span class="t-num">0.0108</span>, <span class="t-op">-</span><span class="t-num">0.1049</span>, <span class="t-op">-</span><span class="t-num">0.1063</span>],
+ ...,
+ [<span class="t-op">-</span><span class="t-num">0.0787</span>, <span class="t-num">0.1259</span>, <span class="t-num">0.0803</span>, ..., <span class="t-num">0.1218</span>, <span class="t-num">0.1303</span>, <span class="t-op">-</span><span class="t-num">0.1351</span>],
+ [ <span class="t-num">0.1359</span>, <span class="t-num">0.0175</span>, <span class="t-op">-</span><span class="t-num">0.0673</span>, ..., <span class="t-num">0.0674</span>, <span class="t-num">0.0676</span>, <span class="t-num">0.1058</span>],
+ [ <span class="t-num">0.0790</span>, <span class="t-num">0.1343</span>, <span class="t-op">-</span><span class="t-num">0.0293</span>, ..., <span class="t-num">0.0344</span>, <span class="t-op">-</span><span class="t-num">0.0971</span>, <span class="t-op">-</span><span class="t-num">0.0509</span>]],
+ requires_grad<span class="t-op">=</span><span class="t-kw">True</span>)</code></pre></div>
+<p>Now that we have spent some time inspecting the <code>NeuralNetwork</code> instance, let’s briefly see how it’s used via the forward pass:</p>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)
+X <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">rand</span>((<span class="t-num">1</span>, <span class="t-num">50</span>))
+out <span class="t-op">=</span> <span class="t-fn">model</span>(X)
+<span class="t-bi">print</span>(out)</code></pre></div>
+<p>The result is</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[<span class="t-op">-</span><span class="t-num">0.1262</span>, <span class="t-num">0.1080</span>, <span class="t-op">-</span><span class="t-num">0.1792</span>]], grad_fn<span class="t-op">=&lt;</span>AddmmBackward0<span class="t-op">&gt;</span>)</code></pre></div>
+<p>In the preceding code, we generated a single random training example <code>X</code> as a toy input (note that our network expects 50-dimensional feature vectors) and fed it to the model, returning three scores. When we call <code>model(x)</code>, it will automatically execute the forward pass of the model. </p>
+<p> The forward pass refers to calculating output tensors from input tensors. This involves passing the input data through all the neural network layers, starting from the input layer, through hidden layers, and finally to the output layer.</p>
+<p> These three numbers returned here correspond to a score assigned to each of the three output nodes. Notice that the output tensor also includes a <code>grad_fn</code> value.</p>
+<div class="pdfpage" data-page="290">PDF p. 290</div>
+<p> Here, <code>grad_fn=&lt;AddmmBackward0&gt;</code> represents the last-used function to compute a variable in the computational graph. In particular, <code>grad_fn=&lt;AddmmBackward0&gt;</code> means that the tensor we are inspecting was created via a matrix multiplication and addition operation. PyTorch will use this information when it computes gradients during back-</p>
+<p>propagation. The <code>&lt;AddmmBackward0&gt;</code> part of <code>grad_fn=&lt;AddmmBackward0&gt;</code> specifies the operation performed. In this case, it is an <code>Addmm</code> operation. <code>Addmm</code> stands for matrix multiplication (<code>mm</code>) followed by an addition (<code>Add</code>).</p>
+<p> If we just want to use a network without training or backpropagation—for example, if we use it for prediction after training—constructing this computational graph for backpropagation can be wasteful as it performs unnecessary computations and consumes additional memory. So, when we use a model for inference (for instance, making predictions) rather than training, the best practice is to use the <code>torch.no_grad()</code> context manager. This tells PyTorch that it doesn’t need to keep track of the gradients, which can result in significant savings in memory and computation:</p>
+<div class="codeblock"><pre><code><span class="t-kw">with</span> <span class="t-bi">torch</span>.<span class="t-fn">no_grad</span>():
+ out <span class="t-op">=</span> <span class="t-fn">model</span>(X)
+<span class="t-bi">print</span>(out)</code></pre></div>
+<p>The result is</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[<span class="t-op">-</span><span class="t-num">0.1262</span>, <span class="t-num">0.1080</span>, <span class="t-op">-</span><span class="t-num">0.1792</span>]])</code></pre></div>
+<p>In PyTorch, it’s common practice to code models such that they return the outputs of the last layer (logits) without passing them to a nonlinear activation function. That’s because PyTorch’s commonly used loss functions combine the <code>softmax</code> (or <code>sigmoid</code> for binary classification) operation with the negative log-likelihood loss in a single class. The reason for this is numerical efficiency and stability. So, if we want to compute class-membership probabilities for our predictions, we have to call the <code>softmax</code> function explicitly:</p>
+<div class="codeblock"><pre><code><span class="t-kw">with</span> <span class="t-bi">torch</span>.<span class="t-fn">no_grad</span>():
+ out <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">softmax</span>(<span class="t-fn">model</span>(X), dim<span class="t-op">=</span><span class="t-num">1</span>)
+<span class="t-bi">print</span>(out)</code></pre></div>
+<p>This prints</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[<span class="t-num">0.3113</span>, <span class="t-num">0.3934</span>, <span class="t-num">0.2952</span>]]))</code></pre></div>
+<p>The values can now be interpreted as class-membership probabilities that sum up to 1. The values are roughly equal for this random input, which is expected for a randomly initialized model without training. </p>
+<div class="pdfpage" data-page="291">PDF p. 291</div>
+<figure><img src="assets/fig-0195.png" alt="" loading="lazy"></figure>
+<p class="listing-title"><span class="no">Listing A.5</span><span class="tl">Creating a small toy dataset</span></p>
+<h2 id="a-6-setting-up-efficient-data-loaders">A.6 Setting up efficient data loaders<a class="anchor" href="#a-6-setting-up-efficient-data-loaders">#</a></h2>
+<p>Before we can train our model, we have to briefly discuss creating efficient data loaders in PyTorch, which we will iterate over during training. The overall idea behind data loading in PyTorch is illustrated in figure A.10.</p>
+<p><code>Dataset</code><sup>Custom</sup><sub> class</sub></p>
+<div class="codeblock"><pre><code>DataLoader <span class="t-kw">class</span></code></pre></div>
+<p class="caption">PyTorch implements a Dataset and a DataLoader class. The Dataset class is used to  Figure A.10 instantiate objects that define how each data record is loaded. The DataLoader handles how the data is shuffled  and assembled into batches.</p>
+<p>Following figure A.10, we will implement a custom <code>Dataset</code> class, which we will use to create a training and a test dataset that we’ll then use to create the data loaders. Let’s start by creating a simple toy dataset of five training examples with two features each. Accompanying the training examples, we also create a tensor containing the corresponding class labels: three examples belong to class 0, and two examples belong to class 1. In addition, we make a test set consisting of two entries. The code to create this dataset is shown in the following listing.</p>
+<div class="codeblock"><pre><code>X_train <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>([
+ [<span class="t-op">-</span><span class="t-num">1.2</span>, <span class="t-num">3.1</span>],
+ [<span class="t-op">-</span><span class="t-num">0.9</span>, <span class="t-num">2.9</span>],
+ [<span class="t-op">-</span><span class="t-num">0.5</span>, <span class="t-num">2.6</span>],
+ [<span class="t-num">2.3</span>, <span class="t-op">-</span><span class="t-num">1.1</span>],
+ [<span class="t-num">2.7</span>, <span class="t-op">-</span><span class="t-num">1.5</span>]
+])
+y_train <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>([<span class="t-num">0</span>, <span class="t-num">0</span>, <span class="t-num">0</span>, <span class="t-num">1</span>, <span class="t-num">1</span>])
+X_test <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>([
+ [<span class="t-op">-</span><span class="t-num">0.8</span>, <span class="t-num">2.8</span>],
+ [<span class="t-num">2.6</span>, <span class="t-op">-</span><span class="t-num">1.6</span>],
+])
+y_test <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>([<span class="t-num">0</span>, <span class="t-num">1</span>])</code></pre></div>
+<div class="pdfpage" data-page="292">PDF p. 292</div>
+<p class="listing-title">Defining a custom Dataset class Listing A.6</p>
+<aside class="callout note"><p class="lab">NOTE</p><p>PyTorch requires that class labels start with label 0, and the largest class label value should not exceed the number of output nodes minus 1 (since Python index counting starts at zero). So, if we have class labels 0, 1, 2, 3, and 4, the neural network output layer should consist of five nodes.</p></aside>
+<p>Next, we create a custom dataset class, <code>ToyDataset</code>, by subclassing from PyTorch’s <code>Dataset</code> parent class, as shown in the following listing.</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 2 条</summary><ul><li>Instructions for retrieving exactly one data record and the corresponding label</li><li>Instructions for returning the total length of the dataset</li></ul></details><pre><code><span class="t-kw">from</span> <span class="t-bi">torch</span>.utils.data <span class="t-kw">import</span> Dataset
+<span class="t-kw">class</span> <span class="t-fn">ToyDataset</span>(Dataset):
+ <span class="t-kw">def</span> <span class="t-fn">__init__</span>(<span class="t-kw">self</span>, X, y):
+ <span class="t-kw">self</span>.features <span class="t-op">=</span> X
+ <span class="t-kw">self</span>.labels <span class="t-op">=</span> y
+ <span class="t-kw">def</span> <span class="t-fn">__getitem__</span>(<span class="t-kw">self</span>, index):
+ one_x <span class="t-op">=</span> <span class="t-kw">self</span>.features[index]
+ one_y <span class="t-op">=</span> <span class="t-kw">self</span>.labels[index]
+ <span class="t-kw">return</span> one_x, one_y
+ <span class="t-kw">def</span> <span class="t-fn">__len__</span>(<span class="t-kw">self</span>):
+ <span class="t-kw">return</span> <span class="t-kw">self</span>.labels.shape[<span class="t-num">0</span>]
+train_ds <span class="t-op">=</span> <span class="t-fn">ToyDataset</span>(X_train, y_train)test_ds <span class="t-op">=</span> <span class="t-fn">ToyDataset</span>(X_test, y_test)</code></pre></div>
+<p>The purpose of this custom <code>ToyDataset</code> class is to instantiate a PyTorch <code>DataLoader</code>. But before we get to this step, let’s briefly go over the general structure of the</p>
+<p><code>ToyDataset</code> code. </p>
+<p> In PyTorch, the three main components of a custom <code>Dataset</code> class are the <code>__init__</code> constructor, the <code>__getitem__</code> method, and the <code>__len__</code> method (see listing A.6). In the <code>__init__</code> method, we set up attributes that we can access later in the <code>__getitem__</code> and <code>__len__</code> methods. These could be file paths, file objects, database connectors, and so on. Since we created a tensor dataset that sits in memory, we simply assign <code>X</code> and <code>y</code> to these attributes, which are placeholders for our tensor objects. </p>
+<p> In the <code>__getitem__</code> method, we define instructions for returning exactly one item from the dataset via an <code>index</code>. This refers to the features and the class label corresponding to a single training example or test instance. (The data loader will provide this <code>index</code>, which we will cover shortly.)</p>
+<p> Finally, the <code>__len__</code> method contains instructions for retrieving the length of the dataset. Here, we use the <code>.shape</code> attribute of a tensor to return the number of rows in the feature array. In the case of the training dataset, we have five rows, which we can double-check:</p>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(<span class="t-bi">len</span>(train_ds))</code></pre></div>
+<div class="pdfpage" data-page="293">PDF p. 293</div>
+<p class="listing-title"><span class="no">Listing A.7</span><span class="tl">Instantiating data loaders</span></p>
+<figure><img src="assets/fig-0196.png" alt="" loading="lazy"></figure>
+<p>The result is</p>
+<p><code>5</code></p>
+<p>Now that we’ve defined a PyTorch <code>Dataset</code> class we can use for our toy dataset, we can use PyTorch’s <code>DataLoader</code> class to sample from it, as shown in the following listing.</p>
+<div class="codeblock"><pre><code><span class="t-kw">from</span> <span class="t-bi">torch</span>.utils.data <span class="t-kw">import</span> DataLoader
+<span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)</code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 4 条</summary><ul><li>The ToyDataset instance created earlier serves as input to the data loader.</li><li>Whether or not to shuffle the data</li><li>The number of background processes</li><li>It is not necessary to shuffle a test dataset.</li></ul></details><pre><code>train_loader <span class="t-op">=</span> <span class="t-fn">DataLoader</span>(
+ dataset<span class="t-op">=</span>train_ds,
+ batch_size<span class="t-op">=</span><span class="t-num">2</span>,
+ shuffle<span class="t-op">=</span><span class="t-kw">True</span>,
+ num_workers<span class="t-op">=</span><span class="t-num">0</span>
+)
+test_loader <span class="t-op">=</span> <span class="t-fn">DataLoader</span>(
+ dataset<span class="t-op">=</span>test_ds,
+ batch_size<span class="t-op">=</span><span class="t-num">2</span>,
+ shuffle<span class="t-op">=</span><span class="t-kw">False</span>,
+ num_workers<span class="t-op">=</span><span class="t-num">0</span>
+)</code></pre></div>
+<p>After instantiating the training data loader, we can iterate over it. The iteration over the <code>test_loader</code> works similarly but is omitted for brevity:</p>
+<div class="codeblock"><pre><code><span class="t-kw">for</span> idx, (x, y) <span class="t-kw">in</span> <span class="t-bi">enumerate</span>(train_loader):
+ <span class="t-bi">print</span>(f<span class="t-str">"Batch {idx+1}:"</span>, x, y)</code></pre></div>
+<p>The result is</p>
+<div class="codeblock"><pre><code>Batch <span class="t-num">1</span>: <span class="t-fn">tensor</span>([[<span class="t-op">-</span><span class="t-num">1.2000</span>, <span class="t-num">3.1000</span>],
+ [<span class="t-op">-</span><span class="t-num">0.5000</span>, <span class="t-num">2.6000</span>]]) <span class="t-fn">tensor</span>([<span class="t-num">0</span>, <span class="t-num">0</span>])
+Batch <span class="t-num">2</span>: <span class="t-fn">tensor</span>([[ <span class="t-num">2.3000</span>, <span class="t-op">-</span><span class="t-num">1.1000</span>],
+ [<span class="t-op">-</span><span class="t-num">0.9000</span>, <span class="t-num">2.9000</span>]]) <span class="t-fn">tensor</span>([<span class="t-num">1</span>, <span class="t-num">0</span>])
+Batch <span class="t-num">3</span>: <span class="t-fn">tensor</span>([[ <span class="t-num">2.7000</span>, <span class="t-op">-</span><span class="t-num">1.5000</span>]]) <span class="t-fn">tensor</span>([<span class="t-num">1</span>])</code></pre></div>
+<p>As we can see based on the preceding output, the <code>train_loader</code> iterates over the training dataset, visiting each training example exactly once. This is known as a training epoch. Since we seeded the random number generator using <code>torch.manual_seed(123)</code> here, you should get the exact same shuffling order of training examples. However, if you iterate over the dataset a second time, you will see that the shuffling order will change. This is desired to prevent deep neural networks from getting caught in repetitive update cycles during training.</p>
+<p> We specified a batch size of 2 here, but the third batch only contains a single example. That’s because we have five training examples, and 5 is not evenly divisible by 2.</p>
+<div class="pdfpage" data-page="294">PDF p. 294</div>
+<p class="listing-title"><span class="no">Listing A.8</span><span class="tl">A training loader that drops the last batch</span></p>
+<p>In practice, having a substantially smaller batch as the last batch in a training epoch can disturb the convergence during training. To prevent this, set <code>drop_last=True</code>, which will drop the last batch in each epoch, as shown in the following listing.</p>
+<div class="codeblock"><pre><code>train_loader <span class="t-op">=</span> <span class="t-fn">DataLoader</span>(
+ dataset<span class="t-op">=</span>train_ds,
+ batch_size<span class="t-op">=</span><span class="t-num">2</span>,
+ shuffle<span class="t-op">=</span><span class="t-kw">True</span>,
+ num_workers<span class="t-op">=</span><span class="t-num">0</span>,
+ drop_last<span class="t-op">=</span><span class="t-kw">True</span>
+)</code></pre></div>
+<p>Now, iterating over the training loader, we can see that the last batch is omitted:</p>
+<div class="codeblock"><pre><code><span class="t-kw">for</span> idx, (x, y) <span class="t-kw">in</span> <span class="t-bi">enumerate</span>(train_loader):
+ <span class="t-bi">print</span>(f<span class="t-str">"Batch {idx+1}:"</span>, x, y)</code></pre></div>
+<p>The result is</p>
+<div class="codeblock"><pre><code>Batch <span class="t-num">1</span>: <span class="t-fn">tensor</span>([[<span class="t-op">-</span><span class="t-num">0.9000</span>, <span class="t-num">2.9000</span>],
+ [ <span class="t-num">2.3000</span>, <span class="t-op">-</span><span class="t-num">1.1000</span>]]) <span class="t-fn">tensor</span>([<span class="t-num">0</span>, <span class="t-num">1</span>])
+Batch <span class="t-num">2</span>: <span class="t-fn">tensor</span>([[ <span class="t-num">2.7000</span>, <span class="t-op">-</span><span class="t-num">1.5000</span>],
+ [<span class="t-op">-</span><span class="t-num">0.5000</span>, <span class="t-num">2.6000</span>]]) <span class="t-fn">tensor</span>([<span class="t-num">1</span>, <span class="t-num">0</span>])</code></pre></div>
+<p>Lastly, let’s discuss the setting <code>num_workers=0</code> in the <code>DataLoader</code>. This parameter in PyTorch’s <code>DataLoader</code> function is crucial for parallelizing data loading and preprocessing. When <code>num_workers</code> is set to 0, the data loading will be done in the main process and not in separate worker processes. This might seem unproblematic, but it can lead to significant slowdowns during model training when we train larger networks on a GPU. Instead of focusing solely on the processing of the deep learning model, the CPU must also take time to load and preprocess the data. As a result, the GPU can sit idle while waiting for the CPU to finish these tasks. In contrast, when <code>num_workers</code> is set to a number greater than 0, multiple worker processes are launched to load data in parallel, freeing the main process to focus on training your model and better utilizing your system’s resources (figure A.11).</p>
+<p> However, if we are working with very small datasets, setting <code>num_workers</code> to 1 or larger may not be necessary since the total training time takes only fractions of a second anyway. So, if you are working with tiny datasets or interactive environments such as Jupyter notebooks, increasing <code>num_workers</code> may not provide any noticeable speedup. It may, in fact, lead to some problems. One potential problem is the overhead of spinning up multiple worker processes, which could take longer than the actual data loading when your dataset is small. </p>
+<p> Furthermore, for Jupyter notebooks, setting <code>num_workers</code> to greater than 0 can sometimes lead to problems related to the sharing of resources between different processes, resulting in errors or notebook crashes. Therefore, it’s essential to understand</p>
+<div class="pdfpage" data-page="295">PDF p. 295</div>
+<figure><img src="assets/fig-0197.png" alt="" loading="lazy"><figcaption>Figure A.11 Loading data without multiple workers (setting num_workers=0) will create a data loading  bottleneck where the model sits idle until the next batch is loaded (left). If multiple workers are enabled, the data  loader can queue up the next batch in the background (right).</figcaption></figure>
+<p class="listing-title"><span class="no">Listing A.9</span><span class="tl">Neural network training in PyTorch</span></p>
+<figure><img src="assets/fig-0198.png" alt="" loading="lazy"></figure>
+<p>the tradeoff and make a calculated decision on setting the <code>num_workers</code> parameter. When used correctly, it can be a beneficial tool but should be adapted to your specific dataset size and computational environment for optimal results.</p>
+<p> In my experience, setting <code>num_workers=4</code> usually leads to optimal performance on many real-world datasets, but optimal settings depend on your hardware and the code used for loading a training example defined in the <code>Dataset</code> class.</p>
+<h2 id="a-7-a-typical-training-loop">A.7 A typical training loop<a class="anchor" href="#a-7-a-typical-training-loop">#</a></h2>
+<p>Let’s now train a neural network on the toy dataset. The following listing shows the training code.</p>
+<div class="codeblock"><pre><code><span class="t-kw">import</span> <span class="t-bi">torch</span>.<span class="t-bi">nn</span>.functional <span class="t-kw">as</span> F</code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 2 条</summary><ul><li>The dataset has two features and two classes.</li><li>The optimizer needs to know which parameters</li></ul></details><pre><code><span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)model <span class="t-op">=</span> <span class="t-fn">NeuralNetwork</span>(num_inputs<span class="t-op">=</span><span class="t-num">2</span>, num_outputs<span class="t-op">=</span><span class="t-num">2</span>)
+optimizer <span class="t-op">=</span> <span class="t-bi">torch</span>.optim.<span class="t-fn">SGD</span>(
+ model.<span class="t-fn">parameters</span>(), lr<span class="t-op">=</span><span class="t-num">0.5</span>
+)
+num_epochs <span class="t-op">=</span> <span class="t-num">3for</span> epoch <span class="t-kw">in</span> <span class="t-bi">range</span>(num_epochs): to optimize.
+
+ model.<span class="t-fn">train</span>()</code></pre></div>
+<div class="pdfpage" data-page="296">PDF p. 296</div>
+<figure><img src="assets/fig-0199.png" alt="" loading="lazy"></figure>
+<div class="codeblock"><pre><code> <span class="t-kw">for</span> batch_idx, (features, labels) <span class="t-kw">in</span> <span class="t-bi">enumerate</span>(train_loader):
+ logits <span class="t-op">=</span> <span class="t-fn">model</span>(features)
+</code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 4 条</summary><ul><li>Sets the gradients from the previous round to 0 to prevent unintended gradient accumulation</li><li>Computes the gradients</li><li>The optimizer uses the gradients of the loss</li><li>to update the model parameters. given the model parameters</li></ul></details><pre><code> loss <span class="t-op">=</span> F.<span class="t-fn">cross_entropy</span>(logits, labels)
+
+ optimizer.<span class="t-fn">zero_grad</span>()
+ loss.<span class="t-fn">backward</span>()
+ optimizer.<span class="t-fn">step</span>()
+
+ <span class="t-com">### LOGGING
+ print(f"Epoch: {epoch+1:03d}/{num_epochs:03d}"
+ f" | Batch {batch_idx:03d}/{len(train_loader):03d}"
+ f" | Train Loss: {loss:.2f}")
+ model.eval()
+ # Insert optional model evaluation code</span></code></pre></div>
+<p>Running this code yields the following outputs:</p>
+<div class="codeblock"><pre><code>Epoch: <span class="t-num">001</span><span class="t-op">/</span><span class="t-num">003</span> <span class="t-op">|</span> Batch <span class="t-num">000</span><span class="t-op">/</span><span class="t-num">002</span> <span class="t-op">|</span> Train Loss: <span class="t-num">0.75</span>
+Epoch: <span class="t-num">001</span><span class="t-op">/</span><span class="t-num">003</span> <span class="t-op">|</span> Batch <span class="t-num">001</span><span class="t-op">/</span><span class="t-num">002</span> <span class="t-op">|</span> Train Loss: <span class="t-num">0.65</span>
+Epoch: <span class="t-num">002</span><span class="t-op">/</span><span class="t-num">003</span> <span class="t-op">|</span> Batch <span class="t-num">000</span><span class="t-op">/</span><span class="t-num">002</span> <span class="t-op">|</span> Train Loss: <span class="t-num">0.44</span>
+Epoch: <span class="t-num">002</span><span class="t-op">/</span><span class="t-num">003</span> <span class="t-op">|</span> Batch <span class="t-num">001</span><span class="t-op">/</span><span class="t-num">002</span> <span class="t-op">|</span> Trainl Loss: <span class="t-num">0.13</span>
+Epoch: <span class="t-num">003</span><span class="t-op">/</span><span class="t-num">003</span> <span class="t-op">|</span> Batch <span class="t-num">000</span><span class="t-op">/</span><span class="t-num">002</span> <span class="t-op">|</span> Train Loss: <span class="t-num">0.03</span>
+Epoch: <span class="t-num">003</span><span class="t-op">/</span><span class="t-num">003</span> <span class="t-op">|</span> Batch <span class="t-num">001</span><span class="t-op">/</span><span class="t-num">002</span> <span class="t-op">|</span> Train Loss: <span class="t-num">0.00</span></code></pre></div>
+<p>As we can see, the loss reaches 0 after three epochs, a sign that the model converged on the training set. Here, we initialize a model with two inputs and two outputs because our toy dataset has two input features and two class labels to predict. We used a stochastic gradient descent (<code>SGD</code>) optimizer with a learning rate (<code>lr</code>) of 0.5. The learning rate is a hyperparameter, meaning it’s a tunable setting that we must experiment with based on observing the loss. Ideally, we want to choose a learning rate such that the loss converges after a certain number of epochs—the number of epochs is another hyperparameter to choose. </p>
+<h3 id="exercise-a-3">Exercise A.3<a class="anchor" href="#exercise-a-3">#</a></h3>
+<div class="plainbox"><p>How many parameters does the neural network introduced in listing A.9 have?</p></div>
+<p>In practice, we often use a third dataset, a so-called validation dataset, to find the optimal hyperparameter settings. A validation dataset is similar to a test set. However, while we only want to use a test set precisely once to avoid biasing the evaluation, we usually use the validation set multiple times to tweak the model settings. </p>
+<p> We also introduced new settings called <code>model.train()</code> and <code>model.eval()</code>. As these names imply, these settings are used to put the model into a training and an evaluation mode. This is necessary for components that behave differently during training and inference, such as <em>dropout</em> or <em>batch normalization</em> layers. Since we don’t have dropout or other components in our <code>NeuralNetwork</code> class that are affected by these settings, using <code>model.train()</code> and <code>model.eval()</code> is redundant in our preceding code. However, it’s best practice to include them anyway to avoid unexpected behaviors when we change the model architecture or reuse the code to train a different model.</p>
+<div class="pdfpage" data-page="297">PDF p. 297</div>
+<p> As discussed earlier, we pass the logits directly into the <code>cross_entropy</code> loss function, which will apply the <code>softmax</code> function internally for efficiency and numerical stability reasons. Then, calling <code>loss.backward()</code> will calculate the gradients in the computation graph that PyTorch constructed in the background. The <code>optimizer.step()</code> method will use the gradients to update the model parameters to minimize the loss. In the case of the SGD optimizer, this means multiplying the gradients with the learning rate and adding the scaled negative gradient to the parameters. </p>
+<aside class="callout note"><p class="lab">NOTE</p><p>To prevent undesired gradient accumulation, it is important to include an <code>optimizer.zero_grad()</code> call in each update round to reset the gradients to 0. Otherwise, the gradients will accumulate, which may be undesired.</p></aside>
+<p>After we have trained the model, we can use it to make predictions:</p>
+<div class="codeblock"><pre><code>model.<span class="t-fn">eval</span>()
+<span class="t-kw">with</span> <span class="t-bi">torch</span>.<span class="t-fn">no_grad</span>():
+ outputs <span class="t-op">=</span> <span class="t-fn">model</span>(X_train)
+<span class="t-bi">print</span>(outputs)</code></pre></div>
+<p>The results are </p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[ <span class="t-num">2.8569</span>, <span class="t-op">-</span><span class="t-num">4.1618</span>],
+ [ <span class="t-num">2.5382</span>, <span class="t-op">-</span><span class="t-num">3.7548</span>],
+ [ <span class="t-num">2.0944</span>, <span class="t-op">-</span><span class="t-num">3.1820</span>],
+ [<span class="t-op">-</span><span class="t-num">1.4814</span>, <span class="t-num">1.4816</span>],
+ [<span class="t-op">-</span><span class="t-num">1.7176</span>, <span class="t-num">1.7342</span>]])</code></pre></div>
+<p>To obtain the class membership probabilities, we can then use PyTorch’s <code>softmax</code> function:</p>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.<span class="t-fn">set_printoptions</span>(sci_mode<span class="t-op">=</span><span class="t-kw">False</span>)
+probas <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">softmax</span>(outputs, dim<span class="t-op">=</span><span class="t-num">1</span>)
+<span class="t-bi">print</span>(probas)</code></pre></div>
+<p>This outputs</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[ <span class="t-num">0.9991</span>, <span class="t-num">0.0009</span>],
+ [ <span class="t-num">0.9982</span>, <span class="t-num">0.0018</span>],
+ [ <span class="t-num">0.9949</span>, <span class="t-num">0.0051</span>],
+ [ <span class="t-num">0.0491</span>, <span class="t-num">0.9509</span>],
+ [ <span class="t-num">0.0307</span>, <span class="t-num">0.9693</span>]])</code></pre></div>
+<p>Let’s consider the first row in the preceding code output. Here, the first value (column) means that the training example has a 99.91% probability of belonging to class 0 and a 0.09% probability of belonging to class 1. (The <code>set_printoptions</code> call is used here to make the outputs more legible.)</p>
+<div class="pdfpage" data-page="298">PDF p. 298</div>
+<p> We can convert these values into class label predictions using PyTorch’s <code>argmax</code> function, which returns the index position of the highest value in each row if we set <code>dim=1</code> (setting <code>dim=0</code> would return the highest value in each column instead):</p>
+<div class="codeblock"><pre><code>predictions <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">argmax</span>(probas, dim<span class="t-op">=</span><span class="t-num">1</span>)
+<span class="t-bi">print</span>(predictions)</code></pre></div>
+<p>This prints</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([<span class="t-num">0</span>, <span class="t-num">0</span>, <span class="t-num">0</span>, <span class="t-num">1</span>, <span class="t-num">1</span>])</code></pre></div>
+<p>Note that it is unnecessary to compute <code>softmax</code> probabilities to obtain the class labels. We could also apply the <code>argmax</code> function to the logits (outputs) directly:</p>
+<div class="codeblock"><pre><code>predictions <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">argmax</span>(outputs, dim<span class="t-op">=</span><span class="t-num">1</span>)
+<span class="t-bi">print</span>(predictions)</code></pre></div>
+<p>The output is</p>
+<p><code>tensor([0, 0, 0, 1, 1])</code></p>
+<p>Here, we computed the predicted labels for the training dataset. Since the training dataset is relatively small, we could compare it to the true training labels by eye and see that the model is 100% correct. We can double-check this using the <code>==</code> comparison operator:</p>
+<div class="codeblock"><pre><code>predictions <span class="t-op">==</span> y_train</code></pre></div>
+<p>The results are</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([<span class="t-kw">True</span>, <span class="t-kw">True</span>, <span class="t-kw">True</span>, <span class="t-kw">True</span>, <span class="t-kw">True</span>])</code></pre></div>
+<p>Using <code>torch.sum</code>, we can count the number of correct predictions:</p>
+<p><code>torch.sum(predictions == y_train)</code></p>
+<p>The output is</p>
+<div class="codeblock"><pre><code><span class="t-num">5</span></code></pre></div>
+<p>Since the dataset consists of five training examples, we have five out of five predictions that are correct, which has 5/5 × 100% = 100% prediction accuracy.</p>
+<p> To generalize the computation of the prediction accuracy, let’s implement a <code>compute_accuracy</code> function, as shown in the following listing.</p><div class="colophon"><p>由 <code>pdf2html2.py</code> 从 <code>bllm2.pdf</code> 转换。插图为原书矢量图按区域渲染的截图，代码块带语法高亮，连字符断词已按全书词表还原。</p></div>
+</main>
+<nav class="chapnav" aria-label="Chapter navigation"><div class="chapnav-inner">
+<a class="prev" href="13-fine-tuning-to-follow-instructions.html"><span class="lbl">上一章</span><span class="nm">Fine-tuning to follow instructions</span></a><span class="none"></span>
+</div></nav>
+<script src="app.js"></script>
+</body>
+</html>

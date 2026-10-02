@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>4.2 Loading a pretrained model · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-29.html">
+<link rel="next" href="page-31.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 30 页 / 共 108 页</span></div>
+<h2 id="h2-loading-a-pretrained-model"><span class="num">4.2</span>Loading a pretrained model</h2>
+<p>Before we begin implementing inference-time-scaling methods, we’ll load the pretrained base model and tokenizer. The following code is similar to the code we used in the previous chapter. </p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">import</span> torch
+<span class="tok-kw">from</span> reasoning_from_scratch.ch02 <span class="tok-kw">import</span> get_device
+<span class="tok-kw">from</span> reasoning_from_scratch.ch03 <span class="tok-kw">import</span> (
+     load_model_and_tokenizer
+)
+device = get_device<span class="tok-kw">()</span>
+device = torch.device<span class="tok-kw">(</span>"cpu"<span class="tok-kw">)</span>
+model, tokenizer = load_model_and_tokenizer<span class="tok-kw">(</span>
+    which_model="base",
+    device=device,
+    use_compile=<span class="tok-kw">False</span>
+<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 4.1</span>Load tokenizer and base model</figcaption></figure>
+<p>Since the code in this chapter is cheap to run, I recommend running it on the <code>"cpu"</code> device the first time to get the same results that are shown in this chapter (running it on a GPU can subtly alter the results).</p>
+<p>Let’s try the model on a prompt from the MATH-500 dataset, which we worked with in the previous chapter:</p>
+<pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.ch03 <span class="tok-kw">import</span> render_prompt
+raw_prompt = (
+    "Half the value of $3x-<span class="tok-fn">9</span>$ <span class="tok-kw">is</span> $x+<span class="tok-fn">37</span>$. "
+    "What <span class="tok-kw">is</span> the value of $x$?"
+)
+prompt = render_prompt<span class="tok-kw">(</span>raw_prompt<span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>prompt<span class="tok-kw">)</span></code></pre>
+<p>The formatted prompt is as follows:</p>
+<pre><code class="language-python">You are a helpful math assistant.
+Answer the question and write the final result on a new line as:
+\boxed{ANSWER}
+Question:
+Half the value of $3x-9$ is $x+37$. What is the value of $x$?
+Answer:</code></pre>
+<p>We can use the preceding prompt as input to the <code>generate_text_stream_concat</code> function we defined in the previous chapter. </p>
+<p>We want to compare several inference-time-scaling strategies, so we’ll make a small modification to the text generation wrapper that will let us swap in different generation functions and settings without changing the surrounding prompt-handling and output code. The changes are highlighted in the code comments in the following listing.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.ch02 <span class="tok-kw">import</span> generate_text_basic_stream_cache</code></pre><figcaption><span class="lbl">Listing 4.2</span>Modified generate_text_stream_concat function</figcaption></figure>
+<pre><code class="language-python"><span class="tok-kw">def</span> generate_text_stream_concat_flex(
+    model, tokenizer, prompt, device, max_new_tokens,
+    verbose=<span class="tok-kw">False</span>,
+    generate_func=<span class="tok-kw">None</span>,</code></pre>
+<pre><code class="language-python">    **generate_kwargs</code></pre>
+<pre><code class="language-python">):
+    <span class="tok-kw">if</span> generate_func <span class="tok-kw">is</span> <span class="tok-kw">None</span>:
+        generate_func = generate_text_basic_stream_cache
+    input_ids = torch.tensor<span class="tok-kw">(</span>
+        tokenizer.encode<span class="tok-kw">(</span>prompt<span class="tok-kw">)</span>, device=device
+        <span class="tok-kw">)</span>.unsqueeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>
+    generated_ids = []
+    <span class="tok-kw">for</span> token <span class="tok-kw">in</span> generate_func<span class="tok-kw">(</span>
+        model=model,
+        token_ids=input_ids,
+        max_new_tokens=max_new_tokens,
+        eos_token_id=tokenizer.eos_token_id,
+        **generate_kwargs,
+    <span class="tok-kw">)</span>:
+        next_token_id = token.squeeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>
+        generated_ids.append<span class="tok-kw">(</span>next_token_id.item<span class="tok-kw">())</span>
+        <span class="tok-kw">if</span> verbose:
+            print<span class="tok-kw">(</span>
+                tokenizer.decode<span class="tok-kw">(</span>next_token_id.tolist<span class="tok-kw">())</span>,
+                end="",
+                flush=<span class="tok-kw">True</span>
+            <span class="tok-kw">)</span>
+    <span class="tok-kw">return</span> tokenizer.decode<span class="tok-kw">(</span>generated_ids<span class="tok-kw">)</span></code></pre>
+<p>In short, the preceding <code>generate_text_stream_concat_flex</code> function is similar to the <code>generate_text_stream_concat</code> function from the previous chapter, except that we can now pass the text generation function (such as <code>generate_text_basic_stream_cache</code>) as an argument instead of hardcoding it. The practical benefit is that the outer wrapper can keep handling the prompt encoding, streaming, and decoding in one place, while the inner generation step can be replaced with different decoding strategies. This makes it easier to compare methods fairly, because we are changing only the generation logic rather than the entire pipeline. In future sections, we’ll swap the <code>generate_ text_basic_stream_cache</code> function for more advanced functions.</p>
+<p>The use of the <code>generate_text_basic_stream_cache</code> function is also similar to before, except that we can now pass the function explicitly:</p>
+<pre><code class="language-python">response = generate_text_stream_concat_flex<span class="tok-kw">(</span>
+    model, tokenizer, prompt, device,
+    max_new_tokens=<span class="tok-fn">2048</span>, verbose=<span class="tok-kw">True</span>,
+    generate_func=generate_text_basic_stream_cache
+<span class="tok-kw">)</span></code></pre>
+<p>This is the generated output:</p>
+<pre><code class="language-python">\boxed{20}</code></pre>
+<p>Note that this answer is wrong; the correct solution is 83. In the remainder of this chapter and the next, we’ll implement inference-time-scaling methods to get the model to generate the correct answer.</p>
+<nav class="pager"><a class="prev" href="page-29.html" rel="prev"><span class="dir">上一页</span><span class="t">Improving reasoning with inference-time scaling</span></a><a class="next" href="page-31.html" rel="next"><span class="dir">下一页</span><span class="t">4.3 Generating better responses with chain-of-thought prompting</span></a></nav>
+</main>
+</body>
+</html>

@@ -1,0 +1,933 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="generator" content="pdf2html2.py">
+<title>Fine-tuning to follow instructions · Build a Large Language Model (From Scratch)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f5f8f'/%3E%3Cpath d='M9 8h9a4.5 4.5 0 0 1 0 9H9zm0 9h9a4.5 4.5 0 0 1 0 9H9z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="assets/detail.css">
+<script>(function(){try{var t=localStorage.getItem('pdf2html-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn" href="index.html" title="Contents">&#9776;</a>
+  <a class="brand" href="index.html">Fine-tuning to follow instructions</a>
+  <button class="btn" id="themeToggle" aria-label="Toggle dark mode">&#9788;</button>
+</header>
+<main id="main">
+<details class="toc"><summary>本章目录</summary><ul><li class="l2"><a href="#this-chapter-covers-7">This chapter covers</a></li><li class="l2"><a href="#introduction-to-instruction-fine-tuning">7.1 Introduction to instruction fine-tuning</a></li><li class="l2"><a href="#preparing-a-dataset-for-supervised-instruction-fine-tuning">7.2 Preparing a dataset for supervised instruction fine-tuning</a></li><li class="l3"><a href="#exercise-7-1-changing-prompt-styles">Exercise 7.1 Changing prompt styles</a></li><li class="l2"><a href="#organizing-data-into-training-batches">7.3 Organizing data into training batches</a></li><li class="l3"><a href="#exercise-7-2-instruction-and-input-masking">Exercise 7.2 Instruction and input masking</a></li><li class="l2"><a href="#creating-data-loaders-for-an-instruction-dataset">7.4 Creating data loaders for an instruction dataset</a></li><li class="l2"><a href="#loading-a-pretrained-llm">7.5 Loading a pretrained LLM</a></li><li class="l2"><a href="#fine-tuning-the-llm-on-instruction-data">7.6 Fine-tuning the LLM on instruction data</a></li><li class="l3"><a href="#dealing-with-hardware-limitations">Dealing with hardware limitations</a></li><li class="l3"><a href="#exercise-7-3-fine-tuning-on-the-original-alpaca-dataset">Exercise 7.3 Fine-tuning on the original Alpaca dataset</a></li><li class="l2"><a href="#extracting-and-saving-responses">7.7 Extracting and saving responses</a></li><li class="l2"><a href="#instruction">### Instruction:</a></li><li class="l2"><a href="#input">### Input:</a></li><li class="l2"><a href="#correct-response">Correct response:</a></li><li class="l2"><a href="#model-response">Model response:</a></li><li class="l2"><a href="#instruction-2">### Instruction:</a></li><li class="l2"><a href="#correct-response-2">Correct response:</a></li><li class="l2"><a href="#model-response-2">Model response:</a></li><li class="l2"><a href="#instruction-3">### Instruction:</a></li><li class="l2"><a href="#correct-response-3">Correct response:</a></li><li class="l2"><a href="#model-response-3">Model response:</a></li><li class="l3"><a href="#conversational-performance">Conversational performance</a></li><li class="l2"><a href="#evaluating-the-fine-tuned-llm">7.8 Evaluating the fine-tuned LLM</a></li><li class="l3"><a href="#using-larger-llms-via-web-apis">Using larger LLMs via web APIs</a></li><li class="l3"><a href="#alternative-ollama-models">Alternative Ollama models</a></li><li class="l3"><a href="#running-the-code-in-a-new-python-session">Running the code in a new Python session</a></li><li class="l2"><a href="#dataset-response">Dataset response:</a></li><li class="l2"><a href="#model-response-4">Model response:</a></li><li class="l2"><a href="#score">Score:</a></li><li class="l2"><a href="#dataset-response-2">Dataset response:</a></li><li class="l2"><a href="#model-response-5">Model response:</a></li><li class="l2"><a href="#score-2">Score:</a></li><li class="l2"><a href="#dataset-response-3">Dataset response:</a></li><li class="l2"><a href="#model-response-6">Model response:</a></li><li class="l2"><a href="#score-3">Score:</a></li><li class="l3"><a href="#exercise-7-4-parameter-efficient-fine-tuning-with-lora">Exercise 7.4 Parameter-efficient fine-tuning with LoRA</a></li><li class="l2"><a href="#conclusions">7.9 Conclusions</a></li><li class="l3"><a href="#what-s-next">7.9.1 What’s next?</a></li><li class="l3"><a href="#staying-up-to-date-in-a-fast-moving-field">7.9.2 Staying up to date in a fast-moving field</a></li><li class="l3"><a href="#final-words">7.9.3 Final words</a></li><li class="l2"><a href="#summary-7">Summary</a></li></ul></details><h1 id="fine-tuning-to-follow-instructions">Fine-tuning to follow instructions<a class="anchor" href="#fine-tuning-to-follow-instructions">#</a></h1>
+<h2 id="this-chapter-covers-7">This chapter covers<a class="anchor" href="#this-chapter-covers-7">#</a></h2>
+<p>Previously, we implemented the LLM architecture, carried out pretraining, and imported pretrained weights from external sources into our model. Then, we focused on fine-tuning our LLM for a specific classification task: distinguishing between spam and non-spam text messages. Now we’ll implement the process for fine-tuning an LLM to follow human instructions, as illustrated in figure 7.1. Instruction fine-tuning is one of the main techniques behind developing LLMs for chatbot applications, personal assistants, and other conversational tasks.</p>
+<p><strong>204</strong></p>
+<div class="pdfpage" data-page="226">PDF p. 226</div>
+<figure><img src="assets/fig-0149.png" alt="" loading="lazy"><figcaption>Figure 7.1 The three main stages of coding an LLM. This chapter focuses on step 9 of stage 3: fine-tuning a  pretrained LLM to follow human instructions.</figcaption></figure>
+<p>Figure 7.1 shows two main ways of fine-tuning an LLM: fine-tuning for classification (step 8) and fine-tuning an LLM to follow instructions (step 9). We implemented step 8 in chapter 6. Now we will fine-tune an LLM using an <em>instruction dataset</em>.</p>
+<h2 id="introduction-to-instruction-fine-tuning">7.1 Introduction to instruction fine-tuning<a class="anchor" href="#introduction-to-instruction-fine-tuning">#</a></h2>
+<p>We now know that pretraining an LLM involves a training procedure where it learns to generate one word at a time. The resulting pretrained LLM is capable of <em>text comple</em><em>tion</em>, meaning it can finish sentences or write text paragraphs given a fragment as input. However, pretrained LLMs often struggle with specific instructions, such as “Fix the grammar in this text” or “Convert this text into passive voice.” Later, we will examine a concrete example where we load the pretrained LLM as the basis for <em>instruction</em> <em>fine-tuning</em>, also known as <em>supervised instruction fine-tuning</em>.</p>
+<p> Here, we focus on improving the LLM’s ability to follow such instructions and generate a desired response, as illustrated in figure 7.2. Preparing the dataset is a key aspect of instruction fine-tuning. Then we’ll complete all the steps in the three stages of the instruction fine-tuning process, beginning with the dataset preparation, as shown in figure 7.3.</p>
+<div class="pdfpage" data-page="227">PDF p. 227</div>
+<figure><img src="assets/fig-0151.png" alt="" loading="lazy"></figure>
+<figure><img src="assets/fig-0150.png" alt="" loading="lazy"><figcaption>Figure 7.3 The three-stage process for instruction fine-tuning an LLM. Stage 1 involves  dataset preparation, stage 2 focuses on model setup and fine-tuning, and stage 3 covers  the evaluation of the model. We will begin with step 1 of stage 1: downloading and  formatting the dataset.</figcaption></figure>
+<div class="pdfpage" data-page="228">PDF p. 228</div>
+<p class="listing-title"><span class="no">Listing 7.1</span><span class="tl">Downloading the dataset</span></p>
+<h2 id="preparing-a-dataset-for-supervised-instruction-fine-tuning">7.2 Preparing a dataset for supervised instruction  fine-tuning<a class="anchor" href="#preparing-a-dataset-for-supervised-instruction-fine-tuning">#</a></h2>
+<p>Let’s download and format the instruction dataset for instruction fine-tuning a pretrained LLM. The dataset consists of 1,100 <em>instruction–response pairs</em> similar to those in figure 7.2. This dataset was created specifically for this book, but interested readers can find alternative, publicly available instruction datasets in appendix B.</p>
+<p> The following code implements and executes a function to download this dataset, which is a relatively small file (only 204 KB) in JSON format. JSON, or JavaScript Object Notation, mirrors the structure of Python dictionaries, providing a simple structure for data interchange that is both human readable and machine friendly.</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>Skips download if file was already downloaded</li></ul></details><pre><code><span class="t-kw">import</span> json
+<span class="t-kw">import</span> os
+<span class="t-kw">import</span> urllib
+<span class="t-kw">def</span> <span class="t-fn">download_and_load_file</span>(file_path, url):
+ <span class="t-kw">if</span> <span class="t-kw">not</span> os.path.<span class="t-fn">exists</span>(file_path):
+ <span class="t-kw">with</span> urllib.request.<span class="t-fn">urlopen</span>(url) <span class="t-kw">as</span> response:
+ text_data <span class="t-op">=</span> response.<span class="t-fn">read</span>().<span class="t-fn">decode</span>(<span class="t-str">"utf-8"</span>)
+ <span class="t-kw">with</span> <span class="t-bi">open</span>(file_path, <span class="t-str">"w"</span>, encoding<span class="t-op">=</span><span class="t-str">"utf-8"</span>) <span class="t-kw">as</span> file:
+ file.<span class="t-fn">write</span>(text_data)
+ <span class="t-kw">else</span>:
+ <span class="t-kw">with</span> <span class="t-bi">open</span>(file_path, <span class="t-str">"r"</span>, encoding<span class="t-op">=</span><span class="t-str">"utf-8"</span>) <span class="t-kw">as</span> file:
+ text_data <span class="t-op">=</span> file.<span class="t-fn">read</span>()
+ <span class="t-kw">with</span> <span class="t-bi">open</span>(file_path, <span class="t-str">"r"</span>) <span class="t-kw">as</span> file:
+ data <span class="t-op">=</span> json.<span class="t-fn">load</span>(file)
+ <span class="t-kw">return</span> data
+file_path <span class="t-op">=</span> <span class="t-str">"instruction-data.json"</span>
+url <span class="t-op">=</span> (
+ <span class="t-str">"https://raw.githubusercontent.com/rasbt/LLMs-from-scratch"</span>
+ <span class="t-str">"/main/ch07/01_main-chapter-code/instruction-data.json"</span>
+)</code></pre></div>
+<div class="codeblock"><pre><code>data <span class="t-op">=</span> <span class="t-fn">download_and_load_file</span>(file_path, url)
+<span class="t-bi">print</span>(<span class="t-str">"Number of entries:"</span>, <span class="t-bi">len</span>(data))</code></pre></div>
+<p>The output of executing the preceding code is</p>
+<div class="codeblock"><pre><code>Number of entries: <span class="t-num">1100</span></code></pre></div>
+<p>The <code>data</code> list that we loaded from the JSON file contains the 1,100 entries of the instruction dataset. Let’s print one of the entries to see how each entry is structured:</p>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(<span class="t-str">"Example entry:\n"</span>, data[<span class="t-num">50</span>])</code></pre></div>
+<div class="pdfpage" data-page="229">PDF p. 229</div>
+<figure><img src="assets/fig-0152.png" alt="" loading="lazy"><figcaption>Figure 7.4 Comparison of prompt styles for instruction fine-tuning in LLMs. The Alpaca style (left) uses a  structured format with defined sections for instruction, input, and response, while the Phi-3 style (right) employs  a simpler format with designated &lt;|user|&gt; and &lt;|assistant|&gt; tokens.</figcaption></figure>
+<p>The content of the example entry is </p>
+<div class="codeblock"><pre><code>Example entry:
+ {<span class="t-str">'instruction'</span>: <span class="t-str">'Identify the correct spelling of the following word.'</span>,
+ <span class="t-str">'input'</span>: <span class="t-str">'Ocassion'</span>, <span class="t-str">'output'</span>: <span class="t-str">"The correct spelling is 'Occasion.'"</span>}</code></pre></div>
+<p>As we can see, the example entries are Python dictionary objects containing an <code>'instruction'</code>, <code>'input'</code>, and <code>'output'</code>. Let’s take a look at another example:</p>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(<span class="t-str">"Another example entry:\n"</span>, data[<span class="t-num">999</span>])</code></pre></div>
+<p>Based on the contents of this entry, the <code>'input'</code> field may occasionally be empty:</p>
+<div class="codeblock"><pre><code>Another example entry:
+ {<span class="t-str">'instruction'</span>: <span class="t-str">"What is an antonym of 'complicated'?"</span>,
+ <span class="t-str">'input'</span>: <span class="t-str">''</span>,
+ <span class="t-str">'output'</span>: <span class="t-str">"An antonym of 'complicated' is 'simple'."</span>}</code></pre></div>
+<p>Instruction fine-tuning involves training a model on a dataset where the input-output pairs, like those we extracted from the JSON file, are explicitly provided. There are various methods to format these entries for LLMs. Figure 7.4 illustrates two different</p>
+<div class="pdfpage" data-page="230">PDF p. 230</div>
+<p class="listing-title"><span class="no">Listing 7.2</span><span class="tl">Implementing the prompt formatting function</span></p>
+<p>example formats, often referred to as <em>prompt styles</em>, used in the training of notable LLMs such as Alpaca and Phi-3. </p>
+<p> Alpaca was one of the early LLMs to publicly detail its instruction fine-tuning process. Phi-3, developed by Microsoft, is included to demonstrate the diversity in prompt styles. The rest of this chapter uses the Alpaca prompt style since it is one of the most popular ones, largely because it helped define the original approach to fine-tuning.</p>
+<h3 id="exercise-7-1-changing-prompt-styles">Exercise 7.1 Changing prompt styles <a class="anchor" href="#exercise-7-1-changing-prompt-styles">#</a></h3>
+<div class="plainbox"><p>After fine-tuning the model with the Alpaca prompt style, try the Phi-3 prompt style</p><p>shown in figure 7.4 and observe whether it affects the response quality of the model.</p></div>
+<p>Let’s define a <code>format_input</code> function that we can use to convert the entries in the <code>data</code> list into the Alpaca-style input format. </p>
+<div class="codeblock"><pre><code><span class="t-kw">def</span> <span class="t-fn">format_input</span>(entry):
+ instruction_text <span class="t-op">=</span> (
+ f<span class="t-str">"Below is an instruction that describes a task. "</span>
+ f<span class="t-str">"Write a response that appropriately completes the request."</span>
+ f<span class="t-str">"\n\n### Instruction:\n{entry['instruction']}"</span>
+ )
+
+ input_text <span class="t-op">=</span> (
+ f<span class="t-str">"\n\n### Input:\n{entry['input']}"</span> <span class="t-kw">if</span> entry[<span class="t-str">"input"</span>] <span class="t-kw">else</span> <span class="t-str">""</span>
+ )
+ <span class="t-kw">return</span> instruction_text <span class="t-op">+</span> input_text</code></pre></div>
+<p>This <code>format_input</code> function takes a dictionary <code>entry</code> as input and constructs a formatted string. Let’s test it to dataset entry <code>data[50]</code>, which we looked at earlier:</p>
+<div class="codeblock"><pre><code>model_input <span class="t-op">=</span> <span class="t-fn">format_input</span>(data[<span class="t-num">50</span>])
+desired_response <span class="t-op">=</span> f<span class="t-str">"\n\n### Response:\n{data[50]['output']}"</span>
+<span class="t-bi">print</span>(model_input <span class="t-op">+</span> desired_response)</code></pre></div>
+<p>The formatted input looks like as follows:</p>
+<div class="codeblock"><pre><code>Below <span class="t-kw">is</span> an instruction that describes a task. Write a response that
+appropriately completes the request.
+<span class="t-com">### Instruction:
+Identify the correct spelling of the following word.
+### Input:
+Ocassion
+### Response:
+The correct spelling is 'Occasion.'</span></code></pre></div>
+<div class="pdfpage" data-page="231">PDF p. 231</div>
+<p class="listing-title">Listing 7.3</p>
+<figure><img src="assets/fig-0153.png" alt="" loading="lazy"></figure>
+<p class="listing-title">Partitioning the dataset</p>
+<p>Note that the <code>format_input</code> skips the optional <code>###</code> <code>Input:</code> section if the <code>'input'</code> field is empty, which we can test out by applying the <code>format_input</code> function to entry <code>data[999]</code> that we inspected earlier:</p>
+<div class="codeblock"><pre><code>model_input <span class="t-op">=</span> <span class="t-fn">format_input</span>(data[<span class="t-num">999</span>])
+desired_response <span class="t-op">=</span> f<span class="t-str">"\n\n### Response:\n{data[999]['output']}"</span>
+<span class="t-bi">print</span>(model_input <span class="t-op">+</span> desired_response)</code></pre></div>
+<p>The output shows that entries with an empty <code>'input'</code> field don’t contain an <code>###</code> <code>Input:</code> section in the formatted input:</p>
+<div class="codeblock"><pre><code>Below <span class="t-kw">is</span> an instruction that describes a task. Write a response that
+appropriately completes the request.
+<span class="t-com">### Instruction:
+What is an antonym of 'complicated'?
+### Response:
+An antonym of 'complicated' is 'simple'.</span></code></pre></div>
+<p>Before we move on to setting up the PyTorch data loaders in the next section, let’s divide the dataset into training, validation, and test sets analogous to what we have done with the spam classification dataset in the previous chapter. The following listing shows how we calculate the portions.</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 3 条</summary><ul><li>Use 85% of the data for training</li><li>Use 10% for testing</li><li>Use remaining 5% for validation</li></ul></details><pre><code>train_portion <span class="t-op">=</span> <span class="t-bi">int</span>(<span class="t-bi">len</span>(data) <span class="t-op">*</span> <span class="t-num">0.85</span>) test_portion <span class="t-op">=</span> <span class="t-bi">int</span>(<span class="t-bi">len</span>(data) <span class="t-op">*</span> <span class="t-num">0.1</span>)
+val_portion <span class="t-op">=</span> <span class="t-bi">len</span>(data) <span class="t-op">-</span> train_portion <span class="t-op">-</span> test_portion
+train_data <span class="t-op">=</span> data[:train_portion]
+test_data <span class="t-op">=</span> data[train_portion:train_portion <span class="t-op">+</span> test_portion]
+val_data <span class="t-op">=</span> data[train_portion <span class="t-op">+</span> test_portion:]
+<span class="t-bi">print</span>(<span class="t-str">"Training set length:"</span>, <span class="t-bi">len</span>(train_data))
+<span class="t-bi">print</span>(<span class="t-str">"Validation set length:"</span>, <span class="t-bi">len</span>(val_data))
+<span class="t-bi">print</span>(<span class="t-str">"Test set length:"</span>, <span class="t-bi">len</span>(test_data))</code></pre></div>
+<p>This partitioning results in the following dataset sizes:</p>
+<div class="codeblock"><pre><code>Training <span class="t-bi">set</span> length: <span class="t-num">935</span>
+Validation <span class="t-bi">set</span> length: <span class="t-num">55</span>
+Test <span class="t-bi">set</span> length: <span class="t-num">110</span></code></pre></div>
+<div class="pdfpage" data-page="232">PDF p. 232</div>
+<figure><img src="assets/fig-0154.png" alt="" loading="lazy"><figcaption>Figure 7.5 The three-stage process for instruction fine-tuning an LLM. Next, we look at step 2 of stage  1: assembling the training batches.</figcaption></figure>
+<p>Having successfully downloaded and partitioned the dataset and gained a clear understanding of the dataset prompt formatting, we are now ready for the core implementation of the instruction fine-tuning process. Next, we focus on developing the method for constructing the training batches for fine-tuning the LLM.</p>
+<h2 id="organizing-data-into-training-batches">7.3 Organizing data into training batches<a class="anchor" href="#organizing-data-into-training-batches">#</a></h2>
+<aside class="detail-link"><span class="tag">数学推导详解</span><code>-100</code> 为何是<b>分子分母同时变</b>，以及 token-level 平均的副作用，见 <a href="13-fine-tuning-to-follow-instructions-detail.html"><b>7.3 <code>-100</code> 掩码与损失聚合</b></a>。全部推导页的索引见 <a href="math-detail.html">math-detail.html</a>。</aside>
+<p>As we progress into the implementation phase of our instruction fine-tuning process, the next step, illustrated in figure 7.5, focuses on constructing the training batches effectively. This involves defining a method that will ensure our model receives the formatted training data during the fine-tuning process.</p>
+<p>In the previous chapter, the training batches were created automatically by the PyTorch <code>DataLoader</code> class, which employs a default <em>collate</em> function to combine lists of samples into batches. A collate function is responsible for taking a list of individual data samples and merging them into a single batch that can be processed efficiently by the model during training. </p>
+<p> However, the batching process for instruction fine-tuning is a bit more involved and requires us to create our own custom collate function that we will later plug into</p>
+<div class="pdfpage" data-page="233">PDF p. 233</div>
+<figure><img src="assets/fig-0155.png" alt="" loading="lazy"><figcaption>Figure 7.6 The five substeps involved in implementing the batching process: (2.1) applying the  prompt template, (2.2) using tokenization from previous chapters, (2.3) adding padding tokens,  (2.4) creating target token IDs, and (2.5) replacing -100 placeholder tokens to mask padding  tokens in the loss function.</figcaption></figure>
+<p>the <code>DataLoader</code>. We implement this custom collate function to handle the specific requirements and formatting of our instruction fine-tuning dataset. </p>
+<p> Let’s tackle the <em>batching process</em> in several steps, including coding the custom collate function, as illustrated in figure 7.6. First, to implement steps 2.1 and 2.2, we code an <code>InstructionDataset</code> class that applies <code>format_input</code> and <em>pretokenizes</em> all inputs in the dataset, similar to the <code>SpamDataset</code> in chapter 6. This two-step process, detailed in figure 7.7, is implemented in the <code>__init__</code> constructor method of the</p>
+<div class="codeblock"><pre><code>InstructionDataset.</code></pre></div>
+<div class="pdfpage" data-page="234">PDF p. 234</div>
+<figure><img src="assets/fig-0156.png" alt="" loading="lazy"><figcaption>Figure 7.7 The first two steps involved in implementing the batching process. Entries are first formatted using  a specific prompt template (2.1) and then tokenized (2.2), resulting in a sequence of token IDs that the model  can process.</figcaption></figure>
+<p class="listing-title"><span class="no">Listing 7.4</span><span class="tl">Implementing an instruction dataset class</span></p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>Pretokenizes texts</li></ul></details><pre><code><span class="t-kw">import</span> <span class="t-bi">torch</span>
+<span class="t-kw">from</span> <span class="t-bi">torch</span>.utils.data <span class="t-kw">import</span> Dataset
+<span class="t-kw">class</span> <span class="t-fn">InstructionDataset</span>(Dataset):
+ <span class="t-kw">def</span> <span class="t-fn">__init__</span>(<span class="t-kw">self</span>, data, tokenizer):
+ <span class="t-kw">self</span>.data <span class="t-op">=</span> data
+ <span class="t-kw">self</span>.encoded_texts <span class="t-op">=</span> []
+ <span class="t-kw">for</span> entry <span class="t-kw">in</span> data:
+ instruction_plus_input <span class="t-op">=</span> <span class="t-fn">format_input</span>(entry)
+ response_text <span class="t-op">=</span> f<span class="t-str">"\n\n### Response:\n{entry['output']}"</span>
+ full_text <span class="t-op">=</span> instruction_plus_input <span class="t-op">+</span> response_text
+ <span class="t-kw">self</span>.encoded_texts.<span class="t-fn">append</span>(
+ tokenizer.<span class="t-fn">encode</span>(full_text)
+ )
+ <span class="t-kw">def</span> <span class="t-fn">__getitem__</span>(<span class="t-kw">self</span>, index):
+ <span class="t-kw">return</span> <span class="t-kw">self</span>.encoded_texts[index]
+ <span class="t-kw">def</span> <span class="t-fn">__len__</span>(<span class="t-kw">self</span>):
+ <span class="t-kw">return</span> <span class="t-bi">len</span>(<span class="t-kw">self</span>.data)</code></pre></div>
+<div class="pdfpage" data-page="235">PDF p. 235</div>
+<figure><img src="assets/fig-0157.png" alt="" loading="lazy"><figcaption>Figure 7.8 The padding of training examples in batches using token ID 50256 to ensure uniform length within  each batch. Each batch may have different lengths, as shown by the first and second.</figcaption></figure>
+<p>Similar to the approach used for classification fine-tuning, we want to accelerate training by collecting multiple training examples in a batch, which necessitates padding all inputs to a similar length. As with classification fine-tuning, we use the <code>&lt;|endoftext|&gt;</code> token as a padding token. </p>
+<p> Instead of appending the <code>&lt;|endoftext|&gt;</code> tokens to the text inputs, we can append the token ID corresponding to <code>&lt;|endoftext|&gt;</code> to the pretokenized inputs directly. We can use the tokenizer’s <code>.encode</code> method on an <code>&lt;|endoftext|&gt;</code> token to remind us which token ID we should use:</p>
+<div class="codeblock"><pre><code><span class="t-kw">import</span> <span class="t-bi">tiktoken</span>
+tokenizer <span class="t-op">=</span> <span class="t-bi">tiktoken</span>.<span class="t-fn">get_encoding</span>(<span class="t-str">"gpt2"</span>)
+<span class="t-bi">print</span>(tokenizer.<span class="t-fn">encode</span>(<span class="t-str">"&lt;|endoftext|&gt;"</span>, allowed_special<span class="t-op">=</span>{<span class="t-str">"&lt;|endoftext|&gt;"</span>}))</code></pre></div>
+<p>The resulting token ID is <code>50256</code>. </p>
+<p> Moving on to step 2.3 of the process (see figure 7.6), we adopt a more sophisticated approach by developing a custom collate function that we can pass to the data loader. This custom collate function pads the training examples in each batch to the same length while allowing different batches to have different lengths, as demonstrated in figure 7.8. This approach minimizes unnecessary padding by only extending sequences to match the longest one in each batch, not the whole dataset.</p>
+<div class="pdfpage" data-page="236">PDF p. 236</div>
+<figure><img src="assets/fig-0158.png" alt="" loading="lazy"></figure>
+<figure><img src="assets/fig-0159.png" alt="" loading="lazy"></figure>
+<p>We can implement the padding process with a custom collate function:</p>
+<div class="codeblock"><pre><code><span class="t-kw">def</span> <span class="t-fn">custom_collate_draft_1</span>(
+ batch,
+ pad_token_id<span class="t-op">=</span><span class="t-num">50256</span>,
+ device<span class="t-op">=</span><span class="t-str">"cpu"</span>
+):
+ batch_max_length <span class="t-op">=</span> <span class="t-bi">max</span>(<span class="t-bi">len</span>(item)<span class="t-op">+</span><span class="t-num">1</span> <span class="t-kw">for</span> item <span class="t-kw">in</span> batch)</code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 3 条</summary><ul><li>Finds the longest sequence in the</li><li>batch</li><li>Pads and prepares inputs</li></ul></details><pre><code> inputs_lst <span class="t-op">=</span> []
+ <span class="t-kw">for</span> item <span class="t-kw">in</span> batch:
+ new_item <span class="t-op">=</span> item.<span class="t-fn">copy</span>()
+ new_item <span class="t-op">+=</span> [pad_token_id]</code></pre></div>
+<div class="codeblock"><pre><code> padded <span class="t-op">=</span> (
+ new_item <span class="t-op">+</span> [pad_token_id] <span class="t-op">*</span></code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 2 条</summary><ul><li>Removes extra padded token added earlier</li><li>Converts the list of inputs to a tensor and transfers it to the target device</li></ul></details><pre><code> (batch_max_length <span class="t-op">-</span> <span class="t-bi">len</span>(new_item))
+ )
+ inputs <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>(padded[:<span class="t-op">-</span><span class="t-num">1</span>])
+ inputs_lst.<span class="t-fn">append</span>(inputs)
+ inputs_tensor <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">stack</span>(inputs_lst).<span class="t-fn">to</span>(device)
+ <span class="t-kw">return</span> inputs_tensor</code></pre></div>
+<p>The <code>custom_collate_draft_1</code> we implemented is designed to be integrated into a PyTorch <code>DataLoader</code>, but it can also function as a standalone tool. Here, we use it independently to test and verify that it operates as intended. Let’s try it on three different inputs that we want to assemble into a batch, where each example gets padded to the same length:</p>
+<div class="codeblock"><pre><code>inputs_1 <span class="t-op">=</span> [<span class="t-num">0</span>, <span class="t-num">1</span>, <span class="t-num">2</span>, <span class="t-num">3</span>, <span class="t-num">4</span>]
+inputs_2 <span class="t-op">=</span> [<span class="t-num">5</span>, <span class="t-num">6</span>]
+inputs_3 <span class="t-op">=</span> [<span class="t-num">7</span>, <span class="t-num">8</span>, <span class="t-num">9</span>]
+batch <span class="t-op">=</span> (
+ inputs_1,
+ inputs_2,
+ inputs_3
+)
+<span class="t-bi">print</span>(<span class="t-fn">custom_collate_draft_1</span>(batch))</code></pre></div>
+<p>The resulting batch looks like the following:</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[ <span class="t-num">0</span>, <span class="t-num">1</span>, <span class="t-num">2</span>, <span class="t-num">3</span>, <span class="t-num">4</span>],
+ [ <span class="t-num">5</span>, <span class="t-num">6</span>, <span class="t-num">50256</span>, <span class="t-num">50256</span>, <span class="t-num">50256</span>],
+ [ <span class="t-num">7</span>, <span class="t-num">8</span>, <span class="t-num">9</span>, <span class="t-num">50256</span>, <span class="t-num">50256</span>]])</code></pre></div>
+<p>This output shows all inputs have been padded to the length of the longest input list, <code>inputs_1</code>, containing five token IDs.</p>
+<div class="pdfpage" data-page="237">PDF p. 237</div>
+<figure><img src="assets/fig-0160.png" alt="" loading="lazy"><figcaption>Figure 7.9 The five substeps involved in implementing the batching process. We are now focusing on  step 2.4, the creation of target token IDs. This step is essential as it enables the model to learn and  predict the tokens it needs to generate.</figcaption></figure>
+<p> We have just implemented our first custom collate function to create batches from lists of inputs. However, as we previously learned, we also need to create batches with the target token IDs corresponding to the batch of input IDs. These target IDs, as shown in figure 7.9, are crucial because they represent what we want the model to generate and what we need during training to calculate the loss for the weight updates. That is, we modify our custom collate function to return the target token IDs in addition to the input token IDs.</p>
+<p>Similar to the process we used to pretrain an LLM, the target token IDs match the input token IDs but are shifted one position to the right. This setup, as shown in figure 7.10, allows the LLM to learn how to predict the next token in a sequence.</p>
+<div class="pdfpage" data-page="238">PDF p. 238</div>
+<figure><img src="assets/fig-0162.png" alt="" loading="lazy"></figure>
+<figure><img src="assets/fig-0161.png" alt="" loading="lazy"><figcaption>Figure 7.10 The input and target token alignment used in the instruction  fine-tuning process of an LLM. For each input sequence, the corresponding  target sequence is created by shifting the token IDs one position to the right,  omitting the first token of the input, and appending an end-of-text token. </figcaption></figure>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>The target vector does not contain the first input ID.</li></ul></details><pre><code>[ <span class="t-num">0</span>, <span class="t-num">1</span>, <span class="t-num">2</span>, <span class="t-num">3</span>, <span class="t-num">4</span> ]</code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>The token IDs in the target We add an end-of-text</li></ul></details><pre><code>[ <span class="t-num">1</span>, <span class="t-num">2</span>, <span class="t-num">3</span>, <span class="t-num">4</span>, <span class="t-num">50256</span> ]</code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 2 条</summary><ul><li>are similar to the input IDs (padding) token.</li><li>but shifted by 1 position.</li></ul></details><pre><code>[ <span class="t-num">5</span>, <span class="t-num">6</span>, <span class="t-num">50256</span>, <span class="t-num">50256</span>, <span class="t-num">50256</span> ]</code></pre></div>
+<div class="codeblock"><pre><code>[ <span class="t-num">6</span>, <span class="t-num">50256</span>, <span class="t-num">50256</span>, <span class="t-num">50256</span>, <span class="t-num">50256</span> ]</code></pre></div>
+<p>The following updated collate function generates the target token IDs from the input token IDs:</p>
+<div class="codeblock"><pre><code><span class="t-kw">def</span> <span class="t-fn">custom_collate_draft_2</span>(
+ batch,
+ pad_token_id<span class="t-op">=</span><span class="t-num">50256</span>,
+ device<span class="t-op">=</span><span class="t-str">"cpu"</span>
+):
+ batch_max_length <span class="t-op">=</span> <span class="t-bi">max</span>(<span class="t-bi">len</span>(item)<span class="t-op">+</span><span class="t-num">1</span> <span class="t-kw">for</span> item <span class="t-kw">in</span> batch)
+ inputs_lst, targets_lst <span class="t-op">=</span> [], []
+ <span class="t-kw">for</span> item <span class="t-kw">in</span> batch:
+ new_item <span class="t-op">=</span> item.<span class="t-fn">copy</span>()
+ new_item <span class="t-op">+=</span> [pad_token_id]</code></pre></div>
+<div class="pdfpage" data-page="239">PDF p. 239</div>
+<figure><img src="assets/fig-0163.png" alt="" loading="lazy"></figure>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 2 条</summary><ul><li>Truncates the last token for inputs</li><li>Shifts +1 to the right for targets</li></ul></details><pre><code> padded <span class="t-op">=</span> (
+ new_item <span class="t-op">+</span> [pad_token_id] <span class="t-op">*</span>
+ (batch_max_length <span class="t-op">-</span> <span class="t-bi">len</span>(new_item))
+ )
+ inputs <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>(padded[:<span class="t-op">-</span><span class="t-num">1</span>])
+ targets <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>(padded[<span class="t-num">1</span>:])
+ inputs_lst.<span class="t-fn">append</span>(inputs)
+ targets_lst.<span class="t-fn">append</span>(targets)
+ inputs_tensor <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">stack</span>(inputs_lst).<span class="t-fn">to</span>(device)
+ targets_tensor <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">stack</span>(targets_lst).<span class="t-fn">to</span>(device)
+ <span class="t-kw">return</span> inputs_tensor, targets_tensor
+inputs, targets <span class="t-op">=</span> <span class="t-fn">custom_collate_draft_2</span>(batch)
+<span class="t-bi">print</span>(inputs)
+<span class="t-bi">print</span>(targets)</code></pre></div>
+<p>Applied to the example <code>batch</code> consisting of three input lists we defined earlier, the new <code>custom_collate_draft_2</code> function now returns the input and the target batch:</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[ <span class="t-num">0</span>, <span class="t-num">1</span>, <span class="t-num">2</span>, <span class="t-num">3</span>, <span class="t-num">4</span>],</code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 2 条</summary><ul><li>The first tensor represents inputs.</li><li>The second tensor represents the targets.</li></ul></details><pre><code> [ <span class="t-num">5</span>, <span class="t-num">6</span>, <span class="t-num">50256</span>, <span class="t-num">50256</span>, <span class="t-num">50256</span>],
+ [ <span class="t-num">7</span>, <span class="t-num">8</span>, <span class="t-num">9</span>, <span class="t-num">50256</span>, <span class="t-num">50256</span>]])
+<span class="t-fn">tensor</span>([[ <span class="t-num">1</span>, <span class="t-num">2</span>, <span class="t-num">3</span>, <span class="t-num">4</span>, <span class="t-num">50256</span>],
+ [ <span class="t-num">6</span>, <span class="t-num">50256</span>, <span class="t-num">50256</span>, <span class="t-num">50256</span>, <span class="t-num">50256</span>],
+ [ <span class="t-num">8</span>, <span class="t-num">9</span>, <span class="t-num">50256</span>, <span class="t-num">50256</span>, <span class="t-num">50256</span>]])</code></pre></div>
+<p>In the next step, we assign a <code>-100</code> placeholder value to all padding tokens, as highlighted in figure 7.11. This special value allows us to exclude these padding tokens from contributing to the training loss calculation, ensuring that only meaningful data influences model learning. We will discuss this process in more detail after we implement this modification. (When fine-tuning for classification, we did not have to worry about this since we only trained the model based on the last output token.)</p>
+<p> However, note that we retain one end-of-text token, ID <code>50256</code>, in the target list, as depicted in figure 7.12. Retaining it allows the LLM to learn when to generate an endof-text token in response to instructions, which we use as an indicator that the generated response is complete.</p>
+<p> In the following listing, we modify our custom collate function to replace tokens with ID <code>50256</code> with <code>-100</code> in the target lists. Additionally, we introduce an <code>allowed_</code> <code>max_length</code> parameter to optionally limit the length of the samples. This adjustment will be useful if you plan to work with your own datasets that exceed the 1,024-token context size supported by the GPT-2 model. </p>
+<div class="pdfpage" data-page="240">PDF p. 240</div>
+<figure><img src="assets/fig-0165.png" alt="" loading="lazy"></figure>
+<figure><img src="assets/fig-0164.png" alt="" loading="lazy"><figcaption>Figure 7.12 Step 2.4 in the token replacement process in the target batch for the training data preparation. We  replace all but the first instance of the end-of-text token, which we use as padding, with the placeholder value </figcaption></figure>
+<p><code>-100</code><strong>, while keeping the initial end-of-text token in each target sequence.</strong></p>
+<div class="pdfpage" data-page="241">PDF p. 241</div>
+<p class="listing-title"><span class="no">Listing 7.5</span><span class="tl">Implementing a custom batch collate function</span></p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 5 条</summary><ul><li>Pads sequences to max_length</li><li>Truncates the last token for inputs</li><li>Shifts +1 to the right for targets</li><li>Replaces all but the first padding tokens in targets by ignore_index</li><li>Optionally truncates to the maximum sequence length</li></ul></details><pre><code><span class="t-kw">def</span> <span class="t-fn">custom_collate_fn</span>(
+ batch,
+ pad_token_id<span class="t-op">=</span><span class="t-num">50256</span>,
+ ignore_index<span class="t-op">=-</span><span class="t-num">100</span>,
+ allowed_max_length<span class="t-op">=</span><span class="t-kw">None</span>,
+ device<span class="t-op">=</span><span class="t-str">"cpu"</span>
+):
+ batch_max_length <span class="t-op">=</span> <span class="t-bi">max</span>(<span class="t-bi">len</span>(item)<span class="t-op">+</span><span class="t-num">1</span> <span class="t-kw">for</span> item <span class="t-kw">in</span> batch)
+ inputs_lst, targets_lst <span class="t-op">=</span> [], []
+ <span class="t-kw">for</span> item <span class="t-kw">in</span> batch:
+ new_item <span class="t-op">=</span> item.<span class="t-fn">copy</span>()
+ new_item <span class="t-op">+=</span> [pad_token_id]
+
+ padded <span class="t-op">=</span> (
+ new_item <span class="t-op">+</span> [pad_token_id] <span class="t-op">*</span>
+ (batch_max_length <span class="t-op">-</span> <span class="t-bi">len</span>(new_item))
+ )
+ inputs <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>(padded[:<span class="t-op">-</span><span class="t-num">1</span>])
+ targets <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>(padded[<span class="t-num">1</span>:])
+ mask <span class="t-op">=</span> targets <span class="t-op">==</span> pad_token_id
+ indices <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">nonzero</span>(mask).<span class="t-fn">squeeze</span>()
+ <span class="t-kw">if</span> indices.<span class="t-fn">numel</span>() <span class="t-op">&gt;</span> <span class="t-num">1</span>:
+ targets[indices[<span class="t-num">1</span>:]] <span class="t-op">=</span> ignore_index
+ <span class="t-kw">if</span> allowed_max_length <span class="t-kw">is</span> <span class="t-kw">not</span> <span class="t-kw">None</span>:
+ inputs <span class="t-op">=</span> inputs[:allowed_max_length]
+ targets <span class="t-op">=</span> targets[:allowed_max_length]
+ inputs_lst.<span class="t-fn">append</span>(inputs)
+ targets_lst.<span class="t-fn">append</span>(targets)
+ inputs_tensor <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">stack</span>(inputs_lst).<span class="t-fn">to</span>(device)
+ targets_tensor <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">stack</span>(targets_lst).<span class="t-fn">to</span>(device)
+ <span class="t-kw">return</span> inputs_tensor, targets_tensor</code></pre></div>
+<p>Again, let’s try the collate function on the sample batch that we created earlier to check that it works as intended:</p>
+<div class="codeblock"><pre><code>inputs, targets <span class="t-op">=</span> <span class="t-fn">custom_collate_fn</span>(batch)
+<span class="t-bi">print</span>(inputs)
+<span class="t-bi">print</span>(targets)</code></pre></div>
+<p>The results are as follows, where the first tensor represents the inputs and the second tensor represents the targets:</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[ <span class="t-num">0</span>, <span class="t-num">1</span>, <span class="t-num">2</span>, <span class="t-num">3</span>, <span class="t-num">4</span>],
+ [ <span class="t-num">5</span>, <span class="t-num">6</span>, <span class="t-num">50256</span>, <span class="t-num">50256</span>, <span class="t-num">50256</span>],
+ [ <span class="t-num">7</span>, <span class="t-num">8</span>, <span class="t-num">9</span>, <span class="t-num">50256</span>, <span class="t-num">50256</span>]])
+<span class="t-fn">tensor</span>([[ <span class="t-num">1</span>, <span class="t-num">2</span>, <span class="t-num">3</span>, <span class="t-num">4</span>, <span class="t-num">50256</span>],
+ [ <span class="t-num">6</span>, <span class="t-num">50256</span>, <span class="t-op">-</span><span class="t-num">100</span>, <span class="t-op">-</span><span class="t-num">100</span>, <span class="t-op">-</span><span class="t-num">100</span>],
+ [ <span class="t-num">8</span>, <span class="t-num">9</span>, <span class="t-num">50256</span>, <span class="t-op">-</span><span class="t-num">100</span>, <span class="t-op">-</span><span class="t-num">100</span>]])</code></pre></div>
+<div class="pdfpage" data-page="242">PDF p. 242</div>
+<p>The modified collate function works as expected, altering the target list by inserting the token ID <code>-100</code>. What is the logic behind this adjustment? Let’s explore the underlying purpose of this modification.</p>
+<p> For demonstration purposes, consider the following simple and self-contained example where each output logit corresponds to a potential token from the model’s vocabulary. Here’s how we might calculate the cross entropy loss<em> </em>(introduced in chapter 5) during training when the model predicts a sequence of tokens, which is similar to what we did when we pretrained the model and fine-tuned it for classification:</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 2 条</summary><ul><li>predictions for 1st token</li><li>predictions for 2nd token</li></ul></details><pre><code>logits_1 <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>(
+ [[<span class="t-op">-</span><span class="t-num">1.0</span>, <span class="t-num">1.0</span>],
+ [<span class="t-op">-</span><span class="t-num">0.5</span>, <span class="t-num">1.5</span>]]
+)
+targets_1 <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>([<span class="t-num">0</span>, <span class="t-num">1</span>]) <span class="t-com"># Correct token indices to generate
+loss_1 = torch.nn.functional.cross_entropy(logits_1, targets_1)
+print(loss_1)</span></code></pre></div>
+<p>The loss value calculated by the previous code is <code>1.1269</code>:</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>(<span class="t-num">1.1269</span>)</code></pre></div>
+<p>As we would expect, adding an additional token ID affects the loss calculation:</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>New third token ID prediction</li></ul></details><pre><code>logits_2 <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>(
+ [[<span class="t-op">-</span><span class="t-num">1.0</span>, <span class="t-num">1.0</span>],
+ [<span class="t-op">-</span><span class="t-num">0.5</span>, <span class="t-num">1.5</span>],
+ [<span class="t-op">-</span><span class="t-num">0.5</span>, <span class="t-num">1.5</span>]]
+)
+targets_2 <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>([<span class="t-num">0</span>, <span class="t-num">1</span>, <span class="t-num">1</span>])
+loss_2 <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-bi">nn</span>.functional.<span class="t-fn">cross_entropy</span>(logits_2, targets_2)
+<span class="t-bi">print</span>(loss_2)</code></pre></div>
+<p>After adding the third token, the loss value is <code>0.7936</code>. </p>
+<p> So far, we have carried out some more or less obvious example calculations using the cross entropy loss function in PyTorch, the same loss function we used in the training functions for pretraining and fine-tuning for classification. Now let’s get to the interesting part and see what happens if we replace the third target token ID with <code>-100</code>:</p>
+<div class="codeblock"><pre><code>targets_3 <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>([<span class="t-num">0</span>, <span class="t-num">1</span>, <span class="t-op">-</span><span class="t-num">100</span>])
+loss_3 <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-bi">nn</span>.functional.<span class="t-fn">cross_entropy</span>(logits_2, targets_3)
+<span class="t-bi">print</span>(loss_3)
+<span class="t-bi">print</span>(<span class="t-str">"loss_1 == loss_3:"</span>, loss_1 <span class="t-op">==</span> loss_3)</code></pre></div>
+<div class="pdfpage" data-page="243">PDF p. 243</div>
+<figure><img src="assets/fig-0166.png" alt="" loading="lazy"><figcaption>Figure 7.13 Left: The formatted input text we tokenize and then feed to the LLM during training. Right: The  target text we prepare for the LLM where we can optionally mask out the instruction section, which means  replacing the corresponding token IDs with the -100 ignore_index value.</figcaption></figure>
+<p>The resulting output is </p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>(<span class="t-num">1.1269</span>)
+loss_1 <span class="t-op">==</span> loss_3: <span class="t-fn">tensor</span>(<span class="t-kw">True</span>)</code></pre></div>
+<p>The resulting loss on these three training examples is identical to the loss we calculated from the two training examples earlier. In other words, the cross entropy loss function ignored the third entry in the <code>targets_3</code> vector, the token ID corresponding to <code>-100</code>. (Interested readers can try to replace the <code>-100</code> value with another token ID that is not <code>0</code> or <code>1</code>; it will result in an error.)</p>
+<p> So what’s so special about <code>-100</code> that it’s ignored by the cross entropy loss? The default setting of the cross entropy function in PyTorch is <code>cross_entropy(...,</code> <code>ignore_index=-100)</code>. This means that it ignores targets labeled with <code>-100</code>. We take advantage of this <code>ignore_index</code> to ignore the additional end-of-text (padding) tokens that we used to pad the training examples to have the same length in each batch. However, we want to keep one <code>50256</code> (end-of-text) token ID in the targets because it helps the LLM to learn to generate end-of-text tokens, which we can use as an indicator that a response is complete.</p>
+<p> In addition to masking out padding tokens, it is also common to mask out the target token IDs that correspond to the instruction, as illustrated in figure 7.13. By masking out the LLM’s target token IDs corresponding to the instruction, the cross entropy loss is only computed for the generated response target IDs. Thus, the model is trained to focus on generating accurate responses rather than memorizing instructions, which can help reduce overfitting.</p>
+<div class="pdfpage" data-page="244">PDF p. 244</div>
+<figure><img src="assets/fig-0167.png" alt="" loading="lazy"><figcaption>Figure 7.14 The three-stage process for instruction fine-tuning an LLM. Thus far, we have prepared the  dataset and implemented a custom collate function to batch the instruction dataset. Now, we can  create and apply the data loaders to the training, validation, and test sets needed for the LLM  instruction fine-tuning and evaluation.</figcaption></figure>
+<p>As of this writing, researchers are divided on whether masking the instructions is universally beneficial during instruction fine-tuning. For instance, the 2024 paper by Shi et al., “Instruction Tuning With Loss Over Instructions” (<a href="https://arxiv.org/abs/" rel="noopener">https://arxiv.org/abs/</a> 2405.14394), demonstrated that not masking the instructions benefits the LLM performance (see appendix B for more details). Here, we will not apply masking and leave it as an optional exercise for interested readers.</p>
+<h3 id="exercise-7-2-instruction-and-input-masking">Exercise 7.2 Instruction and input masking<a class="anchor" href="#exercise-7-2-instruction-and-input-masking">#</a></h3>
+<div class="plainbox"><p>After completing the chapter and fine-tuning the model with <code>InstructionDataset</code>,</p><p>replace the instruction and input tokens with the <code>-100</code> mask to use the instruction</p><p>masking method illustrated in figure 7.13. Then evaluate whether this has a positive</p><p>effect on model performance.</p></div>
+<h2 id="creating-data-loaders-for-an-instruction-dataset">7.4 Creating data loaders for an instruction dataset<a class="anchor" href="#creating-data-loaders-for-an-instruction-dataset">#</a></h2>
+<p>We have completed several stages to implement an <code>InstructionDataset</code> class and a <code>custom_collate_fn</code> function for the instruction dataset. As shown in figure 7.14, we are ready to reap the fruits of our labor by simply plugging both <code>InstructionDataset</code> objects and the <code>custom_collate_fn</code> function into PyTorch data loaders. These loaders</p>
+<div class="pdfpage" data-page="245">PDF p. 245</div>
+<p>will automatically shuffle and organize the batches for the LLM instruction fine-tuning process.</p>
+<p> Before we implement the data loader creation step, we have to briefly talk about</p>
+<p>the <code>device</code> setting of the <code>custom_collate_fn</code>. The <code>custom_collate_fn</code> includes code to move the input and target tensors (for example, <code>torch.stack(inputs_lst).to</code> <code>(device)</code>) to a specified device, which can be either <code>"cpu"</code> or <code>"cuda"</code> (for NVIDIA GPUs) or, optionally, <code>"mps"</code> for Macs with Apple Silicon chips. </p>
+<aside class="callout note"><p class="lab">NOTE</p><p>Using an <code>"mps"</code> device may result in numerical differences compared to the contents of this chapter, as Apple Silicon support in PyTorch is still experimental.</p></aside>
+<p>Previously, we moved the data onto the target device (for example, the GPU memory when <code>device="cuda"</code>) in the main training loop. Having this as part of the collate function offers the advantage of performing this device transfer process as a background process outside the training loop, preventing it from blocking the GPU during model training.</p>
+<p> The following code initializes the <code>device</code> variable:</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>Uncomments these two lines to use the GPU on an Apple Silicon chip</li></ul></details><pre><code>device <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">device</span>(<span class="t-str">"cuda"</span> <span class="t-kw">if</span> <span class="t-bi">torch</span>.cuda.<span class="t-fn">is_available</span>() <span class="t-kw">else</span> <span class="t-str">"cpu"</span>)
+<span class="t-com"># if torch.backends.mps.is_available():
+# device = torch.device("mps")"
+print("Device:", device)</span></code></pre></div>
+<p>This will either print <code>"Device:</code> <code>cpu"</code> or <code>"Device:</code> <code>cuda"</code>, depending on your machine.</p>
+<p> Next, to reuse the chosen device setting in <code>custom_collate_fn</code> when we plug it into the PyTorch <code>DataLoader</code> class, we use the <code>partial</code> function from Python’s <code>functools</code> standard library to create a new version of the function with the device argument prefilled. Additionally, we set the <code>allowed_max_length</code> to <code>1024</code>, which truncates the data to the maximum context length supported by the GPT-2 model, which we will fine-tune later:</p>
+<div class="codeblock"><pre><code><span class="t-kw">from</span> functools <span class="t-kw">import</span> partial
+customized_collate_fn <span class="t-op">=</span> <span class="t-fn">partial</span>(
+ custom_collate_fn,
+ device<span class="t-op">=</span>device,
+ allowed_max_length<span class="t-op">=</span><span class="t-num">1024</span>
+)</code></pre></div>
+<p>Next, we can set up the data loaders as we did previously, but this time, we will use our custom collate function for the batching process.</p>
+<div class="pdfpage" data-page="246">PDF p. 246</div>
+<p class="listing-title"><span class="no">Listing 7.6</span><span class="tl">Initializing the data loaders</span></p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 2 条</summary><ul><li>You can try to increase this number if parallel Python processes are supported</li><li>by your operating system.</li></ul></details><pre><code><span class="t-kw">from</span> <span class="t-bi">torch</span>.utils.data <span class="t-kw">import</span> DataLoader
+num_workers <span class="t-op">=</span> <span class="t-num">0</span>
+batch_size <span class="t-op">=</span> <span class="t-num">8</span>
+<span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)
+train_dataset <span class="t-op">=</span> <span class="t-fn">InstructionDataset</span>(train_data, tokenizer)
+train_loader <span class="t-op">=</span> <span class="t-fn">DataLoader</span>(
+ train_dataset,
+ batch_size<span class="t-op">=</span>batch_size,
+ collate_fn<span class="t-op">=</span>customized_collate_fn,
+ shuffle<span class="t-op">=</span><span class="t-kw">True</span>,
+ drop_last<span class="t-op">=</span><span class="t-kw">True</span>,
+ num_workers<span class="t-op">=</span>num_workers
+)
+val_dataset <span class="t-op">=</span> <span class="t-fn">InstructionDataset</span>(val_data, tokenizer)
+val_loader <span class="t-op">=</span> <span class="t-fn">DataLoader</span>(
+ val_dataset,
+ batch_size<span class="t-op">=</span>batch_size,
+ collate_fn<span class="t-op">=</span>customized_collate_fn,
+ shuffle<span class="t-op">=</span><span class="t-kw">False</span>,
+ drop_last<span class="t-op">=</span><span class="t-kw">False</span>,
+ num_workers<span class="t-op">=</span>num_workers
+)
+test_dataset <span class="t-op">=</span> <span class="t-fn">InstructionDataset</span>(test_data, tokenizer)
+test_loader <span class="t-op">=</span> <span class="t-fn">DataLoader</span>(
+ test_dataset,
+ batch_size<span class="t-op">=</span>batch_size,
+ collate_fn<span class="t-op">=</span>customized_collate_fn,
+ shuffle<span class="t-op">=</span><span class="t-kw">False</span>,
+ drop_last<span class="t-op">=</span><span class="t-kw">False</span>,
+ num_workers<span class="t-op">=</span>num_workers
+)</code></pre></div>
+<p>Let’s examine the dimensions of the input and target batches generated by the training loader:</p>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(<span class="t-str">"Train loader:"</span>)
+<span class="t-kw">for</span> inputs, targets <span class="t-kw">in</span> train_loader:
+ <span class="t-bi">print</span>(inputs.shape, targets.shape)</code></pre></div>
+<p>The output is as follows (truncated to conserve space):</p>
+<div class="codeblock"><pre><code>Train loader:
+<span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">8</span>, <span class="t-num">61</span>]) <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">8</span>, <span class="t-num">61</span>])
+<span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">8</span>, <span class="t-num">76</span>]) <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">8</span>, <span class="t-num">76</span>])
+<span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">8</span>, <span class="t-num">73</span>]) <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">8</span>, <span class="t-num">73</span>])
+...</code></pre></div>
+<div class="pdfpage" data-page="247">PDF p. 247</div>
+<figure><img src="assets/fig-0168.png" alt="" loading="lazy"><figcaption>Figure 7.15 The three-stage process for instruction fine-tuning an LLM. After the dataset  preparation, the process of fine-tuning an LLM for instruction-following begins with loading  a pretrained LLM, which serves as the foundation for subsequent training. </figcaption></figure>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">8</span>, <span class="t-num">74</span>]) <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">8</span>, <span class="t-num">74</span>])
+<span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">8</span>, <span class="t-num">69</span>]) <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">8</span>, <span class="t-num">69</span>])</code></pre></div>
+<p>This output shows that the first input and target batch have dimensions 8 × 61, where 8 represents the batch size and 61 is the number of tokens in each training example in this batch. The second input and target batch have a different number of tokens—for instance, 76. Thanks to our custom collate function, the data loader is able to create batches of different lengths. In the next section, we load a pretrained LLM that we can then fine-tune with this data loader.</p>
+<h2 id="loading-a-pretrained-llm">7.5 Loading a pretrained LLM<a class="anchor" href="#loading-a-pretrained-llm">#</a></h2>
+<p>We have spent a lot of time preparing the dataset for instruction fine-tuning, which is a key aspect of the supervised fine-tuning process. Many other aspects are the same as in pretraining, allowing us to reuse much of the code from earlier chapters.</p>
+<p> Before beginning instruction fine-tuning, we must first load a pretrained GPT model that we want to fine-tune (see figure 7.15), a process we have undertaken previously. However, instead of using the smallest 124-million-parameter model as before, we load the medium-sized model with 355 million parameters. The reason for this choice is that the 124-million-parameter model is too limited in capacity to achieve</p>
+<div class="pdfpage" data-page="248">PDF p. 248</div>
+<p class="listing-title"><span class="no">Listing 7.7</span><span class="tl">Loading the pretrained model</span></p>
+<p>satisfactory results via instruction fine-tuning. Specifically, smaller models lack the necessary capacity to learn and retain the intricate patterns and nuanced behaviors required for high-quality instruction-following tasks. </p>
+<p> Loading our pretrained models requires the same code as when we pretrained the data (section 5.5) and fine-tuned it for classification (section 6.4), except that we now</p>
+<p>specify <code>"gpt2-medium</code> <code>(355M)"</code> instead of <code>"gpt2-small</code> <code>(124M)"</code>. </p>
+<aside class="callout note"><p class="lab">NOTE</p><p>Executing this code will initiate the download of the medium-sized GPT model, which has a storage requirement of approximately 1.42 gigabytes. This is roughly three times larger than the storage space needed for the small model.</p></aside>
+<div class="codeblock"><pre><code><span class="t-kw">from</span> gpt_download <span class="t-kw">import</span> download_and_load_gpt2
+<span class="t-kw">from</span> chapter04 <span class="t-kw">import</span> GPTModel
+<span class="t-kw">from</span> chapter05 <span class="t-kw">import</span> load_weights_into_gpt
+BASE_CONFIG <span class="t-op">=</span> {
+ <span class="t-str">"vocab_size"</span>: <span class="t-num">50257</span>, <span class="t-com"># Vocabulary size
+ "context_length": 1024, # Context length
+ "drop_rate": 0.0, # Dropout rate
+ "qkv_bias": True # Query-key-value bias
+}
+model_configs = {
+ "gpt2-small (124M)": {"emb_dim": 768, "n_layers": 12, "n_heads": 12},
+ "gpt2-medium (355M)": {"emb_dim": 1024, "n_layers": 24, "n_heads": 16},
+ "gpt2-large (774M)": {"emb_dim": 1280, "n_layers": 36, "n_heads": 20},
+ "gpt2-xl (1558M)": {"emb_dim": 1600, "n_layers": 48, "n_heads": 25},
+}
+CHOOSE_MODEL = "gpt2-medium (355M)"
+BASE_CONFIG.update(model_configs[CHOOSE_MODEL])
+model_size = CHOOSE_MODEL.split(" ")[-1].lstrip("(").rstrip(")")
+settings, params = download_and_load_gpt2(
+ model_size=model_size,
+ models_dir="gpt2"
+)
+model = GPTModel(BASE_CONFIG)
+load_weights_into_gpt(model, params)
+model.eval();</span></code></pre></div>
+<p>After executing the code, several files will be downloaded:</p>
+<div class="codeblock"><pre><code>checkpoint: <span class="t-num">100</span><span class="t-op">%|</span>██████████<span class="t-op">|</span> <span class="t-num">77.0</span><span class="t-op">/</span><span class="t-num">77.0</span> [<span class="t-num">00</span>:<span class="t-num">00</span><span class="t-op">&lt;</span><span class="t-num">00</span>:<span class="t-num">00</span>, <span class="t-num">156kiB</span><span class="t-op">/</span>s]
+encoder.json: <span class="t-num">100</span><span class="t-op">%|</span>██████████<span class="t-op">|</span> <span class="t-num">1.04M</span><span class="t-op">/</span><span class="t-num">1.04M</span> [<span class="t-num">00</span>:<span class="t-num">02</span><span class="t-op">&lt;</span><span class="t-num">00</span>:<span class="t-num">00</span>, <span class="t-num">467kiB</span><span class="t-op">/</span>s]
+hparams.json: <span class="t-num">100</span><span class="t-op">%|</span>██████████<span class="t-op">|</span> <span class="t-num">91.0</span><span class="t-op">/</span><span class="t-num">91.0</span> [<span class="t-num">00</span>:<span class="t-num">00</span><span class="t-op">&lt;</span><span class="t-num">00</span>:<span class="t-num">00</span>, <span class="t-num">198kiB</span><span class="t-op">/</span>s]
+model.ckpt.data<span class="t-op">-</span><span class="t-num">00000</span><span class="t-op">-</span>of<span class="t-op">-</span><span class="t-num">00001</span>: <span class="t-num">100</span><span class="t-op">%|</span>██████████<span class="t-op">|</span> <span class="t-num">1.42G</span><span class="t-op">/</span><span class="t-num">1.42G</span>
+[<span class="t-num">05</span>:<span class="t-num">50</span><span class="t-op">&lt;</span><span class="t-num">00</span>:<span class="t-num">00</span>, <span class="t-num">4.05MiB</span><span class="t-op">/</span>s]
+model.ckpt.index: <span class="t-num">100</span><span class="t-op">%|</span>██████████<span class="t-op">|</span> <span class="t-num">10.4k</span><span class="t-op">/</span><span class="t-num">10.4k</span> [<span class="t-num">00</span>:<span class="t-num">00</span><span class="t-op">&lt;</span><span class="t-num">00</span>:<span class="t-num">00</span>, <span class="t-num">18.1MiB</span><span class="t-op">/</span>s]
+model.ckpt.meta: <span class="t-num">100</span><span class="t-op">%|</span>██████████<span class="t-op">|</span> <span class="t-num">927k</span><span class="t-op">/</span><span class="t-num">927k</span> [<span class="t-num">00</span>:<span class="t-num">02</span><span class="t-op">&lt;</span><span class="t-num">00</span>:<span class="t-num">00</span>, <span class="t-num">454kiB</span><span class="t-op">/</span>s]
+vocab.bpe: <span class="t-num">100</span><span class="t-op">%|</span>██████████<span class="t-op">|</span> <span class="t-num">456k</span><span class="t-op">/</span><span class="t-num">456k</span> [<span class="t-num">00</span>:<span class="t-num">01</span><span class="t-op">&lt;</span><span class="t-num">00</span>:<span class="t-num">00</span>, <span class="t-num">283kiB</span><span class="t-op">/</span>s]</code></pre></div>
+<div class="pdfpage" data-page="249">PDF p. 249</div>
+<p>Now, let’s take a moment to assess the pretrained LLM’s performance on one of the validation tasks by comparing its output to the expected response. This will give us a baseline understanding of how well the model performs on an instruction-following task right out of the box, prior to fine-tuning, and will help us appreciate the effect of fine-tuning later on. We will use the first example from the validation set for this assessment:</p>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)
+input_text <span class="t-op">=</span> <span class="t-fn">format_input</span>(val_data[<span class="t-num">0</span>])
+<span class="t-bi">print</span>(input_text)</code></pre></div>
+<p>The content of the instruction is as follows:</p>
+<div class="codeblock"><pre><code>Below <span class="t-kw">is</span> an instruction that describes a task. Write a response that
+appropriately completes the request.
+<span class="t-com">### Instruction:
+Convert the active sentence to passive: 'The chef cooks the meal every day.'</span></code></pre></div>
+<p>Next we generate the model’s response using the same <code>generate</code> function we used to pretrain the model in chapter 5:</p>
+<div class="codeblock"><pre><code><span class="t-kw">from</span> chapter05 <span class="t-kw">import</span> generate, text_to_token_ids, token_ids_to_text
+token_ids <span class="t-op">=</span> <span class="t-fn">generate</span>(
+ model<span class="t-op">=</span>model,
+ idx<span class="t-op">=</span><span class="t-fn">text_to_token_ids</span>(input_text, tokenizer),
+ max_new_tokens<span class="t-op">=</span><span class="t-num">35</span>,
+ context_size<span class="t-op">=</span>BASE_CONFIG[<span class="t-str">"context_length"</span>],
+ eos_id<span class="t-op">=</span><span class="t-num">50256</span>,
+)
+generated_text <span class="t-op">=</span> <span class="t-fn">token_ids_to_text</span>(token_ids, tokenizer)</code></pre></div>
+<p>The <code>generate</code> function returns the combined input and output text. This behavior was previously convenient since pretrained LLMs are primarily designed as text-completion models, where the input and output are concatenated to create coherent and legible text. However, when evaluating the model’s performance on a specific task, we often want to focus solely on the model’s generated response.</p>
+<p> To isolate the model’s response text, we need to subtract the length of the input instruction from the start of the <code>generated_text</code>:</p>
+<div class="codeblock"><pre><code>response_text <span class="t-op">=</span> generated_text[<span class="t-bi">len</span>(input_text):].<span class="t-fn">strip</span>()
+<span class="t-bi">print</span>(response_text)</code></pre></div>
+<div class="pdfpage" data-page="250">PDF p. 250</div>
+<figure><img src="assets/fig-0169.png" alt="" loading="lazy"><figcaption>Figure 7.16 The three-stage process for instruction fine-tuning an LLM. In step 5, we train the pretrained model  we previously loaded on the instruction dataset we prepared earlier.</figcaption></figure>
+<p>This code removes the input text from the beginning of the <code>generated_text</code>, leaving us with only the model’s generated response. The <code>strip()</code> function is then applied to remove any leading or trailing whitespace characters. The output is </p>
+<div class="codeblock"><pre><code><span class="t-com">### Response:
+The chef cooks the meal every day.
+### Instruction:
+Convert the active sentence to passive: 'The chef cooks the</span></code></pre></div>
+<p>This output shows that the pretrained model is not yet capable of correctly following the given instruction. While it does create a Response section, it simply repeats the original input sentence and part of the instruction, failing to convert the active sentence to passive voice as requested. So, let’s now implement the fine-tuning process to improve the model’s ability to comprehend and appropriately respond to such requests.</p>
+<h2 id="fine-tuning-the-llm-on-instruction-data">7.6 Fine-tuning the LLM on instruction data<a class="anchor" href="#fine-tuning-the-llm-on-instruction-data">#</a></h2>
+<p>It’s time to fine-tune the LLM for instructions (figure 7.16). We will take the loaded pretrained model in the previous section and further train it using the previously prepared instruction dataset prepared earlier in this chapter. We already did all the hard work when we implemented the instruction dataset processing at the beginning of</p>
+<div class="pdfpage" data-page="251">PDF p. 251</div>
+<p>this chapter. For the fine-tuning process itself, we can reuse the loss calculation and training functions implemented in chapter 5:</p>
+<div class="codeblock"><pre><code><span class="t-kw">from</span> chapter05 <span class="t-kw">import</span> (
+ calc_loss_loader,
+ train_model_simple
+)</code></pre></div>
+<p>Before we begin training, let’s calculate the initial loss for the training and validation sets:</p>
+<div class="codeblock"><pre><code>model.<span class="t-fn">to</span>(device)
+<span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)
+<span class="t-kw">with</span> <span class="t-bi">torch</span>.<span class="t-fn">no_grad</span>():
+ train_loss <span class="t-op">=</span> <span class="t-fn">calc_loss_loader</span>(
+ train_loader, model, device, num_batches<span class="t-op">=</span><span class="t-num">5</span>
+ )
+ val_loss <span class="t-op">=</span> <span class="t-fn">calc_loss_loader</span>(
+ val_loader, model, device, num_batches<span class="t-op">=</span><span class="t-num">5</span>
+)
+<span class="t-bi">print</span>(<span class="t-str">"Training loss:"</span>, train_loss)
+<span class="t-bi">print</span>(<span class="t-str">"Validation loss:"</span>, val_loss)</code></pre></div>
+<p>The initial loss values are as follows; as previously, our goal is to minimize the loss:</p>
+<div class="codeblock"><pre><code>Training loss: <span class="t-num">3.825908660888672</span>
+Validation loss: <span class="t-num">3.7619335651397705</span></code></pre></div>
+<h3 id="dealing-with-hardware-limitations">Dealing with hardware limitations<a class="anchor" href="#dealing-with-hardware-limitations">#</a></h3>
+<div class="plainbox"><p>Using and training a larger model like GPT-2 medium (355 million parameters) is more</p><p>computationally intensive than the smaller GPT-2 model (124 million parameters). If</p><p>you encounter problems due to hardware limitations, you can switch to the smaller</p></div>
+<p>model by changing <code>CHOOSE_MODEL</code> <code>=</code> <code>"gpt2-medium</code> <code>(355M)"</code> to <code>CHOOSE_MODEL</code> <code>=</code></p>
+<p><code>"gpt2-small</code> <code>(124M)"</code> (see section 7.5). Alternatively, to speed up the model training,</p>
+<div class="plainbox"><p>consider using a GPU. The following supplementary section in this book’s code repos-</p><p>itory lists several options for using cloud GPUs: <a href="https://mng.bz/EOEq" rel="noopener">https://mng.bz/EOEq</a>.</p><p>The following table provides reference run times for training each model on various</p><p>devices, including CPUs and GPUs, for GPT-2. Running this code on a compatible GPU</p><p>requires no code changes and can significantly speed up training. For the results</p><p>shown in this chapter, I used the GPT-2 medium model and trained it on an A100</p><p>GPU.</p></div>
+<div class="pdfpage" data-page="252">PDF p. 252</div>
+<figure><img src="assets/fig-0170.png" alt="" loading="lazy"></figure>
+<p class="listing-title">Model name Device Run time for two epochs</p>
+<p class="listing-title"><span class="no">Listing 7.8</span><span class="tl">Instruction fine-tuning the pretrained LLM</span></p>
+<p class="caption">gpt2-medium (355M) CPU (M3 MacBook Air) 15.78 minutes gpt2-medium (355M) GPU (NVIDIA L4) 1.83 minutes gpt2-medium (355M) GPU (NVIDIA A100) 0.86 minutes gpt2-small (124M) CPU (M3 MacBook Air) 5.74 minutes gpt2-small (124M) GPU (NVIDIA L4) 0.69 minutes gpt2-small (124M) GPU (NVIDIA A100) 0.39 minutes</p>
+<p>With the model and data loaders prepared, we can now proceed to train the model. The code in listing 7.8 sets up the training process, including initializing the optimizer, setting the number of epochs, and defining the evaluation frequency and starting context to evaluate generated LLM responses during training based on the first validation set instruction (<code>val_data[0]</code>) we looked at in section 7.5.</p>
+<div class="codeblock"><pre><code><span class="t-kw">import</span> time
+start_time <span class="t-op">=</span> time.<span class="t-fn">time</span>()
+<span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)
+optimizer <span class="t-op">=</span> <span class="t-bi">torch</span>.optim.<span class="t-fn">AdamW</span>(
+ model.<span class="t-fn">parameters</span>(), lr<span class="t-op">=</span><span class="t-num">0.00005</span>, weight_decay<span class="t-op">=</span><span class="t-num">0.1</span>
+)
+num_epochs <span class="t-op">=</span> <span class="t-num">2</span>
+train_losses, val_losses, tokens_seen <span class="t-op">=</span> <span class="t-fn">train_model_simple</span>(
+ model, train_loader, val_loader, optimizer, device,
+ num_epochs<span class="t-op">=</span>num_epochs, eval_freq<span class="t-op">=</span><span class="t-num">5</span>, eval_iter<span class="t-op">=</span><span class="t-num">5</span>,
+ start_context<span class="t-op">=</span><span class="t-fn">format_input</span>(val_data[<span class="t-num">0</span>]), tokenizer<span class="t-op">=</span>tokenizer
+)
+end_time <span class="t-op">=</span> time.<span class="t-fn">time</span>()
+execution_time_minutes <span class="t-op">=</span> (end_time <span class="t-op">-</span> start_time) <span class="t-op">/</span> <span class="t-num">60</span>
+<span class="t-bi">print</span>(f<span class="t-str">"Training completed in {execution_time_minutes:.2f} minutes."</span>)</code></pre></div>
+<p>The following output displays the training progress over two epochs, where a steady decrease in losses indicates improving ability to follow instructions and generate appropriate responses:</p>
+<div class="codeblock"><pre><code>Ep <span class="t-num">1</span> (Step <span class="t-num">000000</span>): Train loss <span class="t-num">2.637</span>, Val loss <span class="t-num">2.626</span>
+Ep <span class="t-num">1</span> (Step <span class="t-num">000005</span>): Train loss <span class="t-num">1.174</span>, Val loss <span class="t-num">1.103</span>
+Ep <span class="t-num">1</span> (Step <span class="t-num">000010</span>): Train loss <span class="t-num">0.872</span>, Val loss <span class="t-num">0.944</span>
+Ep <span class="t-num">1</span> (Step <span class="t-num">000015</span>): Train loss <span class="t-num">0.857</span>, Val loss <span class="t-num">0.906</span>
+...
+Ep <span class="t-num">1</span> (Step <span class="t-num">000115</span>): Train loss <span class="t-num">0.520</span>, Val loss <span class="t-num">0.665</span>
+Below <span class="t-kw">is</span> an instruction that describes a task. Write a response that
+appropriately completes the request. <span class="t-com">### Instruction: Convert the
+active sentence to passive: 'The chef cooks the meal every day.'
+### Response: The meal is prepared every day by the chef.&lt;|endoftext|&gt;
+The following is an instruction that describes a task.
+Write a response that appropriately completes the request.
+### Instruction: Convert the active sentence to passive:
+Ep 2 (Step 000120): Train loss 0.438, Val loss 0.670
+Ep 2 (Step 000125): Train loss 0.453, Val loss 0.685
+Ep 2 (Step 000130): Train loss 0.448, Val loss 0.681
+Ep 2 (Step 000135): Train loss 0.408, Val loss 0.677
+...
+Ep 2 (Step 000230): Train loss 0.300, Val loss 0.657
+Below is an instruction that describes a task. Write a response
+that appropriately completes the request. ### Instruction:
+Convert the active sentence to passive: 'The chef cooks the meal
+every day.' ### Response: The meal is cooked every day by the
+chef.&lt;|endoftext|&gt;The following is an instruction that describes
+a task. Write a response that appropriately completes the request.
+### Instruction: What is the capital of the United Kingdom
+Training completed in 0.87 minutes.</span></code></pre></div>
+<div class="pdfpage" data-page="253">PDF p. 253</div>
+<p>The training output shows that the model is learning effectively, as we can tell based on the consistently decreasing training and validation loss values over the two epochs. This result suggests that the model is gradually improving its ability to understand and follow the provided instructions. (Since the model demonstrated effective learning within these two epochs, extending the training to a third epoch or more is not essential and may even be counterproductive as it could lead to increased overfitting.)</p>
+<p> Moreover, the generated responses at the end of each epoch let us inspect the model’s progress in correctly executing the given task in the validation set example. In this case, the model successfully converts the active sentence <code>"The</code> <code>chef</code> <code>cooks</code> <code>the</code></p>
+<p><code>meal</code> <code>every</code> <code>day."</code> into its passive voice counterpart: <code>"The</code> <code>meal</code> <code>is</code> <code>cooked</code> <code>every</code> <code>day</code> <code>by</code></p>
+<p><code>the</code> <code>chef."</code></p>
+<p> We will revisit and evaluate the response quality of the model in more detail later. For now, let’s examine the training and validation loss curves to gain additional insights into the model’s learning process. For this, we use the same <code>plot_losses</code> function we used for pretraining:</p>
+<div class="codeblock"><pre><code><span class="t-kw">from</span> chapter05 <span class="t-kw">import</span> plot_losses
+epochs_tensor <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">linspace</span>(<span class="t-num">0</span>, num_epochs, <span class="t-bi">len</span>(train_losses))
+<span class="t-fn">plot_losses</span>(epochs_tensor, tokens_seen, train_losses, val_losses)</code></pre></div>
+<p>From the loss plot shown in figure 7.17, we can see that the model’s performance on both the training and validation sets improves substantially over the course of training. The rapid decrease in losses during the initial phase indicates that the model quickly learns meaningful patterns and representations from the data. Then, as training progresses to the second epoch, the losses continue to decrease but at a slower</p>
+<div class="pdfpage" data-page="254">PDF p. 254</div>
+<figure><img src="assets/fig-0171.png" alt="" loading="lazy"><figcaption>Figure 7.17 The training and validation loss trends over two  epochs. The solid line represents the training loss, showing a  sharp decrease before stabilizing, while the dotted line  represents the validation loss, which follows a similar pattern. </figcaption></figure>
+<p>rate, suggesting that the model is fine-tuning its learned representations and converging to a stable solution. </p>
+<p>While the loss plot in figure 7.17 indicates that the model is training effectively, the most crucial aspect is its performance in terms of response quality and correctness. So, next, let’s extract the responses and store them in a format that allows us to evaluate and quantify the response quality.</p>
+<h3 id="exercise-7-3-fine-tuning-on-the-original-alpaca-dataset">Exercise 7.3 Fine-tuning on the original Alpaca dataset <a class="anchor" href="#exercise-7-3-fine-tuning-on-the-original-alpaca-dataset">#</a></h3>
+<div class="plainbox"><p>The Alpaca dataset, by researchers at Stanford, is one of the earliest and most pop-</p><p>ular openly shared instruction datasets, consisting of 52,002 entries. As an alterna-</p><p>tive to the <code>instruction-data.json</code> file we use here, consider fine-tuning an LLM on</p><p>this dataset. The dataset is available at <a href="https://mng.bz/NBnE" rel="noopener">https://mng.bz/NBnE</a>.</p><p>This dataset contains 52,002 entries, which is approximately 50 times more than</p><p>those we used here, and most entries are longer. Thus, I highly recommend using a</p><p>GPU to conduct the training, which will accelerate the fine-tuning process. If you</p><p>encounter out-of-memory errors, consider reducing the <code>batch_size</code> from 8 to 4, 2,</p><p>or even 1. Lowering the <code>allowed_max_length</code> from 1,024 to 512 or 256 can also</p><p>help manage memory problems.</p></div>
+<h2 id="extracting-and-saving-responses">7.7 Extracting and saving responses<a class="anchor" href="#extracting-and-saving-responses">#</a></h2>
+<p>Having fine-tuned the LLM on the training portion of the instruction dataset, we are now ready to evaluate its performance on the held-out test set. First, we extract the model-generated responses for each input in the test dataset and collect them for manual analysis, and then we evaluate the LLM to quantify the quality of the responses, as highlighted in figure 7.18.</p>
+<div class="pdfpage" data-page="255">PDF p. 255</div>
+<figure><img src="assets/fig-0172.png" alt="" loading="lazy"><figcaption>Figure 7.18 The three-stage process for instruction fine-tuning the LLM. In the first  two steps of stage 3, we extract and collect the model responses on the held-out test  dataset for further analysis and then evaluate the model to quantify the performance of  the instruction-fine-tuned LLM.</figcaption></figure>
+<figure><img src="assets/fig-0173.png" alt="" loading="lazy"></figure>
+<p>To complete the response instruction step, we use the <code>generate</code> function. We then print the model responses alongside the expected test set answers for the first three test set entries, presenting them side by side for comparison:</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 3 条</summary><ul><li>Iterates over the first three test set</li><li>samples</li><li>Uses the generate function imported in section 7.5</li></ul></details><pre><code><span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)
+<span class="t-kw">for</span> entry <span class="t-kw">in</span> test_data[:<span class="t-num">3</span>]:
+ input_text <span class="t-op">=</span> <span class="t-fn">format_input</span>(entry)
+ token_ids <span class="t-op">=</span> <span class="t-fn">generate</span>(
+ model<span class="t-op">=</span>model,
+ idx<span class="t-op">=</span><span class="t-fn">text_to_token_ids</span>(input_text, tokenizer).<span class="t-fn">to</span>(device),
+ max_new_tokens<span class="t-op">=</span><span class="t-num">256</span>,
+ context_size<span class="t-op">=</span>BASE_CONFIG[<span class="t-str">"context_length"</span>],
+ eos_id<span class="t-op">=</span><span class="t-num">50256</span>
+ )
+ generated_text <span class="t-op">=</span> <span class="t-fn">token_ids_to_text</span>(token_ids, tokenizer)
+
+ response_text <span class="t-op">=</span> (
+ generated_text[<span class="t-bi">len</span>(input_text):]
+ .<span class="t-fn">replace</span>(<span class="t-str">"### Response:"</span>, <span class="t-str">""</span>)
+ .<span class="t-fn">strip</span>()
+ )
+ <span class="t-bi">print</span>(input_text)
+ <span class="t-bi">print</span>(f<span class="t-str">"\nCorrect response:\n&gt;&gt; {entry['output']}"</span>)
+ <span class="t-bi">print</span>(f<span class="t-str">"\nModel response:\n&gt;&gt; {response_text.strip()}"</span>)
+ <span class="t-bi">print</span>(<span class="t-str">"-------------------------------------"</span>)</code></pre></div>
+<div class="pdfpage" data-page="256">PDF p. 256</div>
+<p>As mentioned earlier, the <code>generate</code> function returns the combined input and output text, so we use slicing and the <code>.replace()</code> method on the <code>generated_text</code> contents to extract the model’s response. The instructions, followed by the given test set response and model response, are shown next.</p>
+<div class="plainbox"><p>Below is an instruction that describes a task. Write a response that appropriately</p><p>completes the request.</p></div>
+<h2 id="instruction">### Instruction:<a class="anchor" href="#instruction">#</a></h2>
+<div class="plainbox"><p>Rewrite the sentence using a simile.</p></div>
+<h2 id="input">### Input:<a class="anchor" href="#input">#</a></h2>
+<div class="plainbox"><p>The car is very fast.</p></div>
+<h2 id="correct-response">Correct response:<a class="anchor" href="#correct-response">#</a></h2>
+<div class="plainbox"><p>&gt;&gt; The car is as fast as lightning.</p></div>
+<h2 id="model-response">Model response:<a class="anchor" href="#model-response">#</a></h2>
+<div class="plainbox"><p>&gt;&gt; The car is as fast as a bullet.</p></div>
+<div class="plainbox"><p>Below is an instruction that describes a task. Write a response that appropriately</p><p>completes the request.</p></div>
+<h2 id="instruction-2">### Instruction:<a class="anchor" href="#instruction-2">#</a></h2>
+<div class="plainbox"><p>What type of cloud is typically associated with thunderstorms?</p></div>
+<h2 id="correct-response-2">Correct response:<a class="anchor" href="#correct-response-2">#</a></h2>
+<div class="plainbox"><p>&gt;&gt; The type of cloud typically associated with thunderstorms is cumulonimbus.</p></div>
+<h2 id="model-response-2">Model response:<a class="anchor" href="#model-response-2">#</a></h2>
+<div class="plainbox"><p>&gt;&gt; The type of cloud associated with thunderstorms is a cumulus cloud.</p></div>
+<div class="plainbox"><p>Below is an instruction that describes a task. Write a response that appropriately</p><p>completes the request.</p></div>
+<div class="pdfpage" data-page="257">PDF p. 257</div>
+<ul><li>  Short-answer and multiple-choice benchmarks, such as Measuring Massive Multitask Language Understanding (MMLU; <a href="https://arxiv.org/abs/2009.03300" rel="noopener">https://arxiv.org/abs/2009.03300</a>), which test the general knowledge of a model.</li><li>  Human preference comparison to other LLMs, such as LMSYS chatbot arena (<a href="https://arena.lmsys.org" rel="noopener">https://arena.lmsys.org</a>).</li><li>  Automated conversational benchmarks, where another LLM like GPT-4 is used to evaluate the responses, such as AlpacaEval (<a href="https://tatsu-lab.github.io/" rel="noopener">https://tatsu-lab.github.io/</a> alpaca_eval/). In practice, it can be useful to consider all three types of evaluation methods: multiplechoice question answering, human evaluation, and automated metrics that measure conversational performance. However, since we are primarily interested in assessing conversational performance rather than just the ability to answer multiple-choice questions, human evaluation and automated metrics may be more relevant.</li></ul>
+<h2 id="instruction-3">### Instruction:<a class="anchor" href="#instruction-3">#</a></h2>
+<div class="plainbox"><p>Name the author of ‘Pride and Prejudice.’</p></div>
+<h2 id="correct-response-3">Correct response:<a class="anchor" href="#correct-response-3">#</a></h2>
+<div class="plainbox"><p>&gt;&gt; Jane Austen.</p></div>
+<h2 id="model-response-3">Model response:<a class="anchor" href="#model-response-3">#</a></h2>
+<div class="plainbox"><p>&gt;&gt; The author of ‘Pride and Prejudice’ is Jane Austen.</p></div>
+<p>As we can see based on the test set instructions, given responses, and the model’s responses, the model performs relatively well. The answers to the first and last instructions are clearly correct, while the second answer is close but not entirely accurate. The model answers with “cumulus cloud” instead of “cumulonimbus,” although it’s worth noting that cumulus clouds can develop into cumulonimbus clouds, which are capable of producing thunderstorms.</p>
+<p> Most importantly, model evaluation is not as straightforward as it is for completion fine-tuning, where we simply calculate the percentage of correct spam/non-spam class labels to obtain the classification’s accuracy. In practice, instruction-fine-tuned LLMs such as chatbots are evaluated via multiple approaches:</p>
+<h3 id="conversational-performance">Conversational performance<a class="anchor" href="#conversational-performance">#</a></h3>
+<div class="plainbox"><p>Conversational performance of LLMs refers to their ability to engage in human-like</p><p>communication by understanding context, nuance, and intent. It encompasses skills</p><p>such as providing relevant and coherent responses, maintaining consistency, and</p><p>adapting to different topics and styles of interaction.</p></div>
+<div class="pdfpage" data-page="258">PDF p. 258</div>
+<p class="listing-title"><span class="no">Listing 7.9</span><span class="tl">Generating test set responses</span></p>
+<p>Human evaluation, while providing valuable insights, can be relatively laborious and time-consuming, especially when dealing with a large number of responses. For instance, reading and assigning ratings to all 1,100 responses would require a significant amount of effort.</p>
+<p> So, considering the scale of the task at hand, we will implement an approach similar to automated conversational benchmarks, which involves evaluating the responses automatically using another LLM. This method will allow us to efficiently assess the quality of the generated responses without the need for extensive human involvement, thereby saving time and resources while still obtaining meaningful performance indicators.</p>
+<p> Let’s employ an approach inspired by AlpacaEval, using another LLM to evaluate our fine-tuned model’s responses. However, instead of relying on a publicly available benchmark dataset, we use our own custom test set. This customization allows for a more targeted and relevant assessment of the model’s performance within the context of our intended use cases, represented in our instruction dataset.</p>
+<p> To prepare the responses for this evaluation process, we append the generated model responses to the <code>test_set</code> dictionary and save the updated data as an <code>"instruction-data-with-response.json"</code> file for record keeping. Additionally, by saving this file, we can easily load and analyze the responses in separate Python sessions later on if needed.</p>
+<p> The following code listing uses the <code>generate</code> method in the same manner as before; however, we now iterate over the entire <code>test_set</code>. Also, instead of printing the model responses, we add them to the <code>test_set</code> dictionary.</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>indent for</li></ul></details><pre><code><span class="t-kw">from</span> tqdm <span class="t-kw">import</span> tqdm
+<span class="t-kw">for</span> i, entry <span class="t-kw">in</span> <span class="t-fn">tqdm</span>(<span class="t-bi">enumerate</span>(test_data), total<span class="t-op">=</span><span class="t-bi">len</span>(test_data)):
+ input_text <span class="t-op">=</span> <span class="t-fn">format_input</span>(entry)
+ token_ids <span class="t-op">=</span> <span class="t-fn">generate</span>(
+ model<span class="t-op">=</span>model,
+ idx<span class="t-op">=</span><span class="t-fn">text_to_token_ids</span>(input_text, tokenizer).<span class="t-fn">to</span>(device),
+ max_new_tokens<span class="t-op">=</span><span class="t-num">256</span>,
+ context_size<span class="t-op">=</span>BASE_CONFIG[<span class="t-str">"context_length"</span>],
+ eos_id<span class="t-op">=</span><span class="t-num">50256</span>
+ )
+ generated_text <span class="t-op">=</span> <span class="t-fn">token_ids_to_text</span>(token_ids, tokenizer)
+  response_text <span class="t-op">=</span> (
+ generated_text[<span class="t-bi">len</span>(input_text):]
+ .<span class="t-fn">replace</span>(<span class="t-str">"### Response:"</span>, <span class="t-str">""</span>)
+ .<span class="t-fn">strip</span>()
+ )
+ test_data[i][<span class="t-str">"model_response"</span>] <span class="t-op">=</span> response_text
+<span class="t-kw">with</span> <span class="t-bi">open</span>(<span class="t-str">"instruction-data-with-response.json"</span>, <span class="t-str">"w"</span>) <span class="t-kw">as</span> file: json.<span class="t-fn">dump</span>(test_data, file, indent<span class="t-op">=</span><span class="t-num">4</span>) pretty<span class="t-op">-</span>printing</code></pre></div>
+<div class="pdfpage" data-page="259">PDF p. 259</div>
+<p>Processing the dataset takes about 1 minute on an A100 GPU and 6 minutes on an M3 MacBook Air: </p>
+<div class="codeblock"><pre><code><span class="t-num">100</span><span class="t-op">%|</span>██████████<span class="t-op">|</span> <span class="t-num">110</span><span class="t-op">/</span><span class="t-num">110</span> [<span class="t-num">01</span>:<span class="t-num">05</span><span class="t-op">&lt;</span><span class="t-num">00</span>:<span class="t-num">00</span>, <span class="t-num">1.68it</span><span class="t-op">/</span>s]</code></pre></div>
+<p>Let’s verify that the responses have been correctly added to the <code>test_set</code> dictionary by examining one of the entries:</p>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(test_data[<span class="t-num">0</span>])</code></pre></div>
+<p>The output shows that the <code>model_response</code> has been added correctly:</p>
+<div class="codeblock"><pre><code>{<span class="t-str">'instruction'</span>: <span class="t-str">'Rewrite the sentence using a simile.'</span>,
+ <span class="t-str">'input'</span>: <span class="t-str">'The car is very fast.'</span>,
+ <span class="t-str">'output'</span>: <span class="t-str">'The car is as fast as lightning.'</span>,
+ <span class="t-str">'model_response'</span>: <span class="t-str">'The car is as fast as a bullet.'</span>}</code></pre></div>
+<p>Finally, we save the model as <code>gpt2-medium355M-sft.pth</code> file to be able to reuse it in future projects:</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>Removes white spaces and parentheses from file name</li></ul></details><pre><code><span class="t-kw">import</span> re
+file_name <span class="t-op">=</span> f<span class="t-str">"{re.sub(r'[ ()]', '', CHOOSE_MODEL) }-sft.pth"</span>
+<span class="t-bi">torch</span>.<span class="t-fn">save</span>(model.<span class="t-fn">state_dict</span>(), file_name)
+<span class="t-bi">print</span>(f<span class="t-str">"Model saved as {file_name}"</span>)</code></pre></div>
+<p>The saved model can then be loaded via <code>model.load_state_dict(torch.load("gpt2</code></p>
+<div class="codeblock"><pre><code><span class="t-op">-</span>medium355M<span class="t-op">-</span>sft.pth<span class="t-str">")).</span></code></pre></div>
+<h2 id="evaluating-the-fine-tuned-llm">7.8 Evaluating the fine-tuned LLM<a class="anchor" href="#evaluating-the-fine-tuned-llm">#</a></h2>
+<p>Previously, we judged the performance of an instruction-fine-tuned model by looking at its responses on three examples of the test set. While this gives us a rough idea of how well the model performs, this method does not scale well to larger amounts of responses. So, we implement a method to automate the response evaluation of the fine-tuned LLM using another, larger LLM, as highlighted in figure 7.19.</p>
+<p> To evaluate test set responses in an automated fashion, we utilize an existing instruction-fine-tuned 8-billion-parameter Llama 3 model developed by Meta AI. This model can be run locally using the open source Ollama application (<a href="https://ollama" rel="noopener">https://ollama</a> .com).</p>
+<aside class="callout note"><p class="lab">NOTE</p><p>Ollama is an efficient application for running LLMs on a laptop. It serves as a wrapper around the open source llama.cpp library (<a href="https://github" rel="noopener">https://github</a> .com/ggerganov/llama.cpp), which implements LLMs in pure C/C++ to maximize efficiency. However, Ollama is only a tool for generating text using LLMs (inference) and does not support training or fine-tuning LLMs.</p></aside>
+<div class="pdfpage" data-page="260">PDF p. 260</div>
+<figure><img src="assets/fig-0174.png" alt="" loading="lazy"><figcaption>Figure 7.19 The three-stage process for instruction fine-tuning the LLM. In this last  step of the instruction-fine-tuning pipeline, we implement a method to quantify the  performance of the fine-tuned model by scoring the responses it generated for the test.</figcaption></figure>
+<ul><li> <em> For macOS and Windows users</em>—Open the downloaded Ollama application. If prompted to install command-line usage, select Yes.</li><li> <em> For Linux users</em>—Use the installation command available on the Ollama website. Before implementing the model evaluation code, let’s first download the Llama 3 model and verify that Ollama is functioning correctly by using it from the commandline terminal. To use Ollama from the command line, you must either start the Ollama application or run <code>ollama</code> <code>serve</code> in a separate terminal, as shown in figure 7.20.</li></ul>
+<h3 id="using-larger-llms-via-web-apis">Using larger LLMs via web APIs <a class="anchor" href="#using-larger-llms-via-web-apis">#</a></h3>
+<div class="plainbox"><p>The 8-billion-parameter Llama 3 model is a very capable LLM that runs locally. How-</p><p>ever, it’s not as capable as large proprietary LLMs such as GPT-4 offered by OpenAI.</p><p>For readers interested in exploring how to utilize GPT-4 through the OpenAI API to</p><p>assess generated model responses, an optional code notebook is available within</p><p>the supplementary materials accompanying this book at <a href="https://mng.bz/BgEv" rel="noopener">https://mng.bz/BgEv</a>.</p></div>
+<p>To execute the following code, install Ollama by visiting <a href="https://ollama.com" rel="noopener">https://ollama.com</a> and follow the provided instructions for your operating system:</p>
+<div class="pdfpage" data-page="261">PDF p. 261</div>
+<figure><img src="assets/fig-0175.png" alt="" loading="lazy"></figure>
+<figure><img src="assets/fig-0176.png" alt="" loading="lazy"></figure>
+<figure><img src="assets/fig-0177.png" alt="" loading="lazy"><figcaption>Figure 7.20 Two options for running Ollama. The left panel illustrates starting Ollama using ollama serve.  The right panel shows a second option in macOS, running the Ollama application in the background instead of  using the ollama serve command to start the application.</figcaption></figure>
+<aside class="sidenote">Second option: if you are using macOS, you</aside>
+<aside class="sidenote">First option: make sure to start ollama in a separate can also start the ollama application and</aside>
+<aside class="sidenote">terminal via theollama serve command. make sure it is running in the background instead of runningollama serve.</aside>
+<p>With the Ollama application or <code>ollama</code> <code>serve</code> running in a different terminal, execute the following command on the command line (not in a Python session) to try out the 8-billion-parameter Llama 3 model:</p>
+<div class="codeblock"><pre><code>ollama run llama3</code></pre></div>
+<p>The first time you execute this command, this model, which takes up 4.7 GB of storage space, will be automatically downloaded. The output looks like the following:</p>
+<div class="codeblock"><pre><code>pulling manifest
+pulling <span class="t-num">6a0746a1ec1a...</span> <span class="t-num">100</span><span class="t-op">%</span> <span class="t-op">|</span>████████████████<span class="t-op">|</span> <span class="t-num">4.7</span> GB
+pulling <span class="t-num">4fa551d4f938...</span> <span class="t-num">100</span><span class="t-op">%</span> <span class="t-op">|</span>████████████████<span class="t-op">|</span> <span class="t-num">12</span> KB
+pulling <span class="t-num">8ab4849b038c...</span> <span class="t-num">100</span><span class="t-op">%</span> <span class="t-op">|</span>████████████████<span class="t-op">|</span> <span class="t-num">254</span> B
+pulling <span class="t-num">577073ffcc6c...</span> <span class="t-num">100</span><span class="t-op">%</span> <span class="t-op">|</span>████████████████<span class="t-op">|</span> <span class="t-num">110</span> B
+pulling <span class="t-num">3f8eb4da87fa...</span> <span class="t-num">100</span><span class="t-op">%</span> <span class="t-op">|</span>████████████████<span class="t-op">|</span> <span class="t-num">485</span> B
+verifying sha256 digest
+writing manifest
+removing <span class="t-bi">any</span> unused layers
+success</code></pre></div>
+<div class="pdfpage" data-page="262">PDF p. 262</div>
+<h3 id="alternative-ollama-models">Alternative Ollama models <a class="anchor" href="#alternative-ollama-models">#</a></h3>
+<div class="plainbox"><p>The <code>llama3</code> in the <code>ollama</code> <code>run</code> <code>llama3</code> command refers to the instruction-fine-tuned</p><p>8-billion-parameter Llama 3 model. Using Ollama with the <code>llama3</code> model requires</p><p>approximately 16 GB of RAM. If your machine does not have sufficient RAM, you can</p><p>try using a smaller model, such as the 3.8-billion-parameter <code>phi3</code> model via <code>ollama</code></p></div>
+<p><code>run</code> <code>llama3</code>, which only requires around 8 GB of RAM.</p>
+<div class="plainbox"><p>For more powerful computers, you can also use the larger 70-billion-parameter Llama</p><p>3 model by replacing <code>llama3</code> with <code>llama3:70b</code>. However, this model requires signifi-</p><p>cantly more computational resources.</p></div>
+<p>Once the model download is complete, we are presented with a command-line interface that allows us to interact with the model. For example, try asking the model, “What do llamas eat?”</p>
+<div class="codeblock"><pre><code><span class="t-op">&gt;&gt;&gt;</span> What do llamas eat?
+Llamas are ruminant animals, which means they have a four<span class="t-op">-</span>chambered
+stomach <span class="t-kw">and</span> eat plants that are high <span class="t-kw">in</span> fiber. In the wild,
+llamas typically feed on:
+<span class="t-num">1.</span> Grasses: They love to graze on various types of grasses, including tall
+grasses, wheat, oats, <span class="t-kw">and</span> barley.</code></pre></div>
+<p>Note that the response you see might differ since Ollama is not deterministic as of this writing.</p>
+<p> You can end this <code>ollama</code> <code>run</code> <code>llama3</code> session using the input <code>/bye</code>. However, make sure to keep the <code>ollama</code> <code>serve</code> command or the Ollama application running for the remainder of this chapter.</p>
+<p> The following code verifies that the Ollama session is running properly before we use Ollama to evaluate the test set responses:</p>
+<div class="codeblock"><pre><code><span class="t-kw">import</span> psutil
+<span class="t-kw">def</span> <span class="t-fn">check_if_running</span>(process_name):
+ running <span class="t-op">=</span> <span class="t-kw">False</span>
+ <span class="t-kw">for</span> proc <span class="t-kw">in</span> psutil.<span class="t-fn">process_iter</span>([<span class="t-str">"name"</span>]):
+ <span class="t-kw">if</span> process_name <span class="t-kw">in</span> proc.info[<span class="t-str">"name"</span>]:
+ running <span class="t-op">=</span> <span class="t-kw">True</span>
+ <span class="t-kw">break</span>
+ <span class="t-kw">return</span> running
+ollama_running <span class="t-op">=</span> <span class="t-fn">check_if_running</span>(<span class="t-str">"ollama"</span>)
+<span class="t-kw">if</span> <span class="t-kw">not</span> ollama_running:
+ <span class="t-kw">raise</span> <span class="t-bi">RuntimeError</span>(
+ <span class="t-str">"Ollama not running. Launch ollama before proceeding."</span>
+)
+<span class="t-bi">print</span>(<span class="t-str">"Ollama running:"</span>, <span class="t-fn">check_if_running</span>(<span class="t-str">"ollama"</span>))</code></pre></div>
+<div class="pdfpage" data-page="263">PDF p. 263</div>
+<p class="listing-title"><span class="no">Listing 7.10</span><span class="tl">Querying a local Ollama model</span></p>
+<p>Ensure that the output from executing the previous code displays <code>Ollama</code> <code>running:</code> <code>True</code>. If it shows <code>False</code>, verify that the <code>ollama</code> <code>serve</code> command or the Ollama application is actively running.</p>
+<h3 id="running-the-code-in-a-new-python-session">Running the code in a new Python session <a class="anchor" href="#running-the-code-in-a-new-python-session">#</a></h3>
+<div class="plainbox"><p>If you already closed your Python session or if you prefer to execute the remaining</p><p>code in a different Python session, use the following code, which loads the instruction</p><p>and response data file we previously created and redefines the <code>format_input</code> func-</p><p>tion we used earlier (the <code>tqdm</code> progress bar utility is used later): </p></div>
+<div class="codeblock"><pre><code><span class="t-kw">import</span> json
+<span class="t-kw">from</span> tqdm <span class="t-kw">import</span> tqdm
+file_path <span class="t-op">=</span> <span class="t-str">"instruction-data-with-response.json"</span>
+<span class="t-kw">with</span> <span class="t-bi">open</span>(file_path, <span class="t-str">"r"</span>) <span class="t-kw">as</span> file:
+ test_data <span class="t-op">=</span> json.<span class="t-fn">load</span>(file)
+<span class="t-kw">def</span> <span class="t-fn">format_input</span>(entry):
+ instruction_text <span class="t-op">=</span> (
+ f<span class="t-str">"Below is an instruction that describes a task. "</span>
+ f<span class="t-str">"Write a response that appropriately completes the request."</span>
+ f<span class="t-str">"\n\n### Instruction:\n{entry['instruction']}"</span>
+ )</code></pre></div>
+<div class="codeblock"><pre><code> input_text <span class="t-op">=</span> (
+ f<span class="t-str">"\n\n### Input:\n{entry['input']}"</span> <span class="t-kw">if</span> entry[<span class="t-str">"input"</span>] <span class="t-kw">else</span> <span class="t-str">""</span>
+ )
+ <span class="t-kw">return</span> instruction_text <span class="t-op">+</span> input_text</code></pre></div>
+<p>An alternative to the <code>ollama</code> <code>run</code> command for interacting with the model is through its REST API using Python. The <code>query_model</code> function shown in the following listing demonstrates how to use the API.</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 2 条</summary><ul><li>Creates the data payload as a dictionary</li><li>Settings for deterministic responses</li></ul></details><pre><code><span class="t-kw">import</span> urllib.request
+<span class="t-kw">def</span> <span class="t-fn">query_model</span>(
+ prompt,
+ model<span class="t-op">=</span><span class="t-str">"llama3"</span>,
+ url<span class="t-op">=</span><span class="t-str">"http://localhost:11434/api/chat"</span>
+):
+ data <span class="t-op">=</span> {
+ <span class="t-str">"model"</span>: model,
+ <span class="t-str">"messages"</span>: [
+ {<span class="t-str">"role"</span>: <span class="t-str">"user"</span>, <span class="t-str">"content"</span>: prompt}
+ ],
+ <span class="t-str">"options"</span>: {
+ <span class="t-str">"seed"</span>: <span class="t-num">123</span>,
+ <span class="t-str">"temperature"</span>: <span class="t-num">0</span>,
+ <span class="t-str">"num_ctx"</span>: <span class="t-num">2048</span>
+ }
+ }</code></pre></div>
+<div class="pdfpage" data-page="264">PDF p. 264</div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 2 条</summary><ul><li>Creates a request object, setting the method to POST and adding necessary headers</li><li>Sends the request and captures the response</li></ul></details><pre><code> payload <span class="t-op">=</span> json.<span class="t-fn">dumps</span>(data).<span class="t-fn">encode</span>(<span class="t-str">"utf-8"</span>)
+ request <span class="t-op">=</span> urllib.request.<span class="t-fn">Request</span>(
+ url,
+ data<span class="t-op">=</span>payload,
+ method<span class="t-op">=</span><span class="t-str">"POST"</span>
+ )
+
+ request.<span class="t-fn">add_header</span>(<span class="t-str">"Content-Type"</span>, <span class="t-str">"application/json"</span>)
+ response_data <span class="t-op">=</span> <span class="t-str">""</span>
+ <span class="t-kw">with</span> urllib.request.<span class="t-fn">urlopen</span>(request) <span class="t-kw">as</span> response:
+ <span class="t-kw">while</span> <span class="t-kw">True</span>:
+ line <span class="t-op">=</span> response.<span class="t-fn">readline</span>().<span class="t-fn">decode</span>(<span class="t-str">"utf-8"</span>)
+ <span class="t-kw">if</span> <span class="t-kw">not</span> line:
+ <span class="t-kw">break</span>
+ response_json <span class="t-op">=</span> json.<span class="t-fn">loads</span>(line)
+ response_data <span class="t-op">+=</span> response_json[<span class="t-str">"message"</span>][<span class="t-str">"content"</span>]
+ <span class="t-kw">return</span> response_data</code></pre></div>
+<p>Before running the subsequent code cells in this notebook, ensure that Ollama is still running. The previous code cells should print <code>"Ollama</code> <code>running:</code> <code>True"</code> to confirm that the model is active and ready to receive requests.</p>
+<p> The following is an example of how to use the <code>query_model</code> function we just implemented:</p>
+<div class="codeblock"><pre><code>model <span class="t-op">=</span> <span class="t-str">"llama3"</span>
+result <span class="t-op">=</span> <span class="t-fn">query_model</span>(<span class="t-str">"What do Llamas eat?"</span>, model)
+<span class="t-bi">print</span>(result)</code></pre></div>
+<p>The resulting response is as follows:</p>
+<div class="codeblock"><pre><code>Llamas are ruminant animals, which means they have a four<span class="t-op">-</span>chambered
+stomach that allows them to digest plant<span class="t-op">-</span>based foods. Their diet
+typically consists of:
+<span class="t-num">1.</span> Grasses: Llamas love to graze on grasses, including tall grasses,
+short grasses, <span class="t-kw">and</span> even weeds.
+...</code></pre></div>
+<p>Using the <code>query_model</code> function defined earlier, we can evaluate the responses generated by our fine-tuned model that prompts the Llama 3 model to rate our finetuned model’s responses on a scale from 0 to 100 based on the given test set response as reference. </p>
+<div class="pdfpage" data-page="265">PDF p. 265</div>
+<p> First, we apply this approach to the first three examples from the test set that we previously examined:</p>
+<div class="codeblock"><pre><code><span class="t-kw">for</span> entry <span class="t-kw">in</span> test_data[:<span class="t-num">3</span>]:
+ prompt <span class="t-op">=</span> (
+ f<span class="t-str">"Given the input `{format_input(entry)}` "</span>
+ f<span class="t-str">"and correct output `{entry['output']}`, "</span>
+ f<span class="t-str">"score the model response `{entry['model_response']}`"</span>
+ f<span class="t-str">" on a scale from 0 to 100, where 100 is the best score. "</span>
+ )
+ <span class="t-bi">print</span>(<span class="t-str">"\nDataset response:"</span>)
+ <span class="t-bi">print</span>(<span class="t-str">"&gt;&gt;"</span>, entry[<span class="t-str">'output'</span>])
+ <span class="t-bi">print</span>(<span class="t-str">"\nModel response:"</span>)
+ <span class="t-bi">print</span>(<span class="t-str">"&gt;&gt;"</span>, entry[<span class="t-str">"model_response"</span>])
+ <span class="t-bi">print</span>(<span class="t-str">"\nScore:"</span>)
+ <span class="t-bi">print</span>(<span class="t-str">"&gt;&gt;"</span>, <span class="t-fn">query_model</span>(prompt))
+ <span class="t-bi">print</span>(<span class="t-str">"\n-------------------------"</span>)</code></pre></div>
+<p>This code prints outputs similar to the following (as of this writing, Ollama is not fully deterministic, so the generated texts may vary):</p>
+<h2 id="dataset-response">Dataset response:<a class="anchor" href="#dataset-response">#</a></h2>
+<div class="plainbox"><p>&gt;&gt; The car is as fast as lightning.</p></div>
+<h2 id="model-response-4">Model response:<a class="anchor" href="#model-response-4">#</a></h2>
+<div class="plainbox"><p>&gt;&gt; The car is as fast as a bullet.</p></div>
+<h2 id="score">Score:<a class="anchor" href="#score">#</a></h2>
+<div class="plainbox"><p>&gt;&gt; I’d rate the model response “The car is as fast as a bullet.” an 85 out of 100.</p></div>
+<div class="plainbox"><p>Here’s why:</p></div>
+<div class="plainbox"><p>The response uses a simile correctly, comparing the speed of the car to something</p><p>else (in this case, a bullet).</p></div>
+<div class="plainbox"><p>The comparison is relevant and makes sense, as bullets are known for their high</p><p>velocity.</p></div>
+<div class="plainbox"><p>The phrase “as fast as” is used correctly to introduce the simile.</p></div>
+<div class="plainbox"><p>The only reason I wouldn’t give it a perfect score is that some people might find the</p><p>comparison slightly less vivid or evocative than others. For example, comparing</p><p>something to lightning (as in the original response) can be more dramatic and atten-</p><p>tion grabbing. However, “as fast as a bullet” is still a strong and effective simile that</p><p>effectively conveys the idea of the car’s speed.</p></div>
+<div class="plainbox"><p>Overall, I think the model did a great job!</p></div>
+<div class="pdfpage" data-page="266">PDF p. 266</div>
+<h2 id="dataset-response-2">Dataset response:<a class="anchor" href="#dataset-response-2">#</a></h2>
+<div class="plainbox"><p>&gt;&gt; The type of cloud typically associated with thunderstorms is cumulonimbus.</p></div>
+<h2 id="model-response-5">Model response:<a class="anchor" href="#model-response-5">#</a></h2>
+<div class="plainbox"><p>&gt;&gt; The type of cloud associated with thunderstorms is a cumulus cloud.</p></div>
+<h2 id="score-2">Score:<a class="anchor" href="#score-2">#</a></h2>
+<div class="plainbox"><p>&gt;&gt; I’d score this model response as 40 out of 100.</p></div>
+<div class="plainbox"><p>Here’s why:</p></div>
+<div class="plainbox"><p>The model correctly identifies that thunderstorms are related to clouds (correctly</p><p>identifying the type of phenomenon).</p></div>
+<div class="plainbox"><p>However, it incorrectly specifies the type of cloud associated with thunderstorms.</p><p>Cumulus clouds are not typically associated with thunderstorms; cumulonimbus</p><p>clouds are.</p></div>
+<div class="plainbox"><p>The response lacks precision and accuracy in its description.</p></div>
+<div class="plainbox"><p>Overall, while the model attempts to address the instruction, it provides an incorrect</p><p>answer, which is a significant error.</p></div>
+<h2 id="dataset-response-3">Dataset response:<a class="anchor" href="#dataset-response-3">#</a></h2>
+<div class="plainbox"><p>&gt;&gt; Jane Austen.</p></div>
+<h2 id="model-response-6">Model response:<a class="anchor" href="#model-response-6">#</a></h2>
+<div class="plainbox"><p>&gt;&gt; The author of ‘Pride and Prejudice’ is Jane Austen.</p></div>
+<h2 id="score-3">Score:<a class="anchor" href="#score-3">#</a></h2>
+<div class="plainbox"><p>&gt;&gt; I’d rate my own response as 95 out of 100. Here’s why:</p></div>
+<div class="plainbox"><p>The response accurately answers the question by naming the author of <em>Pride and Prej-</em></p><p><em>udice</em> as Jane Austen.</p></div>
+<div class="plainbox"><p>The response is concise and clear, making it easy to understand.</p></div>
+<div class="plainbox"><p>There are no grammatical errors or ambiguities that could lead to confusion.</p></div>
+<div class="plainbox"><p>The only reason I wouldn’t give myself a perfect score is that the response is slightly</p><p>redundant—it’s not necessary to rephrase the question in the answer. A more con-</p><p>cise response would be simply “Jane Austen.”</p></div>
+<div class="pdfpage" data-page="267">PDF p. 267</div>
+<p class="listing-title"><span class="no">Listing 7.11</span><span class="tl">Evaluating the instruction fine-tuning LLM</span></p>
+<p>The generated responses show that the Llama 3 model provides reasonable evaluations and is capable of assigning partial points when a model’s answer is not entirely correct. For instance, if we consider the evaluation of the “cumulus cloud” answer, the model acknowledges the partial correctness of the response.</p>
+<p> The previous prompt returns highly detailed evaluations in addition to the score. We can modify the prompt to just generate integer scores ranging from 0 to 100, where 100 represents the best possible score. This modification allows us to calculate an average score for our model, which serves as a more concise and quantitative assessment of its performance. The <code>generate_model_scores</code> function shown in the following listing uses a modified prompt telling the model to <code>"Respond</code> <code>with</code> <code>the</code></p>
+<div class="codeblock"><pre><code>integer number only.<span class="t-str">"</span></code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>Modified instruction line to only return the score</li></ul></details><pre><code><span class="t-kw">def</span> <span class="t-fn">generate_model_scores</span>(json_data, json_key, model<span class="t-op">=</span><span class="t-str">"llama3"</span>):
+ scores <span class="t-op">=</span> []
+ <span class="t-kw">for</span> entry <span class="t-kw">in</span> <span class="t-fn">tqdm</span>(json_data, desc<span class="t-op">=</span><span class="t-str">"Scoring entries"</span>):
+ prompt <span class="t-op">=</span> (
+ f<span class="t-str">"Given the input `{format_input(entry)}` "</span>
+ f<span class="t-str">"and correct output `{entry['output']}`, "</span>
+ f<span class="t-str">"score the model response `{entry[json_key]}`"</span>
+ f<span class="t-str">" on a scale from 0 to 100, where 100 is the best score. "</span>
+ f<span class="t-str">"Respond with the integer number only."</span>
+ )
+ score <span class="t-op">=</span> <span class="t-fn">query_model</span>(prompt, model)
+ <span class="t-kw">try</span>:
+ scores.<span class="t-fn">append</span>(<span class="t-bi">int</span>(score))
+ <span class="t-kw">except</span> <span class="t-bi">ValueError</span>:
+ <span class="t-bi">print</span>(f<span class="t-str">"Could not convert score: {score}"</span>)
+ <span class="t-kw">continue</span>
+ <span class="t-kw">return</span> scores</code></pre></div>
+<p>Let’s now apply the <code>generate_model_scores</code> function to the entire <code>test_data</code> set, which takes about 1 minute on a M3 Macbook Air:</p>
+<div class="codeblock"><pre><code>scores <span class="t-op">=</span> <span class="t-fn">generate_model_scores</span>(test_data, <span class="t-str">"model_response"</span>)
+<span class="t-bi">print</span>(f<span class="t-str">"Number of scores: {len(scores)} of {len(test_data)}"</span>)
+<span class="t-bi">print</span>(f<span class="t-str">"Average score: {sum(scores)/len(scores):.2f}\n"</span>)</code></pre></div>
+<p>The results are as follows:</p>
+<div class="codeblock"><pre><code>Scoring entries: <span class="t-num">100</span><span class="t-op">%|</span>████████████████████████<span class="t-op">|</span> <span class="t-num">110</span><span class="t-op">/</span><span class="t-num">110</span>
+[<span class="t-num">01</span>:<span class="t-num">10</span><span class="t-op">&lt;</span><span class="t-num">00</span>:<span class="t-num">00</span>, <span class="t-num">1.56it</span><span class="t-op">/</span>s]
+Number of scores: <span class="t-num">110</span> of <span class="t-num">110</span>
+Average score: <span class="t-num">50.32</span></code></pre></div>
+<p>The evaluation output shows that our fine-tuned model achieves an average score above 50, which provides a useful benchmark for comparison against other models</p>
+<div class="pdfpage" data-page="268">PDF p. 268</div>
+<ul><li>  Adjusting the hyperparameters during fine-tuning, such as the learning rate, batch size, or number of epochs</li><li>  Increasing the size of the training dataset or diversifying the examples to cover a broader range of topics and styles</li><li>  Experimenting with different prompts or instruction formats to guide the model’s responses more effectively</li><li>  Using a larger pretrained model, which may have greater capacity to capture complex patterns and generate more accurate responses</li></ul>
+<p>or for experimenting with different training configurations to improve the model’s performance.</p>
+<p> It’s worth noting that Ollama is not entirely deterministic across operating systems at the time of this writing, which means that the scores you obtain might vary slightly from the previous scores. To obtain more robust results, you can repeat the evaluation multiple times and average the resulting scores.</p>
+<p> To further improve our model’s performance, we can explore various strategies, such as</p>
+<aside class="callout note"><p class="lab">NOTE</p><p>For reference, when using the methodology described herein, the Llama 3 8B base model, without any fine-tuning, achieves an average score of 58.51 on the test set. The Llama 3 8B instruct model, which has been finetuned on a general instruction-following dataset, achieves an impressive average score of 82.6.</p></aside>
+<h3 id="exercise-7-4-parameter-efficient-fine-tuning-with-lora">Exercise 7.4 Parameter-efficient fine-tuning with LoRA <a class="anchor" href="#exercise-7-4-parameter-efficient-fine-tuning-with-lora">#</a></h3>
+<div class="plainbox"><p>To instruction fine-tune an LLM more efficiently, modify the code in this chapter to</p><p>use the low-rank adaptation method (LoRA) from appendix E. Compare the training</p><p>run time and model performance before and after the modification.</p></div>
+<h2 id="conclusions">7.9 Conclusions<a class="anchor" href="#conclusions">#</a></h2>
+<p>This chapter marks the conclusion of our journey through the LLM development cycle. We have covered all the essential steps, including implementing an LLM architecture, pretraining an LLM, and fine-tuning it for specific tasks, as summarized in figure 7.21. Let’s discuss some ideas for what to look into next.</p>
+<h3 id="what-s-next">7.9.1 What’s next?<a class="anchor" href="#what-s-next">#</a></h3>
+<p>While we covered the most essential steps, there is an optional step that can be performed after instruction fine-tuning: preference fine-tuning. Preference fine-tuning is particularly useful for customizing a model to better align with specific user preferences. If you are interested in exploring this further, see the <code>04_preference-tuning</code><code>with-dpo</code> folder in this book’s supplementary GitHub repository at <a href="https://mng" rel="noopener">https://mng</a> .bz/dZwD.</p>
+<div class="pdfpage" data-page="269">PDF p. 269</div>
+<figure><img src="assets/fig-0178.png" alt="" loading="lazy"><figcaption>Figure 7.21 The three main stages of coding an LLM. </figcaption></figure>
+<p>In addition to the main content covered in this book, the GitHub repository also contains a large selection of bonus material that you may find valuable. To learn more about these additional resources, visit the Bonus Material section on the repository’s README page: <a href="https://mng.bz/r12g" rel="noopener">https://mng.bz/r12g</a>.</p>
+<h3 id="staying-up-to-date-in-a-fast-moving-field">7.9.2 Staying up to date in a fast-moving field<a class="anchor" href="#staying-up-to-date-in-a-fast-moving-field">#</a></h3>
+<p>The fields of AI and LLM research are evolving at a rapid (and, depending on who you ask, exciting) pace. One way to keep up with the latest advancements is to explore recent research papers on arXiv at <a href="https://arxiv.org/list/cs.LG/recent" rel="noopener">https://arxiv.org/list/cs.LG/recent</a>. Additionally, many researchers and practitioners are very active in sharing and discussing the latest developments on social media platforms like X (formerly Twitter) and Reddit. The subreddit r/LocalLLaMA, in particular, is a good resource for connecting with the community and staying informed about the latest tools and trends. I also regularly share insights and write about the latest in LLM research on my blog, available at <a href="https://magazine.sebastianraschka.com" rel="noopener">https://magazine.sebastianraschka.com</a> and <a href="https://sebastianraschka.com/blog/" rel="noopener">https://sebastianraschka.com/blog/</a>.</p>
+<h3 id="final-words">7.9.3 Final words<a class="anchor" href="#final-words">#</a></h3>
+<p>I hope you have enjoyed this journey of implementing an LLM from the ground up and coding the pretraining and fine-tuning functions from scratch. In my opinion, building an LLM from scratch is the most effective way to gain a deep understanding of how LLMs work. I hope that this hands-on approach has provided you with valuable insights and a solid foundation in LLM development.</p>
+<div class="pdfpage" data-page="270">PDF p. 270</div>
+<ul><li>  The instruction-fine-tuning process adapts a pretrained LLM to follow human instructions and generate desired responses.</li><li>  Preparing the dataset involves downloading an instruction-response dataset, formatting the entries, and splitting it into train, validation, and test sets.</li><li>  Training batches are constructed using a custom collate function that pads sequences, creates target token IDs, and masks padding tokens.</li><li>  We load a pretrained GPT-2 medium model with 355 million parameters to serve as the starting point for instruction fine-tuning.</li><li>  The pretrained model is fine-tuned on the instruction dataset using a training loop similar to pretraining.</li><li>  Evaluation involves extracting model responses on a test set and scoring them (for example, using another LLM).</li><li>  The Ollama application with an 8-billion-parameter Llama model can be used to automatically score the fine-tuned model’s responses on the test set, providing an average score to quantify performance.</li></ul>
+<p> While the primary purpose of this book is educational, you may be interested in utilizing different and more powerful LLMs for real-world applications. For this, I recommend exploring popular tools such as Axolotl (<a href="https://github.com/OpenAccess" rel="noopener">https://github.com/OpenAccess</a> -AI-Collective/axolotl) or LitGPT (<a href="https://github.com/Lightning-AI/litgpt" rel="noopener">https://github.com/Lightning-AI/litgpt</a>), which I am actively involved in developing.</p>
+<p> Thank you for joining me on this learning journey, and I wish you all the best in your future endeavors in the exciting field of LLMs and AI!</p>
+<h2 id="summary-7">Summary<a class="anchor" href="#summary-7">#</a></h2><div class="colophon"><p>由 <code>pdf2html2.py</code> 从 <code>bllm2.pdf</code> 转换。插图为原书矢量图按区域渲染的截图，代码块带语法高亮，连字符断词已按全书词表还原。</p></div>
+</main>
+<nav class="chapnav" aria-label="Chapter navigation"><div class="chapnav-inner">
+<a class="prev" href="12-fine-tuning-for-classification.html"><span class="lbl">上一章</span><span class="nm">Fine-tuning for classification</span></a><a class="next" href="14-appendix-a-introduction-to-pytorch.html"><span class="lbl">下一章</span><span class="nm">appendix A Introduction to PyTorch</span></a>
+</div></nav>
+<script src="app.js"></script>
+</body>
+</html>

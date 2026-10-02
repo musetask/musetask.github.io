@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>Probabilities vs. likelihoods · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/detail.css">
+<link rel="prev" href="page-45.html">
+<link rel="next" href="page-47.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 46 页 / 共 108 页</span></div>
+<aside class="detail-link"><span class="tag">补充材料</span>「概率 vs 似然」以及为什么 <code>next_token_probas</code> 是概率而不是似然，在 <a href="page-48-detail.html"><b>5.5 / 5.6 概率到 logprob 详解 · 1</b></a> 里有完整讨论。全部推导页的索引见 <a href="math-detail.html">math-detail.html</a>。</aside>
+<h3 id="h3-probabilities-vs-likelihoods">Probabilities vs. likelihoods</h3>
+<div class="lead">You may have noticed that we’ve used both the terms “probability” and “likelihood.” Is there a difference? In statistics, probabilities describe how likely an event is before we observe any data, and they must sum to one across all possible outcomes. Likelihoods, in contrast, measure how well a specific model explains observed data, and they are viewed as a function of the model’s weights or parameters, not the data. In short, probabilities predict data given a model, while likelihoods evaluate models given data. (For a more detailed example, see my article on probabilities versus likelihoods: “What is the difference between likelihood and probability?” at https://sebastianraschka.com/faq/docs/probability-vs-likelihood.html.) In LLMs, the next-token probability is technically a probability, not a likelihood, because it comes from a normalized distribution over all possible next tokens that sums to one. In other words, the values in <code>next_token_probas</code> are probabilities, not </div>
+<div class="lead">likelihoods. They come directly from the model’s softmax over the vocabulary for each position, which is a normalized probability distribution. The product, computed as the joint probability (<code>torch.prod(next_token_probas)</code>), is the model-assigned probability of the sequence. This quantity is often referred to as the sequence likelihood (especially when viewed as a function of the model parameters).</div>
+<h2 id="h2-from-token-probability-scores-to-log-probabilities"><span class="num">5.5</span>From token probability scores to log probabilities</h2>
+<p>The token probabilities computed in the previous section can be used as a scoring function to rank different responses. As we saw, the probability scores can be very small, especially when multiplied to obtain the joint probability or sequence likelihood.</p>
+<p>In this section, to avoid the numerical stability issues that often arise when working with such small values, we’ll apply <em>logarithmic scaling</em> (also called <em>log scaling</em>) to these probabilities, as shown in the overview in figure 5.13.</p>
+<figure><a class="zoom" href="assets/figure-5.13.png" tabindex="-1"><img src="assets/figure-5.13.png" alt="" width="1030" height="491" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 5.13</span>Overview of moving from token probabilities to token log probabilities, which provide a numerically more stable basis for the log-probability scoring used later in self-refinement.</figcaption></figure>
+<aside><span class="tag">Note</span>This section focuses on applying a scaling transformation to the proba bilities from the previous section. Our overall goal is still to compute the token probabilities, or, in this case, log probabilities (which you’ll see soon).</aside>
+<p>Consider this simple example of computing probabilities for a selection of logit values:</p>
+<pre><code class="language-python">torch.set_printoptions<span class="tok-kw">(</span>precision=<span class="tok-fn">4</span>, sci_mode=<span class="tok-kw">False)</span>
+logits = torch.linspace<span class="tok-kw">(</span>-<span class="tok-fn">2</span>, <span class="tok-fn">2</span>, steps=<span class="tok-fn">7</span><span class="tok-kw">)</span>
+probas = torch.softmax<span class="tok-kw">(</span>logits, dim=-<span class="tok-fn">1</span><span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>probas<span class="tok-kw">)</span></code></pre>
+<p>The probability values are as follows:</p>
+<pre><code class="language-python">tensor([0.0090, 0.0175, 0.0341, 0.0665, 0.1295, 0.2522, 0.4912])</code></pre>
+<p>We can turn them into log-probability scores via the <code>torch.log</code> function:</p>
+<pre><code class="language-python">print<span class="tok-kw">(</span>torch.log<span class="tok-kw">(</span>probas<span class="tok-kw">))</span></code></pre>
+<p>These are the log-probability values:</p>
+<pre><code class="language-python">tensor([-4.7109, -4.0442, -3.3776, -2.7109, -2.0442, -1.3776, -0.7109])</code></pre>
+<p>Here, <code>torch.log</code> applies the natural logarithm, where 𝑙𝑜𝑔(0.0090) = –4.7109, and vice versa, 𝑒–4.7109 = 0.0090.</p>
+<p>Instead of chaining <code>torch.log(torch.softmax(...))</code>, PyTorch also has an optimized <code>torch.log_softmax</code> function that combines these two operations:</p>
+<pre><code class="language-python">log_probas = torch.log_softmax<span class="tok-kw">(</span>logits, dim=-<span class="tok-fn">1</span><span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>log_probas<span class="tok-kw">)</span></code></pre>
+<p>Similar to before, this returns the following:</p>
+<pre><code class="language-python">tensor([-4.7109, -4.0442, -3.3776, -2.7109, -2.0442, -1.3776, -0.7109])</code></pre>
+<p>Note that log scaling changes only the magnitude of the values, not their ordering, so a sequence with a higher likelihood will always have a higher log likelihood as well. To see this visually, let’s plot the logits, probabilities, and log probabilities side by side.</p>
+<figure class="listing"><pre><code class="language-python">plt.figure<span class="tok-kw">(</span>figsize=(<span class="tok-fn">9</span>, <span class="tok-fn">4</span>)<span class="tok-kw">)</span>
+plt.subplot<span class="tok-kw">(</span><span class="tok-fn">1</span>, <span class="tok-fn">3</span>, <span class="tok-fn">1</span><span class="tok-kw">)</span>
+plt.bar<span class="tok-kw">(</span>range<span class="tok-kw">(</span>len<span class="tok-kw">(</span>logits<span class="tok-kw">))</span>, logits, color="C0", alpha=<span class="tok-fn">0.7</span><span class="tok-kw">)</span>
+plt.title<span class="tok-kw">(</span>"Logits"<span class="tok-kw">)</span>
+plt.xlabel<span class="tok-kw">(</span>"Token index"<span class="tok-kw">)</span>
+plt.ylabel<span class="tok-kw">(</span>"Value"<span class="tok-kw">)</span>
+plt.grid<span class="tok-kw">(</span>alpha=<span class="tok-fn">0.3</span><span class="tok-kw">)</span>
+plt.subplot<span class="tok-kw">(</span><span class="tok-fn">1</span>, <span class="tok-fn">3</span>, <span class="tok-fn">2</span><span class="tok-kw">)</span>
+plt.bar<span class="tok-kw">(</span>range<span class="tok-kw">(</span>len<span class="tok-kw">(</span>probas<span class="tok-kw">))</span>, probas, color="C1", alpha=<span class="tok-fn">0.7</span><span class="tok-kw">)</span>
+plt.title<span class="tok-kw">(</span>"torch.softmax<span class="tok-kw">(</span>logits<span class="tok-kw">)</span>"<span class="tok-kw">)</span>
+plt.xlabel<span class="tok-kw">(</span>"Token index"<span class="tok-kw">)</span>
+plt.ylabel<span class="tok-kw">(</span>"Probability"<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 5.6</span>Plotting logits, softmax probabilities, and log-softmax values</figcaption></figure>
+<pre><code class="language-python">plt.ylim<span class="tok-kw">(</span><span class="tok-fn">0</span>, <span class="tok-fn">1</span><span class="tok-kw">)</span></code></pre>
+<pre><code class="language-python">plt.grid<span class="tok-kw">(</span>alpha=<span class="tok-fn">0.3</span><span class="tok-kw">)</span></code></pre>
+<pre><code class="language-python">plt.subplot<span class="tok-kw">(</span><span class="tok-fn">1</span>, <span class="tok-fn">3</span>, <span class="tok-fn">3</span><span class="tok-kw">)</span>
+plt.bar<span class="tok-kw">(</span>range<span class="tok-kw">(</span>len<span class="tok-kw">(</span>log_probas<span class="tok-kw">))</span>, log_probas, color="C2", alpha=<span class="tok-fn">0.7</span><span class="tok-kw">)</span>
+plt.title<span class="tok-kw">(</span>"torch.log_softmax<span class="tok-kw">(</span>logits<span class="tok-kw">)</span>"<span class="tok-kw">)</span>
+plt.xlabel<span class="tok-kw">(</span>"Token index"<span class="tok-kw">)</span>
+plt.ylabel<span class="tok-kw">(</span>"Log-probability"<span class="tok-kw">)</span>
+plt.grid<span class="tok-kw">(</span>alpha=<span class="tok-fn">0.3</span><span class="tok-kw">)</span>
+plt.tight_layout<span class="tok-kw">()</span>
+plt.savefig<span class="tok-kw">(</span>"logits_softmax_log_softmax.pdf"<span class="tok-kw">)</span>
+plt.show<span class="tok-kw">()</span></code></pre>
+<p>The resulting plot is shown in figure 5.14. As you can see, the log probabilities have the same order as the logits and probability values. A larger logit corresponds to a larger probability and a less negative log probability. Smaller logits, in turn, produce smaller probabilities and more negative log probabilities.</p>
+<figure><a class="zoom" href="assets/figure-5.14.png" tabindex="-1"><img src="assets/figure-5.14.png" alt="" width="1105" height="476" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 5.14</span>Comparing logits, softmax probabilities, and log probabilities for a simple example. The log probabilities preserve the ordering of the probabilities.</figcaption></figure>
+<p>In practical terms, higher probabilities are better because they indicate the model assigns more confidence to a token. For log probabilities, values closer to zero are better, since zero corresponds to a probability of one, while very negative values correspond to extremely small probabilities. This makes it easy to compare tokens: the least negative log probability is the most likely one, and the most negative log probability is the least likely.</p>
+<p>While figure 5.14 illustrates the relationship between logits, probabilities, and log probabilities for a simple example, we can apply it to the probability values from the earlier <code>"The</code> <code>capital</code> <code>of</code> <code>Germany</code> <code>is"</code> prompt, as shown in figure 5.15.</p>
+<figure><a class="zoom" href="assets/figure-5.15.png" tabindex="-1"><img src="assets/figure-5.15.png" alt="" width="1138" height="1369" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 5.15</span>How logits are converted to probabilities and log probabilities for next-token scoring. The correct next token ("Berlin") receives a high logit, which becomes a high probability and a less negative log probability, while unlikely candidates like "Bridge" map to very small probabilities and large negative log probabilities.</figcaption></figure>
+<p>We use probabilities instead of logits because probabilities are normalized and easier to interpret as confidence values. Earlier, we also noted that log probabilities offer an additional benefit, since they allow more numerically stable calculations than working with raw probabilities.</p>
+<p>The numerical stability comes from the fact that even very small probability scores map to log probabilities in a reasonable numeric range. Another reason is that multiplying many probabilities quickly drives the result toward zero, while taking the log turns this multiplication into addition, which avoids underflow and is much more stable for long sequences.</p>
+<p>Figure 5.16 shows how the joint log probability (or sequence log likelihood) is computed for the two example texts we used earlier. When we computed the regular joint probability score, we saw that both sequences had values close to zero. Now, with the joint log probability, we can see that even changing just the final token (for example, <code>"Berlin"</code> versus <code>"Bridge"</code>) results in a noticeably different total log probability </p>
+<pre><code class="language-python">(-16.6250 versus -29.8750).</code></pre>
+<figure><a class="zoom" href="assets/figure-5.16.png" tabindex="-1"><img src="assets/figure-5.16.png" alt="" width="1140" height="570" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 5.16</span>How token-level log probabilities accumulate to form sequence log probabilities. Each row shows the log probability of the next token, given the preceding text. Summing these values results in the joint log probability of the full sequence.</figcaption></figure>
+<nav class="pager"><a class="prev" href="page-45.html" rel="prev"><span class="dir">上一页</span><span class="t">Joint probability of a token sequence</span></a><a class="next" href="page-47.html" rel="next"><span class="dir">下一页</span><span class="t">Working with log probabilities</span></a></nav>
+</main>
+</body>
+</html>

@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>数学推导详解 · 4.4 温度缩放与 softmax 采样 · Build a Reasoning Model</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">数学推导详解 · 4.4 采样</span>
+<a class="nav" href="page-34.html">原文</a>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">对应原文第 32–35 页 · 第 4 章 Improving reasoning with inference-time scaling</span></div>
+
+<h1>4.4 温度缩放与 softmax 采样：完整数学推导</h1>
+
+<div class="lead">
+这一页解释 <b>logits 怎么变成一个采样</b>，以及 temperature 到底在动什么。
+它的重要性在于：<b>self-consistency 采样出不同答案这件事，完全依赖这里的机制。</b>没有温度控制，同一个 prompt 采样 8 次会得到 8 个几乎一样的答案，投票就没有意义了。
+</div>
+
+<h2 class="deriv">一、生成下一个 token 的三个步骤</h2>
+
+<p>用原文的例子：<code>ex_prompt = "The capital of Germany is"</code>，作者把流程拆成 figure 4.6 的三步。</p>
+
+<ol class="steps">
+<li><b>编码</b>：文本转 token ID。原文得到 <code>[785, 6722, 315, 9856, 374]</code>，长度 5。</li>
+<li><b>前向传播</b>：得到 <code>logits</code>，形状 <code>[1, 151936]</code>。151,936 是 Qwen3 0.6B 的词表大小。</li>
+<li><b>选一个</b>：<code>torch.argmax(logits)</code> 给出 <code>19846</code>，即 <code>" Berlin"</code>。</li>
+</ol>
+
+<pre><code><span class="tok-kw">with</span> torch.inference_mode():
+    next_token_logits = model(input_token_ids)[:, <span class="tok-nu">-1</span>]
+<span class="tok-cm"># 形状 [1, 151936]；[:, -1] 取最后一个位置的预测（下一个 token 的分布）</span>
+max_token_id = torch.argmax(next_token_logits)  <span class="tok-cm"># 19846</span></code></pre>
+
+<div class="eq-note">
+<b><code>[:, -1]</code> 为什么这样取：</b>输入 5 个 token，模型输出 5 行预测（<code>[5, 151936]</code>），但只有<b>最后一行</b>对应「下一个新 token」。这就是前面 6.8 节讲的因果掩码错位。
+</div>
+
+<h2 class="deriv">二、logits 是什么，为什么不能直接用</h2>
+
+<p>logits 是输出层给出的、每个词表条目的一个<b>未归一化的分数</b>，实测范围约 \(-8\) 到 \(20\)，<code>" Berlin"</code> 大约是 20。</p>
+
+<p>它们有两个问题，所以不能直接当概率用：</p>
+
+<ol class="steps">
+<li><b>不是概率</b>：可以取负数，且<b>不保证总和为 1</b>。概率必须非负且和为 1。</li>
+<li><b>无法直接采样</b>：因为有负值，你不能写 <code>random() * sum(logits)</code> 这种代码来做按比例抽样。</li>
+</ol>
+
+<h2 class="deriv">三、softmax：把 logits 变成概率</h2>
+
+\[
+\text{softmax}(\mathbf{z})_i = \frac{\exp(z_i)}{\sum_{j=1}^{|V|}\exp(z_j)}, \qquad \sum_i \text{softmax}(\mathbf{z})_i = 1
+\]
+
+<pre><code>rescaled_logits = scale_logits_by_temperature(next_token_logits, <span class="tok-nu">5.0</span>)
+next_token_probas = torch.softmax(rescaled_logits, dim=<span class="tok-nu">-1</span>)
+<span class="tok-fn">print</span>(<span class="tok-st">"Probability sum:"</span>, torch.sum(next_token_probas))  <span class="tok-cm"># 1.0000</span></code></pre>
+
+<h3>3.1 为什么要减最大值（数值稳定）</h3>
+
+<p>\(\exp(z_i)\) 里的 \(z_i\) 可以是 20，\(\exp(20) \approx 4.85 \times 10^8\)。如果某个 logit 是 100，\(\exp(100) \approx 2.7 \times 10^{43}\)——float32 的上限约 \(3.4 \times 10^{38}\)，<b>直接溢出</b>。</p>
+
+<p>标准做法是分子分母同时减去最大值 \(m = \max_j z_j\)：</p>
+
+\[
+\frac{\exp(z_i - m)}{\sum_j \exp(z_j - m)} \;\; \xrightarrow{\; \times e^{-m}\;} \;\; \frac{\exp(z_i)}{\sum_j \exp(z_j)}
+\]
+
+<p>数学上完全等价（分子分母同乘 \(e^{-m}\)），但所有指数的输入都变成 \(\le 0\)，<b>\(\exp\) 的结果必然在 \((0, 1]\) 区间</b>，永远不会溢出。PyTorch 的 <code>torch.softmax</code> / <code>torch.log_softmax</code> 内部都做了这件事。</p>
+
+<div class="key">
+<span class="tag">这解释了一个 API 设计</span>
+<p>为什么不写 <code>torch.log(torch.softmax(x))</code>？因为那样要过两次浮点：先 <code>softmax</code> 可能算出极小的数（比如 \(10^{-40}\)，bfloat16 下就是 0），再取 log 就得到 \(-\infty\)。<code>torch.log_softmax</code> 在 log 空间里做数值稳定版本，一次到位。</p>
+<p>原文在 5.5 节也提到：<i>In practice, I prefer to use the torch.softmax function because it has some additional numerical stability improvements</i>，并且有 Warning 说 <code>softmax</code> 配 <code>sum</code>、<code>log_softmax</code> 配 <code>prod</code> 是「技术上可行但数学上错误」的组合。</p>
+</div>
+
+<h2 class="deriv">四、温度缩放：动的到底是什么</h2>
+
+<pre><code><span class="tok-kw">def</span> <span class="tok-fn">scale_logits_by_temperature</span>(logits, temperature):
+    <span class="tok-kw">if</span> temperature &lt;= <span class="tok-nu">0</span>:
+        <span class="tok-kw">raise</span> <span class="tok-fn">ValueError</span>(<span class="tok-st">"Temperature must be positive"</span>)
+    <span class="tok-kw">return</span> logits / temperature</code></pre>
+
+\[
+z_i^{(T)} = \frac{z_i}{T}, \qquad
+P_T(i) = \text{softmax}\!\left(\frac{\mathbf{z}}{T}\right)_i = \frac{\exp(z_i / T)}{\sum_j \exp(z_j / T)}
+\]
+
+<p>关键在于<b>原文指出的这一点</b>：<i>重要的不是某个 logit 的绝对高度，而是 logit 之间的差异如何变化。</i></p>
+
+<h3>4.1 温度如何改变「差距」</h3>
+
+<p>设两个竞争 token 的 logit 差为 \(\Delta = z_1 - z_2\)。它们概率之比是：</p>
+
+\[
+\frac{P(1)}{P(2)} = \frac{\exp(z_1/T)}{\exp(z_2/T)} = \exp\!\left(\frac{z_1 - z_2}{T}\right) = \exp\!\left(\frac{\Delta}{T}\right)
+\]
+
+<p>所以：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>温度</th><th>对 \(\Delta\) 的作用</th><th>概率比</th><th>行为</th></tr></thead>
+<tbody>
+<tr><td>\(T = 1.0\)</td><td>不变</td><td>\(e^{\Delta}\)</td><td>原始分布</td></tr>
+<tr><td>\(T &lt; 1.0\)</td><td>\(\Delta\) <b>放大</b></td><td>\(e^{\Delta/T}\)，<b>更大</b></td><td>更尖锐（sharper），更确定</td></tr>
+<tr><td>\(T &gt; 1.0\)</td><td>\(\Delta\) <b>压缩</b></td><td>\(e^{\Delta/T}\)，<b>更小</b></td><td>更平坦（flatter），更随机</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="key">
+<span class="tag">用原文的实测数字</span>
+<p><code>" Berlin"</code>（logit ≈ 20）在 <b>T = 5.0</b> 时概率是 <b>0.0003</b>（0.03%）；在 <b>T = 0.5</b> 时概率是 <b>0.3398</b>（34%），其他 token 全部趋近 0。</p>
+<p>也就是说，把温度从 5 降到 0.5，那个 token 的概率放大了<b>一千多倍</b>。这就是「sharper」的具体含义。</p>
+</div>
+
+<h3>4.2 极限情况</h3>
+
+\[
+T \to 0^+ \;\Longrightarrow\; P(i) \to \begin{cases} 1 & \arg\max_j z_j = i \\ 0 & \text{otherwise} \end{cases}
+\qquad
+T \to \infty \;\Longrightarrow\; P(i) \to \frac{1}{|V|}
+\]
+
+<p>原文的实际演示很有说服力：<b>T = 5.0 下采样 1 个 token，得到的是 <code>65094</code>，即 <code>" mistress"</code></b>——在「德国的首都是」这个语境下完全说不通。就是这么被随机出来的。</p>
+
+<div class="warn">
+<span class="tag">这就是 <code>multinomial</code> 的意义</span>
+<p>如果用 <code>argmax</code>（贪心解码），温度<b>完全不起作用</b>——argmax 只看排名，不看分值。所以原文的生成函数里是 <code>if temperature is None or temperature == 0.0: next_token = torch.argmax(...)</code>，走另一条分支。</p>
+</div>
+
+<h2 class="deriv">五、multinomial 采样</h2>
+
+<pre><code>torch.manual_seed(<span class="tok-nu">123</span>)
+<span class="tok-fn">print</span>(<span class="tok-st">"Sampled token:"</span>, torch.multinomial(next_token_probas.cpu(), num_samples=<span class="tok-nu">1</span>))</code></pre>
+
+<p>\(\text{multinomial}(\mathbf{p}, k)\) 的定义：按概率 \(p_i\) 抽取 \(k\) 次，<b>有放回</b>。数学上等价于对每个 \(i\) 独立做一次 categorical 采样，\(\Pr(\text{抽到 } i) = p_i\)。</p>
+
+<p>所以整个采样链是：</p>
+
+\[
+\text{logits} \xrightarrow{\ \div T\ } \frac{\mathbf{z}}{T} \xrightarrow{\ \text{softmax}\ } \mathbf{P} \xrightarrow{\ \text{multinomial}\ } y_t
+\]
+
+<div class="eq-note">
+<b>关于 <code>.cpu()</code>：</b>原文把采样放在 CPU 上做，并说明原因——<code>torch.multinomial()</code> 在 CUDA 和 MPS 上结果可能不同（作者在 PyTorch 2.9 上观察到大 num_samples 时甚至会崩溃）。放 CPU 保证可复现。
+</div>
+
+<h2 class="deriv">六、为什么这套机制是 self-consistency 的前提</h2>
+
+<p>第 4.6 节的 self-consistency 要「同一个 prompt 生成 N 个不同答案，然后对最终答案投票」。它需要：</p>
+
+<ol class="steps">
+<li>每次采样<b>足够随机</b>，否则 N 个答案完全相同，投票退化为 \(N\) 选 1 → 温度要<b>大于 0</b>（原文用 0.8）。</li>
+<li>但又<b>不能太随机</b>，否则全是废话。top-p 过滤（下一页详解）负责砍掉低概率 token。</li>
+<li>各次采样<b>互相独立</b>，所以可以<b>并行</b>（有多 GPU 的话），用户等待时间不增加。</li>
+</ol>
+
+<p>原文的措辞：<i>Since the multiple answers generated with this technique are independent of each other, this can be implemented through parallel sampling</i>。</p>
+
+<div class="key">
+<span class="tag">温度的选择是个权衡</span>
+<p>T 太小 → 每次采样结果一样，self-consistency 退化成单次生成，没有任何增益。<br>
+T 太大 → 答案全是噪声，投票结果比单次生成还差。<br>
+<b>0.8 是这类数学任务上的经验值</b>，既保证多样性又不至于失控。</p>
+</div>
+
+<nav class="deriv-nav">
+<a href="page-36-detail.html"><span class="dir">详解</span>下一页：top-p 过滤</a>
+<a href="page-58-detail.html"><span class="dir">详解</span>6.8 / 6.9 logprob 与策略梯度</a>
+<a href="page-48-detail.html"><span class="dir">详解</span>5.6 logprob 打分与长度归一化</a>
+<a href="page-34.html"><span class="dir">原文</span>4.4.1 选下一个 token</a>
+</nav>
+
+</main>
+
+<script defer src="assets/katex/katex.min.js"></script>
+<script defer src="assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>

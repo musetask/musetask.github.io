@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>C.8 Tokenizer · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-93.html">
+<link rel="next" href="page-95.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 94 页 / 共 108 页</span></div>
+<h2 id="h2-tokenizer"><span class="num">C.8</span>Tokenizer</h2>
+<p>The <em>tokenizer</em> code is somewhat complicated because it supports a variety of special tokens, in addition to the base model and the so-called “thinking” model variant of Qwen3, which is a reasoning model. The full reimplementation of the tokenizer is shown next.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">import</span> re
+<span class="tok-kw">from</span> tokenizers <span class="tok-kw">import</span> Tokenizer
+class Qwen3Tokenizer:
+    _SPECIALS = [
+        <span class="tok-st">"&lt;|endoftext|&gt;"</span>,
+        <span class="tok-st">"&lt;|im_start|&gt;"</span>, <span class="tok-st">"&lt;|im_end|&gt;"</span>,
+        <span class="tok-st">"&lt;|object_ref_start|&gt;"</span>, <span class="tok-st">"&lt;|object_ref_end|&gt;"</span>,
+        <span class="tok-st">"&lt;|box_start|&gt;"</span>, <span class="tok-st">"&lt;|box_end|&gt;"</span>,
+        <span class="tok-st">"&lt;|quad_start|&gt;"</span>, <span class="tok-st">"&lt;|quad_end|&gt;"</span>,
+        <span class="tok-st">"&lt;|vision_start|&gt;"</span>, <span class="tok-st">"&lt;|vision_end|&gt;"</span>,
+        <span class="tok-st">"&lt;|vision_pad|&gt;"</span>, <span class="tok-st">"&lt;|image_pad|&gt;"</span>, <span class="tok-st">"&lt;|video_pad|&gt;"</span>,
+    ]</code></pre><figcaption><span class="lbl">Listing C.9</span>Tokenizer</figcaption></figure>
+<pre><code class="language-python">    _SPLIT_RE = re.compile<span class="tok-kw">(r</span><span class="tok-st">"(&lt;\|[^&gt;]+?\|&gt;)"</span><span class="tok-kw">)</span>
+    <span class="tok-kw">def</span> __init__(self,
+                 tokenizer_file_path=<span class="tok-st">"tokenizer-base.json"</span>,
+                 apply_chat_template=<span class="tok-kw">False</span>,
+                 add_generation_prompt=<span class="tok-kw">False</span>,
+                 add_thinking=<span class="tok-kw">False</span>):
+        self.apply_chat_template = apply_chat_template
+        self.add_generation_prompt = add_generation_prompt
+        self.add_thinking = add_thinking
+        tok_path = Path<span class="tok-kw">(</span>tokenizer_file_path<span class="tok-kw">)</span>
+        <span class="tok-kw">if</span> <span class="tok-kw">not</span> tok_path.is_file<span class="tok-kw">()</span>:
+            <span class="tok-kw">raise</span> FileNotFoundError<span class="tok-kw">(</span>
+                <span class="tok-kw">f</span><span class="tok-st">"Tokenizer file '</span>{tok_path}<span class="tok-st">' not found. "</span>
+            <span class="tok-kw">)</span>
+        self._tok = Tokenizer.from_file<span class="tok-kw">(</span>str<span class="tok-kw">(</span>tok_path<span class="tok-kw">))</span>
+        self._special_to_id = {t: self._tok.token_to_id<span class="tok-kw">(</span>t<span class="tok-kw">)</span>
+                               <span class="tok-kw">for</span> t <span class="tok-kw">in</span> self._SPECIALS}
+        self.pad_token = <span class="tok-st">"&lt;|endoftext|&gt;"</span>
+        self.pad_token_id = self._special_to_id.get<span class="tok-kw">(</span>self.pad_token<span class="tok-kw">)</span>
+        f = tok_path.name.lower<span class="tok-kw">()</span>
+        <span class="tok-kw">if</span> <span class="tok-st">"base"</span> <span class="tok-kw">in</span> f <span class="tok-kw">and</span> <span class="tok-st">"reasoning"</span> <span class="tok-kw">not</span> <span class="tok-kw">in</span> f:
+            self.eos_token = <span class="tok-st">"&lt;|endoftext|&gt;"</span>
+        <span class="tok-kw">else</span>:
+            self.eos_token = <span class="tok-st">"&lt;|im_end|&gt;"</span>
+        self.eos_token_id = self._special_to_id.get<span class="tok-kw">(</span>self.eos_token<span class="tok-kw">)</span>
+    <span class="tok-kw">def</span> encode(self, prompt, chat_wrapped=<span class="tok-kw">None</span>):
+        <span class="tok-kw">if</span> chat_wrapped <span class="tok-kw">is</span> <span class="tok-kw">None</span>:
+            chat_wrapped = self.apply_chat_template
+        stripped = prompt.strip<span class="tok-kw">()</span>
+        <span class="tok-kw">if</span> stripped <span class="tok-kw">in</span> self._special_to_id <span class="tok-kw">and</span> <span class="tok-st">"</span>\n<span class="tok-st">"</span> <span class="tok-kw">not</span> <span class="tok-kw">in</span> stripped:
+            <span class="tok-kw">return</span> [self._special_to_id<span class="tok-kw">[</span>stripped<span class="tok-kw">]</span>]
+        <span class="tok-kw">if</span> chat_wrapped:
+            prompt = self._wrap_chat<span class="tok-kw">(</span>prompt<span class="tok-kw">)</span>
+        ids = []
+        <span class="tok-kw">for</span> part <span class="tok-kw">in</span> filter<span class="tok-kw">(None</span>, self._SPLIT_RE.split<span class="tok-kw">(</span>prompt<span class="tok-kw">))</span>:
+            <span class="tok-kw">if</span> part <span class="tok-kw">in</span> self._special_to_id:
+                ids.append<span class="tok-kw">(</span>self._special_to_id<span class="tok-kw">[</span>part<span class="tok-kw">])</span>
+            <span class="tok-kw">else</span>:
+                ids.extend<span class="tok-kw">(</span>self._tok.encode<span class="tok-kw">(</span>part<span class="tok-kw">)</span>.ids<span class="tok-kw">)</span>
+        <span class="tok-kw">return</span> ids
+    <span class="tok-kw">def</span> decode(self, token_ids):
+        <span class="tok-kw">return</span> self._tok.decode<span class="tok-kw">(</span>token_ids, skip_special_tokens=<span class="tok-kw">False)</span>
+    <span class="tok-kw">def</span> _wrap_chat(self, user_msg):
+        s = <span class="tok-kw">f</span><span class="tok-st">"&lt;|im_start|&gt;user</span>\n{user_msg}<span class="tok-st">&lt;|im_end|&gt;</span>\n<span class="tok-st">"</span>
+        <span class="tok-kw">if</span> self.add_generation_prompt:
+            s += <span class="tok-st">"&lt;|im_start|&gt;assistant"</span>
+            <span class="tok-kw">if</span> self.add_thinking:
+                s += <span class="tok-st">"</span>\n<span class="tok-st">"</span>
+            <span class="tok-kw">else</span>:
+                s += <span class="tok-st">"</span>\n<span class="tok-st">&lt;think&gt;</span>\n\n<span class="tok-st">&lt;/think&gt;</span>\n\n<span class="tok-st">"</span>
+        <span class="tok-kw">return</span> s</code></pre>
+<p>My <code>Qwen3Tokenizer</code> reimplementation in listing C.9 may appear somewhat complicated because it aims to replicate the behavior of the official tokenizer released by the Qwen3 team in the Hugging Face Transformers library.</p>
+<p>At first glance, it appears to have a few quirks. For example, when <code>add_thinking=True</code>, no <code>"\n&lt;think&gt;\n\n&lt;/think&gt;\n\n"</code> tokens are inserted (where <code>\n </code>is a newline character), but when <code>add_thinking=False</code>, these tokens are added. This is intentional because the non-base Qwen3 0.6B model is a hybrid that supports both reasoning (“thinking”) and standard modes.</p>
+<h2 id="h2-using-the-model"><span class="num">C.9</span>Using the model</h2>
+<p>Let’s now instantiate and use the model to confirm that the code works by reusing the text generation approach from chapter 2.</p>
+<p>First, we’ll instantiate the model using the pretrained model weights:</p>
+<pre><code class="language-python"><span class="tok-kw">from</span> pathlib <span class="tok-kw">import</span> Path
+<span class="tok-kw">import</span> torch
+<span class="tok-kw">from</span> reasoning_from_scratch.ch02 <span class="tok-kw">import</span> get_device
+<span class="tok-kw">from</span> reasoning_from_scratch.qwen3 <span class="tok-kw">import</span> download_qwen3_small
+<span class="tok-cm"># device = get_device()</span>
+device = torch.device<span class="tok-kw">(</span><span class="tok-st">"cpu"</span><span class="tok-kw">)</span>
+download_qwen3_small<span class="tok-kw">(</span>kind=<span class="tok-st">"base"</span>, tokenizer_only=<span class="tok-kw">False</span>, out_dir=<span class="tok-st">"qwen3"</span><span class="tok-kw">)</span>
+tokenizer_file_path = Path<span class="tok-kw">(</span><span class="tok-st">"qwen3"</span><span class="tok-kw">)</span> / <span class="tok-st">"tokenizer-base.json"</span>
+model_file = Path<span class="tok-kw">(</span><span class="tok-st">"qwen3"</span><span class="tok-kw">)</span> / <span class="tok-st">"qwen3-0.6B-base.pth"</span>
+tokenizer = Qwen3Tokenizer<span class="tok-kw">(</span>tokenizer_file_path=tokenizer_file_path<span class="tok-kw">)</span>
+model = Qwen3Model<span class="tok-kw">(</span>QWEN_CONFIG_06_B<span class="tok-kw">)</span>
+model.load_state_dict<span class="tok-kw">(</span>torch.load<span class="tok-kw">(</span>model_file<span class="tok-kw">))</span>
+model.to<span class="tok-kw">(</span>device<span class="tok-kw">)</span></code></pre>
+<p>The following output prints the instantiated model architecture. In particular, it shows that the model object was created with the same settings specified in listing C.7, such as the number of layers, attention heads, key-value heads, embedding size, and feed-forward dimensions:</p>
+<pre><code class="language-python">✓ qwen3/qwen3-0.6B-base.pth already up-to-date
+✓ qwen3/tokenizer-base.json already up-to-date</code></pre>
+<pre><code class="language-python">Qwen3Model(
+  (tok_emb): Embedding(151936, 1024)
+  (trf_blocks): ModuleList(
+    (0-27): 28 x TransformerBlock(
+      (att): GroupedQueryAttention(
+        (W_query): Linear(in_features=1024, out_features=2048, bias=False)
+        (W_key): Linear(in_features=1024, out_features=1024, bias=False)
+        (W_value): Linear(in_features=1024, out_features=1024, bias=False)
+        (out_proj): Linear(in_features=2048, out_features=1024, bias=False)
+        (q_norm): RMSNorm()
+        (k_norm): RMSNorm()
+      )
+      (ff): FeedForward(
+        (fc1): Linear(in_features=1024, out_features=3072, bias=False)
+        (fc2): Linear(in_features=1024, out_features=3072, bias=False)
+        (fc3): Linear(in_features=3072, out_features=1024, bias=False)
+      )
+      (norm1): RMSNorm()
+      (norm2): RMSNorm()
+    )
+  )
+  (final_norm): RMSNorm()
+  (out_head): Linear(in_features=1024, out_features=151936, bias=False)
+)</code></pre>
+<p>Next, we’ll reuse the text generation functions from chapter 2 to generate text:</p>
+<pre><code class="language-python"><span class="tok-kw">import</span> time
+<span class="tok-kw">from</span> reasoning_from_scratch.ch02 <span class="tok-kw">import</span> (
+   generate_text_basic_stream_cache,
+   generate_stats
+)
+prompt = <span class="tok-st">"Explain large language models in a single sentence."</span>
+input_token_ids_tensor = torch.tensor<span class="tok-kw">(</span>
+    tokenizer.encode<span class="tok-kw">(</span>prompt<span class="tok-kw">)</span>,
+    device=device
+    <span class="tok-kw">)</span>.unsqueeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>
+max_new_tokens = <span class="tok-fn">200</span>
+start_time = time.time<span class="tok-kw">()</span>
+generated_ids = []
+<span class="tok-kw">for</span> token <span class="tok-kw">in</span> generate_text_basic_stream_cache<span class="tok-kw">(</span>
+    model=model,
+    token_ids=input_token_ids_tensor,
+    max_new_tokens=max_new_tokens,
+    eos_token_id=tokenizer.eos_token_id
+<span class="tok-kw">)</span>:
+    token_id = token.squeeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>.tolist<span class="tok-kw">()</span>
+    print<span class="tok-kw">(</span>
+        tokenizer.decode<span class="tok-kw">(</span>token_id<span class="tok-kw">)</span>,
+        end=<span class="tok-st">""</span>,
+        flush=<span class="tok-kw">True</span>
+    <span class="tok-kw">)</span>
+    next_token_id = token.squeeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>
+    generated_ids.append<span class="tok-kw">(</span>next_token_id<span class="tok-kw">)</span>  <span class="tok-cm"># Collect generated tokens</span>
+end_time = time.time<span class="tok-kw">()</span>
+output_token_ids_tensor = torch.cat<span class="tok-kw">(</span>generated_ids, dim=<span class="tok-fn">0</span><span class="tok-kw">)</span>
+generate_stats<span class="tok-kw">(</span>output_token_ids_tensor, tokenizer, start_time, end_time<span class="tok-kw">)</span></code></pre>
+<p>Since the preceding code uses the same prompt as in chapter 2, the generated text matches the text from chapter 2 exactly:</p>
+<pre><code class="language-python">Time: 1.46 sec
+28 tokens/sec
+ Large language models are artificial intelligence systems that can
+understand, generate, and process human language, enabling them to
+perform a wide range of tasks, from answering questions to writing
+articles, and even creating creative content.</code></pre>
+<p>While we use the 0.6B-parameter variant of Qwen3 in the chapter discussions to keep this book’s resource requirements lower, you can find more information on using the larger models in appendix D.</p>
+<h1 id="h1-appendix-d-using-larger-llms">appendix D Using larger LLMs</h1>
+<p>This book uses the 0.6-billion-parameter (0.6B) Qwen3 base model because it is the smallest model in the Qwen3 family and therefore the easiest to run on consumer hardware. But the same <code>Qwen3Model</code> implementation from appendix C is not limited to the 0.6B checkpoint. We can also use it to load larger Qwen3 checkpoints with the same PyTorch code we built from scratch. </p>
+<p>In practice, this means that once we understand how to work with the 0.6B model, moving to a larger model mainly involves three changes:</p>
+<ul><li>Selecting the matching configuration dictionary</li></ul>
+<ul><li>Downloading the larger checkpoint from Hugging Face</li></ul>
+<ul><li>Loading the appropriate tokenizer for the base or reasoning variant</li></ul>
+<p>This appendix illustrates this process using the Qwen3 4B model as an example because it is meaningfully stronger than the 0.6B model while still being easier to handle than the larger 8B, 14B, and 32B variants.</p>
+<nav class="pager"><a class="prev" href="page-93.html" rel="prev"><span class="dir">上一页</span><span class="t">C.5 Transformer block</span></a><a class="next" href="page-95.html" rel="next"><span class="dir">下一页</span><span class="t">D.1 Larger dense Qwen3 configurations</span></a></nav>
+</main>
+</body>
+</html>

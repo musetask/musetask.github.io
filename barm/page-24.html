@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>3.6 Verifying mathematical equivalence · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-23.html">
+<link rel="next" href="page-25.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 24 页 / 共 108 页</span></div>
+<h2 id="h2-verifying-mathematical-equivalence"><span class="num">3.6</span>Verifying mathematical equivalence</h2>
+<p>So far, we have implemented steps that ask an LLM to generate an answer, extract the relevant portion, and normalize it. The next step, as illustrated in figure 3.8, is to verify the extracted answer by comparing it to a correct reference answer, which in technical contexts is referred to as the <em>ground truth</em>. We will use such a verifier again in chapter 6 to create a verifiable reward signal, and in later chapters we’ll use it to check whether our training changes improved our model.</p>
+<p>Note that to implement the equality check shown in figure 3.8, a direct comparison using Python’s <code>==</code> operator is not sufficient, since expressions like <code>"14/3"</code> and <code>"(14)/(3)"</code> would not match, and equivalent but unnormalized fractions such as <code>"(28)/(6)"</code> and <code>"(14)/(3)"</code> would also be treated as unequal.</p>
+<p>As part of our equality check, we’ll add an intermediate step: parsing the extracted, normalized answer with a symbolic math engine. For this, we’ll use the open source SymPy math library (<a href="https://sympy.org">https://sympy.org</a>), which has been developed and tested over two decades and has become a staple of scientific computing in Python. The parsing function is implemented in listing 3.7.</p>
+<aside><span class="tag">Note</span>If you haven’t installed the dependencies from chapter 2, you can manually install SymPy with uv pip install sympy (or uv add sympy).</aside>
+<figure><a class="zoom" href="assets/figure-3.8.png" tabindex="-1"><img src="assets/figure-3.8.png" alt="" width="1142" height="809" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 3.8</span>An illustration of how an LLM-generated answer is checked against the correct reference answer (ground truth). The LLM’s final boxed answer is extracted, normalized, and compared to the correct answer provided in the dataset. If they match, the response is graded as correct.</figcaption></figure>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">from</span> sympy.parsing <span class="tok-kw">import</span> sympy_parser <span class="tok-kw">as</span> spp
+<span class="tok-kw">from</span> sympy.core.sympify <span class="tok-kw">import</span> SympifyError
+<span class="tok-kw">from</span> sympy.polys.polyerrors <span class="tok-kw">import</span> PolynomialError
+<span class="tok-kw">from</span> tokenize <span class="tok-kw">import</span> TokenError
+<span class="tok-kw">def</span> sympy_parser(expr):
+    <span class="tok-kw">if</span> expr <span class="tok-kw">is</span> <span class="tok-kw">None</span> <span class="tok-kw">or</span> len<span class="tok-kw">(</span>expr<span class="tok-kw">)</span> &gt; <span class="tok-fn">2000</span>:
+        <span class="tok-kw">return</span> <span class="tok-kw">None</span>
+    <span class="tok-kw">try</span>:
+        <span class="tok-kw">return</span> spp.parse_expr<span class="tok-kw">(</span>
+            expr,
+            transformations=(
+                *spp.standard_transformations,
+                spp.implicit_multiplication_application,
+            ),
+            evaluate=<span class="tok-kw">True</span>,
+        <span class="tok-kw">)</span>
+    <span class="tok-kw">except</span> (SympifyError, SyntaxError, TypeError, AttributeError,
+            IndexError, TokenError, ValueError, PolynomialError):
+        <span class="tok-kw">return</span> <span class="tok-kw">None</span></code></pre><figcaption><span class="lbl">Listing 3.7</span>Using the SymPy parser for a mathematical equality check</figcaption></figure>
+<p>This <code>sympy_parser</code> function takes an input expression, such as the normalized answers we extract from the LLM response, and converts it into a SymPy object that can be reliably compared for mathematical equivalence. To do so, it applies SymPy’s standard parsing rules, supports implicit multiplication (for example, 2<em>y</em> instead of 2 * <em>y</em>), and simplifies basic arithmetic (so 2 + 3 becomes 5).</p>
+<aside><span class="tag">Note</span>The sympy_parser accounts for what may seem like an excessive number of error cases, but these are all errors I’ve encountered when evaluating the model on the 500 MATH-500 problems. The model does not always generate perfectly formatted outputs.</aside>
+<p>Let’s see <code>sympy_parser</code> in action and apply it to a normalized answer candidate:</p>
+<pre><code class="language-python">print<span class="tok-kw">(</span>sympy_parser<span class="tok-kw">(</span>normalize_text<span class="tok-kw">(</span>
+    extract_final_candidate<span class="tok-kw">(</span>model_answer<span class="tok-kw">)</span>
+<span class="tok-kw">)))</span></code></pre>
+<p>This returns the fraction <code>14/3</code>. Next, let’s try an unnormalized fraction:</p>
+<pre><code class="language-python">print<span class="tok-kw">(</span>sympy_parser<span class="tok-kw">(</span><span class="tok-st">"28/6"</span><span class="tok-kw">))</span></code></pre>
+<p>Similarly, this returns <code>14/3</code>.</p>
+<p>Using <code>sympy_parser</code>, we can now implement the equality check function.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">from</span> sympy <span class="tok-kw">import</span> simplify
+<span class="tok-kw">def</span> equality_check(expr_gtruth, expr_pred):
+    <span class="tok-kw">if</span> expr_gtruth == expr_pred:
+        <span class="tok-kw">return</span> <span class="tok-kw">True</span></code></pre><figcaption><span class="lbl">Listing 3.8</span>Equality check function using SymPy</figcaption></figure>
+<pre><code class="language-python">    gtruth, pred = sympy_parser<span class="tok-kw">(</span>expr_gtruth<span class="tok-kw">)</span>, sympy_parser<span class="tok-kw">(</span>expr_pred<span class="tok-kw">)</span>
+    <span class="tok-kw">if</span> gtruth <span class="tok-kw">is</span> <span class="tok-kw">not</span> <span class="tok-kw">None</span> <span class="tok-kw">and</span> pred <span class="tok-kw">is</span> <span class="tok-kw">not</span> <span class="tok-kw">None</span>:
+        <span class="tok-kw">try</span>:
+            <span class="tok-kw">return</span> simplify<span class="tok-kw">(</span>gtruth - pred<span class="tok-kw">)</span> == <span class="tok-fn">0</span>
+        <span class="tok-kw">except</span> (SympifyError, TypeError):
+            <span class="tok-kw">pass</span>
+    <span class="tok-kw">return</span> <span class="tok-kw">False</span></code></pre>
+<p>The <code>equality_check</code> function in the preceding listing determines whether a model’s answer matches the ground-truth solution. It first looks for an exact string match, which is the simplest case. If the strings differ, it parses both expressions into SymPy objects (via the <code>sympy_parser</code> function we implemented in listing 3.7) and checks whether their difference simplifies to zero. This lets us recognize answers that may look different on the surface (for example, 14/3 and 28/6) but are mathematically the same.</p>
+<p>Let’s try the equality checker from listing 3.8 on an example:</p>
+<pre><code class="language-python">print<span class="tok-kw">(</span>equality_check<span class="tok-kw">(</span>
+    normalize_text<span class="tok-kw">(</span><span class="tok-st">"13/4."</span><span class="tok-kw">)</span>,
+    normalize_text<span class="tok-kw">(r</span><span class="tok-st">"(13)/(4)"</span><span class="tok-kw">)</span>
+<span class="tok-kw">))</span></code></pre>
+<p>As intended, this ignores the formatting and returns <code>True</code>. Next, let’s try a more challenging example and see whether the symbolic math parser recognizes that 0.5 is the same as 1/2:</p>
+<pre><code class="language-python">print<span class="tok-kw">(</span>equality_check<span class="tok-kw">(</span>
+    normalize_text<span class="tok-kw">(</span><span class="tok-st">"0.5"</span><span class="tok-kw">)</span>,
+    normalize_text<span class="tok-kw">(r</span><span class="tok-st">"(1)/(2)"</span><span class="tok-kw">)</span>
+<span class="tok-kw">))</span></code></pre>
+<p>This also returns <code>True</code>. Now, let’s try a negative example:</p>
+<pre><code class="language-python">print<span class="tok-kw">(</span>equality_check<span class="tok-kw">(</span>
+    normalize_text<span class="tok-kw">(</span><span class="tok-st">"14/3"</span><span class="tok-kw">)</span>,
+    normalize_text<span class="tok-kw">(</span><span class="tok-st">"15/3"</span><span class="tok-kw">)</span>
+<span class="tok-kw">))</span></code></pre>
+<p>This returns <code>False</code>, since the expressions are different.</p>
+<p>So far, so good. Based on these encouraging results, we might conclude that we now have a robust equality checker that we can use to evaluate the LLM on a math benchmark dataset. To make sure it’s ready for prime time, let’s try one more example:</p>
+<pre><code class="language-python">print<span class="tok-kw">(</span>equality_check<span class="tok-kw">(</span>
+    normalize_text<span class="tok-kw">(</span><span class="tok-st">"(14/3, 2/3)"</span><span class="tok-kw">)</span>,
+    normalize_text<span class="tok-kw">(</span><span class="tok-st">"(14/3, 4/6)"</span><span class="tok-kw">)</span>
+<span class="tok-kw">))</span></code></pre>
+<p>In this case, we are comparing two tuples. Since 2/3 and 4/6 are mathematically equivalent, we would expect the result to be <code>True</code>. Instead, the function returns <code>False</code> because it currently handles only simple expressions, not tuples. We will address this limitation in the next section.</p>
+<nav class="pager"><a class="prev" href="page-23.html" rel="prev"><span class="dir">上一页</span><span class="t">3.5 Normalizing the extracted answer</span></a><a class="next" href="page-25.html" rel="next"><span class="dir">下一页</span><span class="t">3.7 Grading answers</span></a></nav>
+</main>
+</body>
+</html>

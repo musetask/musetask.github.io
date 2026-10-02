@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>数学推导详解 · F.4 Elo 评级 · Build a Reasoning Model</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">数学推导详解 · F.4 Elo</span>
+<a class="nav" href="page-102.html">原文</a>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">对应原文第 102 页 · 附录 F 延伸讨论</span></div>
+
+<h1>F.4 Elo 评级：公式、逐场手算与 k 值的作用</h1>
+
+<div class="lead">
+原文给出了 Elo 的两条公式和最终排行榜，但<b>没有展示这 6 场比赛是怎么一步步推出 1043.7 / 1015.2 / 1000.7 / 940.4 的</b>。这一页把每场比赛的 \(E\)、增量、赛后分数全部列出，并补上原文没展开的三件事：<b>400 这个常数从哪来、\(k = 32\) 意味着什么、为什么顺序会影响结果</b>。
+</div>
+
+<h2 class="deriv">一、两条公式</h2>
+
+<p>给定胜者当前评分 \(R_w\) 与败者当前评分 \(R_l\)，先算胜者的<b>预期胜率</b>：</p>
+
+\[
+E_w = \frac{1}{1 + 10^{(R_l - R_w)/400}}
+\]
+
+<p>然后两边同时更新：</p>
+
+\[
+R_w' = R_w + k\,(1 - E_w),
+\qquad
+R_l' = R_l + k\,(0 - (1 - E_w)) = R_l - k\,(1 - E_w)
+\]
+
+<div class="key">
+<span class="tag">一句话概括 Elo 的全部直觉</span>
+<p><b>实际结果 \(S\) 与预期结果 \(E\) 的差，乘以 \(k\)，就是分数增量。</b></p>
+\[
+\Delta = k\,(S - E), \qquad S = \begin{cases} 1 & \text{赢}\\ 0 & \text{输}\end{cases}
+\]
+<p>打爆冷门 → \(S - E\) 大 → 涨得多；稳赢送分 → \(S - E \approx 0\) → 几乎不动。这就是「赢强手涨得多，赢弱手涨得少」的全部机制。</p>
+</div>
+
+<h2 class="deriv">二、400 这个常数从哪来</h2>
+
+<p>先看这个函数对评分差的形状。设 \(\Delta R = R_w - R_l\)，则</p>
+
+\[
+E_w = \frac{1}{1 + 10^{-\Delta R / 400}}
+\]
+
+<p>这是 <b>logistic 函数</b>（形状和 softmax 里的 exp 归一化是同一族）。两个特例：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>评分差 \(\Delta R\)</th><th>\(E_w\)</th><th>含义</th></tr></thead>
+<tbody>
+<tr><td>0</td><td>0.5000</td><td>势均力敌</td></tr>
+<tr><td>100</td><td>0.6400</td><td>约 64% 胜率</td></tr>
+<tr><td>200</td><td>0.7597</td><td>约 76%</td></tr>
+<tr><td>400</td><td>0.9091</td><td>约 91%</td></tr>
+<tr><td>800</td><td>0.9901</td><td>约 99%</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>所以 <b>400 的含义是：领先 400 分 ≈ 10:1 的赔率</b>。这个「差 400 分胜率九成」的习惯是国际象棋 Elo 的约定，沿用到了所有 Elo 变体里。数学上 400 完全自由（换成 200 或 800 只是让曲线更陡或更缓），<b>它是一个尺度约定而非推导结果</b>。</p>
+
+<div class="eq-note">
+<b>对比 sigmoid：</b>Logistic 写出来是 \(E = \frac{1}{1+e^{-x/A}}\)，Elo 里 \(A = 400/\ln 10 \approx 173.7\)。理解成 \(A\) 控制「评分差被放大成多大优势」即可。
+</div>
+
+<h2 class="deriv">三、\(k = 32\) 的作用</h2>
+
+<p>\(k\) 是<b>每场比赛的最大分值变动幅度</b>（因为 \(0 \le S - E \le 1\)，所以 \(|\Delta| \le k\)）。原文用 <code>k_factor=32</code>，<code>initial_rating=1000</code>。</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>\(k\)</th><th>平局时的变动</th><th>爆冷时的变动</th><th>特点</th></tr></thead>
+<tbody>
+<tr><td>4–16</td><td>±2 ~ ±8</td><td>接近上限</td><td>保守，需要几千场才能收敛</td></tr>
+<tr><td><b>32</b></td><td><b>±16</b></td><td>±32</td><td><b>本书取值，平衡速度与稳定</b></td></tr>
+<tr><td>64+</td><td>±32 ~</td><td>±64</td><td>反应快，但对单场噪声敏感、易震荡</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="key">
+<span class="tag">\(k\) 与「学习率」是同一个角色</span>
+<p>\(k\) 越大，排行榜对最近的比赛越敏感（类似大学习率）；越小越稳定但迟钝（类似小学习率）。原始 Elo（\(k=32\)，定级赛用 \(k=10\)）后来演化出 Glicko（按表现方差给每个选手单独定 \(k\)，强手 \(k\) 小、弱手 \(k\) 大）。</p>
+<p>在 LLM 场景，模型的数量远少于棋手、每场「对局」样本量大（每次都是成千上万条用户投票），所以 Arena 用 Bradley–Terry 而不是 Elo——见第七节。</p>
+</div>
+
+<h2 class="deriv">四、逐场手算：复现 1043.7 / 1015.2 / 1000.7 / 940.4</h2>
+
+<p>原文的 6 场投票（每场第一个是胜者）：</p>
+
+<pre><code>votes = [("GPT-5", "Claude-3"), ("GPT-5", "Llama-4"),
+         ("Claude-3", "Llama-3"), ("Llama-4", "Llama-3"),
+         ("Claude-3", "Llama-3"), ("GPT-5", "Llama-3")]</code></pre>
+
+<p>起点：四个模型全部 <b>1000</b>。\(k = 32\)。下表每一行的 \(E_w\) 都用<b>赛前</b>分数计算：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>#</th><th>对阵（胜 vs 负）</th><th>赛前分数</th><th>\(E_w\)</th><th>胜者增量</th><th>赛后分数</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>GPT-5 vs Claude-3</td><td>1000.0 / 1000.0</td><td>0.5000</td><td>+16.00</td><td><b>1016.0 / 984.0</b></td></tr>
+<tr><td>2</td><td>GPT-5 vs Llama-4</td><td>1016.0 / 1000.0</td><td>0.5230</td><td>+15.26</td><td><b>1031.3 / 984.7</b></td></tr>
+<tr><td>3</td><td>Claude-3 vs Llama-3</td><td>984.0 / 1000.0</td><td>0.4770</td><td>+16.74</td><td><b>1000.7 / 983.3</b></td></tr>
+<tr><td>4</td><td>Llama-4 vs Llama-3</td><td>984.7 / 983.3</td><td>0.5021</td><td>+15.93</td><td><b>1000.7 / 967.3</b></td></tr>
+<tr><td>5</td><td>Claude-3 vs Llama-3</td><td>1000.7 / 967.3</td><td>0.5479</td><td>+14.47</td><td><b>1015.2 / 952.9</b></td></tr>
+<tr><td>6</td><td>GPT-5 vs Llama-3</td><td>1031.3 / 952.9</td><td>0.6109</td><td>+12.45</td><td><b>1043.7 / 940.4</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>最终排行榜，与原文输出逐位吻合：</p>
+
+<pre><code>GPT-5     : 1043.7
+Claude-3  : 1015.2
+Llama-4   : 1000.7
+Llama-3   :  940.4</code></pre>
+
+<h3>4.1 三个关键场次的验算细节</h3>
+
+<p><b>第 1 场（平局）：</b>\(R_l - R_w = 0\Rightarrow E_w = 1/(1+10^0) = 0.5\)，两边各 \(\pm 32 \times 0.5 = \pm 16\)。</p>
+
+<p><b>第 3 场（弱势方赢了 16 分的落后者）：</b>Claude-3 只有 984，Llama-3 有 1000，所以 <code>ratings[loser] - ratings[winner]</code> 是 <b>正的 16</b>：</p>
+
+\[
+E_w = \frac{1}{1 + 10^{16/400}} = \frac{1}{1 + 10^{0.04}} = \frac{1}{1 + 1.0965} = 0.4770
+\]
+
+<p>Llama-3 当时<b>被看好</b>（E &gt; 0.5），却输了，所以扣掉 \(32 \times (1 - 0.477) = 16.74\) 分。这就是「爆冷要付出更大代价」——<b>是双向的</b>，冷门方赢时涨得更多。</p>
+
+<p><b>第 6 场（最悬殊的一场）：</b>GPT-5 此时 1031.3，Llama-3 只有 952.9，差 78.4 分：</p>
+
+\[
+E_w = \frac{1}{1 + 10^{-78.4/400}} = \frac{1}{1 + 10^{-0.196}} = \frac{1}{1 + 0.6368} = 0.6109
+\]
+
+<p>GPT-5 赢了，但只涨 \(32 \times (1 - 0.6109) = 12.45\) 分。<b>78 分的优势只换来 12 分的涨幅</b>——这就是 Elo 的「防爆冷」机制：<b>它会自动把频率更高的结果吸收成更小的边际变化</b>。</p>
+
+<div class="eq-note">
+<b>总量守恒的检验：</b>每场比赛双方增量之和恰好为 \(+k(1-E) - k(1-E) = 0\)。<b>整个算法不创造也不销毁分数，只是把分数在模型之间搬运</b>。所以 1000 只是起点，真正有意义的是<b>相对</b>排名。
+</div>
+
+<h2 class="deriv">五、原文提到的顺序效应：为什么会发生</h2>
+
+<p>原文说：<i>the same set of outcomes, when presented in a different order, can end with slightly different final scores</i>。原因是 <b>Elo 是逐场在线更新</b>，第 \(k\) 场的 \(E\) 依赖前 \(k-1\) 场的结果，所以整个过程不是 \(S\) 的某个固定函数。</p>
+
+<p>「爆冷发生得越早，影响越大」这一点可以直接看出来：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>把 Claude-3 爆冷 Llama-3 放在</th><th>该场 \(E_w\)</th><th>Claude-3 涨分</th></tr></thead>
+<tbody>
+<tr><td>第 1 场（双方都是 1000，势均力敌）</td><td>0.5000</td><td><b>+16.00</b></td></tr>
+<tr><td>第 5 场（Claude-3 已被抬到 1000.7，Llama-3 掉到 967.3）</td><td>0.5479</td><td><b>+14.47</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>同一场「比赛」，先打涨 16 分后打只涨 14.47 分，差 1.53 分。虽然本例的差异温和（原文原话 <i>usually mild</i>），但在稀疏投票的排行榜上可以累积到足以颠倒名次。</p>
+
+<div class="key">
+<span class="tag">原文给的解法，以及它的代价</span>
+<p>原文建议：<i>shuffle the votes pairs, run the elo_ratings function multiple times, and average the resulting ratings</i>。这就是<b>多次随机重排取平均</b>，在数学上是对「不同置换下的终值」取期望，属于蒙特卡洛估计。</p>
+<p>它确实能压掉顺序效应，<b>但引入了新问题</b>：\(f\) 是非线性的，\(E[f(x)] \ne f(E[x])\)。平均下来的分数<b>不再对应任何一条真实的对局序列</b>，也不保证满足 Elo 的自洽性条件 \(E_w(R_w, R_l) + E_l(R_l, R_w) = 1\)。所以它是个方便的启发式修正，不是原则性解法。</p>
+</div>
+
+<h2 class="deriv">六、Elo 的三个隐含假设</h2>
+
+<ol class="steps">
+<li><b>零和</b>：分数只在模型间搬运（第二节已验证）。</li>
+<li><b>单一维度</b>：每个模型只有一个分数，假设所有能力（数学、代码、写作、拒答率）排序一致。现实中不同模型强弱项不同，一个分数必然掩盖取舍——<b>这是 Elo 排行榜最常被批评的地方</b>。</li>
+<li><b>结果无平局</b>：<code>S</code> 只取 0/1。用户「两个都好」或「两个都差」被强行二选一，引入系统性偏差。</li>
+</ol>
+
+<p>这三条也解释了原文 4.4 节里说的「benchmark 和 leaderboard 都能被 game，用户会按风格而非正确性来选」。</p>
+
+<h2 class="deriv">七、Elo → Bradley–Terry：Arena 为什么换掉了它</h2>
+
+<p>原文说 Arena 现在改用 Bradley–Terry，优势有两条。可以从上面的分析直接对上：</p>
+
+<p><b>优势一：能给出置信区间。</b>BT 是对整个数据集做一次<b>联合最大似然拟合</b>，似然曲面有明确的曲率信息，于是能算出 \(\hat{R} \pm \text{SE}\)。Elo 是逐场贪心更新，没有这个结构。两个模型分数只差 0.3 分时，区间会大幅重叠——<b>排行榜上「相邻」其实往往是「分不出来」</b>，而 Elo 的呈现方式掩盖了这一点。</p>
+
+<p><b>优势二：免疫顺序效应。</b>BT 一次性估计所有评分，是<b>顺序无关</b>的联合估计，而不是逐场递推，所以第三节的置换问题从根上消失。</p>
+
+<p>两者的关系也很清楚：<b> Bradley–Terry 拟合出来的分数，形状上就是第 1.2 节那个 logistic 函数</b>，只是把它从「递推规则」变成了「待估参数」：</p>
+
+\[
+P(A \succ B) = \frac{1}{1 + 10^{-(R_A - R_B)/400}}
+\]
+
+<p>原文因此说：<i>the Bradley-Terry model is fitted to produce values comparable to Elo</i>。所以「Elo」这个名字留下来了，但算的是 BT。</p>
+
+<nav class="deriv-nav">
+<a href="page-102.html"><span class="dir">原文</span>F.4 用偏好与排行榜比较模型</a>
+<a href="page-53-detail.html"><span class="dir">详解</span>6.1.1 RLHF：偏好数据从哪来</a>
+<a href="math-detail.html"><span class="dir">索引</span>全部数学推导详解</a>
+</nav>
+
+</main>
+
+<script defer src="assets/katex/katex.min.js"></script>
+<script defer src="assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>

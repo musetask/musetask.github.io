@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>数学推导详解 · C.1 RMSNorm · Build a Reasoning Model</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">数学推导详解 · C.1 RMSNorm</span>
+<a class="nav" href="page-91.html">原文</a>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">对应原文第 91 页 · 附录 C From scratch to Qwen3</span></div>
+
+<h1>C.1 RMSNorm：归一化的定义式与手算验证</h1>
+
+<div class="lead">
+原文这一节用图 C.2 直观对比了 LayerNorm 与 RMSNorm，并给出「均值 0.77、方差 0.41」这个结果，但<b>没有写出任何一个公式</b>。这一页把两条定义式写出来，把图 C.2 的六个数字<b>逐步手算一遍</b>，并证明 RMSNorm 真正保证的不变量其实既不是零均值也不是单位方差，而是 <b>平方均值为 1</b>。
+</div>
+
+<h2 class="deriv">一、为什么需要归一化</h2>
+
+<p>深层网络里，前一层的输出尺度会被后一层的权重放大或缩小。设某层为 \(\mathbf{y} = \mathbf{W}\mathbf{x}\)，如果 \(\mathbf{W}\) 的行和随机变大，\(\|\mathbf{y}\|\) 就随层数指数增长或衰减。前者让激活值冲出浮点表示范围，后者让梯度在反向传播中指数消失。</p>
+
+<p>归一化层的作用就是把每个 token 的特征向量<b>拉回一个固定的尺度</b>，让下一层不必关心上游送来的数有多大。RMSNorm 和 LayerNorm 干的是同一件事，区别只在<b>怎么算这个尺度</b>。</p>
+
+<h2 class="deriv">二、LayerNorm 的定义式</h2>
+
+<p>给定一个 token 的 \(d\) 维隐藏向量 \(\mathbf{x} = (x_1, \dots, x_d)\)，先算均值和方差：</p>
+
+\[
+\mu = \frac{1}{d}\sum_{i=1}^{d} x_i,
+\qquad
+\sigma^2 = \frac{1}{d}\sum_{i=1}^{d}(x_i - \mu)^2
+\]
+
+<p>然后标准化，再乘一个学到的增益、加一个学到的偏移：</p>
+
+\[
+\hat{x}_i = \frac{x_i - \mu}{\sigma},
+\qquad
+y_i = \gamma_i\, \hat{x}_i + \beta_i
+\]
+
+<div class="key">
+<span class="tag">LayerNorm 的两条硬保证</span>
+<p>因为 \(\frac{1}{d}\sum_i \hat{x}_i = 0\) 且 \(\frac{1}{d}\sum_i \hat{x}_i^2 = 1\)，所以输出<b>恰好</b>零均值、单位方差（当 \(\gamma = 1, \beta = 0\) 时）。这正是图 C.2 右侧标注的 "Zero-centered mean and unit variance after normalization"。</p>
+</div>
+
+<h2 class="deriv">三、RMSNorm 的定义式：只去掉减均值这一步</h2>
+
+<p>RMSNorm 把「减均值」整个删掉，直接除以均方根（root mean square）：</p>
+
+\[
+\mathrm{RMS}(\mathbf{x}) = \sqrt{\frac{1}{d}\sum_{i=1}^{d} x_i^2}
+= \sqrt{\frac{1}{d}\sum_{i=1}^{d}(x_i - \mu)^2 + \mu^2}
+= \sqrt{\sigma^2 + \mu^2}
+\]
+
+\[
+y_i = \gamma_i \cdot \frac{x_i}{\mathrm{RMS}(\mathbf{x})},
+\qquad \text{（默认没有 } \beta \text{）}
+\]
+
+<div class="warn">
+<span class="tag">最容易算错的一步</span>
+<p>RMSNorm 除的是 <b>RMS</b>，不是<b>标准差</b>。很多人拿 \(\sigma\) 去除，结果全错。二者的关系是 \(\mathrm{RMS} = \sqrt{\sigma^2 + \mu^2}\)，<b>只有当 \(\mu = 0\) 时两者才相等</b>。图 C.2 里输入的均值是 17.47（远非 0），所以 \(\sigma = 14.42\) 而 \(\mathrm{RMS} = 22.65\)，差了 57%。</p>
+</div>
+
+<div class="eq-note">
+<b>参数个数：</b>LayerNorm 每维 2 个参数（\(\gamma_i, \beta_i\)），RMSNorm 每维 1 个（\(\gamma_i\)）。对 \(d = 1024\) 的 Qwen3 0.6B，一个归一化层从 2048 个参数降到 1024 个。后面会看到，全模型一共 57 个 RMSNorm，共省下 58,368 个参数。
+</div>
+
+<h2 class="deriv">四、手算：图 C.2 的六个数字</h2>
+
+<p>图 C.2 的输入（layer outputs）是 \(\mathbf{x} = [5.61,\ 14.32,\ 0.00,\ 34.88,\ 38.70,\ 11.29]\)。按图上标注，先核对统计量：</p>
+
+\[
+\mu = \frac{5.61 + 14.32 + 0.00 + 34.88 + 38.70 + 11.29}{6}
+= \frac{104.80}{6} = 17.4667 \approx 17.47
+\]
+
+\[
+\sigma^2 = \frac{1}{6}\sum (x_i - 17.4667)^2
+= \frac{140.58 + 9.90 + 305.08 + 303.22 + 450.86 + 38.15}{6}
+= \frac{1247.79}{6} = 207.97 \approx 207.91
+\]
+
+<p>（图上标 207.91，是先把各数四舍五入到两位再算的，直接用原始值算是 207.97，差异只来自舍入。）</p>
+
+<h3>4.1 先算 RMS</h3>
+
+\[
+\mathrm{RMS}^2 = \frac{1}{6}\sum x_i^2
+= \frac{31.4721 + 205.0624 + 0 + 1216.6144 + 1497.69 + 127.4641}{6}
+= \frac{3078.3030}{6} = 513.0505
+\]
+
+\[
+\mathrm{RMS} = \sqrt{513.0505} = 22.6517
+\]
+
+<div class="eq-note">
+<b>交叉验证：</b>用 \(\mathrm{RMS}^2 = \sigma^2 + \mu^2 = 207.97 + 305.08 = 513.05\)。两条路得到同一个数，说明算对了。这个恒等式也是理解两者区别的钥匙——RMSNorm 分母里天然带着 \(\mu^2\) 这一项。
+</div>
+
+<h3>4.2 逐个相除，得到 RMSNorm 的输出</h3>
+
+<div class="tw">
+<table>
+<thead><tr><th>输入 \(x_i\)</th><th>\(x_i / 22.6517\)</th><th>图 C.2 标注</th></tr></thead>
+<tbody>
+<tr><td>5.61</td><td>0.2477</td><td><b>0.25</b></td></tr>
+<tr><td>14.32</td><td>0.6322</td><td><b>0.63</b></td></tr>
+<tr><td>0.00</td><td>0.0000</td><td><b>0.00</b></td></tr>
+<tr><td>34.88</td><td>1.5397</td><td><b>1.54</b></td></tr>
+<tr><td>38.70</td><td>1.7083</td><td><b>1.71</b></td></tr>
+<tr><td>11.29</td><td>0.4984</td><td><b>0.50</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>六个数全部对上图 C.2 左侧那一行。</p>
+
+<h3>4.3 算它的均值与方差</h3>
+
+\[
+\mathrm{mean}(y) = \frac{0.2477 + 0.6322 + 0.0000 + 1.5397 + 1.7083 + 0.4984}{6}
+= \frac{4.6263}{6} = 0.7711 \approx \mathbf{0.77}
+\]
+
+\[
+\mathrm{var}(y) = \frac{1}{6}\sum (y_i - 0.7711)^2
+= \frac{0.2739 + 0.0193 + 0.5945 + 0.5909 + 0.8784 + 0.0743}{6}
+= \frac{2.4313}{6} = 0.4052 \approx \mathbf{0.41}
+\]
+
+<p>原文说的「均值是 0.77、方差是 0.41」就是这两个数。</p>
+
+<h3>4.4 顺便手算一下 LayerNorm 的输出做对照</h3>
+
+<p>\(\sigma = \sqrt{207.97} = 14.4212\)，用 \((x_i - \mu)/\sigma\)：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>\(x_i\)</th><th>\(x_i - 17.4667\)</th><th>除以 14.4212</th><th>图 C.2 标注</th></tr></thead>
+<tbody>
+<tr><td>5.61</td><td>−11.8567</td><td>−0.8222</td><td><b>−0.82</b></td></tr>
+<tr><td>14.32</td><td>−3.1467</td><td>−0.2182</td><td><b>−0.22</b></td></tr>
+<tr><td>0.00</td><td>−17.4667</td><td>−1.2112</td><td><b>−1.21</b></td></tr>
+<tr><td>34.88</td><td>+17.4133</td><td>+1.2075</td><td><b>+1.21</b></td></tr>
+<tr><td>38.70</td><td>+21.2333</td><td>+1.4722</td><td><b>+1.47</b></td></tr>
+<tr><td>11.29</td><td>−6.1767</td><td>−0.4282</td><td><b>−0.43</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>注意 <b>0.00 这个输入</b>：LayerNorm 给出 <b>−1.21</b>（因为它离均值最远），RMSNorm 给出 <b>0.00</b>（因为它就是 0）。这正是两种归一化最直观的差别——<b>RMSNorm 不关心「相对均值偏了多少」，只关心「绝对大小是多少」</b>。</p>
+
+<h2 class="deriv">五、RMSNorm 真正保证的不变量：平方均值为 1</h2>
+
+<p>既然输出既不是零均值也不是单位方差，那 RMSNorm 到底保证了什么？答案是<b>它保证的量恰好就是它除的那个量</b>：</p>
+
+\[
+\frac{1}{d}\sum_{i=1}^{d} y_i^2
+= \frac{1}{d}\sum_{i=1}^{d}\left(\frac{x_i}{\mathrm{RMS}}\right)^2
+= \frac{1}{\mathrm{RMS}^2}\cdot \frac{1}{d}\sum_{i=1}^{d} x_i^2
+= \frac{\mathrm{RMS}^2}{\mathrm{RMS}^2} = 1
+\]
+
+<p>即 <b>\(\mathrm{RMS}(\mathbf{y}) = 1\) 恒成立</b>（当增益 \(\gamma = 1\) 时；带增益则是 \(\mathrm{RMS}(\gamma \odot \mathbf{y}) = |\gamma|\)）。用 4.2 的输出验算：</p>
+
+\[
+\frac{0.2477^2 + 0.6322^2 + 0^2 + 1.5397^2 + 1.7083^2 + 0.4984^2}{6}
+= \frac{0.0614 + 0.3997 + 0 + 2.3708 + 2.9190 + 0.2484}{6}
+= \frac{5.9993}{6} = 0.9999 \approx 1
+\]
+
+<div class="key">
+<span class="tag">顺带一个漂亮的恒等式</span>
+<p>因为 \(\mathrm{var}(y) = \frac{\sigma^2}{\mathrm{RMS}^2}\) 且 \(\mathrm{mean}(y) = \frac{\mu}{\mathrm{RMS}}\)，两者相加有：</p>
+\[
+\mathrm{mean}(y)^2 + \mathrm{var}(y) = \frac{\mu^2 + \sigma^2}{\mathrm{RMS}^2} = \frac{\mathrm{RMS}^2}{\mathrm{RMS}^2} = 1
+\]
+<p>用原文的数字验证：\(0.77^2 + 0.41 = 0.5929 + 0.41 = 1.0029 \approx 1\)。<b>所以看到 RMSNorm 的输出均值和方差，只要检查两者平方和是否为 1 就能判断算对了</b>——这也解释了为什么「均值 0.77、方差 0.41」这两个数看起来有点奇怪却又是自洽的。</p>
+</div>
+
+<h2 class="deriv">六、为什么「不减均值」是可以接受的</h2>
+
+<p>LayerNorm 的减均值有两个作用：</p>
+
+<ol class="steps">
+<li><b>数值作用</b>：让输出零均值，梯度分布更对称。</li>
+<li><b>统计作用</b>：让「偏离」成为唯一的信息源。</li>
+</ol>
+
+<p>RMSNorm 放弃了这两点，但实践上损失很小。理由是：</p>
+
+<div class="key">
+<span class="tag">均值是可以被下一层学回来的</span>
+<p>归一化层后面紧跟的是一个线性层 \(W\)。一个常数偏移向量 \(\mu \cdot \mathbf{1}\) 对下一层的贡献是 \(W(\mu\mathbf{1}) = \mu\,(W\mathbf{1})\)，这是<b>一个固定的、可被后续权重吸收的常量方向</b>。换句话说，零均值带来的好处，下游本来就能通过权重自己学到，而减均值本身要付出一次全维 reduction 的代价。</p>
+<p>这就是「便宜 vs 精确」的真实取舍：RMSNorm 用一点表达能力，换来大约 7% 的归一化层前向计算量（见下一节）。大规模训练里这笔交易是划算的——这就是为什么 LLaMA、Qwen3、Mistral 现代架构几乎都选了 RMSNorm。</p>
+</div>
+
+<h2 class="deriv">七、参数量与计算量：两次 reduction vs 一次</h2>
+
+<h3>7.1 reduction 次数</h3>
+
+<p>在 GPU 上，一个向量的 reduction 是<b>跨线程的归约操作</b>，需要线程间通信，是归一化层里最慢的部分。</p>
+
+<div class="tw">
+<table>
+<thead><tr><th></th><th>需要的 reduction</th><th>次数</th></tr></thead>
+<tbody>
+<tr><td>LayerNorm</td><td>\(\sum x_i\)、\(\sum x_i^2\)、最后除法 <code>x.sum()</code> / <code>pow(2).mean()</code></td><td><b>2 次</b>跨特征 reduction</td></tr>
+<tr><td>RMSNorm</td><td>只需 <code>pow(2).mean()</code></td><td><b>1 次</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>这正是原文说的：<i>reduces the number of cross-feature reductions from two to one, which lowers communication overhead on GPUs</i>。</p>
+
+<h3>7.2 参数量</h3>
+
+<p>按图 C.7 的配置，Qwen3 0.6B 的 \(d = 1024\)，transformer block 重复 28 次，每个 block 含 RMSNorm 1（attention 前）和 RMSNorm 2（feedforward 前），模型末尾还有一个 final RMSNorm：</p>
+
+\[
+\text{RMSNorm 层数} = 2 \times 28 + 1 = 57
+\]
+
+<div class="tw">
+<table>
+<thead><tr><th>方案</th><th>每层参数</th><th>57 层合计</th></tr></thead>
+<tbody>
+<tr><td>LayerNorm（\(\gamma,\beta\)）</td><td>\(2 \times 1024 = 2048\)</td><td><b>116,736</b></td></tr>
+<tr><td>RMSNorm（只有 \(\gamma\)）</td><td>\(1 \times 1024 = 1024\)</td><td><b>58,368</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>相对 6 亿参数，这只是一小部分，但<b>这是零成本的收益</b>：不改结构、不改初始化、少一次通信、省一半归一化参数。这也是为什么 C.4 里的 QKNorm 可以直接「借用」C.1 的 RMSNorm 实现，套在 query 和 key 上。</p>
+
+<h2 class="deriv">八、RMSNorm 的梯度（进阶，可跳过）</h2>
+
+<p>用 \(r = \mathrm{RMS}(\mathbf{x})\)，\(y_i = \gamma_i x_i / r\)。注意 \(r\) 依赖于所有 \(x_j\)，所以求导时不能只当作常数：</p>
+
+\[
+\frac{\partial y_i}{\partial x_j}
+= \gamma_i\left(\frac{\delta_{ij}}{r} - \frac{x_i}{r^2}\cdot\frac{\partial r}{\partial x_j}\right),
+\qquad
+\frac{\partial r}{\partial x_j} = \frac{x_j}{d\,r}
+\]
+
+<p>于是（\(\gamma_i = 1\) 时）：</p>
+
+\[
+\frac{\partial y_i}{\partial x_j} = \frac{1}{r}\left(\delta_{ij} - \frac{x_i x_j}{d\,r^2}\right)
+= \frac{1}{r}\left(\delta_{ij} - \frac{y_i y_j}{d}\right)
+\]
+
+<div class="eq-note">
+<b>怎么读这个式子：</b>对角项 \(\frac{1}{r}\delta_{ij}\) 是「保持自己」；减掉的第二项是把所有输入的贡献沿 \(\mathbf{y}\) 方向投影后拿掉，保证 \(\sum_j x_j \frac{\partial y_i}{\partial x_j} = 0\)，也就是 <b>整体缩放不改变输出</b>。后者正是 RMSNorm 的不变性来源：\(\mathbf{x} \to c\mathbf{x}\) 时 \(\mathbf{y}\) 不变（分子分母同时乘 \(c\)）。LayerNorm 多一层不变性：\(\mathbf{x} \to \mathbf{x} + c\mathbf{1}\) 时 \(\mathbf{y}\) 也不变，<b>而这恰恰是 RMSNorm 放弃的那个</b>。
+</div>
+
+<h2 class="deriv">九、与后续章节的连接</h2>
+
+<div class="steps">
+<li><b>C.4 QKNorm</b> — 把同一个 RMSNorm 挪到注意力内部，对 query 和 key 各自归一化，抑制极端 attention score。见 <a href="page-92.html">原文 C.4</a>。</li>
+<li><b>第 5 章 logprob</b> — 归一化层影响的是 logits 的尺度；而 logits 差值进入 softmax 时的相对关系，和这里的「尺度不变性」是同一个数学结构。</li>
+</div>
+
+<nav class="deriv-nav">
+<a href="page-92-detail.html"><span class="dir">详解</span>下一页：C.3 旋转位置编码</a>
+<a href="page-91.html"><span class="dir">原文</span>C.1 RMSNorm</a>
+<a href="math-detail.html"><span class="dir">索引</span>全部数学推导详解</a>
+</nav>
+
+</main>
+
+<script defer src="assets/katex/katex.min.js"></script>
+<script defer src="assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>

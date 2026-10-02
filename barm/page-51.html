@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>Exercise 5.5: Using the heuristic score for self-refinement · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-50.html">
+<link rel="next" href="page-52.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 51 页 / 共 108 页</span></div>
+<h3 id="h3-exercise-5-5-using-the-heuristic-score-for-self-refinement">Exercise 5.5: Using the heuristic score for self-refinement</h3>
+<div class="lead">Run <code>self_refinement_loop</code> using the <code>heuristic_score</code> function, which we defined in listing 5.3.</div>
+<p>The previous example showed that self-refinement can help the model generate the correct answer. To get a better idea of how useful this self-refinement method really is, I ran it on MATH-500 and summarized the results in table 5.1.</p>
+<div class="tw"><table><caption><span class="lbl">Table 5.1</span>MATH-500 task accuracy for different self-refinement methods</caption><thead><tr><th></th><th>Method</th><th>Scoring</th><th>Iterations</th><th>Model</th><th>Accuracy</th><th>Time</th></tr></thead><tbody><tr><td>1</td><td>Baseline (chapter 3)</td><td>-</td><td>-</td><td>Base</td><td>15.2%</td><td>10.1 min</td></tr><tr><td>2</td><td>Self-refinement</td><td>None</td><td>1</td><td>Base</td><td>25.0%</td><td>84.8 min</td></tr><tr><td>3</td><td>Self-refinement</td><td>None</td><td>2</td><td>Base</td><td>22.0%</td><td>165.4 min</td></tr><tr><td>4</td><td>Self-refinement</td><td>Heuristic</td><td>1</td><td>Base</td><td>21.6%</td><td>84.7 min</td></tr><tr><td>5</td><td>Self-refinement</td><td>Heuristic</td><td>2</td><td>Base</td><td>20.8%</td><td>151.4 min</td></tr><tr><td>6</td><td>Self-refinement</td><td>Avg. logprob</td><td>1</td><td>Base</td><td>21.4%</td><td>85.3 min</td></tr><tr><td>7</td><td>Self-refinement</td><td>Avg. logprob</td><td>2</td><td>Base</td><td>22.0%</td><td>165.3 min</td></tr><tr><td>8</td><td>Baseline (chapter 3)</td><td>-</td><td>-</td><td>Reasoning</td><td>48.2%</td><td>182.1 min</td></tr><tr><td>9</td><td>Self-refinement</td><td>None</td><td>1</td><td>Reasoning</td><td>56.6%</td><td>498.8 min</td></tr><tr><td>10</td><td>Self-refinement</td><td>Heuristic</td><td>1</td><td>Reasoning</td><td>57.8%</td><td>498.6 min</td></tr><tr><td>11</td><td>Self-refinement</td><td>Avg. logprob</td><td>1</td><td>Reasoning</td><td>48.4%</td><td>499.7 min</td></tr></tbody></table></div>
+<p>The accuracy values shown in table 5.1 were computed on all 500 samples in the MATH-500 test set using a <code>"cuda"</code> GPU (DGX Spark).</p>
+<p>As shown in table 5.1, self-refinement improves performance over the base model (rows 1–7), but the improvement is very moderate, with the best accuracy achieved when no scoring is used in self-refinement. This means that both the heuristic score and the average logprob score can sometimes lead to incorrect answers being accepted over the initial correct answer.</p>
+<p>Note that when adding <code>"Explain</code> <code>step</code> <code>by</code> <code>step."</code> chain-of-thought to both the base model and the self-refinement, the model failed to improve over the base model (results not shown).</p>
+<p>Looking at the reasoning model results (rows 8–11), we can see that the combination of self-refinement and heuristic scoring improved answer accuracy by almost 10%. (As explained in chapter 3, the reasoning model can be used by changing <code>which_</code></p>
+<pre><code class="language-python">model="base" to which_model="reasoning" in load_model_and_tokenizer in listing 5.1.)</code></pre>
+<p>In both cases, it seems that average logprob scoring results in worse performance than no scorer or the heuristic scorer. This is likely because the average logprob score is more closely related to how natural or expected an answer looks under the model than to whether the answer is actually correct. As a result, it can favor answers that are fluent, familiar, or syntactically clean, even when they are semantically wrong. In other words, the logprob criterion can unintentionally select confident mistakes, whereas the heuristic score is more focused on the format and structure of the answer.</p>
+<p>At this point, it may seem that we’ve spent a lot of time discussing the concept of average logprob scoring. Logprob scoring is a fundamental concept when working with </p>
+<p>LLMs, and it will come in handy in upcoming chapters, when we implement the reinforcement learning training procedure.</p>
+<p>Comparing the results in table 5.1 with those in the previous chapter (table 4.1), we also observe that self-refinement is less effective than self-consistency for this model on this math task. Self-consistency remains widely used because it works well in practice, despite its simplicity.</p>
+<p>Another method we haven’t explored in this chapter is self-refinement with an external model in an LLM-as-a-judge setup, similar to what’s described in appendix F (section F.5). For instance, instead of using the heuristic score or average logprob, we can use a second LLM to compute a score and write the critique.</p>
+<p>In November 2025, with DeepSeekMath-V2, the DeepSeek team demonstrated that self-refinement with a second LLM can be very successful, leading to gold-level performance in several math competitions. Specifically, the team proposed a new method in which they trained a second LLM to be a strong critique model and further trained their base model to become a better math problem solver in the context of self-refinement (by contrast, in this chapter, we applied self-refinement without any additional training).</p>
+<p>This concludes our discussion of inference scaling without additional training (see figure 5.22). In the next chapter, we’ll begin covering training techniques that update the model weights to improve reasoning.</p>
+<figure><a class="zoom" href="assets/figure-5.22.png" tabindex="-1"><img src="assets/figure-5.22.png" alt="" width="1141" height="644" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 5.22</span>Overview of the book’s progression from basic LLM use to inference-time reasoning methods and finally to training-based techniques. This chapter concludes our discussion of inference-scaling methods that don’t require additional training. The next chapters introduce approaches that update model weights to further improve reasoning performance.</figcaption></figure>
+<nav class="pager"><a class="prev" href="page-50.html" rel="prev"><span class="dir">上一页</span><span class="t">5.8 Coding the self-refinement loop</span></a><a class="next" href="page-52.html" rel="next"><span class="dir">下一页</span><span class="t">Summary</span></a></nav>
+</main>
+</body>
+</html>

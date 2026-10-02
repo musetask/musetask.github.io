@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>5.4 Understanding token probability scores · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-43.html">
+<link rel="next" href="page-45.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 44 页 / 共 108 页</span></div>
+<h2 id="h2-understanding-token-probability-scores"><span class="num">5.4</span>Understanding token probability scores</h2>
+<p>Let’s now take the first step toward building a scorer based on the model’s own confidence (step 5 in figure 5.7), where confidence is a probability that the model assigns. At each position, the model will distribute the probability mass over the possible next tokens. If the tokens in a proposed answer consistently receive high probability, this suggests that the answer is more compatible with the model’s own internal preferences. Conversely, if the model assigns very low probability to many of the answer tokens, that’s a sign that the model itself does not strongly support that answer. </p>
+<p>In this section, we’ll start by computing the token probability scores for a proposed answer and use them to estimate how likely the model considers that answer to be (step 3 in figure 5.7). This may seem like a detour, but these probability and log-probability </p>
+<figure><a class="zoom" href="assets/figure-5.7.png" tabindex="-1"><img src="assets/figure-5.7.png" alt="" width="1046" height="441" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 5.7</span>In this section, we’ll move from a simple rule-based scorer to token-level probabilities. These probabilities will form the basis for the logprob scoring method that we’ll use later in the self-refinement approach.</figcaption></figure>
+<p>concepts will become important again in the next chapter, where they’ll reappear inside the training objective rather than only being an inference-time scoring signal.</p>
+<p>The token probability scores we’ll compute in this section are also known in the literature as <em>next-token probabilities</em>, <em>per-token probabilities</em>, <em>sequence likelihoods</em>, or, more loosely, <em>token-level likelihoods</em>. They represent the probability that the model assigns to each possible next token, expressed as a normalized (softmax) distribution over the vocabulary. </p>
+<aside><span class="tag">Note</span>The term logprob is common shorthand in the AI literature for log probability.</aside>
+<p>Although this discussion of probabilities may sound complicated, it relies on the same mechanism used for text generation that we covered in the previous chapter. For instance, in chapter 4, you saw that the model assigns a logit score to each token in the vocabulary at each stage, and it selects the next token based on these scores. This process, which we discussed in section 4.4, is illustrated again in figure 5.8.</p>
+<p>In the previous chapter, we looked up the vocabulary entry corresponding to the highest score (vocabulary index <code>19846</code>, corresponding to the token <code>"Berlin"</code> in figure 5.8) to get the next generated token. Here, we’ll revisit the logits with a different goal in mind. Instead of generating the next token, we want to use the scores to quantify the model’s confidence in a particular answer. In other words, we are not going to generate anything based on the scores here; we are just inspecting them.</p>
+<p>For example, consider two candidate answers we want to score:</p>
+<pre><code class="language-python">"The capital of Germany is Berlin"
+"The capital of Germany is Bridge"</code></pre>
+<p>Our goal is to quantify how confident the model is in each answer. It is important to keep in mind that model confidence does not automatically imply correctness. A model </p>
+<figure><a class="zoom" href="assets/figure-5.8.png" tabindex="-1"><img src="assets/figure-5.8.png" alt="" width="1143" height="672" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 5.8</span>How an LLM selects the next token. The model converts the input text into token IDs, computes a score for every vocabulary token, and chooses the token with the highest score. The plot on the right shows the logit values for a subset of the vocabulary, with the token for Berlin having the highest score.</figcaption></figure>
+<p>can assign high probability to an answer simply because it fits the patterns it has learned well, even if the answer is factually wrong. When this happens, we still need additional methods, such as retrieval-augmented generation, external tools such as web search, calculators, or code execution, or comparison-based approaches like self-consistency to detect and correct confidently wrong answers.</p>
+<p>In figure 5.8, the input text <code>"The capital of Germany is"</code> is fed to the model, and the next token with the highest score (<code>"Berlin"</code>) is selected. Instead of selecting a token, here we’ll compare the scores assigned to two candidate next tokens, <code>"Berlin"</code> and<code>"Bridge"</code>, as shown in figure 5.9. (<code>"Bridge"</code> is used as an alternative because it appears within the vocabulary range shown in figure 5.8.)</p>
+<p>Rather than working with the raw logits shown in figure 5.9, we convert them to probabilities. Probabilities are easier to interpret, they’re comparable across inputs, and they form the basis for the logprob scoring method we’ll use later in the chapter.</p>
+<p>As discussed in chapter 4, applying <code>torch.softmax</code> converts logits into probability values. Figure 5.10 shows the resulting probability distribution. The token probabilities shown in figure 5.10 are computed using <code>torch.softmax</code> as we did in section 4.4.3, as part of the multinomial sampling procedure. The difference here is that we do not</p>
+<figure><a class="zoom" href="assets/figure-5.9.png" tabindex="-1"><img src="assets/figure-5.9.png" alt="" width="1143" height="910" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 5.9</span>How we look up the logit scores for specific tokens. After passing the input text through the model, we obtain a logit value for every vocabulary token. We then convert the candidate tokens we want to score into token IDs and read off their corresponding logit values from the distribution.</figcaption></figure>
+<p>sample from the distribution. Instead, we simply look up the probability assigned to specific tokens.</p>
+<p>In figure 5.10, only the bar for <code>"Berlin"</code> is visible, with a probability of <code>0.1695</code>. The probabilities for other tokens in the plotted range are near zero. This indicates that the model assigns higher confidence to <code>"Berlin"</code> than to <code>"Bridge"</code> as the next token, given </p>
+<pre><code class="language-python">the input text "The capital of Germany is".</code></pre>
+<aside><span class="tag">Note</span>The bars shown in figure 5.10 do not sum to 1 because the full vocabulary contains 151,000 tokens, and the figure displays only a small slice of the distribution (token indices 19,800–19,900).</aside>
+<p>In practice, we usually want to compare complete answers rather than individual tokens. This extension from single-token to sequence-level scoring is illustrated in figure </p>
+<figure><a class="zoom" href="assets/figure-5.10.png" tabindex="-1"><img src="assets/figure-5.10.png" alt="" width="1141" height="919" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 5.10</span>Next-token scoring. The input text is converted into token IDs and fed to the LLM, which outputs logits for the next token. After applying a softmax, these logits become probabilities, where tokens like "Berlin" receive a high probability and unlikely alternatives such as "Bridge" receive values near zero.</figcaption></figure>
+<p>5.11, where we compute the probability of each token given its preceding tokens. This is the same procedure as in figure 5.10, except that we repeat it for every token in the sequence. </p>
+<p>During ordinary text generation, the model does this one step at a time as it goes along, selecting the next token. Here, we use the same mechanism in a different way: instead of sampling new tokens, we take a completed candidate answer and score each of its tokens one by one under the model. We then multiply these probabilities to obtain the probability of the full sequence, also called the <em>joint probability</em>.</p>
+<figure><a class="zoom" href="assets/figure-5.11.png" tabindex="-1"><img src="assets/figure-5.11.png" alt="" width="1141" height="595" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 5.11</span>Computing token probability scores for a given sequence. For each position, we feed the preceding text into the model and read off the softmax probability of the next token. Multiplying these conditional probabilities yields the joint probability of the full sequence.</figcaption></figure>
+<nav class="pager"><a class="prev" href="page-43.html" rel="prev"><span class="dir">上一页</span><span class="t">Exercise 5.2: Using the heuristic scorer in a best-of-N setup</span></a><a class="next" href="page-45.html" rel="next"><span class="dir">下一页</span><span class="t">Joint probability of a token sequence</span></a></nav>
+</main>
+</body>
+</html>

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>4.4.2 Rescaling token scores (logits) via a temperature parameter · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-32.html">
+<link rel="next" href="page-34.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 33 页 / 共 108 页</span></div>
+<h3 id="h3-rescaling-token-scores-logits-via-a-temperature-parameter"><span class="num">4.4.2</span>Rescaling token scores (logits) via a temperature parameter</h3>
+<p>Now that you know how the model selects its next token, we can introduce the concept of temperature. Temperature, or, more precisely, the temperature parameter, rescales the logits, which makes the corresponding probability distribution sharper or flatter and thereby affects how the next token is selected.</p>
+<p>As shown in figure 4.8, this section focuses on rescaling the next-token logits with a temperature parameter before using them for sampling. Rescaling here means adjusting the magnitude of the scores so the sampling step becomes more or less sensitive to differences in the scores.</p>
+<p>The code for implementing the temperature rescaling step (step 3.2 in figure 4.8), is relatively short and simple. In essence, the following code rescales the logit values before converting them to probabilities (discussed in the next section).</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">def</span> scale_logits_by_temperature(logits, temperature):
+    <span class="tok-kw">if</span> temperature &lt;= <span class="tok-fn">0</span>:
+        <span class="tok-kw">raise</span> ValueError<span class="tok-kw">(</span>"Temperature must be positive"<span class="tok-kw">)</span>
+    <span class="tok-kw">return</span> logits / temperature</code></pre><figcaption><span class="lbl">Listing 4.4</span>Rescaling next-token scores via temperature scaling</figcaption></figure>
+<p>In practice, temperature values are expected to be positive numbers, so we raise an error if the temperature is zero or less. We will add more temperature-scaling safeguards later, when we add temperature scaling to our text generation function.</p>
+<p>For all other values, the logits are divided by the temperature. A temperature of 1.0 means no change, because dividing a number by 1 leaves it unchanged. A temperature </p>
+<figure><a class="zoom" href="assets/figure-4.8.png" tabindex="-1"><img src="assets/figure-4.8.png" alt="" width="1141" height="662" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 4.8</span>In this section, we’ll implement the core part of temperature scaling (step 3.2), which adjusts the next-token scores. This lets us control how confidently the model selects its next token in later steps.</figcaption></figure>
+<p>lower than 1.0 makes the distribution sharper, which makes the model more confident when it selects the next token. Temperatures higher than 1.0 flatten the logit distribution, which can make sampling (step 3.4 in figure 4.8) more diverse. In other words, higher temperatures reduce the probability gap between the top token and lower-ranked tokens, increasing the chance that sampling will pick a non-maximum token.</p>
+<p>Let’s see this <code>scale_logits_by_temperature</code> function in action. We’ll try it out with relatively extreme temperature values of 0.5 and 5.0 for a stronger effect.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">def</span> plot_logits_with_temperature(
+    next_token_logits, start=<span class="tok-fn">19_800</span>, end=<span class="tok-fn">19_900</span>,
+    temps=(<span class="tok-fn">0.5</span>, <span class="tok-fn">5.0</span>),
+):
+    x = torch.arange<span class="tok-kw">(</span>start, end<span class="tok-kw">)</span>
+    logits_orig = next_token_logits<span class="tok-kw">[</span><span class="tok-fn">0</span>, start:end<span class="tok-kw">]</span>.float<span class="tok-kw">()</span>.cpu<span class="tok-kw">()</span>
+    logits_scaled = [
+        scale_logits_by_temperature<span class="tok-kw">(</span>logits_orig, T<span class="tok-kw">)</span> <span class="tok-kw">for</span> T <span class="tok-kw">in</span> temps
+    ]
+    plt.plot<span class="tok-kw">(</span>x, logits_orig, label="Original logits", lw=<span class="tok-fn">2</span><span class="tok-kw">)</span>
+    plt.plot<span class="tok-kw">(</span>
+        x, logits_scaled<span class="tok-kw">[</span><span class="tok-fn">0</span><span class="tok-kw">]</span>,
+        label=f"T={temps<span class="tok-kw">[</span><span class="tok-fn">0</span><span class="tok-kw">]</span>} (sharper)", ls="--", lw=<span class="tok-fn">1</span>
+    <span class="tok-kw">)</span>
+    plt.plot<span class="tok-kw">(</span>
+        x, logits_scaled<span class="tok-kw">[</span><span class="tok-fn">1</span><span class="tok-kw">]</span>,
+        label=f"T={temps<span class="tok-kw">[</span><span class="tok-fn">1</span><span class="tok-kw">]</span>} (flatter)", ls=":", lw=<span class="tok-fn">3</span>
+    <span class="tok-kw">)</span>
+    <span class="tok-cm"># Highlight max logit</span>
+    max_idx = torch.argmax<span class="tok-kw">(</span>logits_orig<span class="tok-kw">)</span>
+    plt.annotate<span class="tok-kw">(</span>
+        "Berlin",
+        xy=(x<span class="tok-kw">[</span>max_idx<span class="tok-kw">]</span>, logits_orig<span class="tok-kw">[</span>max_idx<span class="tok-kw">]</span>),
+        xytext=(x<span class="tok-kw">[</span>max_idx<span class="tok-kw">]</span> - <span class="tok-fn">25</span>, logits_orig<span class="tok-kw">[</span>max_idx<span class="tok-kw">]</span> + <span class="tok-fn">2</span>),
+        arrowprops={"facecolor": "black", "arrowstyle": "-&gt;", "lw": <span class="tok-fn">1.5</span>},
+        fontsize=<span class="tok-fn">12</span>,
+    <span class="tok-kw">)</span>
+    plt.xlabel<span class="tok-kw">(</span>"Vocabulary index"<span class="tok-kw">)</span>
+    plt.ylabel<span class="tok-kw">(</span>"Logit value"<span class="tok-kw">)</span>
+    plt.legend<span class="tok-kw">()</span>
+    plt.grid<span class="tok-kw">(</span>alpha=<span class="tok-fn">0.3</span><span class="tok-kw">)</span>
+    plt.tight_layout<span class="tok-kw">()</span>
+    plt.show<span class="tok-kw">()</span>
+plot_logits_with_temperature<span class="tok-kw">(</span>
+    next_token_logits,
+    temps=(<span class="tok-fn">0.5</span>, <span class="tok-fn">5.0</span>)
+<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 4.5</span>Plotting the temperature-rescaled logits</figcaption></figure>
+<p>As shown in figure 4.9, the larger temperature (5.0) yields a much flatter score distribution, while the smaller temperature (0.5) yields a much sharper one.</p>
+<figure><a class="zoom" href="assets/figure-4.9.png" tabindex="-1"><img src="assets/figure-4.9.png" alt="" width="780" height="583" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 4.9</span>The effect of temperature scaling on logits. Lower temperatures make the distribution sharper, while higher temperatures flatten it. (Note that this visualization is shown as a line plot for readability; a bar plot would more accurately represent the individual vocabulary scores.)</figcaption></figure>
+<p>The plotting code in listing 4.5 is very similar to the plotting code in listing 4.3. In addition to applying temperature scaling, we are now using a line plot (<code>plt.plot</code>) instead of a bar plot (<code>plt.bar</code>). Although a bar plot is technically a better choice for the discrete vocabulary indices on the <em>x</em>-axis, a line plot makes it easier to visualize and compare the rescaled logits in this case.</p>
+<p>The important point is not the absolute height of a logit by itself, but how the differences between logits change. If a token such as <code>"Berlin"</code> stands out more strongly than the alternatives, it is more likely to be selected later. If the differences shrink, lower-ranked tokens become more likely to be selected. The next section will illustrate this by converting the logits into probabilities.</p>
+<h3 id="h3-why-temperature">Why temperature?</h3>
+<div class="lead">The term temperature comes from physics, where temperature controls how much randomness or movement there is in a system. In LLMs, we use the same idea to control how confidently or creatively the model chooses its next token, as you’ll see in the following sections.</div>
+<nav class="pager"><a class="prev" href="page-32.html" rel="prev"><span class="dir">上一页</span><span class="t">4.4.1 Understanding the process of selecting the next token</span></a><a class="next" href="page-34.html" rel="next"><span class="dir">下一页</span><span class="t">4.4.3 Sampling the next token from a probability distribution</span></a></nav>
+</main>
+</body>
+</html>

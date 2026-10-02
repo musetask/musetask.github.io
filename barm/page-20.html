@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>3.1 Building a math verifier · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-19.html">
+<link rel="next" href="page-21.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 20 页 / 共 108 页</span></div>
+<h2 id="h2-building-a-math-verifier"><span class="num">3.1</span>Building a math verifier</h2>
+<p>There are four common ways to evaluate trained LLMs in practice: <em>multiple choice</em>, <em>verifiers</em>, <em>leaderboards</em>, and <em>LLM judges</em>. These methods are widely used across research papers, technical reports, marketing materials, and model cards (documents that summarize how a model was trained, evaluated, and intended to be used), and results often draw from more than one category.</p>
+<p>As figure 3.1 illustrates, these evaluation approaches can be grouped into two broader types: <em>benchmark-based evaluation</em> and <em>judgment-based evaluation</em>. The former is usually more quantitative, whereas the latter relies more on qualitative judgments. All four evaluation methods are useful in different contexts, but verifiers are especially relevant for reasoning models.</p>
+<p>Math problems provide a natural example: depending on the problem’s complexity, they benefit from step-by-step reasoning, yet evaluation is straightforward because the final answer can be checked against the correct answer. In this setting, the verifier provides a simple and reliable way to measure whether a model’s reasoning steps lead to the correct outcome.</p>
+<p>In this chapter, we’ll focus on verifiers as a benchmark-based approach for measuring answer correctness in math problems. Verifiers compare the extracted answer with the reference solution, as shown in figure 3.2, often by relying on external tools such as code interpreters or calculator programs.</p>
+<aside><span class="tag">Note</span>Appendix F covers other evaluation methods, such as multiple-choice benchmarks, preference-based leaderboards, and LLM-as-a-judge approaches.</aside>
+<figure><a class="zoom" href="assets/figure-3.2.png" tabindex="-1"><img src="assets/figure-3.2.png" alt="" width="1015" height="613" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 3.2</span>Evaluating an LLM with a verification-based method in free-form question answering. The model generates a free-form answer (which may include multiple steps) and a final boxed answer, which is extracted and compared with the correct answer from the dataset.</figcaption></figure>
+<p>While our immediate focus is evaluation, verifiers will reappear later in this book. They serve not only as a way to measure performance but also as the feedback signal used in reinforcement learning methods to train reasoning models, which we’ll explore in chapter 6.</p>
+<p>The downside is that verifier methods can be applied only to domains that can be easily (and, ideally, deterministically) verified, such as math and code. Also, this approach can introduce additional complexity and dependencies, and it may shift part of the evaluation burden from the model itself to the external tool.</p>
+<p>Because math problem solving can be generated in unlimited variations programmatically and because it benefits from step-by-step reasoning, this task has become a cornerstone of evaluating and developing reasoning models. In this chapter, we’ll build a math verifier step by step, following the eight steps shown in figure 3.3.</p>
+<pre><code class="language-python">14/3
+(14)/(3)</code></pre>
+<pre><code class="language-python">True</code></pre>
+<figure><a class="zoom" href="assets/figure-3.3.png" tabindex="-1"><img src="assets/figure-3.3.png" alt="" width="1141" height="976" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 3.3</span>A step-by-step workflow for building and applying a math verifier. Starting with a pretrained LLM, we’ll generate answers, extract and normalize them, and then compare them with the ground-truth solutions. The verified answers are then graded, and the process is repeated across a dataset (MATH-500) to evaluate overall model performance.</figcaption></figure>
+<p>The next section will go through steps 1 and 2 in figure 3.3: loading a pretrained LLM and setting it up to generate answers.</p>
+<nav class="pager"><a class="prev" href="page-19.html" rel="prev"><span class="dir">上一页</span><span class="t">Exercise 2.2: Rerunning code on non-CPU devices</span></a><a class="next" href="page-21.html" rel="next"><span class="dir">下一页</span><span class="t">3.2 Loading a pretrained model to generate text</span></a></nav>
+</main>
+</body>
+</html>

@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>C.1 RMSNorm · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/detail.css">
+<link rel="prev" href="page-90.html">
+<link rel="next" href="page-92.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 91 页 / 共 108 页</span></div>
+<aside class="detail-link"><span class="tag">补充材料</span>本节 RMSNorm 的归一化定义式，以及图 C.2 里「均值 0.77、方差 0.41」六个数字的逐步手算验证，在 <a href="page-91-detail.html"><b>C.1 RMSNorm</b></a>。全部推导页的索引见 <a href="math-detail.html">math-detail.html</a>。</aside>
+<h2 id="h2-rmsnorm"><span class="num">C.1</span>RMSNorm</h2>
+<p>In contrast to GPT-2, which used standard LayerNorm, the newer Qwen3 architecture uses <em>root mean square layer normalization</em> (RMSNorm). This trend has become increasingly common in recent model architectures.</p>
+<p>RMSNorm fulfills the same core function as LayerNorm: normalizing layer activations to stabilize and improve training. But it simplifies the computation by removing the mean-centering step, as shown in figure C.2. This means that activations are still normalized, but they are not centered at 0.</p>
+<figure><a class="zoom" href="assets/figure-C.2.png" tabindex="-1"><img src="assets/figure-C.2.png" alt="" width="1139" height="520" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure C.2</span>Comparison of LayerNorm (used in GPT-2) and RMSNorm (used in Qwen3). LayerNorm (right) normalizes activations so that their average value (mean) is exactly zero and their spread (variance) is exactly one. RMSNorm (left) instead scales activations based on their root mean square, which does not enforce zero mean or unit variance, but still keeps the mean and variance within a reasonable range for stable training.</figcaption></figure>
+<p>As you can see in figure C.2, both LayerNorm and RMSNorm scale the layer outputs to a reasonable range.</p>
+<p>LayerNorm subtracts the mean and divides by the standard deviation so that the layer outputs have zero mean and unit variance (a variance of one and a standard deviation of one), which results in favorable gradient properties for stable training.</p>
+<p>RMSNorm divides the inputs by the root mean square. This scales activations to a comparable magnitude without enforcing zero mean or unit variance. In the example shown in figure C.2, the mean is 0.77 and the variance is 0.41.</p>
+<p>Both LayerNorm and RMSNorm stabilize activation scales and improve optimization, but RMSNorm is often preferred in large-scale LLMs because it is computationally cheaper. Unlike LayerNorm, RMSNorm does not use a bias (shift) term by default, which reduces the number of trainable parameters. Moreover, RMSNorm reduces the expensive mean and variance computations to a single root-mean-square operation. This reduces the number of cross-feature reductions from two to one, which lowers communication overhead on GPUs and slightly improves training efficiency.</p>
+<p>The following listing shows what RMSNorm looks like in code.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">import</span> torch.nn <span class="tok-kw">as</span> nn
+class RMSNorm(nn.Module):
+    <span class="tok-kw">def</span> __init__(
+        self,
+        emb_dim,
+        eps=<span class="tok-fn">1e-6</span>,
+        bias=<span class="tok-kw">False</span>,
+        qwen3_compatible=<span class="tok-kw">True</span>,
+    ):
+        super<span class="tok-kw">()</span>.__init__<span class="tok-kw">()</span>
+        self.eps = eps
+        self.qwen3_compatible = qwen3_compatible
+        self.scale = nn.Parameter<span class="tok-kw">(</span>torch.ones<span class="tok-kw">(</span>emb_dim<span class="tok-kw">))</span>
+        self.shift = nn.Parameter<span class="tok-kw">(</span>torch.zeros<span class="tok-kw">(</span>emb_dim<span class="tok-kw">))</span> <span class="tok-kw">if</span> bias <span class="tok-kw">else</span> <span class="tok-kw">None</span>
+    <span class="tok-kw">def</span> forward(self, x):
+        input_dtype = x.dtype
+        <span class="tok-kw">if</span> self.qwen3_compatible:
+            x = x.to<span class="tok-kw">(</span>torch.float32<span class="tok-kw">)</span>
+        variance = x.pow<span class="tok-kw">(</span><span class="tok-fn">2</span><span class="tok-kw">)</span>.mean<span class="tok-kw">(</span>dim=-<span class="tok-fn">1</span>, keepdim=<span class="tok-kw">True)</span>
+        norm_x = x * torch.rsqrt<span class="tok-kw">(</span>variance + self.eps<span class="tok-kw">)</span>
+        norm_x = norm_x * self.scale
+        <span class="tok-kw">if</span> self.shift <span class="tok-kw">is</span> <span class="tok-kw">not</span> <span class="tok-kw">None</span>:
+            norm_x = norm_x + self.shift
+        <span class="tok-kw">return</span> norm_x.to<span class="tok-kw">(</span>input_dtype<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing C.1</span>RMSNorm</figcaption></figure>
+<p>Note that, for brevity, this appendix does not provide detailed code walk-throughs for each LLM component. Instead, in section C.6, we’ll integrate all the components into the <code>Qwen3Model</code> class, load the pretrained weights into it, and then use this model to generate text in section C.9.</p>
+<h2 id="h2-feedforward-module"><span class="num">C.2</span>Feedforward module</h2>
+<p>The <em>feedforward module</em> (a small multilayer perceptron) is replaced with a <em>gated linear unit</em> (GLU) variant introduced in a 2020 paper, “GLU Variants Improve Transformer” (<a href="https://arxiv.org/abs/2002.05202">https://arxiv.org/abs/2002.05202</a>). In this design, the standard two fully connected layers are replaced with three, as shown in figure C.3.</p>
+<figure><a class="zoom" href="assets/figure-C.3.png" tabindex="-1"><img src="assets/figure-C.3.png" alt="" width="1138" height="1088" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure C.3</span>In GPT-2 (top), the feedforward module consists of two fully connected (linear) layers separated by a nonlinear activation function. In Qwen3 (bottom), this module is a gated linear unit (GLU) variant that adds a third linear layer (linear layer 3) and multiplies its output elementwise with the activated output of linear layer 1.</figcaption></figure>
+<p>Qwen3’s feedforward module, shown in figure C.3, can be implemented as shown in the next listing.</p>
+<figure class="listing"><pre><code class="language-python">class FeedForward(nn.Module):
+    <span class="tok-kw">def</span> __init__(self, cfg):
+        super<span class="tok-kw">()</span>.__init__<span class="tok-kw">()</span>
+        self.fc1 = nn.Linear<span class="tok-kw">(</span>
+            cfg<span class="tok-kw">[</span><span class="tok-st">"emb_dim"</span><span class="tok-kw">]</span>, cfg<span class="tok-kw">[</span><span class="tok-st">"hidden_dim"</span><span class="tok-kw">]</span>, dtype=cfg<span class="tok-kw">[</span><span class="tok-st">"dtype"</span><span class="tok-kw">]</span>,
+            bias=<span class="tok-kw">False</span>
+        <span class="tok-kw">)</span>
+        self.fc2 = nn.Linear<span class="tok-kw">(</span>
+            cfg<span class="tok-kw">[</span><span class="tok-st">"emb_dim"</span><span class="tok-kw">]</span>, cfg<span class="tok-kw">[</span><span class="tok-st">"hidden_dim"</span><span class="tok-kw">]</span>, dtype=cfg<span class="tok-kw">[</span><span class="tok-st">"dtype"</span><span class="tok-kw">]</span>,
+            bias=<span class="tok-kw">False</span>
+        <span class="tok-kw">)</span>
+        self.fc3 = nn.Linear<span class="tok-kw">(</span>
+            cfg<span class="tok-kw">[</span><span class="tok-st">"hidden_dim"</span><span class="tok-kw">]</span>, cfg<span class="tok-kw">[</span><span class="tok-st">"emb_dim"</span><span class="tok-kw">]</span>, dtype=cfg<span class="tok-kw">[</span><span class="tok-st">"dtype"</span><span class="tok-kw">]</span>,
+            bias=<span class="tok-kw">False</span>
+        <span class="tok-kw">)</span>
+    <span class="tok-kw">def</span> forward(self, x):
+        x_fc1 = self.fc1<span class="tok-kw">(</span>x<span class="tok-kw">)</span>
+        x_fc2 = self.fc2<span class="tok-kw">(</span>x<span class="tok-kw">)</span>
+        x = nn.functional.silu<span class="tok-kw">(</span>x_fc1<span class="tok-kw">)</span> * x_fc2
+        <span class="tok-kw">return</span> self.fc3<span class="tok-kw">(</span>x<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing C.2</span>Qwen3’s feedforward module</figcaption></figure>
+<p>At first glance, it might seem that the GLU feedforward variant used in Qwen3 should outperform the standard feedforward variant in GPT-2, simply because it adds an extra linear layer (three instead of two) and therefore appears to have more parameters.</p>
+<p>But this intuition is misleading. The <code>fc1</code> and <code>fc2</code> layers in the GLU variant are each half the width of the <code>fc1</code> layer in a standard feedforward module, so the GLU variant has fewer parameters.</p>
+<p>To illustrate this with a concrete example, suppose the input dimension to linear layer 1 in figure C.3 is 1,024. This corresponds to <code>cfg["emb_dim"]</code> in listing C.2. The output dimension of <code>fc1</code> is 3,072 (<code>cfg["hidden_dim"]</code>). These are the actual numbers used in the Qwen3 0.6B variant. In this case, we have the following parameter counts for the GLU variant in listing C.2:</p>
+<ul><li><code>fc1</code>: 1024 × 3,072 = 3,145,728</li></ul>
+<ul><li><code>fc2</code>: 1024 × 3,072 = 3,145,728</li></ul>
+<ul><li><code>fc3</code>: 1024 × 3,072 = 3,145,728</li></ul>
+<ul><li>Total: 3 × 3,145,728 = 9,437,184 parameters</li></ul>
+<p>If we assume that <code>fc1</code> in this GLU variant has half the width typically chosen for <code>fc1</code> in a standard feedforward module, the parameter counts of the standard feedforward module would be as follows:</p>
+<ul><li><code>fc1</code>: 1024 × 2 × 3,072 = 6,291,456</li></ul>
+<ul><li><code>fc2</code>: 1024 × 2 × 3,072 = 6,291,456</li></ul>
+<ul><li>Total: 2 × 6,291,456 = 12,582,912 parameters</li></ul>
+<p>While GLU variants usually have fewer parameters than regular feedforward modules, they perform better. The improvement comes from the additional multiplicative interaction introduced by the gating mechanism, <code>activation(x_fc1) * x_fc2</code>, which increases the model’s expressivity. This is similar to how deeper, slimmer networks can outperform shallower, wider ones, given proper training.</p>
+<p>Before we proceed to the next section, there is one more thing to address. Note that the feedforward module shown in figure C.3 contains an element labeled “Activation function,” but we used an <code>nn.functional.silu</code> activation as a concrete example in listing C.2.</p>
+<p>Historically, activation functions were a hot topic of debate until the deep learning community largely converged on the <em>rectified linear unit</em> (ReLU) more than a decade ago. ReLU is simple and computationally cheap, but it has a sharp kink at zero. This motivated researchers to explore smoother functions such as the <em>Gaussian error linear unit</em> (GELU) and the <em>sigmoid linear unit</em> (SiLU), as shown in figure C.4.</p>
+<figure><a class="zoom" href="assets/figure-C.4.png" tabindex="-1"><img src="assets/figure-C.4.png" alt="" width="1119" height="1121" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure C.4</span>Different activation functions that can be used in a feedforward module (neural network). GELU and SiLU (Swish) offer smooth alternatives to ReLU, which has a sharp kink at input zero.</figcaption></figure>
+<p>GELU involves the Gaussian cumulative distribution function (CDF). Computing this CDF is slow because it uses piecewise logic and exponentials, which makes it hard to write fused, optimized GPU kernels, although a tanh approximation uses cheaper operations and runs faster with near-identical results. In short, while GELU produces smooth activation curves, it is overall computationally more expensive than simpler functions.</p>
+<p>Newer models have largely replaced GELU with the SiLU (also known as <em>Swish</em>) function, which smoothly suppresses large negative inputs toward ~0 and is approximately linear for large positive inputs, as shown in figure C.4.</p>
+<p>SiLU has similar smoothness, but it is slightly cheaper to compute than GELU and offers comparable modeling performance. In practice, SiLU is now used in most architectures, while GELU remains in use in only some models, such as Google’s Gemma open-weight LLM. In the implementation of the feedforward module in listing C.2, the SiLU function is called via <code>nn.functional.silu</code>. The feedforward module in listing C.2 is also often called <em>SwiGLU</em>, an abbreviation derived from the terms Swish and GLU.</p>
+<nav class="pager"><a class="prev" href="page-90.html" rel="prev"><span class="dir">上一页</span><span class="t">B.7 Chapter 8</span></a><a class="next" href="page-92.html" rel="next"><span class="dir">下一页</span><span class="t">C.3 Rotary position embeddings</span></a></nav>
+</main>
+</body>
+</html>

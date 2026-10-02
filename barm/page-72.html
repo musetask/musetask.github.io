@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>7.6.2 Training a model to emit &lt;think&gt; tokens · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/detail.css">
+<link rel="prev" href="page-71.html">
+<link rel="next" href="page-73.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 72 页 / 共 108 页</span></div>
+<aside class="detail-link"><span class="tag">补充材料</span>「policy ratio = 1、loss = 0」这个结论的推导（以及它为什么是好事）在 <a href="page-58-detail.html"><b>6.7–6.9 详解 · 六（完整版 GRPO）</b></a>。全部推导页的索引见 <a href="math-detail.html">math-detail.html</a>。</aside>
+<h3 id="h3-training-a-model-to-emit-think-tokens"><span class="num">7.6.2</span>Training a model to emit &lt;think&gt; tokens</h3>
+<p>The modifications needed to train a reasoning model with a formatting reward are implemented in a script that you can download:</p>
+<pre><code class="language-python">download_from_github<span class="tok-kw">(</span>
+    <span class="tok-st">"ch07/03_rlvr_grpo_scripts_advanced/7_6_plus_format_reward.py"</span>
+<span class="tok-kw">)</span></code></pre>
+<p>There are a few caveats to keep in mind about this script. For instance, if we train the base model with the modified prompt to emit <code>&lt;think&gt;</code> and <code>&lt;/think&gt;</code> tokens, as shown in listing 7.14, the results would be poor because the base model has never seen these tokens before. The proper way to introduce these new tokens would be to pretrain or instruction fine-tune the model on data that includes <code>&lt;think&gt;</code> and <code>&lt;/think&gt;</code> tokens (instruction fine-tuning is covered in the next chapter).</p>
+<p>In this chapter, where we are focusing on reinforcement learning, we’ll train the existing reasoning variant of the model, which is already familiar with <code>&lt;think&gt;</code> tokens. This is the same reasoning variant we introduced in chapter 3.</p>
+<p>You can run the script as follows:</p>
+<pre><code class="language-python">uv run 7_6_plus_format_reward.py \
+    --steps <span class="tok-fn">500</span>  \
+    --max_new_tokens <span class="tok-fn">1024</span></code></pre>
+<p>Note that this script is already configured to use the reasoning model variant instead of the base model.</p>
+<p>You can download a log file of this run for further analysis, because running the experiment can be resource intensive and expensive:</p>
+<pre><code class="language-python">download_from_github<span class="tok-kw">(</span>
+    <span class="tok-st">"ch07/02_logs/7_6_plus_format_reward_metrics.csv"</span>
+<span class="tok-kw">)</span>
+plot_grpo_metrics<span class="tok-kw">(</span>
+    <span class="tok-st">"7_6_plus_format_reward_metrics.csv"</span>,
+    columns=[<span class="tok-st">"loss"</span>, <span class="tok-st">"reward_avg"</span>, <span class="tok-st">"avg_response_len"</span>, <span class="tok-st">"eval_acc"</span>]
+<span class="tok-kw">)</span></code></pre>
+<p>The resulting plot is shown in figure 7.19. As you can see, the model improves at first but then gets worse in terms of evaluation accuracy, while the average reward stays approximately constant. The decline in evaluation accuracy appears to correlate with the shorter response lengths the model produces after that point.</p>
+<figure><a class="zoom" href="assets/figure-7.19.png" tabindex="-1"><img src="assets/figure-7.19.png" alt="" width="781" height="584" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 7.19</span>Basic metrics from a GRPO training run with a format reward</figcaption></figure>
+<p>To investigate this further, let’s look at some additional metrics:</p>
+<pre><code class="language-python">plot_grpo_metrics<span class="tok-kw">(</span>
+    <span class="tok-st">"7_6_plus_format_reward_metrics.csv"</span>,
+    columns=[<span class="tok-st">"reward_avg"</span>, <span class="tok-st">"format_reward_avg"</span>, <span class="tok-st">"adv_std"</span>, <span class="tok-st">"entropy_avg"</span>],
+<span class="tok-kw">)</span></code></pre>
+<p>The results are shown in figure 7.20. One possible explanation for the declining model performance is that the model receives too much reward simply for following the <code>&lt;think&gt;</code> tag format, as shown in the <code>format_reward_avg</code> plot. In other words, the model does not focus enough on answer correctness (as reflected by the drop in <code>eval_acc </code>despite the high <code>reward_avg</code>).</p>
+<p>One way to address this is to reduce the strength of the format reward, such as by lowering the default <code>format_reward_weight</code> from <code>1.0</code> to <code>0.1</code>. Another option is to make the format reward conditional so it is applied only when the answer is also correct. In the current setup, the format reward is granted regardless of correctness.</p>
+<h3 id="h3-a-note-on-loss-and-kl_loss">A note on loss and kl_loss</h3>
+<div class="lead">This experiment used <code>7_6_plus_format_reward.py</code> with the default settings <code>--kl_ coeff 0.0</code> and <code>--inner_epochs 1</code>. Because <code>--kl_coeff</code> is set to <code>0.0</code>, the KL penalty is disabled, so the logged <code>kl_loss</code> remains <code>0</code> throughout the run.</div>
+<div class="lead">If you want to enable KL regularization with the same settings used in section 7.5, run this:</div>
+<pre><code class="language-python">uv run 7_6_plus_format_reward.py \
+    --steps 500 \
+    --max_new_tokens 1024 \
+    --kl_coeff 0.001 \
+    --inner_epochs 2</code></pre>
+<div class="lead">The logged <code>loss</code> (figure 7.19) is also 0 with the default 7.6 settings. This happens because the run uses only one inner update (<code>--inner_epochs 1</code>) and compares the model against a copy of itself from the same step. As a result, the policy ratio starts at 1, and because the advantages are normalized to have a mean of 0, the scalar policy loss evaluates to 0. So in this case, <code>loss = 0</code> is a computational artifact caused by the default settings. It mainly reflects that the run uses a single inner epoch and no KL term, which makes the logged scalar loss uninformative. The more useful quantities to monitor here are metrics such as <code>reward_avg</code>, <code>format_</code></div>
+<pre><code class="language-python">reward_avg, adv_std, and entropy_avg.</code></pre>
+<figure><a class="zoom" href="assets/figure-7.20.png" tabindex="-1"><img src="assets/figure-7.20.png" alt="" width="781" height="707" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 7.20</span>Additional metrics from a GRPO training run with a format reward</figcaption></figure>
+<h3 id="h3-exercise-7-2-making-the-format-reward-conditional">Exercise 7.2: Making the format reward conditional</h3>
+<div class="lead">Modify the format reward calculation,</div>
+<pre><code class="language-python">reward = rlvr_reward + format_reward_weight * format_reward</code></pre>
+<div class="lead">so that the format reward is given only if the correctness reward (<code>rlvr_reward</code>) is nonzero. Repeat the training run with the conditional format reward. Does conditioning the format reward change training behavior and final accuracy? Note: Because running these experiments can be resource intensive, reference results are provided in appendix B.</div>
+<nav class="pager"><a class="prev" href="page-71.html" rel="prev"><span class="dir">上一页</span><span class="t">7.6.1 Using &lt;think&gt; tokens</span></a><a class="next" href="page-73.html" rel="next"><span class="dir">下一页</span><span class="t">7.6.3 More GRPO modifications, tips, and tricks</span></a></nav>
+</main>
+</body>
+</html>

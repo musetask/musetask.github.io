@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>7.3.3 Plotting additional GRPO metrics · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/detail.css">
+<link rel="prev" href="page-65.html">
+<link rel="next" href="page-67.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 66 页 / 共 108 页</span></div>
+<aside class="detail-link"><span class="tag">补充材料</span>本节熵阈值的取值依据，以及 log(7) = 1.9459 这个上界的来源，见 <a href="page-65-detail.html"><b>7.3 advantage 统计量与熵</b></a>。全部推导页的索引见 <a href="math-detail.html">math-detail.html</a>。</aside>
+<h3 id="h3-plotting-additional-grpo-metrics"><span class="num">7.3.3</span>Plotting additional GRPO metrics</h3>
+<p>Let’s build on the earlier computation of advantage statistics and entropy by analyzing these quantities in a concrete training run. To do this, we could update <code>compute_ grpo_loss</code> to use <code>sequence_logprob_and_entropy</code> and then print and log the entropy in <code>train_rlvr_grpo</code>, which calls <code>compute_grpo_loss</code> internally. To avoid duplicating a long code listing here, the full modified version is provided in the book’s supplementary materials. You can download it as follows:</p>
+<pre><code class="language-python">download_from_github<span class="tok-kw">(</span>
+    <span class="tok-st">"ch07/03_rlvr_grpo_scripts_advanced/7_3_plus_tracking.py"</span>
+<span class="tok-kw">)</span></code></pre>
+<p>This code can be run in the same way as the training script we used earlier:</p>
+<pre><code class="language-python">uv run 7_3_plus_tracking.py \
+    --steps 500 \
+    --max_new_tokens 1024</code></pre>
+<p>Since training takes a long time, you can download the resulting CSV log file and plot the new advantage statistics and entropy as follows:</p>
+<pre><code class="language-python">download_from_github<span class="tok-kw">(</span>
+    <span class="tok-st">"ch07/02_logs/7_3_plus_tracking_metrics.csv"</span>
+<span class="tok-kw">)</span>
+plot_grpo_metrics<span class="tok-kw">(</span>
+    <span class="tok-st">"7_3_plus_tracking_metrics.csv"</span>,
+    columns=[<span class="tok-st">"reward_avg"</span>, <span class="tok-st">"adv_avg"</span>, <span class="tok-st">"adv_std"</span>, <span class="tok-st">"entropy_avg"</span>]
+<span class="tok-kw">)</span></code></pre>
+<p>We already looked at the average reward, but it’s included here again for comparison. The resulting plots are shown in figure 7.9. Here, moderate entropy should still be understood as exploratory behavior, just less random than the later high-entropy regime.</p>
+<figure><a class="zoom" href="assets/figure-7.9.png" tabindex="-1"><img src="assets/figure-7.9.png" alt="" width="816" height="655" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 7.9</span>Visualizing advantage statistics and entropy tracked during the GRPO training run (next to the average reward tracked previously)</figcaption></figure>
+<p>Let’s begin by analyzing the advantage shown in figure 7.9. As expected with GRPO-style normalization, the average advantage stays at zero throughout training. Since advantages are computed relative to the group mean, they sum to zero by design. As mentioned earlier, this metric mainly serves as a sanity check. If the advantage averages were to drift away from zero, that would point to a bug or a normalization issue.</p>
+<p>The standard deviation of the advantages is more informative. Early in training, we see relatively high variance, which indicates that the model is producing rollouts with a wide range of quality. Over time, the advantage standard deviation gradually decreases and stabilizes, which means that the rollouts become more similar in quality. The key point is that as long as the advantage standard deviation remains nonzero and reasonably stable (meaning the value doesn’t vary much), there is still a usable learning signal, and training is still happening.</p>
+<p>Next, let’s look at the entropy. Early in training, the entropy is relatively low and fairly flat, which indicates that the model behaves in a largely deterministic way. Increasing the sampling temperature would lead to more diverse rollouts, although it does not change the underlying entropy of the model itself.</p>
+<p>Later in training, after roughly step 200, entropy increases quite noticeably. This means the next-token probabilities are more spread out and the model behaves more randomly. Very low entropy can also be a sign of collapse, where the model repeatedly produces the same or very similar outputs. In this run, the entropy and the increasing average reward and non-vanishing advantage standard deviation suggest somewhat healthy exploration rather than collapse. This is also consistent with the earlier MATH-500 evaluation accuracy, which stays in the 30%–40% range. That’s not great, but it is not near zero.</p>
+<p>The main takeaway here is that each metric tells a slightly different part of the story, and they are most useful when considered together and in context.</p>
+<h2 id="h2-stabilizing-sequence-level-grpo-using-clipped-policy-ratios"><span class="num">7.4</span>Stabilizing sequence-level GRPO using clipped policy ratios</h2>
+<p>So far, we have mainly focused on analyzing the GRPO training results. Next, we’ll start adding to the GRPO algorithm itself. The version we have used so far is a simplified form of GRPO, and in this section, we’ll introduce a <em>clipped policy ratio</em> in the GRPO loss, as illustrated in the overview in figure 7.10.</p>
+<figure><a class="zoom" href="assets/figure-7.10.png" tabindex="-1"><img src="assets/figure-7.10.png" alt="" width="897" height="711" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 7.10</span>We have plotted basic and advanced GRPO training metrics. Now we’ll modify the GRPO algorithm to add clipped policy ratios.</figcaption></figure>
+<p>The clipped policy ratios will help limit overly large model weight updates and make training more stable, especially over longer runs. Ideally, we want to ensure that model performance doesn’t noticeably decline, as we saw previously.</p>
+<nav class="pager"><a class="prev" href="page-65.html" rel="prev"><span class="dir">上一页</span><span class="t">7.3.2 Entropy tracking</span></a><a class="next" href="page-67.html" rel="next"><span class="dir">下一页</span><span class="t">7.4.1 Computing clipped policy ratios</span></a></nav>
+</main>
+</body>
+</html>

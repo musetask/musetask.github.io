@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>2.6 Understanding the sequential LLM text generation process · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-13.html">
+<link rel="next" href="page-15.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 14 页 / 共 108 页</span></div>
+<h2 id="h2-understanding-the-sequential-llm-text-generation-process"><span class="num">2.6</span>Understanding the sequential LLM text generation process</h2>
+<p>Now that we’ve loaded the pretrained LLM, our goal is to write a function that uses the LLM to generate text. This function will form the foundation for reasoning-improving methods that we’ll implement later in the book, as shown in figure 2.9.</p>
+<figure><a class="zoom" href="assets/figure-2.9.png" tabindex="-1"><img src="assets/figure-2.9.png" alt="" width="1143" height="505" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 2.9</span>An overview of the four key stages in developing a reasoning model in this book. This section explains the main concept behind text generation in LLMs, which will enable us to implement a text generation function that uses the pretrained LLM.</figcaption></figure>
+<p>You may already know that text generation in LLMs is a sequential process in which LLMs generate one word (or token) at a time. This is often also called <em>autoregressive </em>text generation. Figure 2.10 presents a broad overview, with one generated output token (in the top row) shown at each step as it is fed an input prompt. </p>
+<h3 id="h3-chatbot-interfaces">Chatbot interfaces</h3>
+<div class="lead">A chat interface simply wraps the underlying next-token prediction process (shown in figure 2.10) in a conversational loop. The chatbot model still predicts one token at </div>
+<div class="lead">a time, but the system feeds the entire dialogue history back into the model so that each new reply feels context aware and coherent from turn to turn. This book focuses on single-turn conversations, where the current answer is independent of previous answers. If you’re interested, you can find an implementation of a chat interface with answer history in appendix G.</div>
+<figure><a class="zoom" href="assets/figure-2.10.png" tabindex="-1"><img src="assets/figure-2.10.png" alt="" width="1142" height="676" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 2.10</span>Sequential (autoregressive) text generation in LLMs. At each iteration, the model generates the next token based on the input and previously generated tokens, which are cumulatively fed back into the model to produce coherent output.</figcaption></figure>
+<p>If we zoom in on one of figure 2.10’s iterations, we can see that the LLM processes the full input sequence in one forward pass and produces one prediction for each input position. This means that if we have six input tokens, the model returns six corresponding predictions, as illustrated in figure 2.11. The figure makes the position-by-position structure easy to see, but model outputs are not, in general, just the input prompt shifted by one position. Rather, each position produces a distribution over possible next tokens. For text generation, we only use the prediction at the last position, because that’s the one that tells us which new token to append next.</p>
+<p>Before we implement a text generation function that uses the concept shown in figure 2.11 in each iteration of the autoregressive text generation process, let’s look at a </p>
+<figure><a class="zoom" href="assets/figure-2.11.png" tabindex="-1"><img src="assets/figure-2.11.png" alt="" width="849" height="694" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 2.11</span>The LLM processes the full input sequence and produces one next-token prediction per input position. These predictions are conceptually shifted one step ahead because each position predicts the following token. The illustration is position aligned for intuition, but the outputs are not literally the input prompt shifted by one position. During generation, we keep only the final prediction and use it to continue the input prompt one token at a time.</figcaption></figure>
+<p>code example that further illustrates figure 2.11. We’ll reuse the “Explain large language models.” prompt from section 2.4:</p>
+<pre><code class="language-python">prompt = <span class="tok-st">"Explain large language models."</span>
+input_token_ids_list = tokenizer.encode<span class="tok-kw">(</span>prompt<span class="tok-kw">)</span>
+print<span class="tok-kw">(f</span><span class="tok-st">"Number of input tokens: </span>{len<span class="tok-kw">(</span>input_token_ids_list<span class="tok-kw">)</span>}<span class="tok-st">"</span><span class="tok-kw">)</span>
+input_tensor = torch.tensor<span class="tok-kw">(</span>input_token_ids_list<span class="tok-kw">)</span>
+input_tensor_fmt = input_tensor.unsqueeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>
+input_tensor_fmt = input_tensor_fmt.to<span class="tok-kw">(</span>device<span class="tok-kw">)</span>
+<span class="tok-kw">with</span> torch.inference_mode<span class="tok-kw">()</span>:
+    output_tensor = model<span class="tok-kw">(</span>input_tensor_fmt<span class="tok-kw">)</span>
+output_tensor_fmt = output_tensor.squeeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>
+print<span class="tok-kw">(f</span><span class="tok-st">"Formatted Output tensor shape: </span>{output_tensor_fmt.shape}<span class="tok-st">"</span><span class="tok-kw">)</span></code></pre>
+<p>The preceding code produces the following output:</p>
+<pre><code class="language-python">Number of input tokens: 6
+Formatted Output tensor shape: torch.Size([6, 151936])</code></pre>
+<p>As we can see, we feed six input tokens into the model, which returns a </p>
+<p>6×151,936-dimensional matrix. The 6 in this matrix corresponds to the six input tokens. The second dimension, 151,936, corresponds to the vocabulary size that the model supports. For instance, each of the six tokens is represented by a vector with </p>
+<p>151,936 values. We can think of the values in these vectors as scores for each possible word in the vocabulary, where the highest score corresponds to the most likely word or subword (in the 151,936-entry vocabulary) to be chosen as the generated token.</p>
+<nav class="pager"><a class="prev" href="page-13.html" rel="prev"><span class="dir">上一页</span><span class="t">2.5 Loading pretrained models</span></a><a class="next" href="page-15.html" rel="next"><span class="dir">下一页</span><span class="t">Squeezing and unsqueezing tensors</span></a></nav>
+</main>
+</body>
+</html>

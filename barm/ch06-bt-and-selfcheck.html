@@ -1,0 +1,1589 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>Bradley–Terry 公式详解 + 第 6 章三道自查题完整推导 · Build a Reasoning Model</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+<style>
+/* ================================================================
+   本页专用样式。基准（无 media query）= 手机；34rem 起才增强。
+   ================================================================ */
+
+/* ---------------- 可折叠块（默认收起） ---------------- */
+details.fold{
+  margin:.6rem 0 1.1rem; padding:.5rem .7rem;
+  border:1px dashed var(--rule); border-radius:8px; background:#fcfbf7;
+}
+details.fold > summary{
+  cursor:pointer; font-size:.92rem; color:var(--accent); font-weight:600;
+  list-style:none; outline:none;
+  /* 手机上给足点击高度（≥44px 是可点区域的常用下限） */
+  min-height:2.75rem; display:flex; align-items:center;
+  margin:0 -.1rem;
+}
+details.fold > summary::-webkit-details-marker{display:none}
+details.fold > summary::before{
+  content:"▸"; flex:0 0 auto; margin-right:.45rem;
+  display:inline-block; transition:transform .15s;
+}
+details.fold[open] > summary::before{content:"▾"}
+details.fold[open] > summary{
+  margin-bottom:.55rem; border-bottom:1px dashed var(--rule); padding-bottom:.35rem;
+}
+details.fold > div{font-size:.95rem}
+details.fold > div > *:first-child{margin-top:0}
+
+/* ---------------- 词汇表 ---------------- */
+.gloss{font-size:.9rem; margin:0}
+.gloss dt{font-weight:600; margin-top:.75rem; color:var(--ink)}
+.gloss dd{margin:.1rem 0 0 1.1rem; color:var(--mute)}
+pre.inline-note{background:#f6f4ec; font-size:.84rem}
+
+/* ---------------- 顶部导航（可折叠，手机上省空间） ---------------- */
+details.mtoc{
+  margin:0 0 1.3rem; border:1px solid var(--rule); border-radius:8px;
+  background:#fff;
+}
+details.mtoc > summary{
+  cursor:pointer; list-style:none; outline:none;
+  min-height:2.9rem; display:flex; align-items:center; gap:.45rem;
+  padding:.55rem .75rem; font-size:.92rem; font-weight:600; color:var(--accent);
+}
+details.mtoc > summary::-webkit-details-marker{display:none}
+details.mtoc > summary::after{content:"▾"; margin-left:auto; color:var(--mute)}
+details.mtoc[open] > summary::after{content:"▴"}
+details.mtoc[open] > summary{border-bottom:1px solid var(--rule)}
+details.mtoc ol{
+  margin:0; padding:.5rem .75rem .8rem 1.1rem;
+  font-size:.88rem; line-height:1.5;
+  list-style:none;            /* 条目自带「0.」「第一部分」等编号，不要再叠一层 ol 序号 */
+}
+details.mtoc ol ol{padding-left:.9rem}
+details.mtoc li{margin:.35rem 0}
+details.mtoc a{
+  color:var(--ink); text-decoration:none;
+  display:inline-block; padding:.15rem 0; min-height:1.7rem;
+}
+details.mtoc a:active{color:var(--accent)}
+details.mtoc li.l2{padding-left:.9rem; font-size:.85rem; color:var(--mute)}
+
+/* ---------------- 宽表：手机上横向滚动 + 首列吸附 ---------------- */
+/* style.css 的 .tw 已有 overflow-x:auto 和滚动阴影。Chromium 下 table 的
+   溢出仍会被算进祖先的 scrollWidth（实测 320px 屏上 scrollWidth=329），
+   contain:paint 让滚动容器真正裁剪掉，且不影响 position:sticky 首列。 */
+.tw{contain:paint}
+.tw.matrix{position:relative}
+.tw.matrix table{min-width:34rem}
+.tw.matrix th:first-child,
+.tw.matrix td:first-child{
+  position:sticky; left:0; z-index:2;
+  background:var(--soft); font-weight:600; text-align:center;
+  box-shadow:1px 0 0 var(--rule);
+}
+/* 提示条：只在窄屏出现，宽屏上多余 */
+.swipe-hint{
+  display:none;
+  font-size:.74rem; color:var(--mute); margin:-.85rem 0 1.15rem;
+  padding-left:.1rem;
+}
+
+/* ---------------- 手机上放宽「首列禁止折行」 ---------------- */
+/* detail.css 原本给所有表格首列加 nowrap，窄屏上会把表撑得很难看。
+   只对代码/公式类的短单元格保留，数据类的允许折行。 */
+@media (max-width:33.99rem){
+  body.detail table td:first-child,
+  body.detail table th:first-child{white-space:normal}
+  body.detail table.sym td:first-child{white-space:nowrap}
+  /* 单元格里的 <code> 是代码/索引标识符，不能从中间断行
+     （否则 selected[0] 会被折成 "selecte / d[0]" 两行） */
+  body.detail td code,body.detail th code{white-space:nowrap}
+  body.detail th,body.detail td{padding:.38rem .4rem}
+  body.detail table{font-size:.78rem}
+}
+
+/* ---------------- 回到顶部 ---------------- */
+.totop{
+  position:fixed; right:.7rem; bottom:.7rem; z-index:30;
+  width:2.9rem; height:2.9rem; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  background:#fff; border:1px solid var(--rule);
+  color:var(--accent); font-size:1.05rem; text-decoration:none;
+  box-shadow:0 2px 8px rgba(0,0,0,.12);
+}
+.totop:active{background:var(--soft)}
+/* 桌面上不需要（页面够短/有滚动条习惯），藏起来 */
+@media (min-width:52rem){.totop{display:none}}
+
+/* ---------------- 窄屏微调 ---------------- */
+/* style.css 的 .phead .cnt 是 white-space:nowrap —— 本页副标题比原书的长，
+   在 390px 屏上会把整页撑出横向滚动条（实测 scrollWidth 530 vs 390）。
+   这里改回可换行，只影响本页。 */
+.phead .cnt{white-space:normal}
+
+@media (max-width:33.99rem){
+  /* 警示/要点块的左边框在窄屏占地方，改成上下留白 */
+  .key,.warn,aside.detail-link,details.fold{padding-left:.65rem;padding-right:.65rem}
+  /* 长等式在手机上更容易溢出，给 display 公式留出滚动提示 */
+  .swipe-hint.on{display:block}
+  /* ol.steps 的编号圆点内缩一点，避免和文字贴太近 */
+  ol.steps > li{padding-left:1.9rem}
+  ol.steps > li::before{width:1.35rem;height:1.35rem;line-height:1.35rem;font-size:.7rem}
+}
+
+/* ---------------- 宽屏增强 ---------------- */
+@media (min-width:34rem){
+  details.fold{padding:.6rem .8rem}
+  details.fold > summary{font-size:.9rem}
+  details.mtoc ol{padding:.6rem .9rem .9rem 2.1rem; font-size:.9rem}
+}
+@media (min-width:52rem){
+  .swipe-hint{display:none !important}
+  .totop{display:none}
+}
+</style>
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Bradley–Terry · 三道自查题（详解版）</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">对应原文第 53 / 57–59 页 · 第 6 章 Training reasoning models with reinforcement learning</span></div>
+
+<h1>Bradley–Terry 公式详解，以及第 6 章三道自查题的完整推导</h1>
+
+<div class="lead">
+这一页做两件事：<b>把 Bradley–Terry（BT）公式从零推出来</b>，说明它为什么必然长成 sigmoid 的样子、以及它的三个性质如何直接决定了 RLHF 里必须有 KL 项；然后<b>把第 6 章末尾那三道自查题逐字手算一遍</b>，每一个中间数字都给出来。
+</div>
+
+<p>页面里所有数字都是在本机跑 <code>torch 2.2.2</code> 实测的，不是从书上抄的。凡是我算过的，末尾都附了可复现的代码。</p>
+
+<aside class="detail-link">
+<span class="tag">前置阅读</span>
+<p>第 6 章正文在 <a href="page-53.html">page-53</a>（RLHF 流水线）、<a href="page-57.html">page-57</a>（advantage 与 logprob）、<a href="page-59.html">page-59</a>（策略梯度损失）。已有的推导页：<a href="page-53-detail.html">6.1.1 RLHF 与 PPO</a>、<a href="page-54-detail.html">6.2 GRPO 目标函数</a>、<a href="page-58-detail.html">6.8/6.9 序列 logprob</a>。本页是它们的补充，不替代。</p>
+</aside>
+
+<details class="mtoc" open>
+<summary>本页导航</summary>
+<ol>
+<li><a href="#pre">0. 预备知识<small>（没学过概率论先看这节）</small></a></li>
+<li><a href="#bt">第一部分 · Bradley–Terry 公式</a>
+  <ol>
+    <li class="l2"><a href="#bt-11">1.1 从「排序」到「可微的数」</a></li>
+    <li class="l2"><a href="#bt-12">1.2 两条假设</a></li>
+    <li class="l2"><a href="#bt-13">1.3 求解 F（推导）</a></li>
+    <li class="l2"><a href="#bt-16">1.6 三个性质</a></li>
+    <li class="l2"><a href="#bt-17">1.7 平移不变 → 为什么必须有 KL</a></li>
+    <li class="l2"><a href="#bt-18">1.8 和 Elo 是同一个东西</a></li>
+    <li class="l2"><a href="#bt-19">1.9 GRPO 用的是 BT 吗</a></li>
+    <li class="l2"><a href="#bt-110">1.10 实践：两个偏置</a></li>
+  </ol>
+</li>
+<li><a href="#q">第二部分 · 三道自查题</a>
+  <ol>
+    <li class="l2"><a href="#q1">题 1 · 手推 −2.576 与符号方向</a></li>
+    <li class="l2"><a href="#q2">题 2 · 为什么 prompt_len − 1</a></li>
+    <li class="l2"><a href="#q3">题 3 · rewards=[0,0] 为什么 loss=0</a></li>
+  </ol>
+</li>
+<li><a href="#sum">三道题串起来看</a></li>
+<li><a href="#err">常见错误清单（10 条）</a></li>
+</ol>
+</details>
+
+<details class="fold" open>
+<summary>这一页怎么读 —— 三条路线</summary>
+<div>
+<p>这一页有点长。如果你有明确目的，可以只走一条：</p>
+<div class="tw">
+<table>
+<thead><tr><th>你的目标</th><th>只读这些</th><th>大概需要</th></tr></thead>
+<tbody>
+<tr><td><b>只想搞懂概念</b>，不想看推导</td><td>第一部分的 1.1、1.6、1.7、1.9；第二部分的「自查题 1 · 步骤 4」和「自查题 3 · 步骤 3」</td><td>20 分钟</td></tr>
+<tr><td><b>想自己能推出来</b></td><td>全文，但重点是 1.3、1.7、自查题 1 的步骤 1–4、自查题 2 的步骤 1–5</td><td>1.5 小时</td></tr>
+<tr><td><b>想复现代码 / 调参</b></td><td>每节末尾的代码块，加自查题 3 的「实现上的三个坑」</td><td>40 分钟</td></tr>
+</tbody>
+</table>
+</div>
+<p><b>如果你完全没接触过概率论</b>，先看下面第 0 节，那是这一页唯一需要的前置知识。</p>
+</div>
+</details>
+
+<h2 class="deriv" id="pre">0. 预备知识（只有这一节需要先看）</h2>
+
+<p>如果下面这五个概念你都清楚，<b>直接跳到第一部分</b>。这一节没有任何第 6 章的内容，纯粹是补基础。</p>
+
+<h3>0.1 「概率模型」是什么意思</h3>
+
+<p>一个概率模型就是一个函数，输入是「情况」，输出是「这件事发生的可能性」，取值在 0 到 1 之间。</p>
+
+<p>在 RLHF 里，输入是「两个候选回答 + 谁更好」，输出是「\(y_w\) 赢的概率」。这就是一个概率模型。<b>BT 就是把这个函数的具体形式定下来。</b></p>
+
+<h3>0.2 为什么几乎所有东西最后都要「取对数」</h3>
+
+<p>因为概率会连乘，而连乘会崩。两个原因：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>原因</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td><b>数值会下溢</b></td><td>float64 能表示的最小正规数约 \(10^{-308}\)。一条 300 token的回答，即使每步概率高达 0.9，整体概率也是 \(0.9^{300} \approx 10^{-13.7}\)。再长一点就直接变成 0，之后你<b>无法区分「几乎不可能」和「真的不可能」</b>，梯度信息彻底丢失</td></tr>
+<tr><td><b>连乘变连加</b></td><td>\(\log(ab) = \log a + \log b\)。乘积的和不好算，加法的和好算</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>这也是第 6 章里从链式法则一路推到 \(\log\pi\) 的原因——不是为了「数学上更优雅」，是因为<b>不取对数就算不出来</b>。</p>
+
+<h3>0.3 sigmoid 和 logit</h3>
+
+<p>这两个函数互为反函数，你会反复见到它们成对出现：</p>
+
+\[p = \sigma(z) = \frac{1}{1 + e^{-z}} \qquad\Longleftrightarrow\qquad z = \operatorname{logit}(p) = \ln\frac{p}{1-p}\]
+
+<p>直觉理解：</p>
+
+<ul>
+<li>\(\sigma\) 把<b>任意实数</b>压到 (0, 1)，所以它天生适合当概率。</li>
+<li>\(\operatorname{logit}\) 把概率「拉回」实数轴，是<b>逆变换</b>。</li>
+</ul>
+
+<div class="eq-note">
+一个高频困惑：为什么不能用 <code>softmax</code> 直接当概率？——因为 softmax 需要<b>一组</b> logit（一个向量）才能算出归一化的分布，而 sigmoid 只吃<b>一个</b>标量。两者关系：把 sigmoid 写成 \(\frac{e^z}{e^z + 1} = \frac{e^z}{e^z + e^0}\)，就看出它就是<b>只有两个 logit（\(z\) 和 0）的 softmax</b>。这个观察在 1.4 节会用到。
+</div>
+
+<h3>0.4 「似然」和「极大似然」</h3>
+
+<p>这是本书里唯一一处严格意义上的统计推断，值得单独说清：</p>
+
+<ol class="steps">
+<li>你有一批<b>观测数据</b>，比如 66,000 对「谁更好」的标注。</li>
+<li>你有一个<b>带参数的模型</b>，参数是 \(\phi\)（奖励模型的权重）。</li>
+<li>你问：<b>哪个 \(\phi\) 让这批数据「最可能出现」？</b></li>
+</ol>
+
+<p>「让数据最可能出现」的那个参数，就叫<b>极大似然估计（MLE）</b>。做法是：</p>
+
+<ul>
+<li>第一步：算<b>整批数据的联合概率</b>。数据之间假设独立，就等于把每条的概率<b>连乘</b>。</li>
+<li>第二步：取<b>对数</b>（把连乘变连加）。</li>
+<li>第三步：<b>最小化</b>这个对数（即最小化负对数似然 NLL）。</li>
+</ul>
+
+<p>所以「损失 = 负对数似然」在 RLHF 里长这样：</p>
+
+\[\mathcal{L}_{\text{RM}}(\phi) = -\,\mathbb{E}_{(x,y_w,y_l)\sim D}\Big[\log \underbrace{P(y_w \succ y_l \mid x)}_{\text{这条数据出现的概率}}\Big]\]
+
+<p>注意期望里面只有<b>一条</b>数据：\(E\) 的意思是对数据集中的每一条都算一次，然后平均。</p>
+
+<h3>0.5 一句话词汇表</h3>
+
+<dl class="gloss">
+<dt>logit</dt><dd>概率在实数轴上的坐标。\(p = 0.8\) 的 logit 约 1.386</dd>
+<dt>似然 likelihood</dt><dd>「在给定参数下，这批数据出现的概率」</dd>
+<dt>最大化 / 最小化</dt><dd>优化器的方向。PyTorch 的优化器只会<b>最小化</b>，所以想最大化就得先取负号</dd>
+<dt>单参数 sigmoid 模型的 logit</dt><dd>如果 \(p = \sigma(\theta)\)，那么 \(\log p = \log \sigma(\theta)\)，求导得 \(\frac{d}{d\theta}\log\sigma(\theta) = 1 - \sigma(\theta)\)。这个恒等式在自查题 1 会被用到</dd>
+</dl>
+
+<h2 class="deriv">符号约定</h2>
+
+<div class="tw">
+<table class="sym">
+<thead><tr><th>符号</th><th>含义</th></tr></thead>
+<tbody>
+<tr><td>\(r_i\)</td><td>候选输出 \(i\) 的<b>强度分数</b>。RLHF 阶段由奖励模型 \(\phi\) 给出：\(r_i = r_\phi(x, y_i)\)。第 6 章 GRPO 阶段则是验证器给的 0/1</td></tr>
+<tr><td>\(\succ\)</td><td>偏好关系，读作「胜过」。\(y_w \succ y_l\) = \(y_w\) 比 \(y_l\) 好</td></tr>
+<tr><td>\(\sigma(z)\)</td><td>logistic sigmoid，\(\sigma(z) = 1/(1+e^{-z})\)</td></tr>
+<tr><td>\(d = r_w - r_l\)</td><td>两者强度之<b>差</b>。BT 的全部信息量都在这一个标量上</td></tr>
+<tr><td>\(\lambda\)</td><td>尺度常数。不同论文里被吸收进 \(r\) 或写成超参，本文固定 \(\lambda = \ln 10/400 \approx 0.0057565\)</td></tr>
+<tr><td>\(P = \) <code>prompt_len</code></td><td>prompt 的 token 数</td></tr>
+<tr><td>\(T_i\)</td><td>第 \(i\) 条 rollout 的 token 数</td></tr>
+<tr><td>\(L = P + T_i\)</td><td>送进 <code>sequence_logprob</code> 的总长度</td></tr>
+<tr><td>\(\theta\)</td><td>模型参数。注意：<b>这里的 \(\theta\) 是模型权重，不是上面的 \(\phi\)</b>。\(\phi\) 是奖励模型的权重，\(\theta\) 是策略模型（也就是 LLM 本身）的权重</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="warn">
+<span class="tag">贯穿全文的例子</span>
+<p>后面所有数字都挂在同一个例子上：prompt 是「我要买一台编程和日常用的笔记本，该考虑什么？」，两个候选回答是 Response A 和Response B，真值答案是 83。</p>
+<p>好处是：任何一个数字你都能问「它对应现实里的什么」。</p>
+</div>
+
+<hr>
+
+<h2 class="deriv" id="bt">第一部分 · Bradley–Terry 公式</h2>
+
+<h3 id="bt-11">1.1 要解决的问题：从「排序」到「可微的数」</h3>
+
+<h4>第一步：看清我们手上有什么</h4>
+
+<p>RLHF 的第一步是训一个奖励模型。但标注员手里只有<b>排序</b>，没有分数。</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>Prompt</th><th>标注员的判断</th></tr></thead>
+<tbody>
+<tr><td>“我要买一台编程和日常用的笔记本，该考虑什么？”</td><td>Response B 比 Response A 好</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>具体一点说，标注员看到的是（排名从好到差）：</p>
+
+<pre><code>Response B  &gt;  Response A</code></pre>
+
+<h4>第二步：看清我们缺什么</h4>
+
+<p>而 RLHF 后面要用的，是<b>策略梯度</b>。它的形式是（先不管符号，第六章会讲）：</p>
+
+\[\nabla_\theta J(\theta) = \mathbb{E}\Big[\nabla_\theta \log \pi_\theta(y|x) \;\cdot\; \underbrace{\text{某个标量}}_{\text{reward}}\Big]\]
+
+<p>这个标量必须满足三个条件：</p>
+
+<ol class="steps">
+<li><b>可微</b>——不然回传不了梯度。</li>
+<li><b>连续</b>——不然梯度是 0 或者跳变，优化器走不动。</li>
+<li><b>能区分好坏</b>——至少要告诉我们 A 比 B 差，好让模型知道该往哪调。</li>
+</ol>
+
+<p>排序<b>不是数</b>。所以中间缺了一次<b>翻译</b>：把「谁更好」变成「有多好」。</p>
+
+<h4>为什么不能直接拿排名当权重</h4>
+
+<p>一个很自然但错误的念头：「B 排第 1，A 排第 2，那就用 2 和 1 当分数？」这样做有三个致命问题：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>问题</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td><b>不同 prompt 之间不可比</b></td><td>prompt 甲的「第 2 名」和 prompt 乙的「第 2 名」难度完全不同。标 2 和标 1 抹平了这个差异，而模型需要知道「这道题整体很难」</td></tr>
+<tr><td><b>名次不是「好多少」</b></td><td>「第 1 名比第 2 名好 2 倍」和「第 1 名比第 2 名只好 0.001」在名次上完全一样，但后者模型几乎不用改，前者需要大力调整</td></tr>
+<tr><td><b>没法推广到新样本</b></td><td>模型生成的新回答<b>没有排名</b>——它从来没被人排过。而训练时必须能给新样本打分</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>所以我们需要的是一个<b>函数</b>：给它任意一个回答（包括没见过的），它能吐出一个数，而且这个数在不同回答之间可比。</p>
+
+<h4>第三步：三条建模要求</h4>
+
+<p>这个函数不能随便定，否则训练不出东西。它必须满足：</p>
+
+<ol class="steps">
+<li><b>单调</b>：\(r\) 大的应该更可能赢。</li>
+<li><b>无交互</b>：\(a\) 赢 \(b\) 的概率只由 \(r_a - r_b\) 决定，<b>与「在场还有谁」无关</b>。否则每次比较都要重新算一个模型，谈不上复用。</li>
+<li><b>跨比较一致</b>：如果 \(a\) 稳定赢 \(b\)、\(b\) 稳定赢 \(c\)，那 \(a\) 应该稳定赢 \(c\)，而且这个关系必须由概率运算<b>自动</b>搭出来，不能人工规定。</li>
+</ol>
+
+<div class="key">
+<span class="tag">一句话</span>
+<p>BT 模型就是<b>满足这三条要求的概率模型里唯一的一个</b>（连续情形）。它必然长成 sigmoid 的样子——这不是「我们选了 sigmoid」，是<b>推出来的</b>。</p>
+</div>
+
+<h3 id="bt-12">1.2 两条假设</h3>
+
+<h4>假设 1：无交互</h4>
+
+<p>存在一个标量 \(r_i\)（叫强度、rating、分数都行），使得</p>
+
+\[P(y_i \succ y_j) = F(r_i - r_j)\]
+
+<p>请注意这个式子的形状——<b>只有差</b>。\(r_i\) 本身是多少完全不重要，重要的是两个数之间的距离。</p>
+
+<p>「无交互」这个名字有点误导。更准确的说法是：<b>不存在「对手强度」这类额外的修正项</b>。围棋里叫「段位」的东西，就是这种修正项；BT 明确假设不存在。</p>
+
+<h4>假设 2：乘法一致性</h4>
+
+<p>比较可以搭接。数学上写成：</p>
+
+\[P(y_a \succ y_c) \;=\; \frac{P(y_a\succ y_b)\,P(y_b\succ y_c)}{P(y_a\succ y_b)\,P(y_b\succ y_c) + P(y_b\succ y_a)\,P(y_c\succ y_b)}\]
+
+<p>这个式子的形状值得停一下。分子是「\(a\) 赢 \(b\)」且「\(b\) 赢 \(c\)」的联合概率；分母补上「两条都输」的情况。它等价于一句更直白的话：</p>
+
+<div class="key">
+<span class="tag">假设 2 的白话版</span>
+<p><b>log-odds 是相加的。</b>「\(a\) 比 \(b\) 强多少」加上「\(b\) 比 \(c\) 强多少」，就是「\(a\) 比 \(c\) 强多少」。</p>
+</div>
+
+<p>为什么这个假设是 BT 的全部威力所在？因为它说的是：<b>标注员在不同题目之间表现是一致的</b>——他在 A/B/C 上的口味可以互相推断。如果这个假设不成立（比如有的标注员偏爱长答案、有的偏爱短答案），奖励模型就学不出东西来。</p>
+
+<p>这也是下面 1.10 节那两个偏置必须显式控的<b>根本原因</b>：那两个偏置恰恰是假设 2 被破坏的最常见形式。</p>
+
+<h3 id="bt-13">1.3 求解 F</h3>
+
+<p>现在开始推。目标：从假设 1 和假设 2 出发，把 \(F\) 的形状定死。</p>
+
+<h4>第 1 步：把 \(F\) 参数化成一个更简单的函数 \(G\)</h4>
+
+<p>假设 1 说 \(F\) 依赖差 \(d\)。第一步要处理一个技术问题：<b>\(F\) 是概率，值域在 (0,1)，不好做乘法</b>。所以先变形。</p>
+
+<p>任何满足 \(F(d) + F(-d) = 1\) 的函数都能写成：</p>
+
+\[F(d) = \frac{G(d)}{1 + G(d)}, \qquad G(0) = 1\]
+
+<p>这个变形不损失一般性。想验证的话，反着解就行：令 \(G(d) = F(d)/(1 - F(d))\) 代回去，一定还原。</p>
+
+<p>由 \(F\) 单调可知 \(G\) 也单调。所以 \(G\) 把实数轴单调映射到正实数轴。</p>
+
+<div class="eq-note">
+这个变形的直觉：<b>「赢的概率」除以「输的概率」</b>，就是 \(G\)。也就是赔率（odds）。这是一个在所有对数线性模型里反复出现的标准技巧——把有界的概率搬到无界的实数轴上，才能做加法。
+</div>
+
+<h4>第 2 步：代入假设 2</h4>
+
+<p>把 \(F = G/(1+G)\) 塞进假设 2。四项分别是：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>项</th><th>代入后</th></tr></thead>
+<tbody>
+<tr><td>\(P(y_a\succ y_b)\)</td><td>\(\dfrac{G(d_1)}{1 + G(d_1)}\)</td></tr>
+<tr><td>\(P(y_b\succ y_c)\)</td><td>\(\dfrac{G(d_2)}{1 + G(d_2)}\)</td></tr>
+<tr><td>\(P(y_b\succ y_a)\)</td><td>\(\dfrac{G(-d_1)}{1 + G(-d_1)}\)</td></tr>
+<tr><td>\(P(y_c\succ y_b)\)</td><td>\(\dfrac{G(-d_2)}{1 + G(-d_2)}\)</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>其中 \(d_1 = r_a - r_b\)，\(d_2 = r_b - r_c\)，所以 \(d_1 + d_2 = r_a - r_c\)。</p>
+
+<p>代入后，分子是 \(\dfrac{G(d_1)G(d_2)}{(1+G(d_1))(1+G(d_2))}\)，分母的对应项是 \(\dfrac{G(-d_1)G(-d_2)}{(1+G(d_1))(1+G(d_2))}\)。</p>
+
+<div class="key">
+<span class="tag">关键一步</span>
+<p>两边都有 <b>\((1+G(d_1))(1+G(d_2))\)</b> 这个因子，<b>上下直接约掉</b>。这是整个推导里最省事的一步，很多人卡在这里是因为没意识到分母会共享因子。</p>
+</div>
+
+<p>约掉之后剩下：</p>
+
+\[G(d_1)\,G(d_2) \;=\; G(d_1 + d_2)\]
+
+<h4>第 3 步：这个方程的解是什么</h4>
+
+<p>这就是<b>指数函数的定义方程</b>。连续解只有一个：\(G(d) = e^{\lambda d}\)。</p>
+
+<details class="fold">
+<summary>为什么只有指数函数？（可选阅读）</summary>
+<div>
+<p>一个标准证明思路，两行：</p>
+<p>设 \(G(d) = e^{h(d)}\)（任何正函数都能这样写，令 \(h = \ln G\)）。代入：</p>
+\[e^{h(d_1) + h(d_2)} = e^{h(d_1+d_2)} \;\Longrightarrow\; h(d_1) + h(d_2) = h(d_1 + d_2)\]
+<p>所以 \(h\) 满足<b>柯西函数方程</b>。而<span style="color:#b4553f">柯西方程的连续解只有线性函数</span>——这是分析学里的经典结论。</p>
+<p>于是 \(h(d) = \lambda d\)，代回去得 \(G(d) = e^{\lambda d}\)。</p>
+<p>另外由 \(G(0) = 1\) 可知 \(h(0) = 0\)，所以那个「常数项」被自动定掉了，不会多出一个自由参数。</p>
+<p><b>如果不要求连续</b>，柯西方程还有病态解（依赖选择公理的加性函数），概率论里习惯默认排除——因为概率必须是可测的。</p>
+</div>
+</details>
+
+<h4>第 4 步：代回去</h4>
+
+\[F(d) = \frac{e^{\lambda d}}{1 + e^{\lambda d}} = \frac{1}{1 + e^{-\lambda d}} = \boxed{\;\sigma(\lambda d)\;}\]
+
+<p>取 \(\lambda = 1\)（相当于把 \(\lambda\) 吸收进 \(r\) 的尺度）就是熟悉的 BT 形式：</p>
+
+\[P(y_w \succ y_l \mid x) = \frac{\exp\big(r_\phi(x, y_w)\big)}{\exp\big(r_\phi(x, y_w)\big) + \exp\big(r_\phi(x, y_l)\big)} = \sigma\big(r_\phi(x, y_w) - r_\phi(x, y_l)\big)\]
+
+<h4>验算：假设 2 真的被满足吗</h4>
+
+<p>推导容易出错，所以直接用数字验。取三组 \(d_1, d_2\)，看「按假设 2 搭接算出来的 \(P(a\succ c)\)」和「\(\sigma(d_1+d_2)\)」是否一致：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>\(d_1 = r_a - r_b\)</th><th>\(d_2 = r_b - r_c\)</th><th>假设 2 搭接出的 \(P(a\succ c)\)</th><th>\(\sigma(d_1+d_2)\)</th><th>一致？</th></tr></thead>
+<tbody>
+<tr><td>1.5</td><td>1.5</td><td>0.952574</td><td>\(\sigma(3) = 0.952574\)</td><td>✓</td></tr>
+<tr><td>0.5</td><td>3.0</td><td>0.970688</td><td>\(\sigma(3.5) = 0.970688\)</td><td>✓</td></tr>
+<tr><td>2.0</td><td>\(-0.5\)</td><td>0.817574</td><td>\(\sigma(1.5) = 0.817574\)</td><td>✓</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>手算第一行给你看这个「搭接」到底在算什么：\(d_1 = d_2 = 1.5\) 时，</p>
+
+\[P(a\succ b) = \sigma(1.5) = 0.8176, \quad P(b\succ a) = 0.1824\]
+\[P(a\succ c) = \frac{0.8176 \times 0.8176}{0.8176\times 0.8176 + 0.1824 \times 0.1824} = \frac{0.6685}{0.6685 + 0.0333} = \frac{0.6685}{0.7018} = 0.9526\]
+
+<div class="eq-note">
+第三行特意用了一个<b>负</b>的 \(d_2\)：意味着 \(b\) 其实输给 \(c\)。搭接之后 \(a\) 仍然赢 \(c\)，而且赢的概率正好是 \(\sigma(1.5)\)。这不是巧合，是构造保证的。
+</div>
+
+<h3>1.4 σ 就是两分类的 softmax</h3>
+
+\[\sigma(z) = \frac{e^{z}}{e^{z} + e^{0}}\]
+
+<p>把 \([y_w, y_l]\) 当成两个 logit 丢进 softmax，出来的就是它。</p>
+
+<div class="key">
+<span class="tag">这个观察的价值</span>
+<p>它把「奖励模型」这件听起来很玄的事，翻译成了一件朴素的事：<b>奖励模型就是一个二分类器</b>。输入两个候选，输出「第一个赢的概率」。第 2 名的 logit 恒为 0，相当于「不偏不倚」。</p>
+</div>
+
+<p>这也解释了奖励模型为什么通常和策略模型<b>同架构</b>——它就是策略模型换了个输出头。所以「reward model 常常和基座模型一样大」不是巧合，是架构复用的必然结果。</p>
+
+<h3>1.5 BT 损失</h3>
+
+<p>现在有了 \(P(y_w\succ y_l\mid x) = \sigma(r_w - r_l)\)，对数据集 \(D = \{(x, y_w, y_l)\}\) 做极大似然（0.4 节的三步）：</p>
+
+<ol class="steps">
+<li>联合概率 = 每条连乘：\(\prod_{(x,y_w,y_l)\sim D} \sigma(r_w - r_l)\)</li>
+<li>取对数：\(\sum \log \sigma(r_w - r_l)\)</li>
+<li>最小化它的负：\(\mathcal{L}_{\text{RM}}(\phi) = -\,\mathbb{E}_{(x, y_w, y_l)\sim D}\Big[\log \sigma\big(r_\phi(x, y_w) - r_\phi(x, y_l)\big)\Big]\)</li>
+</ol>
+
+<p>形式上，它和「二分类的交叉熵」完全一样——因为 1.4 节说了这就是个二分类器。</p>
+
+<h3 id="bt-16">1.6 三个性质</h3>
+
+<p>下表全部实测。\(d\) 是强度差。</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>\(d\)</th><th>\(\sigma(d)\)</th><th>\(-\log\sigma(d)\)<br>（损失）</th><th>\(\nabla_d\big(-\log\sigma(d)\big)=\sigma(d)-1\)<br>（梯度）</th></tr></thead>
+<tbody>
+<tr><td>0</td><td>0.5000</td><td>0.6931</td><td>-0.5000</td></tr>
+<tr><td>0.5</td><td>0.6225</td><td>0.4741</td><td>-0.3775</td></tr>
+<tr><td>1</td><td>0.7311</td><td>0.3133</td><td>-0.2689</td></tr>
+<tr><td>1.5</td><td>0.8176</td><td>0.2014</td><td>-0.1824</td></tr>
+<tr><td>2</td><td>0.8808</td><td>0.1269</td><td>-0.1192</td></tr>
+<tr><td>3</td><td>0.9526</td><td>0.0486</td><td>-0.0474</td></tr>
+<tr><td>4</td><td>0.9820</td><td>0.0181</td><td>-0.0180</td></tr>
+<tr><td>5</td><td>0.9933</td><td>0.0067</td><td>-0.0067</td></tr>
+<tr><td>6</td><td>0.9975</td><td>0.0025</td><td>-0.0025</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>性质一：平移不变</h4>
+
+<p>损失里只出现 \(r_w - r_l\)。所以给所有 \(r\) 加 100，损失<b>一个字节都不变</b>（实测：\(-\log\sigma(5)\) 和 \(-\log\sigma(105-100)\) 完全相等）。</p>
+
+<div class="eq-note">
+<b>白话版</b>：你没法问「这个回答值 3 分还是 −1 分」，因为分数的绝对位置是任意的。只有<b>差距</b>有意义。这会导致一个很麻烦的后果，见 1.7。
+</div>
+
+<h4>性质二：饱和</h4>
+
+<p>\(d = 5\) 时 \(\sigma = 0.9933\)，损失只剩 0.0067，梯度只剩 <b>−0.0067</b>——不到 \(d=1\) 时梯度的四十分之一。</p>
+
+<p>梯度为什么会衰减成这样？求一下：</p>
+
+\[\frac{d}{dd}\Big[-\log\sigma(d)\Big] = \frac{d}{dd}\Big[\log(1 + e^{-d})\Big] = \frac{-e^{-d}}{1 + e^{-d}} = \sigma(d) - 1 = -(1 - \sigma(d))\]
+
+<p>当 \(d\) 越大，\(\sigma(d)\) 越接近 1，梯度就越接近 0。</p>
+
+<div class="eq-note">
+<b>白话版</b>：奖励模型「已经分得够开了」，再继续加大差距也换不来多少分数。它会<b>自动停手</b>，不会无限拉大分差去刷分。这是 BT 自带的稳定机制。
+</div>
+
+<h4>性质三：无绝对刻度</h4>
+
+<p>训完之后 \(r_\phi\) 只能在<b>同一个 prompt 下</b>比较两个输出。跨 prompt 比是没有任何意义的。</p>
+
+<div class="warn">
+<span class="tag">原文措辞的常见误读</span>
+<p>原书说「一个坏答案给 −2，一个好答案给 +2」。这句话常被误读成奖励模型的输出范围。</p>
+<p>实际上：奖励模型给的是<b>偏好概率</b>；上面那三个性质合起来说明它<b>根本没有绝对刻度</b>。±2 是训练 LLM 时<b>人为设定的目标奖励值</b>（也就是把概率映射到一个便于设定的区间），跟奖励模型是两码事。</p>
+</div>
+
+<h3 id="bt-17">1.7 平移不变 → 所以必须导出 KL</h3>
+
+<p>这是本部分最重要的一条因果链。它不是「工程上有人加了个正则项试试看有效」，而是<b>被数学逼出来的</b>。</p>
+
+<h4>逐步推</h4>
+
+<ol class="steps">
+<li>损失只通过 \(r_w - r_l\) 出现，所以给所有奖励加 100，损失不变。</li>
+<li>也就是说，目标函数<b>没有定义奖励的绝对位置</b>，沿 \(r \to r + C\) 是一个<b>完全平坦</b>的方向（梯度恒为零）。</li>
+<li>而 RL 的优化是<b>无约束</b>的：只要奖励高，模型可以把权重推到任意远处。它不会自动停在「合理」的地方。</li>
+<li>再叠加第 6 章的一个事实：<b>序列 logprob 是长度敏感的</b>——序列越长，\(\log\pi\) 越负。</li>
+</ol>
+
+<p>第 3、4 步合起来就是一条完整的骗分路径：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>步骤</th><th>模型的策略</th><th>结果</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>把回答写得无限长</td><td>\(\log\pi(y)\) 越来越负</td></tr>
+<tr><td>2</td><td>在 reward 里找对应的空隙</td><td>因为平移不变，<b>reward 的绝对值可以被整体抬高</b>而不损失任何东西</td></tr>
+<tr><td>3</td><td>净效果</td><td>模型学会了「变长」这个捷径，而不是「把题做对」</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>所以 InstructGPT 在 reward 里加了一项：</p>
+
+\[r(x, y) \;=\; r_\phi(x, y) \;-\; \beta \log \frac{\pi_\theta(y|x)}{\pi_{\text{ref}}(y|x)}\]
+
+<p>这就是 KL 散度（取对数形式）。它的作用是<b>把参考模型锚住</b>，禁止策略漂移。注意方向：这是<b>减</b>号——离参考模型越远，实际拿到的奖励越低。</p>
+
+<div class="key">
+<span class="tag">结论</span>
+<p>BT 的平移不变性不是「无害的数学便利」，它是<b>RLHF 里 KL 项存在的根本原因</b>。没有平移不变就没有这个无界方向；没有这个无界方向，用不用 KL 都行。</p>
+</div>
+
+<h4>用一个一参数玩具模型把这件事看出来</h4>
+
+<p>上面是推理。我们把它变成一个能跑的数字实验，问一个更具体的问题：<b>KL 项到底在干什么？加了它会怎样？</b></p>
+
+<p>构造一个极简模型：词表只有两个 token，<code>X</code>（正确）和 <code>Y</code>（错误）。唯一参数 \(\theta\) 是 <code>X</code> 的 logit。于是</p>
+
+\[P(X) = \sigma(\theta), \qquad \log\pi(X) = \log\sigma(\theta), \qquad \log\pi(Y) = \log\sigma(-\theta)\]
+
+<p>给两条 rollout：\(A_1 = +0.8659\)、\(A_2 = -0.8659\)（和第 6 章那组数字一致）。</p>
+
+<details class="fold">
+<summary>推导：为什么这个玩具模型的 loss 是线性的</summary>
+<div>
+\[\mathcal{L} = -\frac{1}{2}\Big[A_1\log\sigma(\theta) + A_2\log\sigma(-\theta)\Big] = -\frac{A}{2}\Big[\log\sigma(\theta) - \log\sigma(-\theta)\Big]\]
+<p>而 \(\log\sigma(\theta) - \log\sigma(-\theta) = \log\dfrac{\sigma(\theta)}{1-\sigma(\theta)} = \operatorname{logit}(\theta) = \theta\)。所以：</p>
+\[\boxed{\mathcal{L} = -\frac{A}{2}\,\theta} = -0.43295\,\theta\]
+<p>实测确认：\(\theta=1\) 时 \(\mathcal{L} = -0.432950\)，\(-0.43295\times 1 = -0.432950\)；\(\theta=2\) 时两者都是 \(-0.865900\)。</p>
+<p><b>梯度是常数</b> \(-A/2\)，与 \(\theta\) 无关。这意味着一件事：<b>梯度下降永远往同一个方向走，永远不会停</b>。没有任何平衡点。</p>
+</div>
+</details>
+
+<p>现在跑 12 步梯度下降（\(\text{lr} = 0.5\)），看两条 rollout 的 logprob 各自怎么变：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>step</th><th>\(\theta\)</th><th>\(\log\pi(X)\)<br>（正确，应↑）</th><th>\(\log\pi(Y)\)<br>（错误，应↓）</th><th>\(\mathcal{L}\)</th></tr></thead>
+<tbody>
+<tr><td>0</td><td>0.0000</td><td>-0.6931</td><td>-0.6931</td><td>-0.0000</td></tr>
+<tr><td>1</td><td>0.2165</td><td>-0.5908</td><td>-0.8072</td><td>-0.0937</td></tr>
+<tr><td>2</td><td>0.4329</td><td>-0.4999</td><td>-0.9329</td><td>-0.1874</td></tr>
+<tr><td>3</td><td>0.6494</td><td>-0.4203</td><td>-1.0697</td><td>-0.2812</td></tr>
+<tr><td>6</td><td>1.2988</td><td>-0.2413</td><td>-1.5401</td><td>-0.5623</td></tr>
+<tr><td>9</td><td>1.9483</td><td>-0.1332</td><td>-2.0815</td><td>-0.8435</td></tr>
+<tr><td>12</td><td>2.5977</td><td>-0.0718</td><td>-2.6695</td><td>-1.1247</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>前 12 步完全符合预期：<b>正确 token 的 logprob 单调上升（−0.6931 → −0.0718），错误 token 的单调下降（−0.6931 → −2.6695）。</b>这就是第 6 章「\(A\) 的符号决定方向」的字面含义。</p>
+
+<p>但注意 \(\theta\) <b>没有收敛</b>。继续跑到 300 步：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>step</th><th>无 KL：\(\theta\)</th><th>无 KL：\(\log\pi(X)\)</th><th>有 KL(\(\beta=4\))：\(\theta\)</th><th>有 KL：\(\log\pi(X)\)</th></tr></thead>
+<tbody>
+<tr><td>0</td><td>0.022</td><td>-0.6824</td><td>0.022</td><td>-0.6824</td></tr>
+<tr><td>60</td><td>1.320</td><td>-0.2367</td><td>0.428</td><td>-0.5020</td></tr>
+<tr><td>120</td><td>2.619</td><td>-0.0703</td><td>0.454</td><td>-0.4918</td></tr>
+<tr><td>180</td><td>3.918</td><td>-0.0197</td><td>0.456</td><td>-0.4910</td></tr>
+<tr><td>240</td><td>5.217</td><td>-0.0054</td><td>0.456</td><td>-0.4910</td></tr>
+<tr><td>300</td><td><b>6.494</b></td><td><b>-0.0015</b></td><td><b>0.456</b></td><td><b>-0.4910</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<ul>
+<li><b>无 KL</b>：\(\theta\) 一路涨到 6.49，\(P(X)\) 到 0.9985，<b>永不停</b>。</li>
+<li><b>有 KL</b>（\(\beta = 4\)）：\(\theta\) 在 0.456 附近<b>稳定下来</b>，\(P(X) = 0.6120\)，不再漂移。</li>
+</ul>
+
+<details class="fold">
+<summary>一个反直觉的细节：β 不是越大越好，小了根本挡不住</summary>
+<div>
+<p>KL 的恢复力是 \(\sigma(\theta)(1-\sigma(\theta))\theta\)。这个函数<b>有上限</b>：</p>
+<p>实测它关于 \(\theta\) 的最大值是 <b>0.2239</b>（在 \(\theta \approx 1.54\) 处取得）。</p>
+<p>而策略梯度的推力是常数 \(|A|/2 = 0.433\)。所以<b>必须</b>满足</p>
+\[\beta \times 0.2239 > 0.433 \;\Longrightarrow\; \beta > 1.93\]
+<p>才存在平衡点。实测：\(\beta = 0.25, 0.5, 1.0\) 时 \(\theta\) 全部 runaway 到 13 以上；只有 \(\beta = 4\) 收敛到 0.4558。</p>
+<p><b>含义</b>：KL 项提供的约束是<b>有限强度</b>的。如果奖励信号太强（这里就是 \(A\) 太大），无论 \(\beta\) 取小值都拦不住策略漂移。</p>
+<p>这正是 reward hacking 的数学形状：<b>不是「模型学坏了」，而是「约束的强度不够」</b>。所以调 \(\beta\) 不是玄学，是在跟奖励强度赛跑。</p>
+</div>
+</details>
+
+<h3 id="bt-18">1.8 和 Elo 是同一个东西</h3>
+
+<p>附录 F.4 讲的 Elo 排行榜和 BT 是同构的。</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>模型</th><th>胜率公式</th><th>底数</th><th>尺度常数</th></tr></thead>
+<tbody>
+<tr><td>Elo</td><td>\(\dfrac{1}{1 + 10^{(R_l - R_w)/400}}\)</td><td>10</td><td>\(400\)</td></tr>
+<tr><td>Bradley–Terry</td><td>\(\sigma\big(\lambda (r_w - r_l)\big)\)</td><td>\(e\)</td><td>\(\lambda\)</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>为什么同构？两者都是 \(\frac{1}{1 + \text{某个底数的负幂}}\)，只是底数和尺度不同。取 \(\lambda = \ln 10/400 \approx 0.0057565\)，两者<b>完全相同</b>。实测 \(d = 2\) 时：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>算法</th><th>计算</th><th>结果</th></tr></thead>
+<tbody>
+<tr><td>Elo</td><td>\(1/(1 + 10^{-2/400})\)</td><td>0.502878</td></tr>
+<tr><td>BT</td><td>\(\sigma(0.0057565 \times 2)\)</td><td>0.502878</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="key">
+<span class="tag">\(\lambda\) 和 400 是什么角色</span>
+<p>它们控制<b>输出多样性</b>。\(400\) 大 → 分数差异被压缩 → 老选手很难被爆冷 → 排行榜稳定但反应迟钝。\(400\) 小 → 分数差异被放大 → 爆冷频繁 → 灵敏但噪声大。</p>
+<p>这个角色和第 4 章的 <b>temperature</b> 一模一样：都是「把 logits 的尺度调大调小」。</p>
+</div>
+
+<p>Elo 和 BT 的区别只在<b>更新方式</b>：Elo 是每场比赛立刻增量更新（在线），BT 是一次性拟合全部偏好数据（全批量）。数学内核完全一样。</p>
+
+<h3 id="bt-19">1.9 GRPO 用的是 BT 吗？不是</h3>
+
+<p>这是个容易混淆的点。对照一下两条路线：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th></th><th>RLHF + PPO</th><th>RLVR + GRPO</th></tr></thead>
+<tbody>
+<tr><td>打分从哪来</td><td>训好的 \(r_\phi\)，本节这个 BT 模型</td><td>第 3 章的数学验证器，给 0/1</td></tr>
+<tr><td>打分形态</td><td>连续标量（\(\sigma(r_w-r_l)\)，或映射到 ±2）</td><td>二值</td></tr>
+<tr><td>baseline 从哪来</td><td>critic \(V_\psi\) 回归估计</td><td><b>同组其他 rollout 的均值</b></td></tr>
+<tr><td>信号</td><td>\(r_\phi(x,y) - \beta\text{KL} - V_\psi\)</td><td>\(\hat{A}_i = \dfrac{r_i - \text{mean}}{\text{std}}\)，<b>组内 z-score</b></td></tr>
+<tr><td>额外模型</td><td>reference + reward + critic = 3 个</td><td>0～1 个</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>也就是说，<b>GRPO 把整个 BT 奖励模型和 critic baseline 都扔掉了</b>，直接在 0/1 正确性上做组内标准化。</p>
+
+<p>为什么能扔？一个类比：</p>
+
+<div class="eq-note">
+<b>类比</b>：BT + critic 像是「请一个专业评委（奖励模型）给每份答卷打分，再请一个教务（critic）估计平均分来减掉」。GRPO 像是「同一批答卷里相互比较，只看谁比这批的平均水平好」。
+</div>
+
+<p>后者在有标准答案的任务上完全够用，而且<b>不可能被 hack</b>——因为打分的是一个确定性的程序，不是一个可以被迎合的模型。DeepSeek-R1 论文的原话：神经奖励模型「susceptible to reward hacking during large-scale reinforcement learning」。</p>
+
+<p>代价：只剩相对信息，且<b>组内全对或全错时无信号</b>。这就是第三道自查题。</p>
+
+<div class="warn">
+<span class="tag">常见误解</span>
+<p>GRPO 的 advantage <b>不是</b> BT 模型输出的概率。它是对 0/1 正确性做 z-score 的结果，量纲完全不一样。把 \(\sigma(r_w-r_l)\) 和 \((r_i-\bar r)/\sigma_r\) 放一起比较是没有意义的。</p>
+</div>
+
+<h3 id="bt-110">1.10 实践：两个偏置必须显式控</h3>
+
+<p>BT 的乘法一致性假设一旦被违反，奖励模型就<b>静默地</b>学到别的东西——训练不会报错，只是效果变差。这是这类问题最难查的地方。</p>
+
+<h4>偏置一：位置偏置</h4>
+
+<p><b>表现</b>：LLM 裁判（或者人）天然偏爱 Response A，或者偏爱 Response B，跟内容无关。很多模型有明显的「先写的更受优待」倾向。</p>
+
+<p><b>为什么致命</b>：如果 A 总是赢，BT 学到的就不是「A 的内容更好」，而是「A 这个位置更好」。给同一个回答换个位置标注，标签就变了。</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>DeepSeek-R1 的对策</th><th>细节</th></tr></thead>
+<tbody>
+<tr><td><b>正反各问 4 次</b></td><td>同一对回答，4 次独立查询，每次<b>随机</b>把两个回答分配到 A / B 位置</td></tr>
+<tr><td>取平均</td><td>4 个判断求平均得到最终偏好分数</td></tr>
+<tr><td><b>丢弃分歧大的</b></td><td>4 个分数的极差 \(\Delta \le 1\) 的样本<b>直接扔掉</b>——「to ensure meaningful distinctions」</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>偏置二：长度偏置</h4>
+
+<p><b>表现</b>：长回答显得更「用心」，LLM 裁判和人类都偏爱长的。</p>
+
+<p><b>为什么致命</b>：这会造成一种慢性的、看不出来的驱动力——模型越长奖励越高。这和你在 1.7 节看到的「序列 logprob 长度效应」是<b>同向叠加</b>的，两个力量合谋。</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>DeepSeek-R1 的对策</th><th>细节</th></tr></thead>
+<tbody>
+<tr><td><b>数据构造阶段配平</b></td><td>「we ensure that the chosen and rejected responses of the whole dataset have <b>comparable lengths</b>」</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>第三条：裁判本身要够强</h4>
+
+<div class="warn">
+<span class="tag">实测坑</span>
+<p>R1 复现 HarmBench 时发现，用 LLaMA-2-13B 当裁判得到的结论<b>不可靠</b>，只好改用 GPT-4o（2024-11-20 版本）。</p>
+<p>裁判的强度直接决定结论的可信度。这条对<b>评测</b>和<b>训练</b>同样成立——你在第 6 章用 GRPO 训出来的模型，其 reward 全是这个 0/1 验证器给的，验证器写错了，梯度就是错的。</p>
+</div>
+
+<h4>还有个技术细节</h4>
+
+<p>论文的安全性评测里有一句值得警惕：</p>
+
+<div class="eq-note">
+when obtaining results for different models, some queries are flagged as unsafe by the risk control system, leading to automatic refusals. In such cases, we <b>uniformly categorized these refusals as safe responses</b>.
+</div>
+
+<p>拒答一律算安全。所以表里的安全分<b>混进了风控系统的功劳，不是模型的</b>。读安全类 benchmark 的数字时要留个心眼。</p>
+
+<h3>1.11 BT 的验证代码</h3>
+
+<pre><code>import math
+
+sig = lambda z: 1 / (1 + math.exp(-z))
+
+def combine(d1, d2):
+    """假设 2：从两两比较搭接出 P(a&gt;c)"""
+    p1, p2 = sig(d1), sig(d2)
+    num = p1 * p2
+    return num / (num + (1 - p1) * (1 - p2))
+
+# 1) 搭接一致性
+for d1, d2 in [(1.5, 1.5), (0.5, 3.0), (2.0, -0.5)]:
+    assert abs(combine(d1, d2) - sig(d1 + d2)) &lt; 1e-12
+print("搭接一致性 OK")
+
+# 2) Elo 与 BT 同构
+lam = math.log(10) / 400
+d = 2.0
+assert abs(1 / (1 + 10 ** (-d / 400)) - sig(lam * d)) &lt; 1e-12
+print("Elo == BT OK,  lambda =", lam)
+
+# 3) 平移不变
+assert abs(-math.log(sig(5)) - (-math.log(sig(105 - 100)))) &lt; 1e-12
+print("平移不变 OK")
+
+# 4) 饱和
+for d in [0, 1, 2, 3, 5, 6]:
+    print(f"d={d:>4}  sigma={sig(d):.4f}  loss={-math.log(sig(d)):.4f}")
+</code></pre>
+
+<hr>
+
+<h2 class="deriv" id="q">第二部分 · 三道自查题</h2>
+
+<h3 id="q1">自查题 1 · 手推出 −2.576（含符号方向怎么决定「推高」还是「压低」）</h3>
+
+<div class="key">
+<span class="tag">为什么要自己手推</span>
+<p>因为这四行代码里每一个数字都有明确来源，但书只给了结果。手推一遍，你就同时掌握了<b>无偏标准差</b>、<b>组内归一化</b>、<b>序列级求和</b>、<b>最大化/最小化符号翻转</b>这四件事。这一题是第 6 章的枢纽，值得花20 分钟。</p>
+</div>
+
+<h4>已知的两个数组</h4>
+
+<p>原文 listing 6.12 和 6.13 给出的实测值：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>rollout</th><th>reward</th><th>序列 logprob</th></tr></thead>
+<tbody>
+<tr><td><code>\boxed{83}</code></td><td>1.0</td><td>-7.9243</td></tr>
+<tr><td><code>The correct answer is \boxed{83}</code></td><td>1.0</td><td>-20.1546</td></tr>
+<tr><td><code>The final answer is 83</code></td><td>0.0</td><td>-16.6130</td></tr>
+<tr><td><code>We get \boxed{38}</code></td><td>0.0</td><td>-23.3677</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>注意这四条 rollout 的来历：它们是「为了讲清楚步骤而假设的」（原文说 we will instead assume that the model produced the following four short responses），不是真的现场采出来的。所以你可以逐格核对。</p>
+
+<h4>步骤 1 · 手算 advantage</h4>
+
+<p><b>这一步在干什么</b>：把「得了多少分」翻译成「比这组平均水平好多少」。</p>
+
+<p>公式是 \(\hat{A}_i = \dfrac{r_i - \mu_r}{\sigma_r + \epsilon}\)。先算均值：</p>
+
+\[\mu_r = \frac{1 + 1 + 0 + 0}{4} = 0.5\]
+
+<p>再算标准差。这里有个<b>容易踩的坑</b>——<code>torch.std()</code> 默认是<b>无偏估计</b>，分母是 \(n - 1\) 而不是 \(n\)：</p>
+
+\[\sigma_r = \sqrt{\frac{(1-0.5)^2 + (1-0.5)^2 + (0-0.5)^2 + (0-0.5)^2}{4-1}} = \sqrt{\frac{0.25 \times 4}{3}} = \sqrt{\frac{1}{3}} \approx 0.5774\]
+
+<div class="tw">
+<table>
+<thead><tr><th>写法</th><th>分母</th><th>本例结果</th></tr></thead>
+<tbody>
+<tr><td><code>torch.std()</code> 默认（无偏）</td><td>\(n - 1 = 3\)</td><td><b>0.5774</b> ← 书上的值</td></tr>
+<tr><td><code>torch.std(unbiased=False)</code></td><td>\(n = 4\)</td><td>0.5</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>然后：</p>
+
+\[\hat{A}_i = \frac{1 - 0.5}{0.5774 + 10^{-4}} \approx +0.8659, \qquad \frac{0 - 0.5}{0.5774 + 10^{-4}} \approx -0.8659\]
+
+<p>所以 <code>advantages = [0.8659, 0.8659, -0.8659, -0.8659]</code>，实测完全吻合。</p>
+
+<div class="eq-note">
+\(1/\sqrt{3} = 0.5773503\)，加上 \(10^{-4}\) 后 \(0.5/0.5774503 = 0.8658754\)。要凑出 <code>0.8659</code> 需要保留 4 位小数，这就是为什么书上的输出是 0.8659 而不是 0.87。
+</div>
+
+<h4>步骤 2 · 逐项相乘</h4>
+
+<div class="tw">
+<table>
+<thead><tr><th>rollout</th><th>\(\hat{A}_i\)</th><th>\(\log\pi_\theta\)</th><th>乘积 \(\hat{A}_i \log\pi_\theta\)</th></tr></thead>
+<tbody>
+<tr><td><code>\boxed{83}</code></td><td>+0.8659</td><td>-7.9243</td><td><b>-6.8615</b></td></tr>
+<tr><td><code>The correct answer is \boxed{83}</code></td><td>+0.8659</td><td>-20.1546</td><td><b>-17.4514</b></td></tr>
+<tr><td><code>The final answer is 83</code></td><td>-0.8659</td><td>-16.6130</td><td><b>+14.3848</b></td></tr>
+<tr><td><code>We get \boxed{38}</code></td><td>-0.8659</td><td>-23.3677</td><td><b>+20.2335</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>步骤 3 · 求和、取平均、取负</h4>
+
+\[-6.8615 - 17.4514 + 14.3848 + 20.2335 = 10.3055\]
+
+\[\frac{10.3055}{4} = 2.5764\]
+
+\[\mathcal{L}_{\text{pg}} = -\frac{1}{4}\sum_i \hat{A}_i \log\pi_\theta(y^{(i)}|x^{(i)}) = \boxed{-2.5764}\]
+
+<p>实测：<code>tensor(-2.5764, grad_fn=&lt;NegBackward0&gt;)</code>。</p>
+
+<h4>步骤 4 · 符号方向：这才是这道题的核心</h4>
+
+<p>前面三步都是机械计算。这一步才是<b>理解</b>。</p>
+
+<p>损失里每一项的符号，决定了优化器往哪个方向走。把上表按符号拆开：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>rollout</th><th>对</th><th>乘积符号</th><th>最小化 loss 的效果</th><th>对概率的影响</th></tr></thead>
+<tbody>
+<tr><td><code>\boxed{83}</code></td><td>✅ 正确</td><td>负 (-6.86)</td><td>往<b>更负</b>推</td><td><b style="color:#3f7a52">概率 ↑</b></td></tr>
+<tr><td><code>The correct answer is \boxed{83}</code></td><td>✅ 正确</td><td>负 (-17.45)</td><td>往<b>更负</b>推</td><td><b style="color:#3f7a52">概率 ↑</b>（更猛）</td></tr>
+<tr><td><code>The final answer is 83</code></td><td>❌ 错误</td><td>正 (+14.38)</td><td>压低</td><td><b style="color:#b4553f">概率 ↓</b></td></tr>
+<tr><td><code>We get \boxed{38}</code></td><td>❌ 错误</td><td>正 (+20.23)</td><td>压低</td><td><b style="color:#b4553f">概率 ↓</b>（更猛）</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="key">
+<span class="tag">方向</span>
+<p>\(\hat{A} > 0\) 的项在 loss 里是<b>负数</b>，最小化 loss 就是把它们往更负推 = 让 \(\log\pi\) 下降 = <b>概率上升</b>。\(\hat{A} < 0\) 的项贡献正数，最小化会压低它 = <b>概率下降</b>。</p>
+<p>也就是说：<b>正确且高 advantage 的回答被推高，错误且低 advantage 的回答被压低。</b>方向完全由 \(A\) 的<b>符号</b>决定，大小由 \(|A|\) 决定。</p>
+</div>
+
+<h4>为什么符号是这样？（从梯度往回推）</h4>
+
+<p>上面是「看结果」，我们再看一遍「为什么是这个结果」。对 loss 求参数梯度：</p>
+
+\[\frac{\partial \mathcal{L}_{\text{pg}}}{\partial \theta} = -\frac{1}{N}\sum_{i=1}^{N} \hat{A}_i \, \nabla_\theta \log \pi_\theta(y^{(i)}|x^{(i)})\]
+
+<p>梯度下降的更新规则是 \(\theta \leftarrow \theta - \eta \cdot \frac{\partial \mathcal{L}}{\partial\theta}\)。所以：</p>
+
+\[\Delta\theta_i \;=\; +\frac{\eta}{N}\,\hat{A}_i \, \nabla_\theta \log \pi_\theta(y^{(i)}|x^{(i)})\]
+
+<p>关键在 \(\nabla_\theta \log\pi_\theta\)：它的方向是<b>「提高这条序列的概率」</b>。梯度下降总是往负梯度走，而这里前面有个负号，所以：</p>
+
+<ul>
+<li>\(\hat{A}_i > 0\) → \(\Delta\theta_i\) 沿着 \(\nabla \log\pi_i\) 的方向 → <b>提高概率</b> ✓</li>
+<li>\(\hat{A}_i < 0\) → 反方向 → <b>压低概率</b> ✓</li>
+<li>\(\hat{A}_i \approx 0\) → 几乎不动 → <b>不贡献</b></li>
+</ul>
+
+<details class="fold">
+<summary>数值实证：用一个一参数模型跑一遍，看正确 token 真的被推高</summary>
+<div>
+<p>光看公式还是有点抽象。我们造一个<b>能跑</b>的最小模型：词表两个 token（<code>X</code> 正确、<code>Y</code> 错误），唯一参数 \(\theta\) 是 <code>X</code> 的 logit。于是</p>
+\[P(X) = \sigma(\theta), \qquad \log\pi(X) = \log\sigma(\theta), \qquad \log\pi(Y) = \log\sigma(-\theta)\]
+<p>给两条 rollout：\(A_1 = +0.8659\)、\(A_2 = -0.8659\)。</p>
+<p>梯度可以解析求出：</p>
+\[\frac{d\log\sigma(\theta)}{d\theta} = 1-\sigma(\theta), \qquad \frac{d\log\sigma(-\theta)}{d\theta} = -\sigma(\theta)\]
+\[\Rightarrow\quad \frac{d\mathcal{L}}{d\theta} = -\frac{1}{2}\Big[A(1-\sigma) + (-A)(-\sigma)\Big] = -\frac{A}{2} = -0.433\]
+<p><b>梯度是常数，和 \(\theta\) 无关。</b>梯度下降就是 \(\theta \leftarrow \theta + 0.5\times 0.433\)，单调上升。跑 12 步：</p>
+<div class="tw">
+<table>
+<thead><tr><th>step</th><th>\(\theta\)</th><th>\(\log\pi(X)\)</th><th>\(\log\pi(Y)\)</th><th>\(\mathcal{L}\)</th></tr></thead>
+<tbody>
+<tr><td>0</td><td>0.0000</td><td>-0.6931</td><td>-0.6931</td><td>-0.0000</td></tr>
+<tr><td>3</td><td>0.6494</td><td>-0.4203</td><td>-1.0697</td><td>-0.2812</td></tr>
+<tr><td>6</td><td>1.2988</td><td>-0.2413</td><td>-1.5401</td><td>-0.5623</td></tr>
+<tr><td>9</td><td>1.9483</td><td>-0.1332</td><td>-2.0815</td><td>-0.8435</td></tr>
+<tr><td>12</td><td>2.5977</td><td>-0.0718</td><td>-2.6695</td><td>-1.1247</td></tr>
+</tbody>
+</table>
+</div>
+<p><b>看第 0 行到第 12 行：\(<code>X</code>（正确）的 logprob 从 −0.6931 涨到 −0.0718，<code>Y</code>（错误）从 −0.6931 掉到 −2.6695。</b>方向完全符合 \(\hat{A}\) 的符号。这不是推理，是跑出来的。</p>
+<p>（这个模型本身是线性 loss、永不收敛，以及加 KL 后如何收敛，见 1.7 节的玩具模型。）</p>
+</div>
+</details>
+
+<h4>步骤 5 · 那个负号是干什么的</h4>
+
+<p>RL 想要<b>最大化</b>：</p>
+
+\[\max_\theta \frac{1}{N}\sum_i \hat{A}_i \log\pi_\theta(y^{(i)}|x^{(i)})\]
+
+<p>而 PyTorch 优化器只会<b>最小化</b>。好在两者是<b>严格等价</b>的：</p>
+
+\[\max f \iff \min(-f), \qquad \nabla(-f) = -\nabla f\]
+
+<p>优化器往负梯度方向走，等价于往 \(\nabla f\) 方向走，参数更新完全相同。</p>
+
+<details class="fold">
+<summary>用原文那个 f(x) = 3 的例子完整走一遍</summary>
+<div>
+<p>原文用了一个很朴素的例子，我们把它做完：</p>
+<ul>
+<li><b>最大化视角</b>：目标 \(f(x) = 3\)。3 比 2 好，所以我们想要 3。</li>
+<li><b>但 PyTorch 会最小化</b>：它看到 loss = 3，会想「3 比 2 大，我把它降下来」，于是朝 2 走——<b>正好和我们想要的相反</b>。</li>
+<li><b>翻转符号</b>：定义 \(L(x) = -f(x) = -3\)。现在最小化 \(L\) 就是把 −3 往下压，比如降到 −5；对应 \(f\) 就从 3 涨到 5。</li>
+</ul>
+<p>关键：<b>\(L\) 越小，\(f\) 越大。</b>而优化器就是往 \(L\) 小的地方走，所以它自然把 \(f\) 往大处推。</p>
+<p>回到本章：\(-2.5764\) 就是「越小越好」。如果它变成 \(+2.5764\)，最小化就会朝相反方向走。</p>
+</div>
+</details>
+
+<div class="warn">
+<span class="tag">反证：去掉负号会怎样</span>
+<p>如果没有负号，损失是 \(\frac{1}{N}\sum \hat{A}_i\log\pi_i = +2.5764\)。最小化它就会：<b>压低正确回答的概率、抬高错误回答的概率</b>。模型会朝完全相反的方向走，MATH-500 准确率断崖式下跌。</p>
+</div>
+
+<h4>步骤 6 · 一个容易被漏掉的观察</h4>
+
+<p>看第 1 行和第 2 行：\(-6.86\) 和 \(-17.45\)。</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>rollout</th><th>长度（量级）</th><th>梯度权重</th></tr></thead>
+<tbody>
+<tr><td><code>\boxed{83}</code></td><td>几个 token</td><td>-6.86</td></tr>
+<tr><td><code>The correct answer is \boxed{83}</code></td><td>长得多</td><td><b>-17.45（2.5 倍）</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<p><b>一个又长又正确的回答，拿到的梯度权重大得多。</b>这不是 bug，是第 6 章用 \(\sum_t\) 而不是 \(\text{mean}_t\) 的直接后果——内层求和的贡献正比于序列长度。</p>
+
+<p>这个观察连着两个后续：</p>
+
+<ul>
+<li><b>第 7 章的 DAPO / token-level loss</b> 就是要把外层的 \(1/N\) 重新分配回每个 token，让长回答不再获得不成比例的权重。</li>
+<li><b>第 7.6 节的 format reward 失败</b>：格式奖励让模型学会「套 tag 就拿分」，而序列 logprob 的长度效应让它「套完 tag 早点收工」，思考被压缩 → reward 高但 eval掉。</li>
+</ul>
+
+<div class="eq-note">
+原文对长度的说法要留意：<b>等 reward 下模型倾向更早停止</b>，而不是无限变长。原因是长序列的 \(\log\pi\) 天生更负，需要更大的参数变动才能改善，而改善空间也更小。
+</div>
+
+<h4>自查题 1 的验证代码</h4>
+
+<pre><code>import torch
+
+r = torch.tensor([1., 1., 0., 0.])
+A = (r - r.mean()) / (r.std() + 1e-4)
+print("mean", r.mean().item(), "std", r.std().item())   # 0.5, 0.5773502588272095
+print("adv", [f"{v:.4f}" for v in A.tolist()])          # 0.8659 0.8659 -0.8659 -0.8659
+print("biased std would be", r.std(unbiased=False).item())  # 0.5
+
+logps = torch.tensor([-7.9243, -20.1546, -16.6130, -23.3677])
+terms = A.detach() * logps
+for t, l, p in zip(terms.tolist(), logps.tolist(), A.tolist()):
+    print(f"A={p:+.4f}  logp={l:+8.4f}  product={t:+.4f}")
+# A=+0.8659  logp= -7.9243  product= -6.8615
+# A=+0.8659  logp=-20.1546  product=-17.4514
+# A=-0.8659  logp=-16.6130  product=+14.3848
+# A=-0.8659  logp=-23.3677  product=+20.2335
+
+print("sum", terms.sum().item(), "mean", terms.mean().item())  # 10.3055, 2.5764
+pg = -(A.detach() * logps).mean()
+print("pg_loss", f"{pg.item():.4f}")   # -2.5764
+</code></pre>
+
+<h3 id="q2">自查题 2 · 为什么是 <code>prompt_len - 1</code> 而不是 <code>prompt_len</code></h3>
+
+<div class="key">
+<span class="tag">这道题考什么</span>
+<p>考的是<b>因果掩码造成的「错位一格」</b>。这类 bug 最烦的地方在于：<b>它不报错</b>。程序照常运行，只是算出了一个错的值。</p>
+</div>
+
+<p>相关代码：</p>
+
+<pre><code>def sequence_logprob(model, token_ids, prompt_len):
+    logits = model(token_ids.unsqueeze(0)).squeeze(0).float()
+    logprobs = torch.log_softmax(logits, dim=-1)      # [L, |V|]
+    selected = logprobs[:-1].gather(
+        1, token_ids[1:].unsqueeze(-1)
+    ).squeeze(-1)
+    return torch.sum(selected[prompt_len - 1:])</code></pre>
+
+<h4>步骤 1 · 因果掩码的结构性事实</h4>
+
+<p>自回归模型的第 \(i\) 个位置<b>只能看到</b> \(0, 1, \dots, i\) 的输入（靠下三角 mask 实现）。所以输出层的第 \(i\) 行 <b>预测的是位置 \(i+1\) 的 token</b>：</p>
+
+\[\text{logits}[i] = \text{「位置 } i+1 \text{ 的 token 在位置 } 0 \dots i \text{ 条件下的分布」}\]
+
+<p>再叠加 gather 的错位配对（<code>logprobs[:-1]</code> 配 <code>token_ids[1:]</code>），两边都移动了半格，合起来正好对上：</p>
+
+\[\text{selected}[k] \;=\; \log P\big(\text{token\_ids}[k+1] \mid \text{token\_ids}[0..k]\big)\]
+
+<div class="key">
+<span class="tag">记住这一句</span>
+<p><code>selected[k]</code> 对应的是<b>位置 \(k+1\) 的 token</b>，不是位置 \(k\)。</p>
+</div>
+
+<h4>步骤 2 · 生成部分在哪个区间</h4>
+
+<p>设 prompt 长度 \(P\)，生成长度 \(T\)，总长 \(L = P + T\)。位置 \(P\) 是<b>第一个生成 token</b>：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>我们要的</th><th>token 位置</th><th>对应 <code>selected</code> 下标</th><th>切片写法</th></tr></thead>
+<tbody>
+<tr><td>prompt 部分（<b>不要</b>）</td><td>\(1, 2, \dots, P-1\)</td><td>\(0, 1, \dots, P-2\)</td><td><code>selected[:P-1]</code></td></tr>
+<tr><td><b>生成部分（要）</b></td><td>\(P, P+1, \dots, L-1\)</td><td><b>\(P-1, P, \dots, L-2\)</b></td><td><b><code>selected[P-1:]</code></b></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>推导的起点是那句「<code>selected[k]</code> 对应位置 \(k+1\)」：位置 \(P\) 对应下标 \(P-1\)，位置 \(L-1\) 对应下标 \(L-2\)。所以下标区间是闭区间 \([P-1, L-2]\)，写成 Python 切片就是 <code>selected[P-1:]</code>。</p>
+
+<h4>步骤 3 · 长度校验（这步最不容易出错）</h4>
+
+\[\text{len}\big(\text{selected}[P-1:]\big) = (L-2) - (P-1) + 1 = L - P = T \quad✓\]
+
+<p>切片长度必须<b>正好等于生成 token 数</b>。这是最快的自查手段——如果对不上，一定错。</p>
+
+<h4>步骤 4 · 用一个可逐格核对的小例子走一遍</h4>
+
+<p>取 \(P = 3\)、\(T = 4\)、\(L = 7\)，词表大小 \(V = 10\)。为了让每个数字都能手算核对，我们构造一个<b>刻意简单</b>的 logprob 矩阵：<b>第 \(i\) 行在实际生成的那个 token 处放 \(-(i+1)\)</b>。</p>
+
+<p><code>token_ids = [3, 1, 4, 1, 5, 9, 2]</code>（位置 0 到 6）。</p>
+
+<div class="tw matrix">
+<table>
+<thead><tr><th></th><th>tok0</th><th>tok1</th><th>tok2</th><th>tok3</th><th>tok4</th><th>tok5</th><th>tok6</th><th>tok7</th><th>tok8</th><th>tok9</th></tr></thead>
+<tbody>
+<tr><td><b>行0</b></td><td>·</td><td><b>−1</b></td><td>·</td><td>·</td><td>·</td><td>·</td><td>·</td><td>·</td><td>·</td><td>·</td></tr>
+<tr><td><b>行1</b></td><td>·</td><td>·</td><td>·</td><td>·</td><td><b>−2</b></td><td>·</td><td>·</td><td>·</td><td>·</td><td>·</td></tr>
+<tr><td><b>行2</b></td><td>·</td><td><b>−3</b></td><td>·</td><td>·</td><td>·</td><td>·</td><td>·</td><td>·</td><td>·</td><td>·</td></tr>
+<tr><td><b>行3</b></td><td>·</td><td>·</td><td>·</td><td>·</td><td>·</td><td><b>−4</b></td><td>·</td><td>·</td><td>·</td><td>·</td></tr>
+<tr><td><b>行4</b></td><td>·</td><td>·</td><td>·</td><td>·</td><td>·</td><td>·</td><td>·</td><td>·</td><td>·</td><td><b>−5</b></td></tr>
+<tr><td><b>行5</b></td><td>·</td><td>·</td><td><b>−6</b></td><td>·</td><td>·</td><td>·</td><td>·</td><td>·</td><td>·</td><td>·</td></tr>
+<tr><td><b>行6</b></td><td>·</td><td>·</td><td>·</td><td>·</td><td>·</td><td>·</td><td>·</td><td>·</td><td>·</td><td>·</td></tr>
+</tbody>
+</table>
+</div>
+
+<p class="swipe-hint on">← 表格可左右滑动，首列会吸附不动→</p>
+
+<p>读法：<b>行 0 的 −1 在 tok1 的格子里，而 tok1 正是位置 1 的 token</b>。行 1 的 −2 在 tok4 格子里，tok4 是位置 2 的 token。如此类推。行 6 全空，因为它要预测的位置 7 不存在。</p>
+
+<p>现在走 gather。<code>logprobs[:-1]</code> 取行 0–5，<code>token_ids[1:]</code> 取 <code>[1, 4, 1, 5, 9, 2]</code>，逐行对应：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th><code>selected</code> 下标</th><th>来自哪一行</th><th>该行的 token</th><th>取到的值</th><th>实际是<b>哪个位置</b>的 token</th></tr></thead>
+<tbody>
+<tr><td><code>selected[0]</code></td><td>行 0</td><td>tok1</td><td>−1</td><td>位置 <b>1</b></td></tr>
+<tr><td><code>selected[1]</code></td><td>行 1</td><td>tok4</td><td>−2</td><td>位置 <b>2</b></td></tr>
+<tr><td><code>selected[2]</code></td><td>行 2</td><td>tok1</td><td>−3</td><td>位置 <b>3</b> ← 第一个生成 token</td></tr>
+<tr><td><code>selected[3]</code></td><td>行 3</td><td>tok5</td><td>−4</td><td>位置 <b>4</b></td></tr>
+<tr><td><code>selected[4]</code></td><td>行 4</td><td>tok9</td><td>−5</td><td>位置 <b>5</b></td></tr>
+<tr><td><code>selected[5]</code></td><td>行 5</td><td>tok2</td><td>−6</td><td>位置 <b>6</b> ← 最后一个</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>验证那一条规律：<code>selected[k]</code> 的值正好是 \(-(k+1)\)，对应位置 \(k+1\)。✓</p>
+
+<p>现在切片。<code>P = 3</code>：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>slice</th><th>下标</th><th>取值</th><th>长度</th><th>对应 token 位置</th><th>对不对</th></tr></thead>
+<tbody>
+<tr><td><b><code>selected[P-1:]</code></b></td><td>2,3,4,5</td><td><b>[−3, −4, −5, −6]</b></td><td><b>4 = T</b></td><td><b>3, 4, 5, 6</b> —— 全是生成部分</td><td><b style="color:#3f7a52">✓</b></td></tr>
+<tr><td><code>selected[P:]</code></td><td>3,4,5</td><td>[−4, −5, −6]</td><td>3 ≠ T</td><td>4, 5, 6 —— 漏了 3</td><td><b style="color:#b4553f">✗</b></td></tr>
+<tr><td><code>selected[:P]</code></td><td>0,1,2</td><td>[−1, −2, −3]</td><td>3 ≠ T</td><td>1, 2, 3 —— 大部分是 prompt</td><td><b style="color:#b4553f">✗</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>写成 <code>[prompt_len:]</code> 会同时犯两个错：</p>
+
+<ul>
+<li><b>漏掉第一个生成 token</b>——位置 3 的值 −3 被丢掉了。它是整个切片里<b>最大的一个</b>（最不负、最有信息量）</li>
+<li><b>多算了 prompt 的最后一个 token</b>——位置 2 的值 −2 被算进来了</li>
+</ul>
+
+<h4>步骤 5 · 为什么这不是「差一个格」，而是语义错误</h4>
+
+<p>这是本题最值得想清楚的地方：为什么「多算一个 prompt token」不是无所谓的噪声？</p>
+
+<p>对比两个位置回答的问题：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th></th><th>位置 3（第一个生成 token）</th><th>位置 2（prompt 末 token）</th></tr></thead>
+<tbody>
+<tr><td>logprob 在问什么</td><td>「读完整个问题之后，模型有多确定自己该从这里<b>开始回答</b>」</td><td>「在已有 prompt 的条件下，<b>prompt 的下一个字</b>应该是什么」</td></tr>
+<tr><td>编码了什么</td><td>对 prompt 的<b>理解</b>——它已经把题目读进去了</td><td>只是<b>语言模型的续写惯性</b>：prompt 写到一半，下一个词多半是什么</td></tr>
+<tr><td>典型数值</td><td>可能是 −2（模型要「切换模式」进入解题）</td><td>可能是 −0.1（续写一个数字或符号，模型很确定）</td></tr>
+<tr><td>对 RL 训练的价值</td><td>高——它标记了「从提问到解题」的转折点</td><td>低——它对「答得对不对」几乎没有贡献</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="key">
+<span class="tag">一句话</span>
+<p>用 prompt 末 token 的 logprob 去顶替第一个生成 token，等于用「预测问题文本的下一个字」冒充「回答的第一个决策」。这两件事没有任何语义关系。</p>
+</div>
+
+<p>还有一个更技术性的理由：<b>它会系统性地压低序列 logprob</b>。因为 prompt 末 token 的 logprob 通常比生成部分更接近 0（更不负），把它换进来，等于往一个偏负的包里塞了一个偏正的值，让整条序列的 logprob 变得不那么负，于是 <code>A * logπ</code> 这一项的绝对值变小，<b>正确的回答拿到的梯度权重被稀释了</b>。</p>
+
+<h4>步骤 6 · 顺带：为什么还要 <code>logprobs[:-1]</code></h4>
+
+<p>这是同一件事的另一半，容易被忽略。输入总长是 \(L\)，<code>logits</code> 有 \(L\) 行，但最后一行 <code>logits[L-1]</code> 预测的是<b>位置 \(L\) 的 token，而它不存在</b>。</p>
+
+<p>所以：</p>
+
+<ul>
+<li><code>logprobs[:-1]</code> → 只留行 \(0 \dots L-2\)，长度 \(L-1\)</li>
+<li><code>token_ids[1:]</code> → 只取位置 \(1 \dots L-1\)，长度 \(L-1\)</li>
+<li>两者才能 <code>gather</code> 对齐</li>
+</ul>
+
+<p>如果不写 <code>[:-1]</code>，两个张量长度差 1，<code>gather</code> 会直接报 shape 不匹配。</p>
+
+<div class="warn">
+<span class="tag">对比一下两种错误的「友好程度」</span>
+<p>忘记 <code>[:-1]</code> → <b>会立刻崩</b>，报错告诉你出问题了。</p>
+<p>把 <code>[P-1:]</code> 写成 <code>[P:]</code> → <b>静默算错</b>，程序跑得好好的，只是结果不对。</p>
+<p>所以这一节专门讲的是后者。</p>
+</div>
+
+<h4>步骤 7 · 顺带二：为什么用 gather 而不是 argmax</h4>
+
+<div class="tw">
+<table>
+<thead><tr><th>方式</th><th>问的问题</th><th>本例结果</th></tr></thead>
+<tbody>
+<tr><td><code>argmax</code></td><td>「模型当时<b>最想</b>说什么？」</td><td>tok1，值 −0.5</td></tr>
+<tr><td><b><code>gather</code></b></td><td>「模型<b>实际说</b>了那个 token，事后看有多意外？」</td><td>tok2，值 <b>−9.0</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>用一个三 token 的小例子（logprob 行 <code>[-2.0, -0.5, -9.0]</code>，实际生成了 tok2）：argmax 给出 tok1 和 −0.5，gather 给出 tok2 和 −9.0，<b>差 8.5 倍</b>。</p>
+
+<p>在 GRPO 里我们要问的是<b>后者</b>。因为 rollout 已经生成完了，\(y_t\) 是<b>既成事实</b>。我们回头问的是「当初这一步模型有多确信」——这个量衡量的正是<b>意外程度</b>，而意外程度恰好与「这一步是否出错」高度相关（第 6 章实测：唯一答错那条的 logprob 最低）。</p>
+
+<p>用 argmax 的话，每一步都取最大值，所有 token 的 logprob 都一样接近 0，这个信号<b>完全消失</b>。</p>
+
+<h4>自查题 2 的验证代码</h4>
+
+<pre><code>import torch
+
+P, T, V = 3, 4, 10
+L = P + T
+tok = torch.tensor([3, 1, 4, 1, 5, 9, 2])   # 位置 0..6 的 token id
+
+# 构造可逐格核对的 logprob 矩阵：第 i 行的实际下一个 token 处放 -(i+1)
+lp = torch.full((L, V), -99.0)
+for i in range(L - 1):                      # 行 L-1 没有下一个 token，留空
+    lp[i, tok[i + 1]] = -(i + 1)
+
+print(lp)
+# 行0: tok1=-1   行1: tok4=-2   行2: tok1=-3
+# 行3: tok5=-4   行4: tok9=-5   行5: tok2=-6   行6: 全空
+
+selected = lp[:-1].gather(1, tok[1:].unsqueeze(-1)).squeeze(-1)
+print(selected.tolist())
+# [-1.0, -2.0, -3.0, -4.0, -5.0, -6.0]   对应位置 1..6
+
+print("正确 selected[P-1:]:", selected[P-1:].tolist(),
+      "len =", len(selected[P-1:]))          # [-3,-4,-5,-6] len 4 == T  ✓
+print("错误 selected[P:]  :", selected[P:].tolist(),
+      "len =", len(selected[P:]))            # [-4,-5,-6]   len 3       ✗
+print("错误 selected[:P]  :", selected[:P].tolist(),
+      "len =", len(selected[:P]))            # [-1,-2,-3]   len 3       ✗
+
+# gather vs argmax
+row = torch.tensor([-2.0, -0.5, -9.0])
+print("argmax:", int(row.argmax()), row.max().item())      # 1, -0.5
+print("gather:", 2, row[2].item())                         # 2, -9.0
+</code></pre>
+
+<h3 id="q3">自查题 3 · <code>rewards=[0,0]</code> 时 loss 为什么是 0，为什么这是好事</h3>
+
+<h4>步骤 0 · 原文实证</h4>
+
+<p>原文 listing 6.15 用 <code>num_rollouts=2</code> 跑 <code>math_train[4]</code>，输出：</p>
+
+<pre><code>{'advantages': [0.0, 0.0],
+ 'loss': -0.0,
+ 'loss_tensor': tensor(-0., grad_fn=&lt;NegBackward0&gt;),
+ 'pg_loss': -0.0,
+ 'rewards': [0.0, 0.0],
+ 'samples': [{'gen_len': 4,   'reward': 0.0, 'text': ' 14'},
+            {'gen_len': 256, 'reward': 0.0, 'text': ' 4\nTo solve the problem, ...'}]}</code></pre>
+
+<p>两条 rollout 都答错（正确答案是 6，必须写成 <code>\boxed{6}</code>），所以 reward 全 0。</p>
+
+<h4>步骤 1 · 手算</h4>
+
+<p>先看中心化：</p>
+
+\[\mu_r = \frac{0 + 0}{2} = 0, \qquad \sigma_r = 0\]
+
+<p>再看归一化。这里分子<b>恰好</b>也是 0，所以 \(10^{-4}\) 加不加都一样：</p>
+
+\[\hat{A}_i = \frac{0 - 0}{0 + 10^{-4}} = 0 \quad\text{（两个都是）}\]
+
+<p>代入 loss：</p>
+
+\[\mathcal{L}_{\text{pg}} = -\frac{1}{2}\big[0 \times \log\pi_1 + 0 \times \log\pi_2\big] = -0.0\]
+
+<p>实测：<code>adv [0.0, 0.0]</code>、<code>loss -0.0</code>。</p>
+
+<div class="eq-note">
+<b>关于 <code>-0.0</code>：</b>这不是 bug。Python 里 <code>-0.0 == 0.0</code> 为 <code>True</code>，打印成 <code>-0.0</code> 只是浮点符号位的显示差异。数学上它就是 0。
+</div>
+
+<h4>步骤 2 · 梯度为什么也是 0</h4>
+
+\[\frac{\partial \mathcal{L}_{\text{pg}}}{\partial \theta} = -\frac{1}{N}\sum_{i=1}^{N} \hat{A}_i \, \nabla_\theta \log \pi_\theta(y^{(i)}|x^{(i)})\]
+
+<p>所有 \(\hat{A}_i = 0\)，所以<b>每一项的系数都是 0</b>。对计算图来说：没有任何一条路径能从 <code>loss</code> 通到模型参数上。</p>
+
+<p>实测：<code>loss.grad_fn is None</code>（因为输入本来就没有 <code>requires_grad</code>）；真实训练时 <code>loss_tensor.backward()</code> 会把所有参数的 <code>.grad</code> 保持为 <code>None</code> 或 0，然后 <code>optimizer.step()</code> <b>什么都不做</b>。</p>
+
+<p>原文的措辞：<i>the gradient would be zero and the model parameters would not be updated</i>。</p>
+
+<h4>步骤 3 · 顺手看看另外三种 reward 组合</h4>
+
+<p>为了对照，我们把四种情况都算一遍（同一组 logprob）：</p>
+<p class="swipe-hint on">← 表格可左右滑动→</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>reward 向量</th><th>情形</th><th>\(\sigma_r\)</th><th>\(\hat{A}\)</th><th>loss</th></tr></thead>
+<tbody>
+<tr><td><code>[0,0,0,0]</code></td><td><b>全错</b></td><td>0.0000</td><td><code>[0, 0, 0, 0]</code></td><td><b>-0.0000</b></td></tr>
+<tr><td><code>[1,1,1,1]</code></td><td><b>全对</b></td><td>0.0000</td><td><code>[0, 0, 0, 0]</code></td><td><b>-0.0000</b></td></tr>
+<tr><td><code>[1,1,0,0]</code></td><td>一半对（本章的例子）</td><td>0.5774</td><td><code>[+.866, +.866, -.866, -.866]</code></td><td>-2.5764</td></tr>
+<tr><td><code>[0,1,0,1]</code></td><td>交错</td><td>0.5774</td><td><code>[-.866, +.866, -.866, +.866]</code></td><td><b>+4.1097</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="warn">
+<span class="tag">注意最后一行</span>
+<p><code>[0,1,0,1]</code> 的 loss 是 <b>+4.1097</b>，正的。<b>loss 是正的不代表「训练得好」</b>——它只是这一组的相对量的另一种排列方式。</p>
+<p>这也是原文说「不要过度解读 loss 绝对值」的另一个理由。真正该看的是多步平均的 <code>reward_avg</code> 和 MATH-500 准确率。</p>
+</div>
+
+<h4>步骤 4 · 为什么这是好事 —— 三个层次</h4>
+
+<p><b>层次一：数学上，组内全相同 = 无信息。</b></p>
+
+<p>GRPO 的学习信号完全来自<b>组内对比</b>。四条 rollout 拿一样的分，意味着这组样本<b>没有携带任何关于「哪条更好」的信息</b>。这种情况下梯度为零不是算法失效，而是算法<b>正确地反映了「无事可学」</b>。</p>
+
+<p>打个比方：你让四个人描述同一道题的解法，然后问「谁解得更好」。如果四份答案的评分完全一样，你<b>无法从中学到任何东西</b>——不管你再怎么分析这四份数据。梯度为 0 就是这个事实的数学表达。</p>
+
+<p><b>层次二：行为上，两种情形梯度为零都对。</b></p>
+
+<div class="tw">
+<table>
+<thead><tr><th>组内情形</th><th>含义</th><th>如果继续硬更新会怎样</th></tr></thead>
+<tbody>
+<tr><td>\(r = [1,1,1,1]\)<br>全对</td><td>模型<b>已经会做这道题了</b></td><td>过拟合到这批具体答案上；把已经学会的东西推坏（学过的东西最容易被新信号带偏）</td></tr>
+<tr><td>\(r = [0,0,0,0]\)<br>全错</td><td>模型<b>完全不知道往哪走</b></td><td>既然没有一个方向能走，梯度只能是个随机方向的噪声，纯属破坏</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>从算力角度看：这两个 prompt 贡献不了任何信息，继续在它们上面花 rollout 的钱是<b>浪费</b>。</p>
+
+<p><b>层次三：统计上，中心化保证了「净推力」恒为 0。</b></p>
+
+\[\sum_i \hat{A}_i = \frac{\sum_i (r_i - \mu_r)}{\sigma_r + \epsilon} = \frac{0}{\sigma_r + \epsilon} = 0\]
+
+<p>不管组内是什么样的分布，减完均值之后 advantage 之和<b>永远</b>是 0。所以这一组 rollout 对模型的<b>整体推力</b>是零，只有<b>相对方向</b>。</p>
+
+<p>这正是第 7.3.1 节监控 <code>adv_avg</code> 的意义——它恒为 0.0000，作者说这只是「a sanity check that the implementation behaves as expected」。</p>
+
+<p>为什么这个性质是<b>必需的</b>？假设不减均值会怎样：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>情形</th><th>不减均值时 <code>max logπ</code> 的实际含义</th><th>后果</th></tr></thead>
+<tbody>
+<tr><td>\(r = [1,1,1,1]\)（全对）</td><td>「无条件抬高这批序列的概率」，<b>不管好不好</b></td><td>净效果：模型在「全抬高」和「全压低」两个极端之间来回震荡</td></tr>
+<tr><td>\(r = [0,0,0,0]\)（全错）</td><td>无条件压低</td><td>同上</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>减完均值后 \(A\) 之和为 0，梯度就<b>纯粹表达「哪边该升、哪边该降」的相对关系</b>，学到了方向性。</p>
+
+<h4>步骤 5 · 但这同时是 GRPO 数据效率的主要瓶颈</h4>
+
+<p>零梯度是好事，但零梯度<b>样本太多</b>就是问题。</p>
+
+<p>真实训练中，大量 prompt 会落入这个区间：</p>
+
+<ul>
+<li><b>简单题</b>：模型很快就能全对 → 组内无方差 → 该 prompt 从此永久贡献 0 梯度</li>
+<li><b>难到没救的题</b>：一直全错 → 同样 0 梯度</li>
+</ul>
+
+<p>所以你会看到一个「正常但反直觉」的现象：<b><code>reward_avg</code> 在上升，而「有效样本比例」在下降。</b>这不是 bug，是 GRPO 的固有结构。</p>
+
+<p>这正是 DAPO 那两条改进针对的地方：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>改进</th><th>做法</th><th>针对</th></tr></thead>
+<tbody>
+<tr><td><b>dynamic sampling</b></td><td>丢弃零梯度的组，<b>继续采样</b>直到攒够 \(G\) 个有效组</td><td>算力浪费在无信息样本上</td></tr>
+<tr><td><b>filter out 退化 rollout</b></td><td>丢掉没头没尾直接吐答案、或撞满 token 上限的 rollout</td><td>listing 6.15 里 <code>gen_len=4</code> 和 <code>gen_len=256</code> 那两个极端</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>步骤 6 · 实现上的三个坑</h4>
+
+<div class="warn">
+<span class="tag">坑一 · <code>num_rollouts</code> 必须 ≥ 2</span>
+<p><code>torch.std()</code> 默认无偏，分母是 \(n-1\)。当 \(n = 1\) 时分母为 0，结果是 <b>NaN</b>：</p>
+<pre class="inline-note"><code>torch.tensor([1.0]).std()   # nan   （警告: degrees of freedom is &lt;= 0）
+torch.tensor([0.0]).std()   # nan</code></pre>
+<p>NaN 会顺着 advantage 污染整个 loss，反向传播后<b>所有权重变成 NaN</b>，模型直接报废。这就是 <code>compute_grpo_loss</code> 里 <code>assert num_rollouts &gt;= 2</code> 的真正原因。</p>
+<p>而 <code>n = 2</code> 时恰好安全：\([0,0]\) 的分子也是 0，\(0/1 = 0\)。</p>
+</div>
+
+<div class="warn">
+<span class="tag">坑二 · <code>1e-4</code> 只是除零兜底，不影响任何实际计算</span>
+<p>因为验证器只给 0/1，reward 全等时分子<b>必然</b>是 0，<code>1e-4</code> 加不加结果一样。</p>
+<p>实测：遍历 \(N = 2 \dots 8\) 的<b>全部</b> 0/1 reward 向量，加与不加 <code>1e-4</code> 的 advantage 最大差异是 <b>7×10⁻⁴</b>。可以完全忽略。</p>
+<p>它<b>不是</b>超参，不需要调。它的作用就是让全等组输出 0 而不是 NaN。</p>
+</div>
+
+<div class="warn">
+<span class="tag">坑三 · 别把零梯度当成训练失败</span>
+<p>原文第 6.11 节明确提醒：<b>不要过度解读 loss 的绝对数值</b>。<code>reward_avg=0.000</code> 的步 loss 接近 0 是正常的；反过来，loss 数值大只说明<b>组内差异大</b>，训练初期尤其如此，不代表学得好。</p>
+<p>该看的是<b>多步平均的 reward 趋势</b>，以及下一节的 MATH-500 准确率。</p>
+</div>
+
+<h4>自查题 3 的验证代码</h4>
+
+<pre><code>import torch, warnings
+
+lp4 = torch.tensor([-7.9243, -20.1546, -16.6130, -23.3677])
+
+for name, rv in [("全错[0,0,0,0]", [0.,0.,0.,0.]),
+                 ("全对[1,1,1,1]", [1.,1.,1.,1.]),
+                 ("混合[1,1,0,0]", [1.,1.,0.,0.]),
+                 ("交错[0,1,0,1]", [0.,1.,0.,1.])]:
+    r = torch.tensor(rv)
+    A = (r - r.mean()) / (r.std() + 1e-4)
+    print(f"{name:<16} std={r.std().item():.4f}  "
+          f"A={[round(x,4) for x in A.tolist()]}  "
+          f"loss={(-(A*lp4).mean()).item():+.4f}")
+
+# 全错[0,0,0,0]  std=0.0000  A=[0.0, 0.0, 0.0, 0.0]        loss=-0.0000
+# 全对[1,1,1,1]  std=0.0000  A=[0.0, 0.0, 0.0, 0.0]        loss=-0.0000
+# 混合[1,1,0,0]  std=0.5774  A=[.8659,.8659,-.8659,-.8659] loss=-2.5764
+# 交错[0,1,0,1]  std=0.5774  A=[-.8659,.8659,-.8659,.8659] loss=+4.1097
+
+r = torch.tensor([0., 0.])
+A = (r - r.mean()) / (r.std() + 1e-4)
+print("A.sum() =", A.sum().item())               # 0.0  (中心化)
+print("-0.0 == 0.0 ->", (-(A*lp4[:2]).mean()).item() == 0.0)   # True
+
+# n=1 才是真的除零 -> NaN
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore")
+    print("std([1.0]) =", torch.tensor([1.0]).std().item())   # nan
+print("std([1.,1.]) =", torch.tensor([1., 1.]).std().item()) # 0.0  安全
+</code></pre>
+
+<hr>
+
+<h2 class="deriv" id="sum">三道题串起来看</h2>
+
+<p>它们不是三个孤立的知识点，正好对应一条完整链路上的三个环节：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>题号</th><th>在链路上的位置</th><th>唯一要记住的点</th></tr></thead>
+<tbody>
+<tr><td><b>1</b></td><td>信号 → 梯度的<b>方向</b></td><td>由 \(\hat{A}_i\) 的<b>符号</b>决定；负号把最大化翻成最小化</td></tr>
+<tr><td><b>2</b></td><td>数据结构的<b>索引对齐</b></td><td>因果掩码让输出层错位一格，所以是 <code>P-1</code>；校验切片长度 == \(T\)</td></tr>
+<tr><td><b>3</b></td><td>信号<b>什么时候该为空</b></td><td>组内无差异 = 无信息；梯度为 0 是正确行为，但零梯度样本过多是效率瓶颈</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>把这三道题串起来，就是 GRPO 一轮的完整生命周期：</p>
+
+<pre><code>prompt x
+  │
+  ├─(1) 采样 N 条 rollout ──────────→ y¹, y², y³, y⁴
+  │
+  ├─(2) 验证器 reward_rlvr ─────────→ r = [1, 1, 0, 0]
+  │
+  ├─(3) 组内 z-score ───────────────→ A = [+0.866, +0.866, -0.866, -0.866]
+  │        └─ 若全 0 或全 1 → A = 0 → 梯度 0（题 3）
+  │
+  ├─(4) 序列 logprob ───────────────→ logπ = [-7.92, -20.15, -16.61, -23.37]
+  │        └─ 切片 [P-1:]，错位一格（题 2）
+  │
+  └─(5) 加权 + 取负 ────────────────→ L = -mean(A ⊙ logπ) = -2.5764
+           └─ 符号方向由 A 的符号决定（题 1）
+
+  └─(6) loss.backward() + optimizer.step()</code></pre>
+
+<h2 class="deriv" id="err">常见错误清单</h2>
+
+<div class="tw">
+<table>
+<thead><tr><th>错误</th><th>后果</th><th>正确做法</th></tr></thead>
+<tbody>
+<tr><td>用 <code>torch.std(unbiased=False)</code></td><td>advantage 偏大 15%（0.8659 vs 1.0）</td><td>用默认的无偏版本，与原文一致</td></tr>
+<tr><td>切片写 <code>[P:]</code></td><td><b>静默算错</b>，梯度被稀释</td><td><code>[P-1:]</code>，并校验长度 == \(T\)</td></tr>
+<tr><td>用 <code>argmax</code> 取 logprob</td><td>信号完全消失（每步都取最大值）</td><td><code>gather</code> 按实际 token 取</td></tr>
+<tr><td>忘记 <code>logprobs[:-1]</code></td><td>shape 不匹配，会报错（还算友好）</td><td>加上</td></tr>
+<tr><td>去掉 loss 的负号</td><td>训练朝反方向走，准确率暴跌</td><td>保留负号</td></tr>
+<tr><td>忘记 <code>.detach()</code></td><td>梯度试图回传到 reward，等于在优化 verifier</td><td>advantage 是常量学习信号，必须 detach</td></tr>
+<tr><td><code>num_rollouts=1</code></td><td>std = NaN → 全部权重 NaN</td><td>断言 ≥ 2</td></tr>
+<tr><td>看到 loss=0 就以为程序挂了</td><td>—</td><td>组内全对/全错时这是<b>正确</b>行为</td></tr>
+<tr><td>解读 loss 的绝对值</td><td>误判训练好坏</td><td>看多步 <code>reward_avg</code> 和 MATH-500 准确率</td></tr>
+<tr><td>以为 BT 奖励模型的输出是 ±2</td><td>误以为有绝对刻度</td><td>BT 只有<b>相对</b>刻度</td></tr>
+</tbody>
+</table>
+</div>
+
+<nav class="deriv-nav">
+<a href="page-53-detail.html"><span class="dir">详解</span>6.1.1 RLHF 与 PPO（含 BT 损失）</a>
+<a href="page-58-detail.html"><span class="dir">详解</span>6.8/6.9 序列 logprob 与损失</a>
+<a href="page-59.html"><span class="dir">原文</span>6.9 策略梯度损失</a>
+<a href="page-102.html"><span class="dir">原文</span>F.4 Elo 排行榜</a>
+<a href="page-54-detail.html"><span class="dir">详解</span>6.2 GRPO 目标函数</a>
+<a href="toc.html"><span class="dir">索引</span>返回目录</a>
+</nav>
+
+</main>
+
+<a class="totop" href="#main" aria-label="回到顶部">↑</a>
+
+<script defer src="assets/katex/katex.min.js"></script>
+<script defer src="assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>

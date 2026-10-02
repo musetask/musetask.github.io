@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>数学推导详解 · 4.5 top-p（nucleus）过滤 · Build a Reasoning Model</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">数学推导详解 · 4.5 top-p 过滤</span>
+<a class="nav" href="page-36.html">原文</a>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">对应原文第 35–37 页 · 第 4 章 Improving reasoning with inference-time scaling</span></div>
+
+<h1>4.5 top-p（nucleus）过滤：完整数学推导</h1>
+
+<div class="lead">
+上一页的 <b>temperature</b> 调节的是整个分布的<b>陡峭程度</b>，但它对所有 token 一视同仁。top-p 解决的是另一个问题：<b>不管分布多陡，都要先砍掉那些「就算概率最高也荒谬」的尾部 token。</b>
+两者叠加使用，是 self-consistency 能工作的最后一块拼图。
+</div>
+
+<h2 class="deriv">一、定义</h2>
+
+<p>把概率按降序排序，取<b>累积概率质量刚好达到或超过 \(p\) 的最小 token 集合</b>：</p>
+
+\[
+S = \min\Big\{ k \;:\; \sum_{i=1}^{k} p_{(i)} \ge p \Big\}
+\]
+
+<p>其中 \(p_{(i)}\) 表示排序后第 \(i\) 大的概率。保留 \(p_1, \dots, p_S\)，其余置 0，再<b>重新归一化</b>使其和为 1，然后从这 \(S\) 个里采样。</p>
+
+<div class="key">
+<span class="tag">top-p 的设计哲学</span>
+<p>它保留的是<b>自适应数量</b>的 token：分布尖锐时只留 1–2 个，分布平坦时留几十上百个。而 top-k 保留<b>固定数量</b>。</p>
+<p>这正是原文的对比：<i>top-k keeps a fixed number of the most likely tokens, whereas top-p keeps a variable number of tokens depending on their cumulative mass.</i> 分布不确定时 top-k 会强行保留 50 个垃圾 token，top-p 则不会。</p>
+</div>
+
+<h2 class="deriv">二、代码里的累积和技巧</h2>
+
+<p>原文用一个略有技巧的写法：</p>
+
+<pre><code>sorted_idx   = torch.argsort(toy_probas, descending=<span class="tok-kw">True</span>)
+sorted_probas = toy_probas[sorted_idx]
+cumsum = torch.cumsum(sorted_probas, dim=<span class="tok-nu">0</span>)
+
+keep_mask = (<span class="tok-fn">cumsum</span> - sorted_probas) &lt; top_p   <span class="tok-cm"># 加入前还不够 p → 必须保留（含越界项）</span>
+n_kept = keep_mask.<span class="tok-fn">sum</span>().item()</code></pre>
+
+<p>常见的两种写法并不等价，差别就在「刚好把累积质量推过 \(p\) 的那个 token」要不要留：</p>
+
+<pre><code>keep_mask = (cumsum - sorted_probas) &lt; top_p   <span class="tok-cm"># 本书采用：包含越界项（nucleus 标准做法）</span>
+keep_mask = cumsum &lt;= top_p                     <span class="tok-cm"># 另一种：不含越界项（更保守，集合可能 &lt; p）</span></code></pre>
+
+<h3>2.1 <code>cumsum - sorted_probas</code> 是什么意思</h3>
+
+<p>这是这一节唯一的技巧，值得单独讲。设排序后概率为 \(q_1, q_2, \dots\)，定义：</p>
+
+\[
+c_k = \sum_{i=1}^{k} q_i
+\]
+
+<p>那么：</p>
+
+\[
+(c_k - q_k) = \sum_{i=1}^{k-1} q_i
+\]
+
+<p><b>就是前 \(k-1\) 个 token 的累积质量，不含第 \(k\) 个自己。</b></p>
+
+<p>那么 <code>keep_mask = (cumsum - sorted_probas) &lt; top_p</code> 就是在问：<b>「我加入这个 token <i>之前</i>，累积质量还不到 \(p\) 吗？」</b>如果是，说明我需要它来把质量凑到 \(p\)，必须保留。</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>token（降序）</th><th>\(q_i\)</th><th>\(c_i\)</th><th>\(c_i - q_i\)</th><th>\(&lt; 0.8\) ?</th><th>保留</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>0.4538</td><td>0.4538</td><td>0.0000</td><td>✓</td><td>✅</td></tr>
+<tr><td>2</td><td>0.2752</td><td>0.7290</td><td>0.4538</td><td>✓</td><td>✅</td></tr>
+<tr><td>3</td><td>0.0829</td><td>0.8119</td><td>0.7290</td><td>✓</td><td>✅</td></tr>
+<tr><td>4</td><td>0.0250</td><td>0.8369</td><td>0.8119</td><td>✗</td><td>❌</td></tr>
+<tr><td>…</td><td>…</td><td>…</td><td>…</td><td>✗</td><td>❌</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>所以答案 <code>n_kept = 3</code>，与原文一致。截断点在第 3 和第 4 之间，因为 \(c_3 = 0.8119 \ge 0.8\)。</p>
+
+<div class="warn">
+<span class="tag">注意：判断的是「加入之前」</span>
+<p><code>(cumsum - sorted_probas) &lt; top_p</code> 问的是「不含自己时累积质量是否还不够 \(p\)」。所以越界的那一项会被留下——这正是 nucleus sampling 的标准定义，保证留下的集合质量 \(\ge p\)。</p>
+<p>若改成 <code>cumsum &lt;= top_p</code>，越界项会被砍掉，集合质量可能严格小于 \(p\)。两种写法不要混着记。</p>
+</div>
+
+<h2 class="deriv">三、置零与重新归一化</h2>
+
+<pre><code>kept_sorted = torch.where(keep_mask, sorted_probas, torch.zeros_like(sorted_probas))
+filtered = torch.zeros_like(toy_probas).scatter(<span class="tok-nu">0</span>, sorted_idx, kept_sorted)
+<span class="tok-cm"># filtered = [0, 0, 0, 0, 0.4538, 0, 0, 0, 0.0829, 0.2752]</span>
+
+denom = torch.<span class="tok-fn">sum</span>(filtered).clamp_min(<span class="tok-nu">1e-12</span>)
+renormalized = filtered / denom
+<span class="tok-cm"># [0, 0, 0, 0, 0.5589, 0, 0, 0, 0.1021, 0.3390]</span></code></pre>
+
+<h3>3.1 为什么必须重新归一化</h3>
+
+<p>置零后总和是 \(0.8119\)，不是 1。<code>torch.multinomial</code> 要求概率分布和为 1，所以要除以实际总和：</p>
+
+\[
+\tilde{p}_i = \begin{cases} \dfrac{p_i}{\sum_{j \in S} p_j} & i \in S \\[6pt] 0 & i \notin S \end{cases}
+\]
+
+<p>验算：\(0.4538 / 0.8119 = 0.5589\)，\(0.0829 / 0.8119 = 0.1021\)，\(0.2752 / 0.8119 = 0.3390\)。✓</p>
+
+<div class="eq-note">
+<b><code>.clamp_min(1e-12)</code> 防什么？</b>如果 <code>keep_mask</code> 一个都没保留（<b>极端情况下所有概率都很小</b>，比如 top_p 设得极小），<code>denom</code> 会是 0，导致 0/0 = NaN。<code>clamp_min</code> 给一个下界防止除零。这是工程细节，但值得知道。
+</div>
+
+<h3>3.2 <code>scatter</code> 为什么要还原顺序</h3>
+
+<p>整个流程是「排序 → 过滤 → 再排回去」。原因：<b>词表索引顺序是有意义的</b>，模型输出层的第 \(i\) 个分量永远对应第 \(i\) 个 token。我们只是在排序后的临时空间里做计算，最终必须映射回原始位置，否则概率会安到错误的 token 上。</p>
+
+<pre><code>filtered = torch.zeros_like(toy_probas).scatter(<span class="tok-nu">0</span>, sorted_idx, kept_sorted)
+<span class="tok-cm">#          ↑ 造一个全 0 的目标形状        ↑ 按 sorted_idx 把值放回去</span></code></pre>
+
+<h2 class="deriv">四、top-p 和 temperature 怎么配合</h2>
+
+<p>它们控制的是<b>分布的不同维度</b>：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th></th><th>temperature</th><th>top-p</th></tr></thead>
+<tbody>
+<tr><td>作用位置</td><td>softmax <b>之前</b>，缩放 logits</td><td>softmax <b>之后</b>，截断概率</td></tr>
+<tr><td>控制什么</td><td>分布的<b>整体陡峭程度</b></td><td><b>候选集合的大小</b></td></tr>
+<tr><td>效果</td><td>连续调节多样性</td><td>硬性砍掉长尾</td></tr>
+<tr><td>失效模式</td><td>T 太大 → 全是垃圾；T 太小 → 无多样性</td><td>p 太大 → 退化成全词表；p 太小 → 只剩 argmax</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>原文的完整生成函数把它们串在一起（listing 4.16）：</p>
+
+<pre><code><span class="tok-kw">if</span> temperature <span class="tok-kw">is</span> <span class="tok-kw">None</span> <span class="tok-kw">or</span> temperature == <span class="tok-nu">0.0</span>:
+    next_token = torch.argmax(out, dim=<span class="tok-nu">-1</span>, keepdim=<span class="tok-kw">True</span>)   <span class="tok-cm"># 贪心</span>
+<span class="tok-kw">else</span>:
+    logits = scale_logits_by_temperature(out, temperature)   <span class="tok-cm"># ① 缩放</span>
+    probas = torch.softmax(logits, dim=<span class="tok-nu">-1</span>)                    <span class="tok-cm"># ② 归一化</span>
+    probas = top_p_filter(probas, top_p)                      <span class="tok-cm"># ③ 截断 + 重归一</span>
+    next_token = torch.multinomial(probas.cpu(), num_samples=<span class="tok-nu">1</span>)  <span class="tok-cm"># ④ 采样</span></code></pre>
+
+<p>原文的实测（<code>temperature=0.5, top_p=0.8</code>）：输出 <code>\boxed{18}</code>，仍然错误。<b>「能采样出不同答案」和「采样出正确答案」是两件事</b>——前者是手段，后者要看 4.6 的投票。</p>
+
+<div class="key">
+<span class="tag">和 self-consistency 的关系</span>
+<p>4.6 节要采样 N=8（或更多）个不同答案做投票。质量靠 top-p 保证下限（不采到荒谬 token），多样性靠 temperature 保证（每次不完全一样）。<b>两个都必须有：</b></p>
+<p>只调温度不打分 → 可能全是垃圾；<b>不打分只调温度</b> → 高温时仍会采到长尾里的怪东西。</p>
+</div>
+
+<h2 class="deriv">五、一个数值例子走完全程</h2>
+
+<p>用原文的 <code>toy_probas</code>（长度 10，top_p = 0.8）：</p>
+
+<ol class="steps">
+<li><b>排序</b>：<code>argsort(descending=True)</code> → 索引 [4, 9, 8, ...]，概率 [0.4538, 0.2752, 0.0829, 0.0250, ...]</li>
+<li><b>累积</b>：cumsum = [0.4538, 0.7290, <b>0.8119</b>, 0.8369, ...]</li>
+<li><b>判断</b>：<code>cumsum - sorted_probas</code> = [0, 0.4538, <b>0.7290</b>, 0.8119, ...]，前三个 &lt; 0.8</li>
+<li><b>n_kept = 3</b>，截断点在 token 3 与 4 之间（\(c_3 = 0.8119 \ge 0.8\)）</li>
+<li><b>置零还原</b>：<code>[0,0,0,0, 0.4538, 0,0,0, 0.0829, 0.2752]</code></li>
+<li><b>重归一</b>：除以 0.8119 → <code>[0,0,0,0, 0.5589, 0,0,0, 0.1021, 0.3390]</code></li>
+<li><b>采样</b>：只会命中索引 4、8、9</li>
+</ol>
+
+<p>figure 4.15 用「柱状图（排序后的概率）+ 阶梯线（累积和）+ 红虚线（0.8 阈值）+ 灰点线（截断位置）」画出了这个过程。</p>
+
+<nav class="deriv-nav">
+<a href="page-34-detail.html"><span class="dir">详解</span>上一页：温度缩放与 softmax</a>
+<a href="page-58-detail.html"><span class="dir">详解</span>6.8 / 6.9 logprob 与策略梯度</a>
+<a href="page-36.html"><span class="dir">原文</span>4.5.1 选出 top-p 子集</a>
+</nav>
+
+</main>
+
+<script defer src="assets/katex/katex.min.js"></script>
+<script defer src="assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>

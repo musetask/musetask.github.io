@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>数学推导详解 · 7.3 −100 掩码与损失聚合 · Build a Large Language Model (From Scratch)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f5f8f'/%3E%3Cpath d='M9 8h9a4.5 4.5 0 0 1 0 9H9zm0 9h9a4.5 4.5 0 0 1 0 9H9z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+<script>(function(){try{var t=localStorage.getItem('pdf2html-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="13-fine-tuning-to-follow-instructions.html">7. −100 掩码与损失聚合</a>
+  <button class="btn" id="themeToggle" aria-label="切换深色模式">&#9788;</button>
+</header>
+<main id="main">
+
+<h1>7.3 <code>-100</code> 掩码与损失聚合：完整数学推导</h1>
+
+<div class="plainbox">
+<p>这一章只有一个新概念：<b><code>-100</code> 是怎么让某些 token 从损失里消失的</b>。原书用三个数字（1.1269、0.7936、1.1269）演示，但没有解释背后的两件事：</p>
+<p><b>① <code>ignore_index</code> 同时改了分子和分母</b>（不只是「跳过」，而是重新定义平均值）；<b>② <code>mean</code> 在这里和第 5 章的 <code>mean</code> 语义已经不同了</b>。</p>
+</div>
+
+<h2 class="deriv">一、三个数字，先手算一遍</h2>
+
+<p>原书 7.3 节的例子：</p>
+
+<pre><code>logits_1 = torch.tensor([[-<span class="t-num">1.0</span>, <span class="t-num">1.0</span>],
+                         [-<span class="t-num">0.5</span>, <span class="t-num">1.5</span>]])
+targets_1 = torch.tensor([<span class="t-num">0</span>, <span class="t-num">1</span>])
+loss_1 = F.cross_entropy(logits_1, targets_1)   <span class="t-com"># tensor(1.1269)</span></code></pre>
+
+<h3>1.1 两个 token 的贡献</h3>
+
+<p>对第一个 token，logits 是 <code>[-1.0, 1.0]</code>，真实类别是 0：</p>
+
+\[
+-\log p_0 = -\log\frac{e^{-1}}{e^{-1}+e^{1}} = -\log\frac{1}{1+e^{2}} = \log(1+e^{2}) = 2.1269
+\]
+
+<p>对第二个 token，logits 是 <code>[-0.5, 1.5]</code>，真实类别是 1：</p>
+
+\[
+-\log p_1 = -\log\frac{e^{1.5}}{e^{-0.5}+e^{1.5}} = -\log\frac{1}{1+e^{-2}} = \log(1+e^{-2}) = 0.1269
+\]
+
+<p>平均：</p>
+
+\[
+\mathcal{L}_1 = \frac{2.1269 + 0.1269}{2} = \frac{2.2538}{2} = 1.1269
+\]
+
+<p>✓ 与原书 <code>tensor(1.1269)</code> 完全一致。</p>
+
+<div class="key">
+<span class="tag">logit 差距相同，损失差了 16.8 倍</span>
+<p>第一个 token 的两个 logits 相差 \(1.0-(-1.0)=2.0\)，第二个也是 \(1.5-(-0.5)=2.0\)——<b>logit 差距完全相同</b>。但因为真实类别一个要选小的、一个要选大的，损失分别是 2.1269 和 0.1269，<b>相差 16.8 倍</b>。</p>
+<p>原因是对称的：\(\log(1+e^{\Delta})\) 在 \(\Delta = 2\) 时是 2.1269，在 \(\Delta = -2\) 时是 0.1269，<b>两者之和恒为 2.2539</b>。即「自信地猜对」和「自信地猜错」在数值上是对偶的，但<b>猜错的代价几乎全部集中在 2.1269 这一侧</b>。</p>
+<p>这正是交叉熵作为损失函数的全部意义：<b>它只在「自信地犯错」时给出大惩罚，在「自信地正确」时几乎不消耗优化预算</b>。</p>
+</div>
+
+<h3>1.2 三个 token 会怎样</h3>
+
+<pre><code>logits_2 = torch.tensor([[-<span class="t-num">1.0</span>, <span class="t-num">1.0</span>],
+                         [-<span class="t-num">0.5</span>, <span class="t-num">1.5</span>],
+                         [-<span class="t-num">0.5</span>, <span class="t-num">1.5</span>]])
+targets_2 = torch.tensor([<span class="t-num">0</span>, <span class="t-num">1</span>, <span class="t-num">1</span>])
+loss_2 = F.cross_entropy(logits_2, targets_2)   <span class="t-com"># tensor(0.7936)</span></code></pre>
+
+<p>新增的第三项是 0.1269（与第二项相同），所以：</p>
+
+\[
+\mathcal{L}_2 = \frac{2.1269 + 0.1269 + 0.1269}{3} = \frac{2.3807}{3} = 0.7936
+\]
+
+<p>✓ 与原书一致。</p>
+
+<div class="eq-note">
+<b>关键观察：损失从 1.1269 <b>降到</b>了 0.7936。</b>多了一个训练信号，损失反而更小——因为新加的项损失很小（0.1269），把平均值拉低了。<b>这说明交叉熵的绝对值和「加入多少监督信号」直接相关</b>，跨不同 mask 方案比较 loss 是没有意义的。
+</div>
+
+<h2 class="deriv">二、<code>-100</code> 的机制：分子分母同时变</h2>
+
+<h3>2.1 命题</h3>
+
+<pre><code>targets_3 = torch.tensor([<span class="t-num">0</span>, <span class="t-num">1</span>, -<span class="t-num">100</span>])
+loss_3 = F.cross_entropy(logits_2, targets_3)
+print(loss_3)                            <span class="t-com"># tensor(1.1269)</span>
+print("loss_1 == loss_3:", loss_1 == loss_3)   <span class="t-com"># tensor(True)</span></code></pre>
+
+<p>原书打印 <code>tensor(True)</code>。数学上这是必然的：</p>
+
+\[
+\mathcal{L}(\text{logits}_2,\, [0,1,-100]) = \frac{\sum_{n:\, y_n \ne -100} -\log p_{y_n}^{(n)}}{\left|\{n : y_n \ne -100\}\right|}
+= \frac{2.1269 + 0.1269}{2} = 1.1269
+\]
+
+<div class="warn">
+<span class="tag">最容易理解错的一点：分母也变了</span>
+<p>很多人以为「忽略」就是<b>分子加 0，分母不变</b>。那样会得到 \((2.1269+0.1269+0)/3 = 0.7513\)，<b>和原书的 1.1269 不符</b>。</p>
+<p>PyTorch 的行为是：<b>被 ignore 的位置既不进分子，也不进分母</b>。分母是「有效 token 数」而非「总 token 数」。这就是为什么 <code>loss_1 == loss_3</code> 严格等于 <code>True</code>——<b>损失精确等于只用两个有效样本算出的损失</b>，与第三个位置的存在完全无关。</p>
+<p>这个语义很关键：<b>padding 长度不会稀释损失</b>。如果分母固定，一个 batch 里全是短回答的样本会被大量 padding 拉低 loss，梯度信号被无效数据稀释。</p>
+</div>
+
+<h3>2.2 为什么是 −100 这个特定的数</h3>
+
+<p>三个约束共同决定了 −100：</p>
+
+<ol class="steps">
+<li><b>必须小于 0</b>。token ID 是 0 到 50256 的非负整数，必须能保证 −100 不会与任何真实 token ID 冲突。</li>
+<li><b>必须足够小，使 <code>exp(logit - logsumexp)</code> 不会产生 NaN</b>。但更重要的是——它<b>不参与计算</b>，所以数值上不需要真的能算出来。PyTorch 内部先筛掉它，再计算。</li>
+<li><b>必须是约定俗成的</b>。PyTorch 默认 <code>ignore_index=-100</code>，这是社区通用约定（与 HuggingFace Transformers 相同）。换成一个未被约定的值（如 −1）就<b>不会</b>被忽略——原书明确说 <i>"replace the −100 value with another token ID that is not 0 or 1; it will result in an error"</i>。</li>
+</ol>
+
+<div class="key">
+<span class="tag">原书那句括号注释值得单独讲</span>
+<p><i>"However, we want to keep one 50256 (end-of-text) token ID in the targets because it helps the LLM to learn to generate end-of-text tokens."</i></p>
+<p>也就是说：<b>序列末尾的 <code>&lt;|endoftext|&gt;</code>（50256）必须保留在 targets 里，不能掩成 −100</b>。原因是模型在推理时<b>需要一个停止信号</b>——如果训练时从没学过输出 50256，生成时它就永远不会停，会一直写下去。</p>
+<p>这是一个「<b>训练目标必须包含推理时需要的能力</b>」的例子：虽然 50256 本身不携带任何内容语义，但它是<b>控制流的一部分</b>。这和 padding token 必须掩掉是同一个原则的两面：<b>有用的（含控制信息）留，无用的（纯填充）掩。</b></p>
+</div>
+
+<h2 class="deriv">三、原书没细说的一点：<code>mean</code> 的语义变了</h2>
+
+<p>第 5 章的 <code>reduction='mean'</code>：分母是 <b>batch 内所有 token 数</b>。第 7 章在有 <code>-100</code> 的情况下：分母是 <b>有效 token 数</b>。</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th></th><th>第 5 章（预训练）</th><th>第 7 章（指令微调，有 mask）</th></tr></thead>
+<tbody>
+<tr><td>分母</td><td>\(B \times T\)</td><td>\(B \times T - \#\{\text{掩掉的}\}\)</td></tr>
+<tr><td>batch 内样本长短不一</td><td>无 padding，全部有效</td><td><b>有 padding，长样本的 token 权重更大</b></td></tr>
+<tr><td>短样本的梯度信号</td><td>—</td><td>被稀释（有效 token 少）</td></tr>
+<tr><td>为什么这样设计</td><td>简单且正确</td><td>见下文权衡</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>这个「按有效 token 加权平均」的语义有一个重要后果，值得单独指出：</p>
+
+<div class="warn">
+<span class="tag">token-level 平均 ⇒ 长回答权重更大</span>
+<p>考虑一个 batch：样本 A 的回答是 5 个 token，样本 B 的回答是 100 个 token。两个都各贡献 1 个监督标签，但 <b>B 贡献的梯度项数是 A 的 20 倍</b>。</p>
+<p>所以这个损失函数实际优化的是「<b>每个 token 的平均预测质量</b>」，而不是「每个回答的平均预测质量」。<b>长回答的每个 token 会被更细致地监督，短回答的 token 相对被忽略。</b></p>
+<p>这是 <code>reduction='mean'</code> 的固有性质（RNMT 里叫 token-level averaging），不是 bug。但如果你想做「<b>每个样本等权</b>」，需要 <code>reduction='sum'</code> 后自己除以 batch size——这在 GRPO 等算法里是常见的对照设计。</p>
+</div>
+
+<h2 class="deriv">四、要不要掩掉 instruction：一个真实的争议</h2>
+
+<p>原书 figure 7.13 右侧画了「可以掩掉 instruction 部分」的选项，并把它留作习题 7.2。这里说明它的数学含义。</p>
+
+<h3>4.1 两种方案的损失</h3>
+
+<p>假设一个样本的 prompt 模板是：</p>
+
+<pre><code>### Instruction:
+{prompt}
+### Input:
+{input}
+### Response:
+{response}</code></pre>
+
+<p><b>方案 A（原书采用，不掩 instruction）：</b>整段都算损失，\(N_A\) = 全序列 token 数。</p>
+
+<p><b>方案 B（掩掉 instruction）：</b>只有 response 部分算损失，\(N_B \ll N_A\)。</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th></th><th>方案 A（不掩）</th><th>方案 B（掩 instruction）</th></tr></thead>
+<tbody>
+<tr><td>监督的范围</td><td>学会「给定前缀，续写下一个 token」</td><td>学会「<b>只在回答区</b>，给定前缀续写下一个 token」</td></tr>
+<tr><td>有效 token 数</td><td>大</td><td>小（可能只有 20–50）</td></tr>
+<tr><td>梯度信号量</td><td><b>多</b></td><td>少</td></tr>
+<tr><td>过拟合风险</td><td>较高（要记住指令原文）</td><td>较低</td></tr>
+<tr><td>小数据集表现</td><td>可能更好（信号更多）</td><td>更差（信号太少）</td></tr>
+<tr><td>大数据集表现</td><td>可能过拟合</td><td>可能更好</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>4.2 原书引用的结论</h3>
+
+<p>原书写道（引用 Shi et al. 2024, <i>"Instruction Tuning With Loss Over Instructions"</i>）：<b>不掩 instruction 反而对 LLM 表现有益</b>。所以原书采用方案 A，把掩码留作习题。</p>
+
+<div class="key">
+<span class="tag">为什么「不算损失」不等于「没在学」</span>
+<p>直觉上「模型不需要学会复述指令」，所以掩掉指令应该更干净。但实际上：<b>损失函数同时是训练信号和正则化器</b>。</p>
+<p>在 instruction 上算损失，迫使模型的隐状态编码指令的语义，从而<b>让 response 的生成有更好的条件</b>。这是一种隐式的条件增强，而非单纯的记忆负担。</p>
+<p>这也解释了为什么这个结论会随数据集规模翻转：<b>数据少时信号不足是主要矛盾，数据多时过拟合才是主要矛盾。</b>原书用 1,000 条 Alpaca 样本做微调，属于「数据少」的情况，所以不掩是对的。</p>
+</div>
+
+<h2 class="deriv">五、初始损失 3.826 意味着什么</h2>
+
+<p>原书 7.6 节的微调起点：</p>
+
+<pre><code>Training loss:   <span class="t-num">3.825908660888672</span>
+Validation loss: <span class="t-num">3.7619335651397705</span></code></pre>
+
+<p>这仍然可以按困惑度读：</p>
+
+\[
+e^{3.8259} = 45.9, \qquad e^{3.7619} = 43.0
+\]
+
+<p>换句话说：<b>GPT-2 medium 在指令数据上，每 token 的等效候选数是 46 个</b>。</p>
+
+<div class="warn">
+<span class="tag">为什么这个数比随机初始化时高那么多</span>
+<p>对比第 5 章随机初始化的 48,726（PPL）。现在只有 46，<b>降了三个数量级</b>——因为 GPT-2 medium 是预训练过的，它对英文有极强的先验，<code>&lt;|endoftext|&gt;</code>（50256）这类 token 也很常见。</p>
+<p>但 46 仍然说明：<b>这个模型完全不知道指令微调的数据格式</b>（<code>### Instruction:</code> 这种模板）。它只知道「这是一段文本，猜下一个 token」。</p>
+<p>训练目标就是把 46 压到接近文本熵（约 2–3）。这也是为什么指令微调只需要几千步就能见效——起点已经很低了。</p>
+</div>
+
+<p>注意 <b>validation loss (3.762) 略低于 training loss (3.826)</b>。这在微调的第一时刻是正常的：训练集样本少、且可能已在 loss 的下降沿；验证集是独立样本。这个差距会在后续训练中<b>扩大并最终反转为过拟合信号</b>——如果验证 loss 开始回升，就该早停了。</p>
+
+<div class="key">
+<span class="tag">全章一句话</span>
+<p><code>-100</code> 做的不是「加零」，而是<b>「从分子和分母里同时删掉这一项」</b>。这保证了 padding 长度不影响损失，也保证了 <code>loss_1 == loss_3</code> 这样的严格相等。</p>
+<p>而 <code>-100</code> 的默认值来自 PyTorch 约定，不是数学必然——换成任何其他数字都<b>不会</b>被忽略，而是会因为越界而报错。</p>
+</div>
+
+<nav class="deriv-nav">
+<a href="12-fine-tuning-for-classification-detail.html"><span class="dir">上一章</span>6.6 分类损失与 argmax</a>
+<a href="math-detail.html"><span class="dir">索引</span>全部数学推导详解</a>
+<a href="13-fine-tuning-to-follow-instructions.html"><span class="dir">返回原文</span>7. Fine-tuning to follow instructions</a>
+</nav>
+
+</main>
+<nav class="chapnav" aria-label="导航"><div class="chapnav-inner">
+<a class="prev" href="12-fine-tuning-for-classification-detail.html"><span class="lbl">上一章</span><span class="nm">6. 分类损失与 argmax</span></a><a class="next" href="math-detail.html"><span class="lbl">索引</span><span class="nm">全部数学推导详解</span></a>
+</div></nav>
+<script src="app.js"></script>
+<script defer src="assets/katex/katex.min.js"></script>
+<script defer src="assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>

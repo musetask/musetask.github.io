@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>4.4.1 Understanding the process of selecting the next token · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-31.html">
+<link rel="next" href="page-33.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 32 页 / 共 108 页</span></div>
+<h3 id="h3-understanding-the-process-of-selecting-the-next-token"><span class="num">4.4.1</span>Understanding the process of selecting the next token</h3>
+<p>Let’s take a closer look at the text generation process we’ve implemented so far and see how the next-token selection process works under the hood. This will help you understand the motivation behind temperature scaling.</p>
+<p>Suppose we have the following simple prompt:</p>
+<pre><code class="language-python">ex_prompt = "The capital of Germany <span class="tok-kw">is</span>"
+response = generate_text_stream_concat_flex<span class="tok-kw">(</span>
+    model, tokenizer, ex_prompt, device,
+    max_new_tokens=<span class="tok-fn">1</span>, verbose=<span class="tok-kw">True</span>
+<span class="tok-kw">)</span></code></pre>
+<p>The model’s response is <code>" Berlin"</code>. This looks relatively simple, but multiple steps are happening under the hood, as illustrated in figure 4.6.</p>
+<p>When generating text, the inputs are first converted into token IDs (as discussed in chapter 2):</p>
+<pre><code class="language-python">input_token_ids = torch.tensor<span class="tok-kw">(</span>
+    tokenizer.encode<span class="tok-kw">(</span>ex_prompt<span class="tok-kw">)</span>, device=device
+<span class="tok-kw">)</span>.unsqueeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>input_token_ids<span class="tok-kw">)</span></code></pre>
+<p>In this case, these are the token IDs:</p>
+<pre><code class="language-python">tensor([[ 785, 6722, 315, 9856, 374]])</code></pre>
+<figure><a class="zoom" href="assets/figure-4.6.png" tabindex="-1"><img src="assets/figure-4.6.png" alt="" width="1143" height="705" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 4.6</span>How an LLM generates the next token. As in all process diagrams in this book, the flow runs from bottom to top. The model converts the input into token IDs, computes scores for all possible next tokens, and selects the one with the highest score as the next output.</figcaption></figure>
+<p>In the second step in figure 4.6, we get the scores for the output token we want to generate. These output scores are also called <em>logits</em>. An LLM generates one output token for each input token, but we are interested only in the last token, which we select via the <code>[:,</code> <code>-1]</code> tensor indexing. This last token corresponds to the token we want to generate:</p>
+<pre><code class="language-python"><span class="tok-kw">with</span> torch.inference_mode<span class="tok-kw">()</span>:
+    next_token_logits = model<span class="tok-kw">(</span>input_token_ids<span class="tok-kw">)</span>[:, -<span class="tok-fn">1</span>]
+print<span class="tok-kw">(</span>next_token_logits.shape<span class="tok-kw">)</span></code></pre>
+<p>The printed output shape is <code>[1,</code> <code>151936]</code>, where <code>151936</code> is the vocabulary size for this tokenizer and model. The vocabulary includes all the unique tokens the tokenizer can handle and the LLM can generate.</p>
+<p>To obtain the next generated token (<code>" Berlin"</code> in this example), we have to find the vocabulary entry associated with the largest score (step 3 in figure 4.6):</p>
+<pre><code class="language-python">max_token_id = torch.argmax<span class="tok-kw">(</span>next_token_logits<span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>f"Token ID: {max_token_id}"<span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>f"Decoded token: '{tokenizer.decode<span class="tok-kw">(</span>[max_token_id]<span class="tok-kw">)</span>}'"<span class="tok-kw">)</span></code></pre>
+<p>The output follows:</p>
+<pre><code class="language-python">Token ID: 19846
+Decoded token: ' Berlin'</code></pre>
+<p>We’ve now covered the three main steps in generating the next token. Before we move on to the next section, let’s take a closer look at the score distribution of the <code>next_ token_logits</code> tensor we passed to the <code>torch.argmax</code> function to obtain the token IDs. We’ll plot it in Matplotlib.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">import</span> matplotlib.pyplot <span class="tok-kw">as</span> plt
+<span class="tok-kw">def</span> plot_scores_bar(
+    next_token_logits, start=<span class="tok-fn">19_800</span>, end=<span class="tok-fn">19_900</span>,
+    arrow=<span class="tok-kw">True</span>, ylabel="Logit value"
+):
+    x = torch.arange<span class="tok-kw">(</span>start, end<span class="tok-kw">)</span>
+    logits_section = next_token_logits<span class="tok-kw">[</span><span class="tok-fn">0</span>, start:end<span class="tok-kw">]</span>.float<span class="tok-kw">()</span>.cpu<span class="tok-kw">()</span>
+    plt.bar<span class="tok-kw">(</span>x, logits_section<span class="tok-kw">)</span>
+    plt.xlabel<span class="tok-kw">(</span>"Vocabulary index"<span class="tok-kw">)</span>
+    plt.ylabel<span class="tok-kw">(</span>ylabel<span class="tok-kw">)</span>
+    <span class="tok-kw">if</span> arrow:
+        max_idx = torch.argmax<span class="tok-kw">(</span>logits_section<span class="tok-kw">)</span>
+        plt.annotate<span class="tok-kw">(</span>
+            "Berlin",
+            xy=(x<span class="tok-kw">[</span>max_idx<span class="tok-kw">]</span>, logits_section<span class="tok-kw">[</span>max_idx<span class="tok-kw">]</span>),
+            xytext=(x<span class="tok-kw">[</span>max_idx<span class="tok-kw">]</span> - <span class="tok-fn">25</span>, logits_section<span class="tok-kw">[</span>max_idx<span class="tok-kw">]</span> - <span class="tok-fn">2</span>),
+            arrowprops={
+                "facecolor": "black", "arrowstyle": "-&gt;", "lw": <span class="tok-fn">1.5</span>
+            },
+            fontsize=<span class="tok-fn">10</span>,
+        <span class="tok-kw">)</span>
+    plt.grid<span class="tok-kw">(</span>alpha=<span class="tok-fn">0.3</span><span class="tok-kw">)</span>
+    plt.tight_layout<span class="tok-kw">()</span>
+    plt.show<span class="tok-kw">()</span>
+plot_scores_bar<span class="tok-kw">(</span>next_token_logits<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 4.3</span>Plotting the next-token logit scores</figcaption></figure>
+<p>We are restricting the plot to the 100 vocabulary index tokens between 19,800 and 19,900, rather than plotting the scores for all 151,936 entries, which would make the plot too crowded. I selected this range because it contains the entry with the highest score. The resulting plot is shown in figure 4.7.</p>
+<p>The plot in figure 4.7 shows the 100 logit values (scores) for vocabulary indices 19,800–19,899. The values range approximately from –8 to 20, and the value 20 corresponds to the vocabulary index for the token <code>" Berlin"</code>.</p>
+<figure><a class="zoom" href="assets/figure-4.7.png" tabindex="-1"><img src="assets/figure-4.7.png" alt="" width="781" height="582" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 4.7</span>Next-token logits for a 100-token slice of a language model’s much larger vocabulary. Each bar represents one possible token’s score within this slice, with"Berlin" having the highest logit value and being selected as the next token.</figcaption></figure>
+<nav class="pager"><a class="prev" href="page-31.html" rel="prev"><span class="dir">上一页</span><span class="t">4.3 Generating better responses with chain-of-thought prompting</span></a><a class="next" href="page-33.html" rel="next"><span class="dir">下一页</span><span class="t">4.4.2 Rescaling token scores (logits) via a temperature parameter</span></a></nav>
+</main>
+</body>
+</html>

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>Joint probability of a token sequence · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/detail.css">
+<link rel="prev" href="page-44.html">
+<link rel="next" href="page-46.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 45 页 / 共 108 页</span></div>
+<aside class="detail-link"><span class="tag">补充材料</span>本节的链式法则 <code>P(y_1:T | x) = Π_t P(y_t | y_&lt;t, x)</code> 在 <a href="page-48-detail.html"><b>5.5 / 5.6 概率到 logprob 详解 · 二</b></a> 里有完整推导。全部推导页的索引见 <a href="math-detail.html">math-detail.html</a>。</aside>
+<h3 id="h3-joint-probability-of-a-token-sequence">Joint probability of a token sequence</h3>
+<div class="lead">For those comfortable with mathematical notation, the joint probability of a token sequence 𝑥1, 𝑥2, ..., 𝑥𝑇 and model weights W, this is sequence can be written compactly as a product of conditional probabilities. For a Expanded, this becomes This matches exactly what we compute in figure 5.11. At each position, we feed the context into the model, obtain the probability of the next token, and multiply these scores across the sequence.</div>
+<p>Ideally, the probability assigned to the sequence <code>"The</code> <code>capital</code> <code>of</code> <code>Germany</code> <code>is</code> <code>Berlin" should be much higher than that of the nonsensical answer </code><code>"The</code> <code>capital</code> <code>of</code> <code>Germany is</code> <code>Bridge"</code>. Because the joint probability is obtained by multiplying many small values, the resulting probabilities for both sequences in figure 5.11 are close to zero. We address this issue in the next section.</p>
+<p>The two answers in this example are nearly identical, differing only in the final token (<code>"Berlin"</code> versus <code>"Bridge"</code>). The same method can also be applied to sequences that differ more substantially, such as the answers generated in section 5.2 for the MATH-500 </p>
+<pre><code class="language-python">prompt (“Half the value of $3x-9$ is $x+37$. What is the value of $x$?").</code></pre>
+<h3 id="h3-how-this-probability-scoring-differs-from-greedy-sampling-an">How this probability scoring differs from greedy sampling and temperature-plus-top-p sampling</h3>
+<div class="lead">When we compute token probability scores, we are not generating text. The full sequence already exists, and we are simply querying the model for the probability of each next token, given the fixed context as input. Nothing about these probabilities influences later inputs. It is a retrospective scoring procedure, not a generation step. Generation methods like the <code>generate_text_stream_cache</code> function (greedy sampling) and the <code>generate_text_top_p_stream_cache</code> function that we coded in chapter 4 behave very differently. Greedy sampling always selects the most likely next token, while temperature sampling and top-p sampling draw from a reshaped probability distribution. These procedures modify the distribution at each step and then commit to a single token, which becomes the input for the next position. None of these sampling strategies, including greedy sampling, is guaranteed to produce the sequence with the highest overall probability under the model. A token that looks suboptimal at one step can lead to a future step where the following tokens are much more likely. On the other hand, a locally optimal choice may steer the model toward low-probability sequences later. Even if we did find the globally highest-probability sequence under the model, that still would not guarantee that it is the correct answer or the most useful answer for the user. It would only mean that it is the sequence the model prefers most under its learned distribution. Temperature and top-p sampling add even more variability by flattening or truncating the distribution before drawing samples, which may further disconnect the generated text from the globally most likely sequence. By scoring an existing answer, we avoid all these complications. We do not run a sampling algorithm, and the model does not choose any tokens. We only evaluate how probable the given sequence would have been, if it had already been written.</div>
+<p>We’ve looked at the conceptual explanations, so now let’s see the token probability calculation in action.</p>
+<figure class="listing"><pre><code class="language-python">@torch.inference_mode<span class="tok-kw">()</span>
+<span class="tok-kw">def</span> calc_next_token_probas(model, tokenizer, prompt, device, show=<span class="tok-kw">True</span>):
+    token_ids = torch.tensor<span class="tok-kw">(</span>tokenizer.encode<span class="tok-kw">(</span>prompt<span class="tok-kw">)</span>, device=device<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 5.5</span>Calculating next-token probabilities</figcaption></figure>
+<pre><code class="language-python">    logits = model<span class="tok-kw">(</span>token_ids.unsqueeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">))</span>.squeeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>
+    all_probas = torch.softmax<span class="tok-kw">(</span>logits, dim=-<span class="tok-fn">1</span><span class="tok-kw">)</span>
+    t_idx = torch.arange<span class="tok-kw">(</span><span class="tok-fn">0</span>, token_ids.shape<span class="tok-kw">[</span><span class="tok-fn">0</span><span class="tok-kw">]</span> - <span class="tok-fn">1</span>, device=device<span class="tok-kw">)</span>
+    next_ids = token_ids<span class="tok-kw">[</span><span class="tok-fn">1</span>:<span class="tok-kw">]</span>
+    next_token_probas = all_probas<span class="tok-kw">[</span>t_idx, next_ids<span class="tok-kw">]</span>
+    prod_next_token_probas = torch.prod<span class="tok-kw">(</span>next_token_probas<span class="tok-kw">)</span>
+    <span class="tok-kw">if</span> show:
+        print<span class="tok-kw">(</span>"Next-token probabilities:", next_token_probas<span class="tok-kw">)</span>
+        print<span class="tok-kw">(</span>"Joint probability:", prod_next_token_probas<span class="tok-kw">)</span>
+    <span class="tok-kw">else</span>:
+        <span class="tok-kw">return</span> next_token_probas, prod_next_token_probas</code></pre>
+<p>As you can see, the <code>calc_next_token_probas</code> function, which computes the next-token probabilities (illustrated in figure 5.11), is relatively short and appears simple at first glance. But a lot is happening in this function to carry out the computation. Figure 5.12 illustrates this with a simpler input text example and a tiny five-word vocabulary.</p>
+<p>The <code>calc_next_token_probas</code> function, illustrated in figure 5.12, computes next-token probabilities in a few steps. First, it computes the logits in the same way as the text-generation functions introduced earlier (for example, the <code>out = model(token_ids)</code> line in <code>generate_text_basic</code> from section 2.7).</p>
+<p>The resulting logits (step 2 in figure 5.12) have shape <code>[sequence_length, vocab_ size]</code> and are then converted into normalized probability distributions using <code>torch.softmax</code> (step 3), so that the probabilities at each position sum to 1.</p>
+<p>To extract the probability assigned to the actual next token at each position, we construct an index tensor <code>t_idx</code> for the positions we want to score and another tensor, <code>next_ids</code>, containing the corresponding target tokens. For example, if the input text is<code>"The</code> <code>capital</code> <code>of</code> <code>Germany</code> <code>is</code> <code>Berlin"</code>, then <code>t_idx</code> refers to the positions corresponding to<code>"The</code> <code>capital</code> <code>of</code> <code>Germany</code> <code>is"</code>, and <code>next_ids</code> contains the tokens shifted by one position: </p>
+<pre><code class="language-python">"capital of Germany is Berlin".</code></pre>
+<p>These target tokens are simply the input tokens shifted by one position because an LLM is trained to predict the next token in a sequence. For example, given the input<code>"The</code> <code>capital</code> <code>of</code> <code>Germany</code> <code>is</code> <code>Berlin"</code>, the model is asked at position 2 (the token for<code>"capital"</code>) to predict position 3 (the token for <code>"of"</code>). Using <code>all_probas[t_idx,</code> <code>next_ ids]</code> (steps 4 and 5) retrieves exactly these probability values for each position in the sequence.</p>
+<p>Finally, the function uses <code>torch.prod</code> to compute the sequence likelihood as the product of the per-token probabilities (step 6).</p>
+<figure><a class="zoom" href="assets/figure-5.12.png" tabindex="-1"><img src="assets/figure-5.12.png" alt="" width="1139" height="930" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 5.12</span>Extracting next-token probabilities. After converting the input text into token IDs, the model computes logits that are transformed into probabilities with a softmax function. Using index tensors for positions and true next tokens, we then get the model’s computed probability for each next token.</figcaption></figure>
+<p>Let’s see this function in action:</p>
+<pre><code class="language-python">torch.set_printoptions<span class="tok-kw">(</span>precision=<span class="tok-fn">4</span>, sci_mode=<span class="tok-kw">True)</span>
+calc_next_token_probas<span class="tok-kw">(</span>
+        model, tokenizer, device=device,
+        prompt="The capital of Germany <span class="tok-kw">is</span> Berlin"
+    <span class="tok-kw">)</span></code></pre>
+<p>This is the resulting output:</p>
+<pre><code class="language-python">Next-token probabilities: tensor([6.1512e-05, 4.6484e-01,
+1.6724e-02, 7.3828e-01, 1.6895e-01], dtype=torch.bfloat16)
+Joint probability: tensor(5.9372e-08, dtype=torch.bfloat16)</code></pre>
+<p>Let’s try another text:</p>
+<pre><code class="language-python">calc_next_token_probas<span class="tok-kw">(</span>
+        model, tokenizer, device=device,
+        prompt="The capital of Germany <span class="tok-kw">is</span> Bridge"
+    <span class="tok-kw">)</span></code></pre>
+<p>This results in the following output:</p>
+<pre><code class="language-python">Next-token probabilities: tensor([6.1512e-05, 4.6484e-01, 1.6724e-02,
+7.3828e-01, 2.9802e-07], dtype=torch.bfloat16)
+Joint probability: tensor(1.0481e-13, dtype=torch.bfloat16)</code></pre>
+<p>Analyzing these results, the first response (ending in <code>"Berlin"</code>) had a joint probability (sequence likelihood) of <code>5.9372e-08</code>, which is larger than the joint probability of the second response, <code>1.0481e-13</code>. (In decimal form, <code>5.9372e-08</code> is <code>0.000000059372</code> and </p>
+<pre><code class="language-python">1.0481e-13 is 0.00000000000010481.)</code></pre>
+<p>These results make sense because the <code>"Berlin"</code> answer receives a higher sequence likelihood than the <code>"Bridge"</code> answer. Both values are extremely small because multiplying many probabilities less than one quickly produces numbers that approach zero. This makes raw likelihoods difficult to work with in practice, especially for longer sequences where underflow becomes a problem.</p>
+<aside><span class="tag">Note</span>These scores reflect the model’s internal likelihood, not a calibrated probability of correctness. In other words, they tell us how strongly the model prefers one answer over another under its own distribution, not whether the answer is actually true, correct, or useful. A high score means the answer fits the model’s learned patterns well, not that it is guaranteed to be right.</aside>
+<p>In the next section, we’ll modify this calculation with log probabilities, which will let us avoid these numerical issues and give us a more stable way to score entire sequences.</p>
+<nav class="pager"><a class="prev" href="page-44.html" rel="prev"><span class="dir">上一页</span><span class="t">5.4 Understanding token probability scores</span></a><a class="next" href="page-46.html" rel="next"><span class="dir">下一页</span><span class="t">Probabilities vs. likelihoods</span></a></nav>
+</main>
+</body>
+</html>

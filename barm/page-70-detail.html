@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>数学推导详解 · 7.5 KL 正则项与它的失效模式 · Build a Reasoning Model</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">数学推导详解 · 7.5 KL 项</span>
+<a class="nav" href="page-69.html">原文</a>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">对应原文第 68–70 页 · 第 7 章 Improving GRPO for reinforcement learning</span></div>
+
+<h1>7.5 KL 正则项：完整数学推导与它的失效模式</h1>
+
+<div class="lead">
+这是全书<b>最有价值的一节</b>，因为它展示了一个更少见的现象：一个<b>理论上正确、实践中却会毁掉训练</b>的组件。作者不仅实现了 KL 项，还诚实地记录了它怎么失败、以及为什么数学任务上干脆不用它。
+</div>
+
+<h2 class="deriv">一、KL 散度是什么</h2>
+
+<h3>1.1 定义</h3>
+
+<p>KL 散度（相对熵）衡量两个概率分布的差异：</p>
+
+\[
+D_{\text{KL}}(P \| Q) = \sum_{v} P(v) \log \frac{P(v)}{Q(v)}
+\]
+
+<p>在 LLM 上下文里，两个分布都是<b>每个位置的 next-token 分布</b>，所以是词表上的求和（151,936 项）。</p>
+
+<h3>1.2 两个关键性质</h3>
+
+<div class="tw">
+<table>
+<thead><tr><th>性质</th><th>数学</th><th>含义</th></tr></thead>
+<tbody>
+<tr><td>非负</td><td>\(D_{\text{KL}}(P\|Q) \ge 0\)，等号当且仅当 \(P = Q\)</td><td>可以用来做惩罚项</td></tr>
+<tr><td><b>不对称</b></td><td>\(D_{\text{KL}}(P\|Q) \neq D_{\text{KL}}(Q\|P)\)</td><td><b>方向有讲究</b>，见第三节</td></tr>
+<tr><td>不归一化</td><td>可以 \(&gt; 1\)，无上界</td><td>量级需要用 \(\beta\) 调</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>1.3 拆开之后是两项；代码只保留了其中一项的采样版</h3>
+
+<p>用恒等式 \(\log \frac{P}{Q} = \log P - \log Q\) 拆开：</p>
+
+\[
+\begin{aligned}
+D_{\text{KL}}(P \| Q) &= \sum_v P(v)\, \log\frac{P(v)}{Q(v)} \\[4pt] &= \sum_v P(v)\big(\log P(v) - \log Q(v)\big) \\[4pt] &= \underbrace{\sum_v P(v)\log P(v)}_{=\,-H(P)} - \sum_v P(v)\log Q(v) \end{aligned}
+\]
+
+<p>第一项是负熵。所以精确 KL 是两项：</p>
+
+\[
+\boxed{\; D_{\text{KL}}(P\|Q) = -H(P) - \mathbb{E}_{v \sim P}\big[\log Q(v)\big] \;}
+\]
+
+<p>也可以写成期望差：</p>
+
+\[
+D_{\text{KL}}(P\|Q) = \mathbb{E}_{v \sim P}\big[\log P(v) - \log Q(v)\big]
+\]
+
+<div class="key">
+<span class="tag">这就是代码里 <code>mean(new_logps - ref_logps)</code> 的来源——以及它缺了什么</span>
+<p>精确 KL 要对整个词表求期望。代码只在<b>已经采样出来的那几个 token</b> 上算 \(\log\pi_\theta - \log\pi_{\text{ref}}\)，既没有对词表求和，也没有用 \(\pi_\theta\) 自己的分布做加权——这是一个<b>采样式代理（sampled surrogate）</b>，不是精确 KL。原文对此有明确说明，见第四节。
+</p>
+</div>
+
+<h2 class="deriv">二、KL 项在 GRPO 里的角色</h2>
+
+<h3>2.1 目标函数</h3>
+
+\[
+\mathcal{L} = \underbrace{-\frac{1}{N}\sum_{i=1}^{N}\min\big(\rho_i A_i,\; \text{clip}(\rho_i, 1-\epsilon, 1+\epsilon)A_i\big)}_{\text{7.4 裁剪}} + \underbrace{\beta\, \hat{D}_{\text{KL}}\big(\pi_\theta \,\|\, \pi_{\text{ref}}\big)}_{\text{7.5 KL}}
+\]
+
+<p>\(\beta\)（代码里的 <code>kl_coeff</code>）控制正则强度，默认为 0.02。</p>
+
+<h3>2.2 代码实现</h3>
+
+<pre><code>kl_coeff = <span class="tok-nu">0.0</span>
+<span class="tok-kw">if</span> kl_coeff:
+    ref_model = copy.deepcopy(model).to(device)   <span class="tok-cm"># 参考模型 = 训练开始时的模型</span>
+    ref_model.eval()
+    <span class="tok-kw">for</span> p <span class="tok-kw">in</span> ref_model.parameters():
+        p.requires_grad = <span class="tok-kw">False</span>             <span class="tok-cm"># 不需要梯度</span>
+<span class="tok-kw">else</span>:
+    ref_model = <span class="tok-kw">None</span></code></pre>
+
+<pre><code><span class="tok-cm"># 采样阶段：顺便算参考模型的 logprob</span>
+<span class="tok-kw">if</span> kl_coeff:
+    <span class="tok-kw">with</span> torch.no_grad():
+        ref_logp = sequence_logprob(ref_model, token_ids, prompt_len)
+<span class="tok-kw">else</span>:
+    ref_logp = <span class="tok-kw">None</span></code></pre>
+
+<pre><code><span class="tok-cm"># loss 阶段</span>
+pg_loss = -(advantages.detach() * logps).mean()
+<span class="tok-kw">if</span> kl_coeff:
+    kl_loss = kl_coeff * torch.<span class="tok-fn">mean</span>(logps - ref_logps)   <span class="tok-nu"># ⚠ 见第三节</span>
+<span class="tok-kw">else</span>:
+    kl_loss = torch.zeros_like(pg_loss)</code></pre>
+
+<h3>2.3 两个技术细节</h3>
+
+<ol class="steps">
+<li><b><code>copy.deepcopy</code> 而不是 <code>ref_model = model</code></b>：必须是<b>独立副本</b>，否则引用同一个对象，参数会被一起更新，KL 恒为 0。</li>
+<li><b><code>ref_logps</code> 也要 <code>.detach()</code></b>：参考模型已经 <code>requires_grad=False</code>，但显式 detach 更清晰（且 <code>sequence_logprob</code> 内部没有 <code>no_grad</code>）。</li>
+</ol>
+
+<p>\(\pi_{\text{ref}}\) 的更新频率：<b>训练开始时固定</b>，或很少更新（DeepSeek-R1 是每 400 步）。这和 7.4 的裁剪比率不同——后者每轮都换参考。</p>
+
+<h2 class="deriv">三、方向问题：<code>new - ref</code> 不是 <code>old - new</code></h2>
+
+<p>原文专门开了一小节讲这个（page 70 的 "KL direction versus rollout sampling"），因为这里有个真实的不一致。</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>你想度量的</th><td></td><th>应该用的差</th></tr></thead>
+<tbody>
+<tr><td>当前策略 vs 旧采样策略</td><td>→</td><td><code>old_logps - new_logps</code></td></tr>
+<tr><td>当前策略 vs 固定参考策略</td><td>→</td><td><code>new_logps - ref_logps</code> ✅ 本书用这个</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><b>但问题在于：rollout 是用 <code>old_policy</code> 采的，不是用 <code>ref_policy</code> 采的。</b>而 KL 正则想约束的是「当前策略离固定参考有多远」。</p>
+
+<div class="warn">
+<span class="tag">原文的核心批评</span>
+<p>「The subtlety is that the responses are generated by the old rollout policy, not by the current policy after the update. Therefore, <b><code>mean(new_logps - ref_logps)</code> is a simplified sampled surrogate rather than an exact KL estimate</b>.」</p>
+<p>一个严格的做法需要<b>重要性采样修正（importance-sampling correction）</b>——而 DAPO / DeepSeek-V3.2 的改进项 #9「<i>Reweight the KL term with importance sampling</i>」正是干这个的。</p>
+</div>
+
+<h3>3.1 长度敏感性</h3>
+
+<p>因为代码用的是 <code>mean</code>（不是 <code>sum</code>），<b>看起来</b>做了长度归一化。但原文指出问题更深：</p>
+
+<blockquote style="margin:1rem 0;padding-left:1rem;border-left:3px solid var(--rule);color:#3a3634">
+because the rollouts are sampled from the old policy, this simple sampled surrogate is not an exact KL estimate for the current policy unless we either sample from the current policy or apply an importance-sampling correction. As a result, the objective becomes length sensitive, which can bias training toward longer outputs in some cases, as suggested by the growing response length here, and can destabilize training.
+</blockquote>
+
+<p>也就是说：<b>错误的估计方式引入了长度依赖，而这个长度依赖的符号是「偏向更长」</b>，与 6.8 节序列 logprob 的「偏向更短」方向<b>相反</b>，两个效应互相打架。</p>
+
+<h2 class="deriv">四、失效模式：reward 崩塌后 KL 独大</h2>
+
+<p>这是本节最重要的实验观察。</p>
+
+<h3>4.1 现象</h3>
+
+<p>原文 7.5.2 的实验：训练跑到<b>大约第 200 步，reward 全部塌到 0</b>，最终 eval 准确率跌到 <b>0.0%</b>。</p>
+
+<h3>4.2 为什么会这样：梯度来源分析</h3>
+
+<p>关键在于训练后期各梯度项的贡献：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>阶段</th><th>reward</th><th>advantage</th><th>PG 梯度</th><th>KL 梯度</th></tr></thead>
+<tbody>
+<tr><td>step &lt; 200</td><td>&gt; 0</td><td>非零</td><td><b>提供梯度</b></td><td>辅助</td></tr>
+<tr><td>step &gt; 200</td><td>= 0</td><td><b>= 0</b></td><td><b>无梯度</b></td><td><b>独大</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>因为 \(\mathcal{L}_{\text{pg}} \propto A_i\)，<b>所有 reward 都为 0 时 advantage 全为 0，PG 项完全不贡献梯度</b>（这就是 <a href="page-58-detail.html">6.7 节的零 advantage 情形</a>）。KL 项成了唯一的梯度来源。</p>
+
+<h3>4.3 致命的一步：符号</h3>
+
+<p>现在看 KL 项在固定 token 上的梯度方向。损失是：</p>
+
+\[
+\mathcal{L}_{\text{KL}} = \beta \cdot \frac{1}{T}\sum_{t} \Big[\log \pi_\theta(y_t) - \log \pi_{\text{ref}}(y_t)\Big]
+\]
+
+<p>要最小化它，就要<b>压低</b>\(\log \pi_\theta(y_t)\)——也就是<b>降低模型给已经采样出来的那些 token 的概率</b>。</p>
+
+<div class="warn">
+<span class="tag">这是反直觉的部分</span>
+<p>你可能以为「拉回参考策略」会让分布回到原样。<b>但这里有个致命区别：KL 项只作用在<b>已经采样出来的那几个 token</b> 上</b>，而 <code>ref_logps</code> 在优化过程中是<b>常数</b>。</p>
+<p>压低几个已采样 token 的概率，会让概率质量<b>转移到没被采样的其他 token 上</b>——下一 token 分布变得更<b>平坦</b>，<b>熵上升</b>，输出越来越随机。</p>
+</div>
+
+<p>原文的表述：</p>
+
+<blockquote style="margin:1rem 0;padding-left:1rem;border-left:3px solid var(--rule);color:#3a3634">
+On those fixed sampled tokens, minimizing the loss mainly pushes down the current model's probability on the sampled actions, which can make the next-token distribution more spread out and <b>raise entropy</b>. The observed behavior is better understood as a failure mode of this sampled surrogate, which can lead to increasingly random outputs and the drop to 0.0% evaluation accuracy. If you want, you can plot the other evaluation metrics, such as <code>policy_ratio</code>, <code>adv_avg</code>, <code>adv_std</code>, and <code>entropy_avg</code>, and confirm that the entropy becomes very large.
+</blockquote>
+
+<div class="key">
+<span class="tag">验证方法</span>
+<p>如果你的理解对了，那么 <code>entropy_avg</code> 曲线在训练后期应该<b>剧烈上升</b>。作者邀请读者自己去画图确认——<b>这是一个可以直接做的自检实验</b>，跑 <code>7_5_plus_kl.py</code> 然后画这四个指标。</p>
+</div>
+
+<h3>4.4 对比：精确的 KL-to-reference 会怎样</h3>
+
+<p>原文明确对比了两种情况：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th></th><th>精确的 KL-to-reference</th><th>本书的 sampled surrogate</th></tr></thead>
+<tbody>
+<tr><td>优化对象</td><td>整个 next-token 分布</td><td>仅已采样的 token</td></tr>
+<tr><td>reward 崩塌后</td><td>把分布<b>拉回参考</b>（恢复能力）</td><td>压低已采样 token，<b>熵升</b>（更糟）</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>关键差异：<b>精确 KL 是把整个分布拉回去；sampled surrogate 只是「不涨」，反而可能更随机。</b>在 reward 已经崩塌、PG 项失效的情况下，这个差异是致命的。</p>
+
+<h2 class="deriv">五、实践结论：数学任务上直接关掉</h2>
+
+<p>原文的最终判断，以及 6.10 里那句「我们故意省略了 KL 项」：</p>
+
+<blockquote style="margin:1rem 0;padding-left:1rem;border-left:3px solid var(--rule);color:#3a3634">
+For math reasoning tasks, several recent systems report better stability and performance by omitting the KL term altogether.
+</blockquote>
+
+<pre><code><span class="tok-cm"># Ch6 的默认值：不要 KL</span>
+uv run 02_rlvr_grpo_scripts_intro.py
+  --kl_coeff <span class="tok-nu">0.0</span>
+
+<span class="tok-cm"># Ch7.6 format reward 实验的修复命令</span>
+uv run 7_6_plus_format_reward.py --steps <span class="tok-nu">500</span> --max_new_tokens <span class="tok-nu">1024</span> \
+  --kl_coeff <span class="tok-nu">0.001</span> --inner_epochs <span class="tok-nu">2</span></code></pre>
+
+<div class="tw">
+<table>
+<caption class="lbl">Ch7.3 的 15 条改进中与 KL 相关的部分</caption>
+<thead><tr><th>#</th><th>改进</th><th>来源</th><th>方向</th></tr></thead>
+<tbody>
+<tr><td>4</td><td>Omit the KL loss term</td><td>DAPO, Dr. GRPO</td><td><b>直接关掉</b>（数学任务）</td></tr>
+<tr><td>8</td><td>Tune the KL strength by domain</td><td>DeepSeek-V3.2</td><td>不同数据类型用不同 \(\beta\)，<b>数学任务 \(\beta = 0\)</b></td></tr>
+<tr><td>9</td><td>Reweight the KL term with importance sampling</td><td>DeepSeek-V3.2</td><td>修正 off-policy 偏差（<b>就是 3.1 提的那个修正</b>）</td></tr>
+<tr><td>10</td><td>Mask unsuitable off-policy sequences</td><td>DeepSeek-V3.2</td><td>剔除当前策略下过于不可能的 rollout</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 class="deriv">六、三个正则机制的对比总表</h2>
+
+<div class="tw">
+<table>
+<thead><tr><th></th><th>裁剪比率</th><th>KL 项</th><th>advantage 归一化</th></tr></thead>
+<tbody>
+<tr><td>参照对象</td><td>\(\pi_{\theta_{\text{old}}}\)<br>每轮更新</td><td>\(\pi_{\text{ref}}\)<br>训练初期固定</td><td>同组 rollout 均值</td></tr>
+<tr><td>约束什么</td><td>单步更新幅度</td><td>长期漂移</td><td>跨状态无差别漂移</td></tr>
+<tr><td>实现</td><td><code>clamp(ρ, 1±ε)</code></td><td><code>β·mean(logπ − logπ_ref)</code></td><td><code>(r−μ)/(σ+ε)</code></td></tr>
+<tr><td>缺陷</td><td>激进改进被裁，保守退步不裁</td><td><b>surrogate 不精确，可致熵升</b></td><td>全对/全错时无信号</td></tr>
+<tr><td>数学任务建议</td><td>保留（<code>clip_eps=10</code>）</td><td><b>关掉</b>（<code>kl_coeff=0</code>）</td><td>保留（必需）</td></tr>
+</tbody>
+</table>
+</div>
+
+<nav class="deriv-nav">
+<a href="page-67-detail.html"><span class="dir">详解</span>7.4 裁剪比率（KL 的前置）</a>
+<a href="page-65-detail.html"><span class="dir">详解</span>7.3 熵的度量与坍缩</a>
+<a href="page-58-detail.html"><span class="dir">详解</span>6.8 / 6.9 零 advantage 与梯度来源</a>
+<a href="page-69.html"><span class="dir">原文</span>7.5.1 实现 KL 项</a>
+</nav>
+
+</main>
+
+<script defer src="assets/katex/katex.min.js"></script>
+<script defer src="assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>

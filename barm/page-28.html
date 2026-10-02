@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>Loading the .jsonl file programmatically · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-27.html">
+<link rel="next" href="page-29.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 28 页 / 共 108 页</span></div>
+<h3 id="h3-loading-the-jsonl-file-programmatically">Loading the .jsonl file programmatically</h3>
+<div class="lead">The <code>.jsonl</code> file suffix is a convention used for JSON files with one data entry per row. You can view it in your favorite text editor. Optionally, you can load the <code>.jsonl</code> file created during the evaluation in Python using the following code:</div>
+<pre><code class="language-python">dev_name = str<span class="tok-kw">(</span>device<span class="tok-kw">)</span>.replace<span class="tok-kw">(</span><span class="tok-st">":"</span>, <span class="tok-st">"-"</span><span class="tok-kw">)</span>
+local_path = <span class="tok-kw">f</span><span class="tok-st">"math500_</span>{WHICH_MODEL}<span class="tok-st">-</span>{dev_name}<span class="tok-st">.jsonl"</span></code></pre>
+<pre><code class="language-python">results = []
+<span class="tok-kw">with</span> open<span class="tok-kw">(</span>local_path, <span class="tok-st">"r"</span><span class="tok-kw">)</span> <span class="tok-kw">as</span> f:
+    <span class="tok-kw">for</span> line <span class="tok-kw">in</span> f:
+        <span class="tok-kw">if</span> line.strip<span class="tok-kw">()</span>:
+            results.append<span class="tok-kw">(</span>json.loads<span class="tok-kw">(</span>line<span class="tok-kw">))</span></code></pre>
+<p>The reasoning model variant, which you can enable by setting <code>WHICH_MODEL</code> <code>="reasoning"</code> in listing 3.1, performs much better, achieving 90% accuracy on the same </p>
+<p>10-sample subset and 50.8% on the complete 500-sample dataset, as shown in table 3.1.</p>
+<div class="tw"><table><caption><span class="lbl">Table 3.1</span>MATH-500 task accuracy on different devices</caption><thead><tr><th>Mode</th><th>Device</th><th>Accuracy</th><th>MATH-500 size</th></tr></thead><tbody><tr><td>Base</td><td>CPU</td><td>30%</td><td>10</td></tr><tr><td>Base</td><td>CUDA</td><td>30%</td><td>10</td></tr><tr><td>Base</td><td>MPS</td><td>30%</td><td>10</td></tr><tr><td>Reasoning</td><td>CPU</td><td>90%</td><td>10</td></tr><tr><td>Reasoning</td><td>CUDA</td><td>90%</td><td>10</td></tr><tr><td>Reasoning</td><td>MPS</td><td>80%</td><td>10</td></tr><tr><td>Base</td><td>CUDA</td><td>15.3%</td><td>500</td></tr><tr><td>Reasoning</td><td>CUDA</td><td>50.8%</td><td>500</td></tr></tbody></table></div>
+<p>As shown in table 3.1, the reasoning variant, with its longer responses, has drastically improved accuracy, but it also increases compute intensity and answer generation time substantially (from 0.4 minutes for the base model to 7 minutes for the reasoning model on a Mac Mini with an M4 chip on the 10-sample subset, and from 13.3 minutes to 185.4 minutes on an NVIDIA H100 GPU on the 500-sample dataset), which highlights one of the tradeoffs of using reasoning models. Note that these numbers were obtained in PyTorch 2.8 and can differ across PyTorch versions.</p>
+<aside><span class="tag">Tip</span>The book’s code repository contains a bonus script that runs the code in this chapter in batched mode (https://github.com/rasbt/reasoning-from-scratch/blob/main/ch03/02_math500-verifier-scripts/evaluate_ math500_batched.py). This means it processes multiple examples per forward pass to speed up evaluation, but it requires more RAM. Using a batch size of </aside>
+<p>128 to evaluate all 500 samples reduces the running time of the base model from 13.3 minutes to 3.3 minutes on an H100 GPU. Similarly, it reduces the running time of the reasoning model from 185.4 minutes to 14.6 minutes. </p>
+<p>Note that the H100 is used as an example here; the script is compatible with other GPUs as well.</p>
+<h3 id="h3-exercise-3-2-calculating-the-average-response-length">Exercise 3.2: Calculating the average response length</h3>
+<div class="lead">Try modifying the code in this chapter to also report the average response length in the <code>evaluate_math500_stream</code> function (listing 3.15). Instead of modifying the function directly, you could also compute the response length from the generated JSON report files.</div>
+<h3 id="h3-exercise-3-3-extending-or-changing-the-evaluation-dataset">Exercise 3.3: Extending or changing the evaluation dataset</h3>
+<div class="lead">We chose a subset of only 10 examples for computational efficiency. You can also run the code on larger or different portions of the dataset to see whether the 10-sample subset is representative. Ideally, you could also experiment with your own data. (For reference, evaluating the base model on the complete MATH-500 dataset takes about 13.3 minutes for the base model and 185.4 minutes for the reasoning model on an H100.)</div>
+<h3 id="h3-exercise-3-4-experimenting-with-different-prompt-templates">Exercise 3.4: Experimenting with different prompt templates</h3>
+<div class="lead">Models can be sensitive to different prompt templates. Experiment with different prompt templates in listing 3.13 to see how they affect the results. Also, while the Qwen3 team recommends using the base model without an additional chat template, you can enable the <code>apply_chat_template=True</code> setting in the tokenizer (listing 3.1) and observe whether it improves base model performance.</div>
+<p>This concludes our implementation of a verification-based approach for math tasks (figure 3.11). I chose math because it is both natural to implement and widely used in reasoning-specific training, particularly reinforcement learning with verifiable rewards, which we’ll cover in chapter 6. The same concept can be extended to other domains, such as code; we didn’t explore that here because executing code would involve setting up a secure virtual environment.</p>
+<p>Before we move on, it’s worth noting that evaluation also comes in many other flavors. In this chapter, we focused on verification-based accuracy for math problems because it is a popular method and because we will reuse this verifier as part of the reinforcement learning pipeline in chapters 6 and 7. For a broader overview, appendix </p>
+<p>F walks through other common evaluation strategies, such as multiple-choice benchmarks, verifiers, leaderboards, and LLM-as-judge setups. It also includes hands-on examples if you want a quick tour of how these methods work in practice.</p>
+<p>Now that we have an evaluation framework in place, the next chapter will focus on improving reasoning capabilities through more advanced inference (text generation) techniques.</p>
+<figure><a class="zoom" href="assets/figure-3.11.png" tabindex="-1"><img src="assets/figure-3.11.png" alt="" width="1143" height="614" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 3.11</span>A model of the topics covered in this book. This chapter implements a verification-based evaluation pipeline. In the next chapter, we improve the reasoning capabilities of the LLM through more advanced inference techniques.</figcaption></figure>
+<h3 id="h3-summary-3">Summary</h3>
+<ul><li>There are four main evaluation methods for LLMs: multiple choice, verifiers, leaderboards, and LLM judges.</li></ul>
+<ul><li>Verification-based evaluation methods allow free-form answers and use external tools to check correctness.</li></ul>
+<ul><li>This chapter focuses on verification-based evaluation by building a math verifier that extracts, normalizes, and checks answers with SymPy.</li></ul>
+<ul><li> The verification pipeline involves several core steps, from loading the LLM to running the evaluation on a dataset.</li></ul>
+<ul><li> As part of the verification pipeline, answer extraction uses string parsing to locate boxed content (with fallback mechanisms for missing boxes).</li></ul>
+<ul><li> Another step implements normalization, which standardizes diverse answer formats by stripping LaTeX and converting mathematical notation.</li></ul>
+<ul><li>Finally, the pipeline uses mathematical equivalence checking (via SymPy) to compare expressions symbolically.</li></ul>
+<ul><li>The MATH-500 dataset provides 500 curated math problems for evaluation.</li></ul>
+<ul><li>Prompt templates significantly impact model performance.</li></ul>
+<ul><li>The reasoning model achieves higher accuracy than the base model, but it requires a much longer running time.</li></ul>
+<nav class="pager"><a class="prev" href="page-27.html" rel="prev"><span class="dir">上一页</span><span class="t">Prompt template choices</span></a><a class="next" href="page-29.html" rel="next"><span class="dir">下一页</span><span class="t">Improving reasoning with inference-time scaling</span></a></nav>
+</main>
+</body>
+</html>

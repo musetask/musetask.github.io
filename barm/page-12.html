@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>2.4 Preparing input texts for LLMs · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-11.html">
+<link rel="next" href="page-13.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 12 页 / 共 108 页</span></div>
+<h2 id="h2-preparing-input-texts-for-llms"><span class="num">2.4</span>Preparing input texts for LLMs</h2>
+<p>Let’s now explore how we can use a tokenizer to process input and output text for an </p>
+<p>LLM. Tokenizers are essential because every prompt, reasoning trace, and generated answer ultimately has to be represented as token IDs before the model can process them. Figure 2.5 provides a more detailed view of the input and output preparation steps shown earlier in figure 2.2 .</p>
+<figure><a class="zoom" href="assets/figure-2.5.png" tabindex="-1"><img src="assets/figure-2.5.png" alt="" width="1141" height="729" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 2.5</span>A simplified illustration of how an LLM receives input data and generates output. The user-provided text is tokenized into IDs using the tokenizer’s encode method, which are then processed by the LLM to generate output token IDs. These are decoded back into human-readable text using the tokenizer’s decode method.</figcaption></figure>
+<p>To see how this works in practice, we’ll begin by loading a tokenizer from this book’s <code>reasoning-from-scratch</code> Python package (installed in section 2.2). To download the tokenizer files (corresponding to the Qwen3 0.6B base LLM), run this command:</p>
+<pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.qwen3 <span class="tok-kw">import</span> download_qwen3_small
+download_qwen3_small<span class="tok-kw">(</span>kind=<span class="tok-st">"base"</span>, tokenizer_only=<span class="tok-kw">True</span>, out_dir=<span class="tok-st">"qwen3"</span><span class="tok-kw">)</span></code></pre>
+<p>This will display a progress bar:</p>
+<pre><code class="language-python">tokenizer-base.json: 100% (6 MiB / 6 MiB)</code></pre>
+<p>The command downloads the <code>tokenizer-base.json</code> file (approximately 6 MB in size) and saves it in a <code>qwen3</code> subdirectory.</p>
+<p>Now we can load the tokenizer settings from the tokenizer file into <code>Qwen3Tokenizer</code>:</p>
+<pre><code class="language-python"><span class="tok-kw">from</span> pathlib <span class="tok-kw">import</span> Path
+<span class="tok-kw">from</span> reasoning_from_scratch.qwen3 <span class="tok-kw">import</span> Qwen3Tokenizer
+tokenizer_path = Path<span class="tok-kw">(</span><span class="tok-st">"qwen3"</span><span class="tok-kw">)</span> / <span class="tok-st">"tokenizer-base.json"</span>
+tokenizer = Qwen3Tokenizer<span class="tok-kw">(</span>tokenizer_file_path=tokenizer_path<span class="tok-kw">)</span></code></pre>
+<p>Since we have not loaded the LLM yet (the central component in figure 2.5), we will start with a simpler dry run using just the tokenizer. Specifically, we will do a tokenization round trip: encode a text into token IDs and then decode those IDs back to text, as illustrated in figure 2.6.</p>
+<figure><a class="zoom" href="assets/figure-2.6.png" tabindex="-1"><img src="assets/figure-2.6.png" alt="" width="1143" height="781" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 2.6</span>The round-trip tokenization process using a tokenizer. The user-provided input text is first converted into token IDs using the encode method and then reconstructed into the original text using the decode method.</figcaption></figure>
+<p>The following code snippet implements the encoding process shown at the bottom of figure 2.6:</p>
+<pre><code class="language-python">prompt = <span class="tok-st">"Explain large language models."</span>
+input_token_ids_list = tokenizer.encode<span class="tok-kw">(</span>prompt<span class="tok-kw">)</span></code></pre>
+<p>The following code implements the decoding process, converting the token IDs back into text, shown at the top of figure 2.6:</p>
+<pre><code class="language-python">text = tokenizer.decode<span class="tok-kw">(</span>input_token_ids_list<span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>text<span class="tok-kw">)</span></code></pre>
+<p>Based on the following printed result, we can see that the tokenizer reconstructed the original input prompt from the token IDs:</p>
+<pre><code class="language-python">'Explain large language models.'</code></pre>
+<p>Before we move on to the LLM, let’s take a look at the token IDs generated by the <code>encode</code> method. The following code prints each token ID and its corresponding decoded string to illustrate how the tokenizer works:</p>
+<pre><code class="language-python"><span class="tok-kw">for</span> i <span class="tok-kw">in</span> input_token_ids_list:
+    print<span class="tok-kw">(f</span><span class="tok-st">"</span>{i}<span class="tok-st"> --&gt; </span>{tokenizer.decode<span class="tok-kw">(</span>[i]<span class="tok-kw">)</span>}<span class="tok-st">"</span><span class="tok-kw">)</span></code></pre>
+<p>The output is as follows:</p>
+<pre><code class="language-python">840 --&gt; Ex
+20772 --&gt; plain
+3460 --&gt; large
+4128 --&gt; language
+4119 --&gt; models
+13 --&gt; .</code></pre>
+<p>As you can see in the output, the original text is split into six token IDs. Each token represents a word or subword, depending on how the tokenizer segments the input.</p>
+<p>For example, “Explain” was split into two separate tokens, “Ex” and “plain.” This is because the tokenizer algorithm uses a subword-based method called <em>byte pair</em> <em>encoding</em> (BPE). BPE can represent both common and rare words using a mix of full words and subword units. Spaces are also often included in tokens (for example, “ large”), which helps the LLM detect word boundaries.</p>
+<p>The <code>Qwen3Tokenizer</code> has a vocabulary of about 151,000 tokens, which is relatively large as of this writing (for comparison, early GPT-2 has a vocabulary of approximately 50,000 tokens, and Llama 3 has a vocabulary of approximately 128,000 tokens).</p>
+<p>A larger vocabulary in a language model increases the model’s size because the embedding and output layers must store more token representations. It can also increase the per-token compute cost of producing next-token probabilities. A larger vocabulary also allows more words to be represented as single tokens rather than being split into subword components, which can reduce sequence length. For example, splitting a word like “Explain” into “Ex” and “plain” results in more input tokens. More tokens lead to longer input sequences, which increases processing time and resource usage. The tradeoff is between a larger vocabulary with a somewhat higher per-token cost and a smaller vocabulary that often produces longer token sequences. For instance, doubling the number of tokens in a sequence can roughly double the computational cost of running the model, since the model has to process and generate more tokens overall.</p>
+<p>Unfortunately, the details of tokenizers and their implementations are outside the scope of this book. If you’re interested, you can find additional resources, including my from-scratch implementation, in appendix A.</p>
+<h3 id="h3-exercise-2-1-encoding-unknown-words">Exercise 2.1: Encoding unknown words</h3>
+<div class="lead">Experiment with the tokenizer to see if and how it handles unknown words. To do this, get creative and make up words that don’t exist. Also, if you speak multiple languages, try to encode words in a language other than English.</div>
+<nav class="pager"><a class="prev" href="page-11.html" rel="prev"><span class="dir">上一页</span><span class="t">2.3 Understanding hardware needs and recommendations</span></a><a class="next" href="page-13.html" rel="next"><span class="dir">下一页</span><span class="t">2.5 Loading pretrained models</span></a></nav>
+</main>
+</body>
+</html>

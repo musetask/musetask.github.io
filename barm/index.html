@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>开篇 · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="next" href="page-02.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 1 页 / 共 108 页</span><span class="cur">开篇</span></div>
+<p>For online information and ordering of this and other Manning books, please visit www.manning.com. The publisher offers discounts on this book when ordered in quantity.</p>
+<p>For more information, please contact</p>
+<p>Special Sales Department</p>
+<p>Manning Publications Co.</p>
+<p>20 Baldwin Road</p>
+<p>PO Box 761</p>
+<p>Shelter Island, NY 11964</p>
+<p>Email: orders@manning.com</p>
+<p>© 2026 Manning Publications Co. All rights reserved.</p>
+<p>No part of this publication may be reproduced, stored in a retrieval system, or transmitted, in any form or by means electronic, mechanical, photocopying, or otherwise, without prior written permission of the publisher.</p>
+<p>Many of the designations used by manufacturers and sellers to distinguish their products are claimed as trademarks. Where those designations appear in the book, and Manning Publications was aware of a trademark claim, the designations have been printed in initial caps or all caps.</p>
+<p>Recognizing the importance of preserving what has been written, it is Manning’s policy to have the books we publish printed on acid-free paper, and we exert our best efforts to that end. Recognizing also our responsibility to conserve the resources of our planet, Manning books are printed on paper that is at least 15 percent recycled and processed without the use of elemental chlorine.</p>
+<p>The author and publisher have made every effort to ensure that the information in this book was correct at press time. The author and publisher do not assume and hereby disclaim any liability to any party for any loss, damage, or disruption caused by errors or omissions, whether such errors or omissions result from negligence, accident, or any other cause, or from any usage of the information herein.</p>
+<p>Development editor: Dustin Archibald</p>
+<p>Manning Publications Co. </p>
+<p>Technical editor: David Caswell</p>
+<p>20 Baldwin Road</p>
+<p>Review editor: Kishor Rit</p>
+<p>PO Box 761 </p>
+<p>Production editor: Kathy Rossland</p>
+<p>Shelter Island, NY 11964</p>
+<p>Copy editor: Andy Carroll</p>
+<p>Proofreader: Katie Tennant</p>
+<p>Typesetter: Tamara ŠveliÊ SabljiÊ</p>
+<p>Cover designer: Marija Tudor</p>
+<p>ISBN 9781633434677</p>
+<p>Printed in the United States of America</p>
+<p><em>To Liza, my partner in every adventure; to my beloved family; and to the worldwide community of programmers and creators who have shaped my journey as an author</em></p>
+<h1 id="h1-preface">preface</h1>
+<p>More than a decade ago, my journey into AI began with statistical pattern classification, where I learned how far relatively simple models can go when they capture useful structure in data. Over time, that curiosity shifted from models that recognize patterns to models that can explain, plan, and solve multistep problems.</p>
+<p>With the release of ChatGPT in 2022, large language models (LLMs) moved into the mainstream. A later shift, especially visible in late 2024 and throughout 2025, was the extension of LLMs to create so-called reasoning models, which can solve more complex problems, especially in technical domains such as math and code.</p>
+<p>At the same time, reasoning models can feel opaque, and this book is my attempt to make reasoning models more approachable. Rather than training a giant model from scratch, we’ll begin with a small pretrained LLM and apply reasoning techniques step by step. Along the way, you will implement text generation, evaluation with verifiers, inference-time scaling methods, and training methods, such as reinforcement learning with verifiable rewards and distillation from scratch. By the end, you will understand how the main reasoning methods work in practice and how they fit into a modern LLM development workflow.</p>
+<p>Like my earlier book, <em>Build a Large Language Model (From Scratch)</em>, this one takes a code-first approach, but the focus here is different. Instead of explaining the Transformer architecture in depth or covering large-scale pretraining, here we’ll concentrate on the methods that turn a conventional LLM into a reasoning model. If you have read the earlier book, this one should feel like a natural next step. If you haven’t, you can still follow along here without needing all the underlying LLM details up front.</p>
+<p>We’ll use math examples throughout the book because they are practical for reasoning research and easy to verify automatically. That makes them a useful test bed for understanding whether a model is actually solving a problem correctly. More broadly, my goal is not to teach one narrow benchmark but to give you the tools and intuition needed to build, evaluate, and improve reasoning systems in your own work.</p>
+<p>When I first started working on reasoning models, I had to piece together ideas from papers, repositories, and scattered implementation notes. I hope this book saves you that effort and gives you a clearer path from first principles to working code. I strongly believe that the best way to understand reasoning models is to build one yourself.</p>
+<p>Happy reading and coding!</p>
+<h1 id="h1-acknowledgments">acknowledgments</h1>
+<p>Writing a book is a significant undertaking, and I would like to express my sincere gratitude to my wife, Liza, for her patience and support throughout this process. Her unconditional love and constant encouragement have been absolutely essential.</p>
+<p>I am incredibly grateful to Daniel Kleine and Dmitry Labazkin, whose invaluable feedback on the draft chapters and code went far above and beyond. Daniel’s keen eye for detail and style, along with Dmitry’s sharp insights into code performance, have undoubtedly made this book a smoother and more enjoyable read for all.</p>
+<p>I would also like to thank the wonderful team at Manning Publications. Michael Stephens, thank you for the many productive conversations that helped shape the direction of this book. Dustin Archibald, I greatly appreciate your constructive guidance on adhering to Manning’s guidelines, as well as your flexibility in accommodating the unique demands of this unconventional from-scratch approach. Special thanks also go to Aleksandar Dragosavljevic and Ivan Martinović for their work on layout and formatting. Finally, technical editor David Caswell, thank you for your thoughtful and generous feedback throughout the process. David is an industry-leading consultant focused on applying LLMs to journalism. He previously led AI innovation at the BBC, Tribune Publishing, and Yahoo!, he publishes peer-reviewed research on AI automation of information workflows, and he is a frequent speaker and writer on LLMs in the emerging AI-mediated information ecosystem.</p>
+<p>Finally, I extend my thanks to the reviewers Alejandro Cuevas Rivero, Muhammad Ali Shafique, Arun Prakash A, Christopher Brousseau, David Curran, Fabio Montagna, Hamza Farooq, Hongming Zheng, Julien Thomazo, Lindo William Khoza, Michael Anthony Garcia, Naman Dwivedi, Pere Martra, Pradeep Dasigi, Salvatore Raieli, Sifal Klioui, Syed Baqir Ali, Thomas Viehmann, Tianrui Liu, Toni Ramchandani, and Viton </p>
+<p>Vitanis for their thorough feedback on the drafts. Your keen eyes and insightful comments have been essential in improving the quality of this book.</p>
+<p>To everyone who has contributed to this journey, I am sincerely grateful. Your support, expertise, and dedication have been instrumental in bringing this book to fruition. Thank you!</p>
+<h1 id="h1-about-this-book">about this book</h1>
+<p><em>Build a Reasoning Model (From Scratch)</em> is a hands-on guide to understanding how modern reasoning LLMs work by implementing their core techniques yourself. Rather than training a base model from the ground up, this book starts with a pretrained open source base LLM and shows you how to extend it step by step with reasoning capabilities. Along the way, you will learn how to generate text with a base model, evaluate answers with verifiers, improve performance through inference-time scaling, train with reinforcement learning, and distill reasoning behavior into smaller models. By the end of the book, you will understand how the main reasoning methods fit together in a practical LLM development workflow and how to build small but functional reasoning systems of your own.</p>
+<p>The book takes a code-first approach. The “from scratch” part refers to implementing the reasoning methods yourself so that the underlying mechanics become transparent. If you are interested in how base LLMs are built and pretrained in detail, my earlier book, <em>Build a Large Language Model (From Scratch)</em> (<a href="http://mng.bz/M96o">http://mng.bz/M96o</a>), provides that foundation, but it is not required for reading this book.</p>
+<nav class="pager"><span class="void" aria-hidden="true"></span><a class="next" href="page-02.html" rel="next"><span class="dir">下一页</span><span class="t">Who should read this book</span></a></nav>
+</main>
+</body>
+</html>

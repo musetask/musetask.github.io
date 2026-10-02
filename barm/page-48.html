@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>5.6 Scoring model confidence with log probabilities · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-47.html">
+<link rel="next" href="page-49.html">
+<link rel="stylesheet" href="assets/detail.css">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 48 页 / 共 108 页</span></div>
+<aside class="detail-link"><span class="tag">补充材料</span>这一节的数学推导（公式已用 KaTeX 排版，含逐步手算验证）在 <a href="page-48-detail.html"><b>5.5 / 5.6 概率到 logprob 与置信度打分</b></a>。全部推导页的索引见 <a href="math-detail.html">math-detail.html</a>。</aside>
+<h2 id="h2-scoring-model-confidence-with-log-probabilities"><span class="num">5.6</span>Scoring model confidence with log probabilities</h2>
+<p>The previous two sections explained the concepts of token probabilities and log probabilities in great detail. In this section, we’ll make slight modifications to the log-probability computation to develop a log-probability-based scorer function analogous to the heuristic scorer we developed at the beginning of this chapter (see figure 5.17).</p>
+<p>The logprob scoring method we’ll develop is very similar to the procedure we covered in the previous section. We’ll make two main modifications. First, we’ll exclude the prompt from the score calculation and calculate the score only for the answer tokens. </p>
+<figure><a class="zoom" href="assets/figure-5.17.png" tabindex="-1"><img src="assets/figure-5.17.png" alt="" width="1030" height="500" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 5.17</span>This section implements a logprob scorer based on token log probabilities, which we’ll use in the self-refinement method later in this chapter.</figcaption></figure>
+<p>Second, we’ll average (instead of sum) the token log probabilities so that it is fairer to compare two sequences of different lengths. The updated calculation with these two modifications is shown in figure 5.18.</p>
+<p>For illustration, let’s implement the two modifications shown in figure 5.18 using the <code>calc_next_token_logprobas</code> function from listing 5.7. For example, suppose we have the following prompt and answer:</p>
+<pre><code class="language-python">example_prompt = "What <span class="tok-kw">is</span> the capital of Germany?"
+example_answer = " The capital of Germany <span class="tok-kw">is</span> Berlin."
+next_token_logprobas, sum_next_token_logprobas = calc_next_token_logprobas<span class="tok-kw">(</span>
+        model, tokenizer, device=device,
+        prompt=example_prompt+example_answer,
+        show=<span class="tok-kw">False</span>
+    <span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>"Next-token logprobas:", next_token_logprobas<span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>"Joint log-probability:", sum_next_token_logprobas<span class="tok-kw">)</span></code></pre>
+<p>This prints the following output. (Note that the tensor contains scores for the prompt token as well, which is why the numbers appear different from figure 5.18. This will become clearer as you read on.)</p>
+<pre><code class="language-python">Next-token logprobas: tensor([-0.4512, -0.3418, -8.3125, -0.3906,
+-3.8125, -3.0469, -1.1719, 0.0000, -0.0155, 0.0000,
+-0.0078, -0.0752, -0.1582], dtype=torch.bfloat16)
+Joint log-probability: tensor(-17.7500, dtype=torch.bfloat16)</code></pre>
+<pre><code class="language-python">What is the capital of Germany?
+The
+-1.1719</code></pre>
+<pre><code class="language-python">What is the capital of Germany?
+The capital
+0.0000
+What is the capital of Germany?
+The capital of
+-0.0155
+What is the capital of Germany?
+The capital of Germany
+0.0000
+What is the capital of Germany?
+-0.0078
+The capital of Germany is
+What is the capital of Germany?
+-0.0752
+The capital of Germany is Berlin</code></pre>
+<pre><code class="language-python">What is the capital of Germany?
+-0.1582
+The capital of Germany is Berlin.
+(-1.1719 + 0.0000 + -0.01550 + 0.0000 +
+-0.0078 + -0.0752 + -0.1582) / 7
+= -0.2041</code></pre>
+<figure><a class="zoom" href="assets/figure-5.18.png" tabindex="-1"><img src="assets/figure-5.18.png" alt="" width="1014" height="1004" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 5.18</span>The modified logprob scoring procedure. The prompt tokens are excluded from the calculation, and only the log probabilities of the answer tokens are collected. These values are then averaged to obtain a length-normalized score, allowing us to compare answers of different lengths fairly.</figcaption></figure>
+<p>We can then calculate the number of answer tokens with the following code, which yields <code>7</code>:</p>
+<pre><code class="language-python">print<span class="tok-kw">(</span>len<span class="tok-kw">(</span>tokenizer.encode<span class="tok-kw">(</span>example_answer<span class="tok-kw">)))</span></code></pre>
+<p>Then, to calculate the average log probability over the answer tokens, as shown in figure 5.18, we need to average over those seven answer tokens:</p>
+<pre><code class="language-python">last_7 = next_token_logprobas<span class="tok-kw">[</span>-<span class="tok-fn">7</span>:<span class="tok-kw">]</span>
+print<span class="tok-kw">(</span>last_7<span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>torch.mean<span class="tok-kw">(</span>last_7<span class="tok-kw">))</span></code></pre>
+<pre><code class="language-python">This prints:
+tensor<span class="tok-kw">(</span>[-<span class="tok-fn">1.1719</span>, <span class="tok-fn">0.0000</span>, -<span class="tok-fn">0.0155</span>, <span class="tok-fn">0.0000</span>, -<span class="tok-fn">0.0078</span>, -<span class="tok-fn">0.0752</span>, -<span class="tok-fn">0.1582</span>],
+       dtype=torch.bfloat16<span class="tok-kw">)</span>
+tensor<span class="tok-kw">(</span>-<span class="tok-fn">0.2041</span>, dtype=torch.bfloat16<span class="tok-kw">)</span></code></pre>
+<p>We can see that the resulting average, <code>-0.2041</code>, is similar to what’s shown in figure 5.18.</p>
+<p>We can combine the <code>calc_next_token_logprobas</code> code with this calculation into a </p>
+<pre><code class="language-python">new function, avg_logprob_answer.</code></pre>
+<figure class="listing"><pre><code class="language-python">@torch.inference_mode<span class="tok-kw">()</span>
+<span class="tok-kw">def</span> avg_logprob_answer(model, tokenizer, prompt, answer, device="cpu"):
+    prompt_ids = tokenizer.encode<span class="tok-kw">(</span>prompt<span class="tok-kw">)</span>
+    answer_ids = tokenizer.encode<span class="tok-kw">(</span>answer<span class="tok-kw">)</span>
+    full_ids = torch.tensor<span class="tok-kw">(</span>prompt_ids + answer_ids, device=device<span class="tok-kw">)</span>
+    logits = model<span class="tok-kw">(</span>full_ids.unsqueeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">))</span>.squeeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>
+    logprobs = torch.log_softmax<span class="tok-kw">(</span>logits, dim=-<span class="tok-fn">1</span><span class="tok-kw">)</span>
+    start = len<span class="tok-kw">(</span>prompt_ids<span class="tok-kw">)</span> - <span class="tok-fn">1</span>
+    end = full_ids.shape<span class="tok-kw">[</span><span class="tok-fn">0</span><span class="tok-kw">]</span> - <span class="tok-fn">1</span></code></pre><figcaption><span class="lbl">Listing 5.8</span>Average log-probability scoring for answer tokens Encode prompt and answer tokens separately to get the prompt length later.</figcaption></figure>
+<pre><code class="language-python">    t_idx = torch.arange<span class="tok-kw">(</span>start, end, device=device<span class="tok-kw">)</span>
+    next_tokens = full_ids<span class="tok-kw">[</span>start + <span class="tok-fn">1</span> : end + <span class="tok-fn">1</span><span class="tok-kw">]</span>
+    next_token_logps = logprobs<span class="tok-kw">[</span>t_idx, next_tokens<span class="tok-kw">]</span></code></pre>
+<pre><code class="language-python">    <span class="tok-kw">return</span> torch.mean<span class="tok-kw">(</span>next_token_logps<span class="tok-kw">)</span>
+The avg_logprob_answer function is similar to the calc_next_token_logprobas func</code></pre>
+<p>tion in listing 5.7, except that we calculate logprobs only for the answer tokens rather than for the whole sequence, including the prompt, and we average the calculated logprob values instead of summing them.</p>
+<p>Let’s apply this new function to the prompt and answer from earlier in this section:</p>
+<pre><code class="language-python">score_1 = avg_logprob_answer<span class="tok-kw">(</span>
+    model, tokenizer,
+    prompt="What <span class="tok-kw">is</span> the capital of Germany?",
+    answer=" The capital of Germany <span class="tok-kw">is</span> Berlin.",
+    device=device
+<span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>score_1<span class="tok-kw">)</span></code></pre>
+<p>This returns <code>-0.2041</code>, as before, which indicates that we implemented the function correctly. We can now also apply this function to the nonsensical <code>"Bridge"</code> answer:</p>
+<pre><code class="language-python">score_2 = avg_logprob_answer<span class="tok-kw">(</span>
+    model, tokenizer,
+    prompt="What <span class="tok-kw">is</span> the capital of Germany?",
+    answer=" The capital of Germany <span class="tok-kw">is</span> Bridge.",
+    device=device
+<span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>score_2<span class="tok-kw">)</span></code></pre>
+<p>The resulting score here is <code>-3.8906</code>, which is much lower than the <code>"Berlin"</code> score, as expected.</p>
+<p>With the average logprob scoring function now in place, we could also calculate the scores for the MATH-500 prompt (<code>prompt_cot</code>) we defined at the beginning of this chapter and the responses we stored as <code>response_1</code> and <code>response_2</code>. I’ll leave that to you as an exercise.</p>
+<p>We’ve spent a lot of time in this chapter going through the concepts of next-token probability and log-probability scoring. One reason for doing so is that we can use these as scorers in the upcoming section on self-refinement. A second reason is that the concept of log probabilities will also be relevant when we implement the reinforcement learning with verifiable rewards training in the next chapter.</p>
+<p>At the same time, it is important not to assume logprob scoring can be a universal fix. Because it measures what the model itself strongly prefers, logprob scoring can still favor confident mistakes over correct but less strongly preferred answers. In practice, logprob scoring is best viewed as one useful scoring signal among several, not as a guaranteed tiebreaker.</p>
+<h3 id="h3-exercise-5-3-using-the-logprob-scorer-as-a-tiebreaker-in-sel">Exercise 5.3: Using the logprob scorer as a tiebreaker in self-consistency</h3>
+<div class="lead">Using the logprob scorer instead of the heuristic scorer in exercise 5.1, extend the self-consistency implementation (<code>self_consistency_vote</code>) from the previous chapter (listing 4.17) so it can handle ties among candidate answers. Then run the two implementations on a subset of the MATH-500 dataset to see which tiebreaking method performs better.</div>
+<h3 id="h3-exercise-5-4-using-the-logprob-scorer-in-a-best-of-n-setup">Exercise 5.4: Using the logprob scorer in a best-of-N setup</h3>
+<div class="lead">Extend the self-consistency implementation so that the final answer is chosen using the logprob scorer (<code>avg_logprob_answer</code>) rather than the heuristic scorer or majority voting, as in exercise 5.2. Then run the different implementations on a subset of the MATH-500 dataset to see which tiebreaking method performs better. Tip: You don’t need to modify the <code>self_consistency_vote </code>function itself to apply the tiebreaking. You can apply tiebreaking to the <code>results</code> dictionary returned by <code>self_ consistency_vote</code>, which is used inside the <code>evaluate_math500_stream</code> function from listing 3.15.</div>
+<nav class="pager"><a class="prev" href="page-47.html" rel="prev"><span class="dir">上一页</span><span class="t">Working with log probabilities</span></a><a class="next" href="page-49.html" rel="next"><span class="dir">下一页</span><span class="t">5.7 Self-refinement through iterative feedback</span></a></nav>
+</main>
+</body>
+</html>

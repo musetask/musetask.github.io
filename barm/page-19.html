@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>Exercise 2.2: Rerunning code on non-CPU devices · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-18.html">
+<link rel="next" href="page-20.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 19 页 / 共 108 页</span></div>
+<h3 id="h3-exercise-2-2-rerunning-code-on-non-cpu-devices">Exercise 2.2: Rerunning code on non-CPU devices</h3>
+<div class="lead">If you have access to a GPU, rerun the code in this chapter on a GPU device and compare the runtimes to the CPU runtimes. </div>
+<p>In case you are curious about how the different model configurations compare on an Apple Silicon GPU and a high-end NVIDIA GPU, see table 2.1.</p>
+<div class="tw"><table><caption><span class="lbl">Table 2.1</span>Token generation speeds and GPU memory usage for different model configurations on different hardware</caption><thead><tr><th>Mode</th><th>Hardware</th><th>Tokens/sec</th><th>GPU memory</th></tr></thead><tbody><tr><td>Regular</td><td>Mac Mini M4 CPU</td><td>5</td><td>-</td></tr><tr><td>Regular compiled</td><td>Mac Mini M4 CPU</td><td>6</td><td>-</td></tr><tr><td>KV cache</td><td>Mac Mini M4 CPU</td><td>28</td><td>-</td></tr><tr><td>KV cache compiled</td><td>Mac Mini M4 CPU</td><td>68</td><td>-</td></tr><tr><td>Regular</td><td>Mac Mini M4 GPU</td><td>27</td><td>-</td></tr><tr><td>Regular compiled</td><td>Mac Mini M4 GPU</td><td>43</td><td>-</td></tr><tr><td>KV cache</td><td>Mac Mini M4 GPU</td><td>41</td><td>-</td></tr><tr><td>KV cache compiled</td><td>Mac Mini M4 GPU</td><td>71</td><td>-</td></tr><tr><td>Regular</td><td>NVIDIA H100 GPU</td><td>51</td><td>1.55 GB</td></tr><tr><td>Regular compiled</td><td>NVIDIA H100 GPU</td><td>164</td><td>1.81 GB</td></tr><tr><td>KV cache</td><td>NVIDIA H100 GPU</td><td>48</td><td>1.52 GB</td></tr><tr><td>KV cache compiled</td><td>NVIDIA H100 GPU</td><td>141</td><td>1.81 GB</td></tr></tbody></table></div>
+<p>As shown in table 2.1, the NVIDIA GPU delivers the best performance, which is expected. The CPU still performs surprisingly well once a KV cache and a compiled model are enabled. However, there are a few important details that explain why the GPU gains are not larger for this particular setup.</p>
+<p>First, the model in this chapter is not optimized for GPUs. The implementation aims for a good balance between memory usage and compute speed because memory is the main bottleneck for most readers. A GPU-optimized variant would preallocate the full K and V tensors up to the maximum context length (in this case, 40 thousand tokens). This preallocation avoids repeated concatenation via <code>torch.cat</code>, but it also increases memory consumption.</p>
+<p>With a large context size, preallocating, for example, 40 thousand entries for both K and V adds a noticeable footprint. Another approach would be to let users specify a fixed context size at construction time, but that introduces extra configuration overhead. The KV cache here grows on demand via <code>torch.cat</code>, which is simpler and more memory friendly, although concatenating non-preallocated tensors is a bit slower on GPUs.</p>
+<p>I included a GPU-optimized version in the bonus materials, where the KV cache variant is slightly faster than the regular version, but it uses more memory (see <a href="https://github.com/rasbt/reasoning-from-scratch/tree/main/ch02/03_optimized-LLM">https://github.com/rasbt/reasoning-from-scratch/tree/main/ch02/03_optimized-LLM</a>).</p>
+<p>Second, the model used for benchmarking is small. Larger models benefit much more from KV caching and from GPU-optimized memory layouts. The same holds for batched inference, where GPUs can better saturate their compute units. With a larger model or a GPU-focused implementation, the performance gap in favor of the NVIDIA GPU would be more pronounced.</p>
+<p>All examples were run using a single prompt (i.e., a batch size of 1). For readers interested in how performance scales with multiple inputs, batched inference is discussed in appendix E.</p>
+<h3 id="h3-summary-2">Summary</h3>
+<ul><li>Using LLMs to generate text involves multiple key steps:</li></ul>
+<ul><li> Setting up the coding environment to run LLM code and install necessary dependencies</li></ul>
+<ul><li> Loading a pretrained base LLM (such as Qwen3 0.6B), which will be extended with reasoning capabilities in later chapters</li></ul>
+<ul><li> Initializing and using a tokenizer, which converts text input into token IDs and decodes output back to human-readable form</li></ul>
+<ul><li>Text generation in LLMs follows a sequential (autoregressive) process, where the model generates one token at a time by predicting the next most likely token. The speed and efficiency of text generation can be improved through</li></ul>
+<ul><li> KV caching, which stores intermediate states to avoid recomputing previously encountered input tokens at each step</li></ul>
+<ul><li> Model compilation using <code>torch.compile</code>, which optimizes runtime performance</li></ul>
+<ul><li>This chapter lays the technical foundation for reasoning capabilities in upcoming chapters by implementing a functional, efficient text generation pipeline using a pretrained base LLM.</li></ul>
+<h1 id="h1-evaluating-reasoning-models">Evaluating reasoning models</h1>
+<p class="summary">This chapter covers</p>
+<ul><li>Extracting final answers reliably from an LLM response</li><li>Verifying answer correctness by comparing an LLM’s output to the reference solution using a symbolic math solver</li><li>Running a full evaluation pipeline that loads a pretrained model, generates outputs, and grades them against a dataset</li></ul>
+<p>Evaluation is what lets us distinguish between LLMs that merely sound convincing and those that can solve problems correctly. LLM evaluation techniques span a broad range of approaches, from measuring task accuracy to making sure that LLMs adhere to specific safety standards. In this chapter, “evaluate” means quantitatively testing a model on many examples and scoring its outputs against reference answers.</p>
+<p>More specifically, we’ll focus on implementing a <em>verification</em>-based method that checks whether an LLM can solve math problems accurately by comparing its answers against reference solutions using a calculator-like implementation.</p>
+<p>This verifier is particularly useful because it not only evaluates performance on math tasks but also introduces the principle of <em>verifiable rewards</em>, the foundation of the reinforcement learning approach to reasoning models that we’ll implement in chapter 6. </p>
+<figure><a class="zoom" href="assets/figure-3.1.png" tabindex="-1"><img src="assets/figure-3.1.png" alt="" width="1143" height="768" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 3.1</span>A model of the topics covered in this book. This chapter covers evaluation methods (stage 2), with a special focus on implementing verifiers, which we’ll reuse as the basis for verifiable rewards in chapter 6.</figcaption></figure>
+<nav class="pager"><a class="prev" href="page-18.html" rel="prev"><span class="dir">上一页</span><span class="t">2.9 Faster inference via PyTorch model compilation</span></a><a class="next" href="page-20.html" rel="next"><span class="dir">下一页</span><span class="t">3.1 Building a math verifier</span></a></nav>
+</main>
+</body>
+</html>

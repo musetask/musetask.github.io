@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>数学推导详解 · 5.5 概率到 logprob 与 5.6 置信度打分 · Build a Reasoning Model</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">数学推导详解 · 5.5 / 5.6 logprob</span>
+<a class="nav" href="page-48.html">原文</a>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">对应原文第 46–48 页 · 第 5 章 Inference-time scaling via self-refinement</span></div>
+
+<h1>5.5 从概率到 logprob，5.6 用 logprob 打分：完整推导</h1>
+
+<div class="lead">
+这一页是 <a href="page-58-detail.html">6.8 / 6.9 的前置知识</a>。第 5 章建立的两个概念——<b>log 空间</b>和<b>长度归一化</b>——在第 6 章 GRPO 里会直接复用，而且 5.6 的实验结论会反过来解释 GRPO 里的长度偏置。
+</div>
+
+<h2 class="deriv">一、概率 vs 似然（原文 5.4 开头澄清）</h2>
+
+<p>原文专门澄清了一组容易混用的词：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th></th><th>概率 probability</th><th>似然 likelihood</th></tr></thead>
+<tbody>
+<tr><td>方向</td><td>「给定模型，预测数据」</td><td>「给定数据，评估模型」</td></tr>
+<tr><td>性质</td><td>非负，<b>跨所有结果和为 1</b></td><td>不必归一化</td></tr>
+<tr><td>看作谁的函数</td><td>数据的函数</td><td><b>参数 \(\theta\) 的函数</b></td></tr>
+<tr><td>LLM 里的对应</td><td>单 token 概率 <code>next_token_probas</code></td><td>序列乘积 <code>torch.prod(next_token_probas)</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>原文的结论：<i>In LLMs, the next-token probability is technically a probability, not a likelihood, because it comes from a normalized distribution over all possible next tokens that sums to one.</i></p>
+
+<h2 class="deriv">二、为什么要取对数</h2>
+
+<h3>2.1 数值下溢的定量分析</h3>
+
+<p>第 5 章和第 6 章都提到这个问题，但 5.5 讲得更细。序列联合概率是连乘：</p>
+
+\[
+P(y_{1:T} \mid x) = \prod_{t=1}^{T} P(y_t \mid y_{&lt;t}, x)
+\]
+
+<p>假设每个 token 概率都是 0.9，看它在不同长度下的表现：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>token 数</th><th>\(0.9^T\)</th><th>状态</th></tr></thead>
+<tbody>
+<tr><td>10</td><td>0.35</td><td>安全</td></tr>
+<tr><td>100</td><td>\(2.7 \times 10^{-5}\)</td><td>安全</td></tr>
+<tr><td>1,000</td><td>\(1.7 \times 10^{-46}\)</td><td>float32 尚可，bfloat16 已接近下限</td></tr>
+<tr><td>10,000</td><td>\(10^{-458}\)</td><td><b>下溢成 0</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<p>而本书第 6 章的 rollout 动辄 <b>256–1024</b> 个 token。第 5.6 节的例子只有 5 个 token 就已经有 <code>-16.6250</code>，换成 265 token（6.8 节的真实例子）就是 <code>-16.239</code>。</p>
+
+<h3>2.2 对数把连乘变连加</h3>
+
+\[
+\log P(y_{1:T} \mid x) = \sum_{t=1}^{T} \log P(y_t \mid y_{&lt;t}, x)
+\]
+
+<p>加法不会有下溢问题：一个 1000 项的和最多是 \(-1000 \times 151936\) 之类的有限数，永远在 float 范围内。</p>
+
+<div class="key">
+<span class="tag">这不是近似</span>
+<p>因为 \(\log(ab) = \log a + \log b\) 是<b>恒等式</b>，两边取对数得到的表达式<b>精确等于</b>联合概率的对数。原文强调：<i>the log probability of a sequence is just the sum of the log probabilities of its individual tokens. This is both numerically more stable and easier to work with.</i></p>
+</div>
+
+<h3>2.3 代码：两处改动</h3>
+
+<p>原文指出从 5.4 版的 <code>calc_next_token_probas</code> 改到 5.5 版的 <code>calc_next_token_logprobas</code>，只需两处：</p>
+
+<pre><code><span class="tok-cm"># 5.4 版                                     5.5 版</span>
+probas = torch.softmax(logits, dim=<span class="tok-nu">-1</span>)    →   logprobas = torch.log_softmax(logits, dim=<span class="tok-nu">-1</span>)
+joint_probas = torch.prod(next_token_probas)  →   joint_logprobas = torch.sum(next_token_logprobas)</code></pre>
+
+<div class="warn">
+<span class="tag">原文的 Warning</span>
+<p>「使用不匹配的组合，比如 <code>torch.softmax</code> 配 <code>torch.sum</code>，或 <code>torch.log_softmax</code> 配 <code>torch.prod</code>，<b>技术上可行但数学上错误</b>。」</p>
+<p>对概率取 sum 没有意义（量纲不对，而且不满足概率公理）；对 logprob 取 prod 则会得到一个既不是概率也不是对数概率的怪东西。</p>
+</div>
+
+<h2 class="deriv">三、一个能背下来的对照实验</h2>
+
+<p>原文用同一个 prompt 配两个不同答案，测出 logprob 的差别：</p>
+
+<pre><code><span class="tok-fn">calc_next_token_logprobas</span>(model, tokenizer, device=device,
+                       prompt=<span class="tok-st">"The capital of Germany is Berlin"</span>)
+<span class="tok-cm"># Next-token log-probabilities: [-9.6875, -0.7695, -4.0938, -0.3008, -1.7812]
+# Joint log-probability:       -16.6250</span>
+
+<span class="tok-fn">calc_next_token_logprobas</span>(model, tokenizer, device=device,
+                       prompt=<span class="tok-st">"The capital of Germany is Bridge"</span>)
+<span class="tok-cm"># Next-token log-probabilities: [-9.6875, -0.7695, -4.0938, -0.3008, -15.0000]
+# Joint log-probability:       -29.8750</span></code></pre>
+
+<p>前 4 个 token 完全相同（同样的 logprob），只有最后一个不同：</p>
+
+\[
+-1.7812 - (-15.0000) = 13.22
+\]
+\[
+-16.6250 - (-29.8750) = 13.25 \approx 13.22
+\]
+
+<div class="key">
+<span class="tag">这个数字解释了一切</span>
+<p>差别<b>只来自最后一个 token</b>。模型在「Bridge」这个位置几乎<b>完全没料到</b>——logprob −15 换算成概率是 \(e^{-15} \approx 3 \times 10^{-7}\)。</p>
+<p>换算一下：Berlin 的最后一个 token 概率 \(e^{-1.78} \approx 0.17\)，Bridge 是 \(e^{-15} \approx 0.0000003\)。<b>差了约 56 万倍。</b></p>
+</div>
+
+<h2 class="deriv">四、5.6 的两个改动：排除 prompt + 平均</h2>
+
+<p>第 5.6 节把 logprob 变成一个<b>打分器</b>（scorer），用于 self-refinement 里选优。它对 5.5 做了两处修改：</p>
+
+<ol class="steps">
+<li><b>排除 prompt，只算答案 token。</b>否则测的是「模型有多愿意说这句话」（prompt 是我们强加的，和答案质量无关）。</li>
+<li><b>用 mean 不用 sum。</b>为了公平比较不同长度的回答。</li>
+</ol>
+
+<h3>4.1 公式对照</h3>
+
+<div class="tw">
+<table>
+<thead><tr><th></th><th>公式</th><th>用途</th></tr></thead>
+<tbody>
+<tr><td>5.5 联合</td><td>\(\sum_{t=1}^{T} \log P(y_t \mid y_{&lt;t}, x)\)</td><td>看整个序列有多不可能</td></tr>
+<tr><td>5.6 打分</td><td>\(\dfrac{1}{T}\sum_{t=1}^{T} \log P(y_t \mid y_{&lt;t}, x)\)</td><td>跨长度比较，用于选优</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>5.6 的实际计算（figure 8.18 / 5.18）：</p>
+
+\[
+\begin{aligned}
+&\big[(-1.1719) + 0.0000 + (-0.0155) + 0.0000 \\
+&\qquad + (-0.0078) + (-0.0752) + (-0.1582)\big] \div 7 = -0.2041
+\end{aligned}
+\]
+
+<p>分母 7 是答案 token 数（<code>example_answer</code> 里有 7 个），prompt 部分的 6 个 logprob 被完全排除。</p>
+
+<h2 class="deriv">五、关键实验结论：logprob 是坏的置信度</h2>
+
+<p>这是本章最值得记住的一条，也是第 6 章长度偏置的伏笔。原文 table 5.1（MATH-500 全 500 题，DGX Spark）：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>#</th><th>方法</th><th>打分</th><th>轮数</th><th>模型</th><th>准确率</th><th>耗时</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>基线</td><td>—</td><td>—</td><td>Base</td><td>15.2%</td><td>10.1 min</td></tr>
+<tr><td>2</td><td>Self-refinement</td><td>无</td><td>1</td><td>Base</td><td><b>25.0%</b></td><td>84.8 min</td></tr>
+<tr><td>4</td><td>Self-refinement</td><td>Heuristic</td><td>1</td><td>Base</td><td>21.6%</td><td>84.7 min</td></tr>
+<tr><td>6</td><td>Self-refinement</td><td>Avg logprob</td><td>1</td><td>Base</td><td>21.4%</td><td>85.3 min</td></tr>
+<tr><td>8</td><td>基线</td><td>—</td><td>—</td><td>Reasoning</td><td>48.2%</td><td>182.1 min</td></tr>
+<tr><td>9</td><td>Self-refinement</td><td>无</td><td>1</td><td>Reasoning</td><td><b>56.6%</b></td><td>498.8 min</td></tr>
+<tr><td>10</td><td>Self-refinement</td><td>Heuristic</td><td>1</td><td>Reasoning</td><td><b>57.8%</b></td><td>498.6 min</td></tr>
+<tr><td>11</td><td>Self-refinement</td><td>Avg logprob</td><td>1</td><td>Reasoning</td><td>48.4%</td><td>499.7 min</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>三个观察：</p>
+
+<ol class="steps">
+<li><b>不用打分（第 2 行）比用 logprob（第 6 行）更好</b>：25.0% vs 21.4%。logprob 打分<b>把正确答案换成了错误答案</b>。</li>
+<li><b>在 reasoning 模型上更明显（第 11 行几乎回到基线）</b>：56.6% → 48.4%，基本白干。</li>
+<li><b>heuristic 打分（检查 \boxed{} 格式和长度）比 logprob 好</b>。</li>
+</ol>
+
+<h3>5.1 为什么会这样</h3>
+
+<p>原文的解释非常清楚：</p>
+
+<blockquote style="margin:1rem 0;padding-left:1rem;border-left:3px solid var(--rule);color:#3a3634">
+the average logprob score is more closely related to how natural or expected an answer looks under the model than to whether the answer is actually correct. It can favor answers that are fluent, familiar, or syntactically clean, even when they are semantically wrong. In other words, the logprob criterion can unintentionally select <b>confident mistakes</b>, whereas the heuristic score is more focused on the format and structure of the answer.
+</blockquote>
+
+<div class="key">
+<span class="tag">把这条接到第 6 章</span>
+<p>logprob 衡量的是「<b>这个答案像不像训练数据</b>」，不是「<b>这个答案对不对</b>」。这两件事在数学任务上只是弱相关。</p>
+<p>在 <a href="page-58-detail.html">第 6 章</a>，序列 logprob 的长度效应会进一步影响梯度：等 reward 下模型倾向更短的回答。这和这里「logprob 偏爱流畅的短答案」是同一套机制的两面。</p>
+<p><b>但 logprob 在第 6 章仍然是必需的</b>——不是因为它能当打分器，而是因为策略梯度<b>必须</b>有可微的似然项。这两个用途不要混淆。</p>
+</div>
+
+<h2 class="deriv">六、三个 scorer 的对比</h2>
+
+<p>原文在 5.3 列出打分器的三种可能，这里汇总它们的性质：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>类型</th><th>依据</th><th>能否自动验证</th><th>实测表现</th></tr></thead>
+<tbody>
+<tr><td><b>Heuristic</b></td><td>规则：有 \boxed{} 加分、长度短加分</td><td>能</td><td>较好（21.6% / 57.8%）</td></tr>
+<tr><td><b>Avg logprob</b></td><td>模型自身的对数概率</td><td>能</td><td><b>较差</b>（21.4% / 48.4%）</td></tr>
+<tr><td><b>LLM-as-a-judge</b></td><td>另一个 LLM 评分</td><td>需要额外模型调用</td><td>见 appendix F</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><code>heuristic_score</code> 的打分逻辑（listing 5.3）值得看一眼结构：<code>boxed_bonus=2.0</code> &gt; <code>extract_bonus=1.0</code>，让「能干净抽出 \boxed{} 答案」优先于「只能抽出一个数字」。原文说：<i>The absolute values are not very important. What matters more is their relative scale.</i></p>
+
+<div class="eq-note">
+<b>另一个值得注意的数据点：</b>self-refinement 加到第 2 轮（row 3）反而降到 22.0%。<b>更多迭代不等于更好</b>——这和第 7 章 format reward 过度训练是同一类现象。
+</div>
+
+<nav class="deriv-nav">
+<a href="page-58-detail.html"><span class="dir">详解</span>6.8 / 6.9：GRPO 里的 sum 与 mean</a>
+<a href="page-34-detail.html"><span class="dir">详解</span>4.4 温度缩放与 softmax</a>
+<a href="page-70-detail.html"><span class="dir">详解</span>7.5 KL 项的方向与失效</a>
+<a href="page-47.html"><span class="dir">原文</span>5.5 在 log 空间工作</a>
+</nav>
+
+</main>
+
+<script defer src="assets/katex/katex.min.js"></script>
+<script defer src="assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>

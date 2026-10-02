@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>E.3 Padding and attention masks · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-97.html">
+<link rel="next" href="page-99.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 98 页 / 共 108 页</span></div>
+<h2 id="h2-padding-and-attention-masks"><span class="num">E.3</span>Padding and attention masks</h2>
+<p>In single-example mode, if we tokenize a short prompt such as <code>"2+2?"</code>, we can pass it to the model as a simple tensor of shape <code>(1, 4)</code>:</p>
+<pre><code class="language-python">input_ids = torch.tensor<span class="tok-kw">(</span>[[<span class="tok-fn">17</span>, <span class="tok-fn">10</span>, <span class="tok-fn">17</span>, <span class="tok-fn">30</span>]]<span class="tok-kw">)</span></code></pre>
+<p>Internally, the model builds a standard <em>causal attention mask</em> so that each position can attend only to itself and earlier tokens. If you are unfamiliar with causal attention masks and self-attention, my article titled “Understanding and Coding Self-Attention, Multi-Head Attention, Causal-Attention, and Cross-Attention in LLMs,” provides more background information: <a href="https://magazine.sebastianraschka.com/p/understanding-and-coding-self-attention">https://magazine.sebastianraschka.com/p/understanding-and-coding-self-attention</a>.</p>
+<pre><code class="language-python"> <span class="tok-nu">4</span>
+<span class="tok-nu">"Solve 2x + 3 = 11"</span>
+<span class="tok-nu">x</span>
+<span class="tok-nu">=</span>
+<span class="tok-nu">&lt;eos&gt;</span></code></pre>
+<pre><code class="language-python"><span class="tok-nu">4</span>
+<span class="tok-nu">&lt;eos&gt;</span>
+<span class="tok-nu">x</span>
+<span class="tok-nu">=</span>
+<span class="tok-nu">"Solve 2x + 3 = 11"</span>
+24
+&lt;eos&gt;
+&lt;eos&gt;
+&lt;eos&gt;
+"Compute 7^2 - 5^2"</code></pre>
+<pre><code class="language-python">8
+.
+&lt;eos&gt;
+&lt;eos&gt;
+"Simplify 12/3 + 4"</code></pre>
+<pre><code class="language-python">In batched generation via generate_text_basic_batched_cache_stop, we</code></pre>
+<pre><code class="language-python"><span class="tok-nu">4</span>
+<span class="tok-nu">&lt;eos&gt;</span>
+<span class="tok-nu">"Solve 2x + 3 = 11"</span>
+<span class="tok-nu">x</span>
+<span class="tok-nu">=</span>
+"Compute 7^2 - 5^2"
+24
+&lt;eos&gt;</code></pre>
+<pre><code class="language-python">"Simplify 12/3 + 4"
+8
+.
+&lt;eos&gt;</code></pre>
+<figure><a class="zoom" href="assets/figure-E.2.png" tabindex="-1"><img src="assets/figure-E.2.png" alt="" width="1045" height="1052" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure E.2</span>Sequential generation (1) versus regular batched generation (2) and early-stop batched generation (3). The regular batched helper (2) keeps finished rows in the batch as placeholder EOS rows, whereas the _stop variant (3) removes finished rows from the active compute batch as soon as they emit EOS.</figcaption></figure>
+<p>The causal attention mask for the <code>"2+2?" </code>prompt is illustrated in figure E.3. In the causal mask, the value <code>1</code> means “masked out” and <code>0</code> means “allowed.” In this figure, the first token cannot look ahead to later positions, the second token can look only at the first two positions, and so on. This is the standard autoregressive masking pattern.</p>
+<p>Batching changes the situation because different prompts usually have different lengths. Suppose we process <code>"2+2?"</code> together with the slightly longer prompt, </p>
+<pre><code class="language-python">"3+3=6?".</code></pre>
+<pre><code class="language-python">obtained via tokenizer.encode(prompt)
+prompt = "2+2?"</code></pre>
+<pre><code class="language-python">tokenized = [17, 10, 17, 30]</code></pre>
+<pre><code class="language-python">input_ids = torch.tensor([[17, 10, 17, 30]])</code></pre>
+<pre><code class="language-python">17 10 17 30
+17
+causal_mask = [</code></pre>
+<pre><code class="language-python">    [0, 1, 1, 1],
+10
+    [0, 0, 1, 1],
+17
+    [0, 0, 0, 1],
+    [0, 0, 0, 0],
+30
+]</code></pre>
+<figure><a class="zoom" href="assets/figure-E.3.png" tabindex="-1"><img src="assets/figure-E.3.png" alt="" width="1030" height="848" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure E.3</span>The causal mask used in single-example generation. Tokens can attend only to themselves and earlier positions, which is the standard autoregressive setup.</figcaption></figure>
+<p>Since PyTorch tensors must be rectangular, the shorter row has to be padded to match the longer one, as illustrated in figure E.4 with left padding.</p>
+<p>Figure E.4 shows that we keep an additional <code>attn_mask</code> internally. This mask is used to keep track of the padded positions, where <code>True</code> means padded and <code>False</code> means not padded. We use this additional <code>attn_mask</code> to identify the tokens in the causal mask that correspond to pad token IDs. Masking padded keys and zeroing padded queries are important steps to make batching behave similarly to the single-example execution.</p>
+<p>In the remainder of this appendix, you will see how to use scripts from the book’s supplementary materials that implement the optional batched variants for different chapters.</p>
+<h2 id="h2-chapter-3-batched-math-500-evaluation"><span class="num">E.4</span>Chapter 3: Batched MATH-500 evaluation</h2>
+<p>The book’s supplementary materials include a script for the single-example evaluation method from chapter 3 that you can download and run directly using the download function we introduced in chapter 7.</p>
+<pre><code class="language-python">prompts = ["2+2?", "3+3=6?"]</code></pre>
+<pre><code class="language-python">tokenizer.encode(prompt).</code></pre>
+<pre><code class="language-python">tokenized = [</code></pre>
+<pre><code class="language-python">    [17, 10, 17, 30],
+mask_prompt_1 = [</code></pre>
+<pre><code class="language-python">    [18, 10, 18, 28, 21, 30],</code></pre>
+<pre><code class="language-python">]
+    [1, 1, 1, 1, 1, 1],</code></pre>
+<pre><code class="language-python">    [1, 1, 1, 1, 1, 1],</code></pre>
+<pre><code class="language-python">    [1, 1,
+ 0, 1, 1, 1],</code></pre>
+<pre><code class="language-python">    [1, 1,
+0, 0, 1, 1],</code></pre>
+<pre><code class="language-python">padded = [
+    [1, 1,
+0, 0, 0, 1],</code></pre>
+<pre><code class="language-python">    [151643, 151643, 17, 10, 17, 30],</code></pre>
+<pre><code class="language-python">    [1, 1,
+0, 0, 0, 0],
+    [ 18, 10, 18, 28, 21, 30],
+]
+]</code></pre>
+<pre><code class="language-python">mask_prompt_2 = [</code></pre>
+<pre><code class="language-python">    [0, 1, 1, 1, 1, 1],
+attn_mask = torch.tensor([</code></pre>
+<pre><code class="language-python">    [0, 0, 1, 1, 1, 1],
+    [True, True,   False, False, False, False],
+    [0, 0, 0, 1, 1, 1],
+    [False, False, False, False, False, False],
+    [0, 0, 0, 0, 1, 1],
+])
+    [0, 0, 0, 0, 0, 1],
+    [0, 0, 0, 0, 0, 1],</code></pre>
+<pre><code class="language-python">]</code></pre>
+<figure><a class="zoom" href="assets/figure-E.4.png" tabindex="-1"><img src="assets/figure-E.4.png" alt="" width="1137" height="769" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure E.4</span>Left padding in batched generation. The shorter row is padded up to the maximum sequence length in the batch, and the padding-aware mask ensures that these padded positions do not affect attention.</figcaption></figure>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.ch07 <span class="tok-kw">import</span> download_from_github
+download_from_github<span class="tok-kw">(</span>
+    "ch03/02_math500-verifier-scripts/evaluate_math500.py"
+<span class="tok-kw">)</span>
+download_from_github<span class="tok-kw">(</span>
+    "ch03/01_main-chapter-code/math500_test.json",
+    out="math500_test.json",
+<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing E.3</span>Downloading the single-example evaluation script</figcaption></figure>
+<p>After downloading the script and dataset via listing E.3, we can run the single-example evaluation from the terminal as follows (if you are not using <code>uv</code>, simply replace <code>uv</code> <code>run with </code><code>python</code>):</p>
+<pre><code class="language-python">uv run evaluate_math500.py \
+  --dataset_size 500 \
+  --which_model "reasoning"</code></pre>
+<p>The supplementary material also includes a batched version that applies the batching method we discussed previously. The download is almost identical, except that we </p>
+<pre><code class="language-python">replace evaluate_math500.py with evaluate_math500_batched.py.</code></pre>
+<figure class="listing"><pre><code class="language-python">download_from_github<span class="tok-kw">(</span>
+    "ch03/02_math500-verifier-scripts/evaluate_math500_batched.py"
+<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing E.4</span>Downloading the evaluation script with batch support</figcaption></figure>
+<p>The use of the batched script is very similar to the nonbatched version, except that we now provide an additional <code>--batch_size</code> argument to specify how many prompts and answers the model should process in parallel:</p>
+<pre><code class="language-python">uv run evaluate_math500_batched.py \
+  --dataset_size 500 \
+  --which_model "reasoning" \
+  --batch_size 64</code></pre>
+<p>The ideal batch size depends entirely on what your hardware can handle, so it’s best to start with a smaller value and scale upward until you hit the throughput and memory limit that makes sense for your setup.</p>
+<p>We will return to a comparison of single-example and batched generation performance at the end of this appendix.</p>
+<nav class="pager"><a class="prev" href="page-97.html" rel="prev"><span class="dir">上一页</span><span class="t">E.2 Running batched generation</span></a><a class="next" href="page-99.html" rel="next"><span class="dir">下一页</span><span class="t">E.5 Chapter 4: Batched self-consistency sampling</span></a></nav>
+</main>
+</body>
+</html>

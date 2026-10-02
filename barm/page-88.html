@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>B.4 Chapter 5 · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-87.html">
+<link rel="next" href="page-89.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 88 页 / 共 108 页</span></div>
+<h2 id="h2-chapter-5"><span class="num">B.4</span>Chapter 5</h2>
+<h3 id="h3-exercise-5-1-using-the-heuristic-scorer-as-a-tiebreaker-in-s-2">Exercise 5.1: Using the heuristic scorer as a tiebreaker in self-consistency</h3>
+<p>There are many ways to implement this. Perhaps the easiest approach is to handle it outside the self-consistency function and work directly with the returned dictionary, similar to what we did in exercise 4.4, where we implemented the tiebreaking logic directly inside the <code>evaluate_math500_stream</code> function. The relevant lines are shown here:</p>
+<pre><code class="language-python"><span class="tok-cm"># ...</span>
+<span class="tok-kw">from</span> reasoning_from_scratch.ch05 <span class="tok-kw">import</span> heuristic_score
+<span class="tok-kw">def</span> evaluate_math500_stream(
+    <span class="tok-cm">#...</span>
+    <span class="tok-cm"># ...</span>
+            results = self_consistency_vote<span class="tok-kw">(</span>...<span class="tok-kw">)</span>
+            <span class="tok-cm"># Majority vote winner available</span>
+            <span class="tok-kw">if</span> results<span class="tok-kw">[</span><span class="tok-st">"final_answer"</span><span class="tok-kw">]</span> <span class="tok-kw">is</span> <span class="tok-kw">not</span> <span class="tok-kw">None</span>:
+                extracted = results<span class="tok-kw">[</span><span class="tok-st">"final_answer"</span><span class="tok-kw">]</span>
+            <span class="tok-cm">### NEW: Break tie with heuristic_score</span>
+            <span class="tok-kw">else</span>:
+                best = <span class="tok-kw">None</span>
+                best_score = float<span class="tok-kw">(</span><span class="tok-st">"-inf"</span><span class="tok-kw">)</span>
+                <span class="tok-kw">for</span> cand <span class="tok-kw">in</span> results<span class="tok-kw">[</span><span class="tok-st">"majority_winners"</span><span class="tok-kw">]</span>:
+                    scores = [
+                        heuristic_score<span class="tok-kw">(</span>results<span class="tok-kw">[</span><span class="tok-st">"full_answers"</span><span class="tok-kw">]</span>[idx],
+                                        prompt=prompt<span class="tok-kw">)</span>
+                        <span class="tok-kw">for</span> idx <span class="tok-kw">in</span> results<span class="tok-kw">[</span><span class="tok-st">"groups"</span><span class="tok-kw">]</span>[cand]
+                    ]
+                    score = max<span class="tok-kw">(</span>scores<span class="tok-kw">)</span>
+                    <span class="tok-kw">if</span> score &gt; best_score:
+                        best_score = score
+                        best = cand
+                extracted = best
+            <span class="tok-cm"># ...</span>
+    <span class="tok-cm"># ...</span>
+    <span class="tok-kw">return</span> num_correct, num_examples, acc</code></pre>
+<p>The results are shown in table B.3. The accuracy values and runtimes were computed on all 500 samples in the MATH-500 test set using a <code>"cuda"</code> GPU (DGX Spark).</p>
+<div class="tw"><table><caption><span class="lbl">Table B.3</span>MATH-500 self-consistency score with different tiebreaking</caption><thead><tr><th></th><th>Method</th><th>Model</th><th>Accuracy</th><th>Time</th></tr></thead><tbody><tr><td>1</td><td>Baseline with chain-of-thought prompting</td><td>Base</td><td>33.4%</td><td>129.2 min</td></tr><tr><td>2</td><td>Self-consistency (n=3)</td><td>Base</td><td>43.2%</td><td>328.2 min</td></tr><tr><td>3</td><td>Self-consistency (n=3) + heuristic</td><td>Base</td><td>43.4%</td><td>326.5 min</td></tr><tr><td>4</td><td>Self-consistency (n=3) + avg. logprob</td><td>Base</td><td>44.8%</td><td>327.7 min</td></tr></tbody></table></div>
+<p>Row 1 in table B.3 is the baseline from chapter 4 without self-consistency. Row 2 doesn’t use a scorer for tiebreaking, so if there is a tie among the answers, it chooses the one that appears first. Using a heuristic scorer (row 3) as a tiebreaker results in a slight improvement. The best, though still minimal, improvement is achieved with the logprob scorer as a tiebreaker (row 4).</p>
+<h3 id="h3-exercise-5-2-using-the-heuristic-scorer-in-a-best-of-n-setup-2">Exercise 5.2: Using the heuristic scorer in a best-of-N setup</h3>
+<p>Best-of-<em>N</em> is similar to self-consistency in that we generate multiple answers. But instead of selecting the final answer by majority vote, we score all generated answers using a scoring function, such as <code>heuristic_score</code>, and return the highest-scoring one. There are several ways to implement this behavior, but the simplest approach is to use the existing self-consistency function from chapter 4 as a template and swap in <code>heuristic_ score</code>, as follows:</p>
+<pre><code class="language-python"><span class="tok-cm"># ...</span>
+<span class="tok-kw">from</span> reasoning_from_scratch.ch05 <span class="tok-kw">import</span> (
+    heuristic_score
+)
+<span class="tok-kw">def</span> self_consistency_vote( <span class="tok-cm">#...):</span>
+    full_answers, short_answers = [], []
+    counts = Counter<span class="tok-kw">()</span>
+    groups = {}
+    majority_winners, final_answer = [], <span class="tok-kw">None</span>
+    best_score, best_idx = float<span class="tok-kw">(</span><span class="tok-st">"-inf"</span><span class="tok-kw">)</span>, <span class="tok-kw">None</span>
+    <span class="tok-kw">for</span> i <span class="tok-kw">in</span> range(num_samples):
+        <span class="tok-kw">if</span> seed <span class="tok-kw">is</span> <span class="tok-kw">not</span> <span class="tok-kw">None</span>:
+            torch.manual_seed<span class="tok-kw">(</span>seed + i + <span class="tok-fn">1</span><span class="tok-kw">)</span>
+        answer = generate_text_stream_concat_flex<span class="tok-kw">(</span>
+            model=model,
+            tokenizer=tokenizer,
+            prompt=prompt,
+            device=device,
+            max_new_tokens=max_new_tokens,
+            verbose=show_long_answer,
+            generate_func=generate_text_top_p_stream_cache,
+            temperature=temperature,
+            top_p=top_p,
+        <span class="tok-kw">)</span>
+        short = extract_final_candidate<span class="tok-kw">(</span>answer, fallback=<span class="tok-st">"number_then_full"</span><span class="tok-kw">)</span>
+        full_answers.append<span class="tok-kw">(</span>answer<span class="tok-kw">)</span>
+        short_answers.append<span class="tok-kw">(</span>short<span class="tok-kw">)</span>
+        counts<span class="tok-kw">[</span>short<span class="tok-kw">]</span> += <span class="tok-fn">1</span>
+        <span class="tok-kw">if</span> short <span class="tok-kw">in</span> groups:
+            groups<span class="tok-kw">[</span>short<span class="tok-kw">]</span>.append<span class="tok-kw">(</span>i<span class="tok-kw">)</span>
+        <span class="tok-kw">else</span>:
+            groups<span class="tok-kw">[</span>short<span class="tok-kw">]</span> = [i]
+        score = heuristic_score<span class="tok-kw">(</span>answer, prompt=prompt<span class="tok-kw">)</span>
+        <span class="tok-kw">if</span> score &gt; best_score:
+            best_score, best_idx = score, i
+        <span class="tok-cm"># ...</span></code></pre>
+<p>Table B.4 compares the baseline with two best-of-<em>N</em> variants, one using the heuristic scorer and one using average log probability to select among three sampled answers. </p>
+<div class="tw"><table><caption><span class="lbl">Table B.4</span>MATH-500 best-of-N scores with heuristic and average logprob scores</caption><thead><tr><th></th><th>Method</th><th>Model</th><th>Accuracy</th><th>Time</th></tr></thead><tbody><tr><td>1</td><td>Baseline with chain-of-thought prompting</td><td>Base</td><td>33.4%</td><td>129.2 min</td></tr><tr><td>2</td><td>Best-of-N (n=3) + heuristic</td><td>Base</td><td>40.6%</td><td>327.7 min</td></tr><tr><td>3</td><td>Best-of-N (n=3) + avg. logprob</td><td>Base</td><td>43.2%</td><td>330.2 min</td></tr></tbody></table></div>
+<p>The accuracy values and runtimes shown in the table were computed on all 500 samples in the MATH-500 test set using a <code>"cuda"</code> GPU (DGX Spark).</p>
+<h3 id="h3-exercise-5-3-using-the-logprob-scorer-as-a-tiebreaker-in-sel-2">Exercise 5.3: Using the logprob scorer as a tiebreaker in self-consistency</h3>
+<p>The solution is similar to exercise 5.1, except that we swap <code>heuristic_score</code> with <code>avg_</code></p>
+<pre><code class="language-python">logprob_answer, as follows:
+<span class="tok-cm"># ...</span>
+<span class="tok-cm"># from reasoning_from_scratch.ch05 import heuristic_score</span>
+<span class="tok-kw">from</span> reasoning_from_scratch.ch05 <span class="tok-kw">import</span> avg_logprob_answer
+<span class="tok-kw">def</span> evaluate_math500_stream(<span class="tok-cm"># ...)</span>
+    <span class="tok-cm"># ...</span>
+    <span class="tok-cm"># score = heuristic_score(</span>
+    <span class="tok-cm"># candidate_full, prompt=prompt</span>
+    <span class="tok-cm"># )</span>
+    score = avg_logprob_answer<span class="tok-kw">(</span>
+        model=model,
+        tokenizer=tokenizer,
+        prompt=prompt,
+        answer=candidate_full,
+        device=device,
+    <span class="tok-kw">)</span>
+   <span class="tok-cm"># ...</span></code></pre>
+<p>The results were included in table B.3 (exercise 5.1), in row 4.</p>
+<h3 id="h3-exercise-5-4-using-the-logprob-scorer-in-a-best-of-n-setup-2">Exercise 5.4: Using the logprob scorer in a best-of-N setup</h3>
+<p>To implement best-of-<em>N</em> with a logprob scorer, we can use the code from exercise 5.2 </p>
+<pre><code class="language-python">and swap the heuristic_score with avg_logprob_answer, as follows:
+<span class="tok-kw">from</span> reasoning_from_scratch.ch05 <span class="tok-kw">import</span> (
+    avg_logprob_answer
+)
+<span class="tok-cm"># ...</span>
+            score = avg_logprob_answer<span class="tok-kw">(</span>
+                model=model,
+                tokenizer=tokenizer,
+                prompt=prompt,
+                answer=answer,
+                device=device
+            <span class="tok-kw">)</span>
+        <span class="tok-kw">if</span> score &gt; best_score:
+            best_score, best_idx = score, i
+<span class="tok-cm"># ...</span></code></pre>
+<p>The resulting MATH-500 score is shown in table B.4 (exercise 5.2).</p>
+<h3 id="h3-exercise-5-5-using-the-heuristic-score-for-self-refinement-2">Exercise 5.5: Using the heuristic score for self-refinement</h3>
+<p>Using the <code>heuristic_score</code> is even simpler than using the logprob score; all we need to do is change the following code:</p>
+<pre><code class="language-python"><span class="tok-kw">from</span> functools <span class="tok-kw">import</span> partial
+avg_logprob_score = partial<span class="tok-kw">(</span>
+    avg_logprob_answer,
+    model=model,
+    tokenizer=tokenizer,
+    device=device
+<span class="tok-kw">)</span>
+torch.manual_seed<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>
+results_logprob = self_refinement_loop<span class="tok-kw">(</span>
+    model=model,
+    tokenizer=tokenizer,
+    raw_prompt=raw_prompt,
+    device=device,
+    iterations=<span class="tok-fn">2</span>,
+    max_response_tokens=<span class="tok-fn">2048</span>,
+    max_critique_tokens=<span class="tok-fn">256</span>,
+    score_fn=avg_logprob_score,
+    verbose=<span class="tok-kw">True</span>,
+    temperature=<span class="tok-fn">0.7</span>,
+    top_p=<span class="tok-fn">0.9</span>,
+<span class="tok-kw">)</span></code></pre>
+<p>The updated code is</p>
+<pre><code class="language-python">torch.manual_seed<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>
+results_logprob = self_refinement_loop<span class="tok-kw">(</span>
+    model=model,
+    tokenizer=tokenizer,
+    raw_prompt=raw_prompt,
+    device=device,
+    iterations=<span class="tok-fn">2</span>,
+    max_response_tokens=<span class="tok-fn">2048</span>,
+    max_critique_tokens=<span class="tok-fn">256</span>,
+    score_fn=heuristic_score, <span class="tok-cm"># NEW</span>
+    verbose=<span class="tok-kw">True</span>,
+    temperature=<span class="tok-fn">0.7</span>,
+    top_p=<span class="tok-fn">0.9</span>,
+<span class="tok-kw">)</span></code></pre>
+<p>The improvements over the baseline in chapter 3 and the self-consistency results from chapter 4 are shown in table 5.1 (rows 4, 5, and 10).</p>
+<nav class="pager"><a class="prev" href="page-87.html" rel="prev"><span class="dir">上一页</span><span class="t">B.3 Chapter 4</span></a><a class="next" href="page-89.html" rel="next"><span class="dir">下一页</span><span class="t">B.5 Chapter 6</span></a></nav>
+</main>
+</body>
+</html>

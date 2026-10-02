@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>A.6 Chapter 6: Training reasoning models with reinforcement learning · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-83.html">
+<link rel="next" href="page-85.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 84 页 / 共 108 页</span></div>
+<h2 id="h2-chapter-6-training-reasoning-models-with-reinforcement-learn"><span class="num">A.6</span>Chapter 6: Training reasoning models with reinforcement learning</h2>
+<h3 id="h3-references-6"><span class="num">A.6.1</span>References</h3>
+<p>The InstructGPT paper demonstrated the effectiveness of RLHF and was instrumental in popularizing RLHF as a standard alignment and fine-tuning approach for LLMs:</p>
+<ul><li>Long Ouyang, Jeff Wu, Xu Jiang, et al., “Training language models to follow instructions with human feedback” (Mar. 4, 2022), <a href="https://arxiv.org/abs/2203.02155">https://arxiv.org/abs/2203.02155</a></li></ul>
+<p>The following DeepSeekMath paper introduced the GRPO algorithm:</p>
+<ul><li>Zhihong Shao, Peiyi Wang, Qihao Zhu, et al., “DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models” (Feb. 5, 2024), <a href="https://arxiv.org/abs/2402.03300">https://arxiv.org/abs/2402.03300</a></li></ul>
+<p>The DeepSeek-R1 paper showed that strong reasoning behavior can emerge in LLMs through reinforcement learning alone (via RLVR with GRPO). This was most clearly shown in the R1-Zero variant, but combining this approach with a multistage training pipeline yields an even better reasoning model:</p>
+<ul><li>DeepSeek-AI, Daya Guo, Dejian Yang, et al., “DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning” (Jan. 22, 2025), <a href="https://arxiv.org/abs/2501.12948">https://arxiv.org/abs/2501.12948</a></li></ul>
+<h3 id="h3-further-reading-5"><span class="num">A.6.2</span>Further reading</h3>
+<p>The following article provides a comprehensive walk-through of the DeepSeek-R1 training pipeline involving RLVR:</p>
+<ul><li>Sebastian Raschka, “Understanding Reasoning LLMs: Methods and Strategies for Building and Refining Reasoning Models” (Feb. 5, 2025), <a href="https://magazine.sebastianraschka.com/p/understanding-reasoning-llms">https://magazine.sebastianraschka.com/p/understanding-reasoning-llms</a></li></ul>
+<p>This article compares GRPO and PPO for reinforcement learning in the context of LLMs:</p>
+<ul><li>Sebastian Raschka, “The State of Reinforcement Learning for LLM Reasoning: Understanding GRPO and New Insights from Reasoning Model Papers” (Apr. 19, 2025), <a href="https://magazine.sebastianraschka.com/p/the-state-of-llm-reasoning-model-training">https://magazine.sebastianraschka.com/p/the-state-of-llm-reasoning-model-training</a></li></ul>
+<h2 id="h2-chapter-7-improving-grpo-for-reinforcement-learning"><span class="num">A.7</span>Chapter 7: Improving GRPO for reinforcement learning</h2>
+<h3 id="h3-references-7"><span class="num">A.7.1</span>References</h3>
+<p>This is the original PPO paper that introduced clipped policy ratios, which we also use here to stabilize GRPO:</p>
+<ul><li>John Schulman, Filip Wolski, Prafulla Dhariwal, et al., “Proximal Policy Optimization Algorithms” (Jul. 20, 2017), <a href="https://arxiv.org/abs/1707.06347">https://arxiv.org/abs/1707.06347</a></li></ul>
+<p>The following papers recommend improvements to the GRPO algorithm:</p>
+<ul><li>Qiying Yu, Zheng Zhang, Ruofei Zhu, et al., “DAPO: An Open-Source LLM Reinforcement Learning System at Scale” (Mar. 18, 2025), <a href="https://arxiv.org/abs/2503.14476">https://arxiv.org/abs/2503.14476</a></li></ul>
+<ul><li>Understanding R1-Zero-Like Training: A Critical Perspective” (Mar. 26, 2025, this paper introduces Dr. GRPO), <a href="https://arxiv.org/abs/2503.20783">https://arxiv.org/abs/2503.20783</a></li></ul>
+<ul><li>Feng Yao, Liyuan Liu, Dinghuai Zhang, et al., “Your Efficient RL Framework Secretly Brings You Off-Policy RL Training” (Aug. 5, 2025, this paper introduces VERL), <a href="https://fengyao.notion.site/off-policy-rl">https://fengyao.notion.site/off-policy-rl</a></li></ul>
+<ul><li>DeepSeek-AI, Aixin Liu, Aoxue Mei, et al., “DeepSeek-V3.2: Pushing the Frontier of Open Large Language Models” (Dec. 2, 2025), <a href="https://arxiv.org/abs/2512.02556">https://arxiv.org/abs/2512.02556</a></li></ul>
+<ul><li>Shih-Yang Liu, Xin Dong, Ximing Lu, et al., “GDPO: Group reward-Decoupled Normalization Policy Optimization for Multi-reward RL Optimization” (Jan. 8, 2026), <a href="https://arxiv.org/abs/2601.05242">https://arxiv.org/abs/2601.05242</a></li></ul>
+<ul><li>Chujie Zheng, Shixuan Liu, Mingze Li, et al., “Group Sequence Policy Optimization” (Jul. 24, 2025, this paper introduces GSPO), <a href="https://arxiv.org/abs/2507.18071">https://arxiv.org/abs/2507.18071</a></li></ul>
+<ul><li>Aili Chen, Aonian Li, Bangwei Gong, et al., “MiniMax-M1: Scaling Test-Time Compute Efficiently with Lightning Attention” (Jun. 16, 2025, this paper introduces CISPO), <a href="https://arxiv.org/abs/2506.13585">https://arxiv.org/abs/2506.13585</a></li></ul>
+<h3 id="h3-further-reading-6"><span class="num">A.7.2</span>Further reading</h3>
+<p>The following article provides a comparison between PPO (the original algorithm used for RLHF) and GRPO:</p>
+<ul><li>Sebastian Raschka, “The State of Reinforcement Learning for LLM Reasoning” (Apr. 19, 2025), <a href="https://magazine.sebastianraschka.com/p/the-state-of-llm-reasoning-model-training">https://magazine.sebastianraschka.com/p/the-state-of-llm-reasoning-model-training</a></li></ul>
+<p>The following article is a good technical deep dive discussing different GRPO improvements:</p>
+<ul><li>Cameron R. Wolfe, “GRPO++: Tricks for Making RL Actually Work” (Jan. 5, 2026), <a href="https://cameronrwolfe.substack.com/p/grpo-tricks">https://cameronrwolfe.substack.com/p/grpo-tricks</a></li></ul>
+<h2 id="h2-chapter-8-distilling-reasoning-models-for-efficient-reasonin"><span class="num">A.8</span>Chapter 8: Distilling reasoning models for efficient reasoning</h2>
+<h3 id="h3-references-8"><span class="num">A.8.1</span>References</h3>
+<p>This is the original knowledge-distillation paper that popularized the combination of hard and soft distillation objectives:</p>
+<ul><li>Geoffrey Hinton, Oriol Vinyals, and Jeff Dean, “Distilling the Knowledge in a Neural Network” (Mar. 9, 2015), <a href="https://arxiv.org/abs/1503.02531">https://arxiv.org/abs/1503.02531</a></li></ul>
+<p>The DeepSeek-R1 paper described the reasoning-distillation recipe that motivated this chapter, in which a large teacher model generates reasoning traces that are then used to train smaller student models:</p>
+<ul><li>DeepSeek-AI, Daya Guo, Dejian Yang, et al., “DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning” (Jan. 22, 2025), <a href="https://arxiv.org/abs/2501.12948">https://arxiv.org/abs/2501.12948</a></li></ul>
+<p>The following paper on distilling large language models reports strong results for carefully designed soft-distillation objectives:</p>
+<ul><li>Yuxian Gu, Li Dong, Furu Wei, and Minlie Huang, “MiniLLM: Knowledge Distillation of Large Language Models” (Jun. 14, 2023), <a href="https://arxiv.org/abs/2306.08543">https://arxiv.org/abs/2306.08543</a></li></ul>
+<h3 id="h3-further-reading-7"><span class="num">A.8.2</span>Further reading</h3>
+<p>The following chapter provides more details on supervised fine-tuning (the technique used in hard distillation) and on masking when working with batches of training examples:</p>
+<ul><li>Sebastian Raschka, <em>Build A Large Language Model (From Scratch)</em>, chapter 7 (Manning, 2024), <a href="https://www.manning.com/books/build-a-large-language-model-from-scratch">https://www.manning.com/books/build-a-large-language-model-from-scratch</a></li></ul>
+<p>The following article provides a practical walk-through of reasoning-model-training pipelines, including distillation and RLVR:</p>
+<ul><li>Sebastian Raschka, “Understanding Reasoning LLMs: Methods and Strategies for Building and Refining Reasoning Models” (Feb. 5, 2025), <a href="https://magazine.sebastianraschka.com/p/understanding-reasoning-llms">https://magazine.sebastianraschka.com/p/understanding-reasoning-llms</a></li></ul>
+<h2 id="h2-appendix-f-common-approaches-to-llm-evaluation"><span class="num">A.9</span>Appendix F: Common approaches to LLM evaluation</h2>
+<h3 id="h3-references-9"><span class="num">A.9.1</span>References</h3>
+<p>This is the original paper that introduced the popular multiple-choice MMLU dataset:</p>
+<ul><li>Dan Hendrycks, Collin Burns, Steven Basart, et al., “Measuring Massive Multitask Language Understanding” (Sept. 7, 2020), <a href="https://arxiv.org/abs/2009.03300">https://arxiv.org/abs/2009.03300</a></li></ul>
+<p>The following Wikipedia article provides a detailed description of the Elo rating system:</p>
+<ul><li>Elo rating system, <a href="https://en.wikipedia.org/wiki/Elo_rating_system">https://en.wikipedia.org/wiki/Elo_rating_system</a></li></ul>
+<p>The following paper describes the original methodology behind the popular LLM leaderboard:</p>
+<ul><li>Wei-Lin Chiang, Lianmin Zheng, Ying Sheng, et al., “Chatbot Arena: An Open Platform for Evaluating LLMs by Human Preference” (Mar. 7, 2024), <a href="https://arxiv.org/abs/2403.04132">https://arxiv.org/abs/2403.04132</a></li></ul>
+<h3 id="h3-further-reading-8"><span class="num">A.9.2</span>Further reading</h3>
+<p>The following paper discusses the problems with leaderboards such as LM Arena:</p>
+<ul><li>Shivalika Singh, Yiyang Nan, Alex Wang, et al., “The Leaderboard Illusion” (Apr. 29, 2025), <a href="http://arxiv.org/abs/2504.20879">http://arxiv.org/abs/2504.20879</a></li></ul>
+<p>The following article describes OpenAI’s most recent open source model, gpt-oss, in more detail:</p>
+<ul><li>Sebastian Raschka, “From GPT-2 to gpt-oss: Analyzing the Architectural Advances” (Aug. 9, 2025), <a href="https://magazine.sebastianraschka.com/p/from-gpt-2-to-gpt-oss-analyzing-the">https://magazine.sebastianraschka.com/p/from-gpt-2-to-gpt-oss-analyzing-the</a></li></ul>
+<p>The following survey compares different LLM judge approaches:</p>
+<ul><li>Jiawei Gu, Xuhui Jiang, Zhichao Shi, et al., “A Survey on LLM-as-a-Judge” (Nov. 23, 2024), <a href="https://arxiv.org/abs/2411.15594">https://arxiv.org/abs/2411.15594</a></li></ul>
+<p>The method described in the following paper is an example of a small LLM fine-tuned to act as a judge:</p>
+<ul><li>Mahesh Deshwal and Apoorva Chawla, “PHUDGE: Phi-3 as Scalable Judge” (May 12, 2024), <a href="https://arxiv.org/abs/2405.08029">https://arxiv.org/abs/2405.08029</a></li></ul>
+<h1 id="h1-appendix-b-exercise-solutions">appendix B Exercise solutions</h1>
+<p>The complete code examples for the exercise solutions can be found in the supplementary GitHub repository at <a href="https://github.com/rasbt/reasoning-from-scratch">https://github.com/rasbt/reasoning-from-scratch</a>.</p>
+<nav class="pager"><a class="prev" href="page-83.html" rel="prev"><span class="dir">上一页</span><span class="t">A.2 Chapter 2: Generating text with a pretrained LLM</span></a><a class="next" href="page-85.html" rel="next"><span class="dir">下一页</span><span class="t">B.1 Chapter 2</span></a></nav>
+</main>
+</body>
+</html>

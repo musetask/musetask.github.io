@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>4.3 Generating better responses with chain-of-thought prompting · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-30.html">
+<link rel="next" href="page-32.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 31 页 / 共 108 页</span></div>
+<h2 id="h2-generating-better-responses-with-chain-of-thought-prompting"><span class="num">4.3</span>Generating better responses with chain-of-thought prompting</h2>
+<p>We’ve loaded the pretrained base model and set up the text generation function; now we’ll focus on improving model output through so-called <em>chain-of-thought </em>prompting. This prompting technique is classic, simple, and effective. It modifies the input prompt to encourage the LLM to generate an explanation, or a chain of thought (also called a reasoning chain), as illustrated in figure 4.4.</p>
+<p>The simplest way to try chain-of-thought prompting is to append an extra instruction that asks the model to reason step by step. There are multiple ways to phrase this. For example, the original paper on the topic used <code>"Let's</code> <code>think</code> <code>step</code> <code>by</code> <code>step."</code> (<a href="https://arxiv.org/abs/2205.11916">https://arxiv.org/abs/2205.11916</a>), but different phrasings may work better depending on the model and task. Here, we’ll use <code>"Explain</code> <code>step</code> <code>by</code> <code>step."</code> because it worked well in my experiments for this chapter, and it keeps the example simple:</p>
+<pre><code class="language-python">prompt_cot = prompt + " \n\nExplain step by step."
+response_cot = generate_text_stream_concat_flex<span class="tok-kw">(</span>
+    model, tokenizer, prompt_cot, device,
+    max_new_tokens=<span class="tok-fn">2048</span>, verbose=<span class="tok-kw">True</span>,
+<span class="tok-kw">)</span></code></pre>
+<figure><a class="zoom" href="assets/figure-4.4.png" tabindex="-1"><img src="assets/figure-4.4.png" alt="" width="1143" height="689" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 4.4</span>Our first inference-time method, chain-of-thought prompting, modifies the prompt to encourage the model to explain its reasoning, step by step, before producing a final answer.</figcaption></figure>
+<p>The response is now as follows:</p>
+<pre><code class="language-bash"> To solve the problem, we need to find the value of \( x \) such that
+half the value of \( 3x - 9 \) is equal to \( x + 37 \).
+# ...</code></pre>
+<pre><code class="language-bash">### Step 3: Solve for \( x \)
+Subtract \( 2x \) from both sides to isolate \( x \):
+\[
+3x - 2x - 9 = 74
+\]
+Simplify:
+\[
+x - 9 = 74
+\]
+Add 9 to both sides to solve for \( x \):
+\[
+x = 74 + 9
+\]
+\[
+x = 83
+\]
+### Final Answer:
+\[
+\boxed{83}
+\]</code></pre>
+<p>As you can see, the model now writes a lengthy step-by-step explanation and, in this case, arrives at the correct answer.</p>
+<p>This simple chain-of-thought prompt is a good demonstration of the inference-time-scaling tradeoff. While the model now answers correctly, it expends many more tokens than before. As discussed in chapter 2, LLMs generate text one token at a time, and each additional token requires another forward pass through the model. So these intermediate reasoning steps do not just make the answer longer; they also directly increase latency, compute cost, and often API cost.</p>
+<p>Note that while the model generated the correct answer in this case, not all problems benefit from chain-of-thought prompting. On simple problems, it can sometimes even degrade the model’s performance, as the model might generate erroneous explanations and mislead itself. This phenomenon is known as “overthinking.”</p>
+<p>Lastly, not every model benefits from the “Explain step by step” (or similar) instruction. In this case, we used a simple base model that doesn’t always generate explanations, so chain-of-thought prompting can help. Trained reasoning models, such as the “reasoning” variant of the Qwen3 model we used in the previous chapter, already write explanations alongside their responses and don’t need or benefit from this type of chain-of-thought prompting.</p>
+<h3 id="h3-why-chain-of-thought-can-improve-accuracy">Why chain-of-thought can improve accuracy</h3>
+<div class="lead">Chain-of-thought prompting asks the model to write out the intermediate steps that lead to a final answer. This helps in two practical ways. First, walking through the steps gives the model more opportunities to correct itself. Second, step-by-step reasoning matches the way many training examples are written. For instance, large math and logic datasets often contain detailed solutions, so asking for a chain of thought aligns the model with patterns it has already learned. At the same time, chain-of-thought reasoning is no guarantee of correctness. It can still produce faulty reasoning, and for very simple problems it may even introduce unnecessary steps that lead to more mistakes. In other words, chain-of-thought can improve accuracy on many reasoning tasks, but it is not universally beneficial. Overall, chain-of-thought prompting does not provide the model with new knowledge, but it changes how the model uses its existing knowledge. Often, this shift can lead to more reliable answers. This is especially true for math, code, logic, and other multistep problems.</div>
+<h3 id="h3-exercise-4-1-using-chain-of-thought-prompting-on-math-500">Exercise 4.1: Using chain-of-thought prompting on MATH-500</h3>
+<div class="lead">Modify the <code>evaluate_math500_stream</code> function from listing 3.15 to see whether chain-of-thought prompting improves the MATH-500 accuracy of the base model.</div>
+<h2 id="h2-controlling-output-diversity-with-temperature-scaling"><span class="num">4.4</span>Controlling output diversity with temperature scaling</h2>
+<p>The previous section gave a brief taste of inference-time scaling by extending the model’s answer via chain-of-thought prompting. Chain-of-thought prompting can be seen as a sequential technique because it extends the number of next-token prediction steps.</p>
+<p>In the remainder of this chapter, we’ll implement a self-consistency technique (also called <em>self-consistency sampling</em>) that generates multiple answers, as illustrated in figure 4.5. This technique was formally described in the Google Research paper “Self-Consistency Improves Chain of Thought Reasoning in Language Models” (<a href="https://arxiv.org/abs/2203.11171">https://arxiv.org/abs/2203.11171</a>).</p>
+<figure><a class="zoom" href="assets/figure-4.5.png" tabindex="-1"><img src="assets/figure-4.5.png" alt="" width="1141" height="721" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 4.5</span>Self-consistency sampling, our second inference-time method, generates multiple answers and selects the most frequent one. This method relies on temperature scaling, which influences how the model samples its next token.</figcaption></figure>
+<p>Since the multiple answers generated with this technique are independent of each other, this can be implemented through parallel sampling (if you have the necessary resources, such as multiple GPUs), which won’t increase the time for the user to get an answer. (Chain-of-thought prompting can be combined with this technique, but more on that later.)</p>
+<p>Before we implement self-consistency sampling (step 5 in figure 4.5), we first need to extend the text generation function so that it can produce different answers for the same prompt. To achieve this, we’ll implement two techniques that allow the model to sample different responses: <em>temperature scaling</em> (step 3) and <em>top-p filtering</em> (step 4).</p>
+<p>Temperature scaling is the main focus of this section; it will be one of the key controls for output diversity in the rest of this chapter, and it forms the basis for the top-<em>p</em> filtering method that follows. First, though, we’ll look at how the next token is sampled in an LLM. These low-level sampling controls may seem overly technical, but they are what will let us generate diverse candidate answers for self-consistency sampling.</p>
+<nav class="pager"><a class="prev" href="page-30.html" rel="prev"><span class="dir">上一页</span><span class="t">4.2 Loading a pretrained model</span></a><a class="next" href="page-32.html" rel="next"><span class="dir">下一页</span><span class="t">4.4.1 Understanding the process of selecting the next token</span></a></nav>
+</main>
+</body>
+</html>

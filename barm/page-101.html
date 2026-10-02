@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>Multiple-choice answer formats · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-100.html">
+<link rel="next" href="page-102.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 101 页 / 共 108 页</span></div>
+<h3 id="h3-multiple-choice-answer-formats">Multiple-choice answer formats</h3>
+<div class="lead">This section implements a simplified version of multiple-choice evaluation for illustration purposes, where the model’s predicted answer letter is compared directly with the correct one. In practice, more widely used variations exist, such as log-probability scoring, where we measure how likely the model considers each candidate answer rather than just checking the final letter choice. (Probability-based scoring is discussed in chapter 5.) For reasoning models, evaluation can also involve assessing the likelihood of generating the correct answer when it is provided as input. Regardless of the variant, evaluation still amounts to checking whether the model selects correctly from the predefined answer options. Examples of these variations are included in the code repository as optional bonus material.</div>
+<p>A limitation of multiple-choice benchmarks like MMLU is that they only measure an LLM’s ability to select from predefined options and thus are not very useful for evaluating reasoning capabilities beyond checking whether, and how much, knowledge the model has forgotten compared to the base model. They do not capture free-form writing ability or real-world utility. Still, they remain a simple and useful diagnostic: a high MMLU score doesn’t necessarily mean the model is strong in practical use, but a low score can highlight potential knowledge gaps.</p>
+<h2 id="h2-using-verifiers-to-check-answers"><span class="num">F.3</span>Using verifiers to check answers</h2>
+<p>Related to the multiple-choice question answering that was discussed in the previous section, verification-based approaches quantify LLM capabilities with an accuracy metric. But unlike multiple-choice benchmarks, verification methods allow LLMs to provide a free-form answer. We then extract the relevant portion of the answer and use a verifier to compare it with the correct answer provided in the dataset, as illustrated in figure F.3.</p>
+<figure><a class="zoom" href="assets/figure-F.3.png" tabindex="-1"><img src="assets/figure-F.3.png" alt="" width="1047" height="993" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure F.3</span>Evaluating an LLM with a verification-based method in free-form question answering. The model generates a free-form answer (which may include multiple steps) and a final boxed answer, which is extracted and compared against the correct answer from the dataset.</figcaption></figure>
+<p>When we compare the extracted answer with the provided answer, as shown in figure F.3, we can use external tools such as code interpreters or calculator software.</p>
+<p>The downside is that this method can only be applied to domains that can be easily (and, ideally, deterministically) verified, such as math and code. Also, this approach can introduce additional complexity and dependencies, and it may shift part of the evaluation burden from the model itself to the external tool.</p>
+<p>Because this method allows us to generate an unlimited number of math problem variations programmatically and it benefits from step-by-step reasoning, it has become a cornerstone of reasoning model evaluation and development. An extensive example of this method is provided in chapter 3, so we’ll skip a code demonstration here.</p>
+<nav class="pager"><a class="prev" href="page-100.html" rel="prev"><span class="dir">上一页</span><span class="t">F.2 Evaluating answer-choice accuracy</span></a><a class="next" href="page-102.html" rel="next"><span class="dir">下一页</span><span class="t">F.4 Comparing models using preferences and leaderboards</span></a></nav>
+</main>
+</body>
+</html>

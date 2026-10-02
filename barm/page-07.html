@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>1.4 Pattern matching vs. logical reasoning · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-06.html">
+<link rel="next" href="page-08.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 7 页 / 共 108 页</span></div>
+<h2 id="h2-pattern-matching-vs-logical-reasoning"><span class="num">1.4</span>Pattern matching vs. logical reasoning</h2>
+<p>During pretraining, LLMs are exposed to vast quantities of text and learn to predict the next token by identifying and reproducing statistical associations in that data. This process enables them to generate fluent and coherent text, but it is fundamentally based on learned statistical regularities rather than explicit rules or guaranteed logical inference.</p>
+<p>LLMs respond to prompts by generating text continuations that are statistically consistent with the patterns seen during training. This includes many premise-to-conclusion patterns that can look like logical inference. The key difference is that the model does not explicitly represent premises and apply formal rules but instead predicts likely continuations from similar examples in its training data.</p>
+<p>Consider the following example:</p>
+<div class="lead"> The capital of Germany is… Berlin.</div>
+<p>An LLM producing the answer “Berlin” is not logically deducing the answer. Instead, it is recalling a strong statistical association learned from training data. This behavior reflects what we refer to as <em>pattern matching</em>, which means that the model completes text based on learned correlations and not by applying structured reasoning steps.</p>
+<p>But what about tasks that go beyond pattern recognition, tasks where a correct answer depends on drawing conclusions from given facts? This brings us to a different kind of capability: logical reasoning.</p>
+<p>Logical reasoning involves systematically coming up with conclusions using rules. Unlike pattern matching, it depends on intermediate reasoning steps and the ability to recognize contradictions or draw implications based on formal relationships.</p>
+<p>Consider the following prompt as an example:</p>
+<div class="lead"> All birds can fly. A penguin is a bird. Can a penguin fly?</div>
+<p>There are two ways to evaluate this.</p>
+<p>First, in a <em>closed-world</em> (prompt-only) setting, given the two premises (claims or assumptions) in the prompt, the valid answer is “Yes, a penguin can fly.”</p>
+<p>Second, in an <em>open-world</em> (with background knowledge) setting, if we allow knowledge not included in the prompt (such as that penguins cannot fly), this external fact conflicts with the conclusion derived from the premises, as shown in figure 1.6. A reasoning system should notice the inconsistency and either ask for clarification or weaken the first statement (for example, “Most birds can fly, with exceptions such as penguins.”). </p>
+<p>In contrast, a statistical (pattern-matching) LLM does <em>not</em> explicitly track contradictions but instead predicts based on learned text distributions. For instance, if information such as “All birds can fly” is strongly reinforced in the training data, the model may confidently answer, “Yes, penguins can fly.”</p>
+<figure><a class="zoom" href="assets/figure-1.6.png" tabindex="-1"><img src="assets/figure-1.6.png" alt="" width="999" height="557" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 1.6</span>Contradictory premises lead to a logical inconsistency. From “All birds can fly” and “A penguin is a bird,” we infer “A penguin can fly.” This conclusion conflicts with the established fact “A penguin cannot fly,” which results in a contradiction.</figcaption></figure>
+<p>In the next section, we’ll look at an example of how an LLM handles this “All birds can fly...” prompt.</p>
+<h3 id="h3-logical-reasoning-and-rule-based-systems">Logical reasoning and rule-based systems</h3>
+<div class="lead">Why are explicit rule-based systems not more popular? Rule-based systems were widely used in the ’80s and ’90s for medical diagnosis, legal decisions, and engineering. They are still used in critical domains (medicine, law, aerospace), which often require explicit inference and transparent decision processes. They are hard to implement because they largely rely on human-crafted heuristics. (Heuristics are simple decision rules that give a good-enough answer quickly without guaranteeing an optimal one.) In contrast, deep neural networks, including LLMs, do not implement handwritten rules; they learn decision patterns from data and can be highly flexible when trained at scale.</div>
+<h2 id="h2-simulating-reasoning-without-explicit-rules"><span class="num">1.5</span>Simulating reasoning without explicit rules</h2>
+<p>We saw how contradictory premises can lead to logical inconsistencies. A conventional </p>
+<p>LLM does not explicitly track contradictions but generates responses based on learned text distributions.</p>
+<p>Figure 1.7 shows how a non-reasoning-enhanced LLM like GPT-4o in OpenAI’s </p>
+<p>ChatGPT responds to the “All birds can fly...” prompt discussed in the previous section. </p>
+<p>As you can see, GPT-4o appears to answer correctly even though it is not considered a reasoning model (unlike OpenAI’s other offerings, such as o1, o3, o4-mini, and the more recent GPT-5, which have been explicitly developed with reasoning methodology).</p>
+<figure><a class="zoom" href="assets/figure-1.7.png" tabindex="-1"><img src="assets/figure-1.7.png" alt="" width="922" height="645" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 1.7</span>An illustrative example of how a language model (GPT-4o in ChatGPT) appears to “reason” about a contradictory premise</figcaption></figure>
+<p>So how did the 4o model generate its answer? Does this mean GPT-4o explicitly reasons logically? No, not necessarily. At a minimum, GPT-4o is highly effective at simulating logical reasoning in familiar contexts.</p>
+<p>GPT-4o does not implement explicit contradiction checking; it instead generates answers based on probability-weighted patterns. This approach works well enough if the training data includes many instances that correct the contradiction (for example, text like “penguins cannot fly”) so that the model learns a statistical association between “penguins” and “not flying.” In other words, the model recognizes the contradiction implicitly because it has frequently encountered this exact reasoning scenario during training. This effect relies heavily on statistical associations built from extensive exposure to reasoning-like patterns in training data. So, even when a conventional LLM seems to perform logical deduction, as shown in figure 1.7, it’s not executing explicit, rule-based logic but instead leveraging patterns from its vast training data.</p>
+<p>Still, GPT-4o’s success here is a good illustration of how powerful implicit pattern matching can become when trained at a massive scale. These pattern-based reasoning models usually struggle in a couple of scenarios:</p>
+<ul><li>When the logical scenario is novel (not previously encountered in training data) When reasoning complexity is high, involving intricate, multistep logical relationships</li></ul>
+<h3 id="h3-logical-reasoning-vs-reasoning-models-currently-available-to">Logical reasoning vs. reasoning models currently available today</h3>
+<div class="lead">Although GPT-4o is not officially labeled as a reasoning model, OpenAI offers several dedicated reasoning models, including o1, o3, o4-mini, and GPT-5. Moreover, other companies have been developing LLMs with explicit reasoning capabilities. As of this writing, popular examples include Anthropic’s Claude 4, xAI’s Grok 4, Google’s Gemini 2.5, DeepSeek’s R1, Alibaba’s Qwen3, and many more. The techniques employed by these models are the focus of this book. As we’ll see, this happens without implementing a rule-based reasoning pipeline. Instead, the LLM will learn or improve its reasoning capabilities through modified inference and training methodologies.</div>
+<p>We might say that LLMs simulate logical reasoning through learned patterns. We can improve this further with specific reasoning methods, including inference-compute scaling and post-training strategies such as reinforcement learning, but the LLMs are not explicitly executing any rule-based logic internally.</p>
+<p>Moreover, LLMs exist on a spectrum. Even before the advent of dedicated reasoning models such as OpenAI’s o1 and DeepSeek-R1, LLMs were capable of simulating reasoning behavior. These models exhibited behaviors aligning with the chapter’s earlier definition of reasoning in section 1.1, namely, generating intermediate steps before producing a final answer. What we now explicitly label a “reasoning model” is essentially a more refined version of this capability. These improved reasoning capabilities are achieved by using specific inference-compute scaling techniques (discussed in chapters 4 and 5) and targeted post-training methods, such as reinforcement learning (chapters 6 and 7), designed to improve and reinforce reasoning-like behavior.</p>
+<nav class="pager"><a class="prev" href="page-06.html" rel="prev"><span class="dir">上一页</span><span class="t">1.3 Improving LLM reasoning with training and inference techniques</span></a><a class="next" href="page-08.html" rel="next"><span class="dir">下一页</span><span class="t">1.6 Why build reasoning models from scratch?</span></a></nav>
+</main>
+</body>
+</html>

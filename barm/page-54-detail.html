@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>数学推导详解 · 6.2 GRPO 目标函数 · Build a Reasoning Model</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">数学推导详解 · 6.2 GRPO</span>
+<a class="nav" href="page-54.html">原文</a>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">对应原文第 54 页 · 第 6 章 Scaling reinforcement learning</span></div>
+
+<h1>6.2 GRPO 目标函数：从策略梯度到公式</h1>
+
+<div class="lead">
+原文把 GRPO 的目标函数<b>只放在图 6.9 里</b>，正文一句公式推导都没有。这一页把它写出来：<b>那串 min / clip / 1/|o| 各自在做什么、GRPO 相比 PPO 到底省了什么、为什么 \(1/|o_i|\) 这个 token 级平均项是后续所有改进（DAPO、Dr. GRPO）的战场</b>。
+</div>
+
+<h2 class="deriv">一、GRPO 要优化的东西</h2>
+
+<p>和 PPO 一样，目标是最大化期望奖励：</p>
+
+\[
+J(\theta) = \mathbb{E}_{x \sim \mathcal{D}}\ \mathbb{E}_{y \sim \pi_\theta(\cdot|x)}\big[R(x, y)\big]
+\]
+
+<p>DeepSeekMath 论文给出的完整 GRPO 定义式（以及 <a href="page-53-detail.html">6.1.1 推导</a>第二节的 RLVR 奖励 \(R = r_{\text{verifier}}\)）：</p>
+
+\[
+\boxed{\;\mathcal{L}_{\text{GRPO}}(\theta) = -\frac{1}{G}\sum_{i=1}^{G}\frac{1}{|o_i|}\sum_{t=1}^{|o_i|}\Big[\min\big(\rho_{i,t}\hat{A}_i,\ \operatorname{clip}(\rho_{i,t}, 1-\epsilon, 1+\epsilon)\hat{A}_i\big) - \beta\,\mathrm{KL}\big(\pi_\theta \| \pi_{\text{ref}}\big)\Big]\;}
+\]
+
+<p>本书第 6 章实现的是它的简化子集——去掉了 \(\frac{1}{|o_i|}\)、\(\rho\)/clip 与 \(\beta\,\mathrm{KL}\) 三项，只留 advantage × 序列 logprob（见第三节）。第 7 章再把后两项加回来。</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>符号</th><th>含义</th><th>来源</th></tr></thead>
+<tbody>
+<tr><td>\(G\)</td><td>每个 prompt 采样的 rollout 数（组大小）</td><td>图 6.9</td></tr>
+<tr><td>\(o_i\)</td><td>第 \(i\) 个 rollout，即 completion / 响应序列</td><td>图 6.8 步骤 2–3</td></tr>
+<tr><td>\(|o_i|\)</td><td>第 \(i\) 个 rollout 的 <b>token 数</b></td><td>—</td></tr>
+<tr><td>\(t\)</td><td>序列内的位置</td><td>—</td></tr>
+<tr><td>\(\rho_{i,t}\)</td><td>重要性比率 \(= \pi_\theta/\pi_{\text{old}}\) 在第 \(t\) 步的值</td><td><a href="page-67-detail.html">7.4</a></td></tr>
+<tr><td>\(\hat{A}_i\)</td><td>第 \(i\) 个 rollout 的 <b>标量</b> advantage（组内归一化后的奖励）</td><td><a href="page-58-detail.html">6.7</a></td></tr>
+<tr><td>\(\epsilon\)</td><td>裁剪超参，典型 0.2</td><td>第 7 章</td></tr>
+<tr><td>\(\beta\)</td><td>KL 系数</td><td><a href="page-70-detail.html">7.5</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 class="deriv">二、逐项拆解：每个符号在做什么</h2>
+
+<h3>2.1 从内到外：三层求和的职责</h3>
+
+<ol class="steps">
+<li><b>最内层 \(\sum_t\)</b>：沿<b>序列内的时间</b>累加 token 级的策略比率项。这是 <a href="page-58-detail.html">6.9</a> 里那个 policy gradient loss 的原始形态。</li>
+<li><b>中间层 \(1/|o_i|\)</b>（论文有、本书简化版没有）：把该 rollout 的 token 级求和<b>除以其长度</b>，得到每 token 平均。这是后续 DAPO / Dr. GRPO 争论的战场（见第四节）。</li>
+<li><b>最外层 \(\frac{1}{G}\sum_i\)</b>：沿<b>组内不同 rollout</b>平均，得到 batch 内每个 prompt 的贡献。</li>
+</ol>
+
+<h3>2.2 \(\hat{A}_i\) 为什么是标量而 GRPO 又能不要 critic</h3>
+
+<p>这是 GRPO 最重要的简化。PPO 里 \(A_t\) 是<b>逐 token</b>的（由 critic 逐步估计），GRPO 里 \(\hat{A}_i\) 是<b>整段共享一个常数</b>：</p>
+
+\[
+\hat{A}_i = \frac{r_i - \text{mean}(\{r_1,\dots,r_G\})}{\text{std}(\{r_1,\dots,r_G\})}
+\]
+
+<p>推导与「为什么 adv_avg 恒为 0」在 <a href="page-58-detail.html">6.7 推导</a>里。<b>用组内相对排名代替 critic</b>，就省掉了 value model 及其全部成本：</p>
+
+<div class="tw">
+<table>
+<thead><tr><th></th><th>PPO</th><th>GRPO</th></tr></thead>
+<tbody>
+<tr><td>advantage 来源</td><td>critic \(V_\psi\) 回归估计 + GAE</td><td><b>同组内其它 rollout 的 reward</b></td></tr>
+<tr><td>额外模型</td><td>reference + reward + <b>critic</b> = 3</td><td>reference = 1（还常常省掉）</td></tr>
+<tr><td>advantage 粒度</td><td>逐 token \(A_t\)</td><td><b>逐序列 \(\hat{A}_i\)，组内共享</b></td></tr>
+<tr><td>归一化</td><td>GAE 里的 \(\lambda\) 折扣</td><td>组内 \(z\)-score 标准化</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>原文：<i>GRPO is more resource friendly than PPO because it doesn't require a separate value model</i>。</p>
+
+<div class="eq-note">
+<b>代价是什么：</b>组内 advantage 假设「同一个 prompt 的不同 rollout 之间的差异，就是好坏的差异」。这比 critic 的假设<b>更强也更粗糙</b>——它假设 credit assignment 可以完全均匀地摊到整段序列上。原文图 6.8 的第 4 步正是这个假设：<i>Customers only give us feedback after tasting the entire dish</i>。<b>只判断最终结果，不判断中间步骤</b>。
+</div>
+
+<h3>2.3 \(\min\) 那一项：悲观下界</h3>
+
+<p>与 PPO 完全相同，展开看（\(\hat{A} > 0\) 时）：</p>
+
+\[
+\min\big(\rho\hat{A},\ \operatorname{clip}(\rho,1\pm\epsilon)\hat{A}\big) =
+\begin{cases}
+\rho\hat{A} & \rho < 1+\epsilon \\[4pt]
+(1+\epsilon)\hat{A} & \rho > 1+\epsilon
+\end{cases}
+\]
+
+<p>即：<b>「变好」有上限，「变坏」不设上限</b>。完整分析（为什么必须用 <code>min</code> 而不是两边都裁剪、20.09 → 11.00 的手算）见 <a href="page-67-detail.html">7.4 推导</a>。</p>
+
+<h3>2.4 KL 项：为什么它乘在 \(\frac{1}{|o_i|}\sum_t\) 内部</h3>
+
+<p>注意 KL 项的写法是<b>逐 token 求和</b>的（<a href="page-69.html">7.5.1</a> 的 <code>kl_loss</code> 逐位置计算 logprob 之差再求和）：</p>
+
+\[
+\sum_{t=1}^{|o_i|}\big[\log\pi_\theta(y_t|\cdot) - \log\pi_{\text{ref}}(y_t|\cdot)\big] \approx |o_i| \cdot \mathrm{KL}\big(\pi_\theta \,\|\, \pi_{\text{ref}}\big)
+\]
+
+<div class="warn">
+<span class="tag">放在求和内 vs 求和外，效果完全不同</span>
+<p>放在 \(\sum_t\) <b>内</b>（原版 GRPO）：长序列的 KL 惩罚天然更大，因为多乘了 \(|o_i|\)。</p>
+<p>放在 \(\sum_t\) <b>外</b>：变成「每条序列的 KL 取平均」，与长度无关。</p>
+<p>这不是形式上的小差别——它会改变模型对长度的<b>隐式偏好</b>。而 <a href="page-48-detail.html">5.6 推导</a>已经说明 logprob 是长度敏感的，正是这个偏好在奖励崩塌时会造成 7.5 节描述的熵升和输出随机化。<b>详细机理见 <a href="page-70-detail.html">7.5 推导</a>。</b></p>
+</div>
+
+<h2 class="deriv">三、这一版的简化：KL 被拿掉了</h2>
+
+<p>原文明确说，本书先实现<b>既不含 KL、也不含裁剪比率</b>的简化版（listing 6.13）：</p>
+
+\[
+\mathcal{L}^{\text{simplified}} = -\frac{1}{G}\sum_{i=1}^{G} \hat{A}_i \underbrace{\Big(\sum_{t=1}^{|o_i|} \log \pi_\theta(y_t^{(i)} \mid y_{&lt;t}^{(i)}, x)\Big)}_{\text{序列级 logprob}}
+\]
+
+<p>注意：这一版直接用序列级 logprob 乘以 advantage，连 <code>ρ</code> 都不出现——因为「同一批数据只更新一次」（<code>inner_epochs=1</code>），新旧策略相同，<code>ρ ≡ 1</code>，裁剪无意义。理由原文给了两条：<i>The KL loss is part of the original GRPO formulation, but it is not strictly essential. Many LLM developers omit it in practice</i>。至于在数学任务上<b>关掉更好</b>的机理，见 <a href="page-70-detail.html">7.5 推导</a>的失效模式一节。</p>
+
+<div class="key">
+<span class="tag">书里的实现顺序与公式的顺序不一样</span>
+<p>注意这个对照：</p>
+<ul>
+<li><b>6.2 / 6.9（本章）</b>：<b>既无裁剪比率，也无 KL</b>——图 6.9 里画了这两项，但正文明确说「先实现简化版」。</li>
+<li><b>7.4</b>：才加入裁剪比率的实际实现与实验效果。</li>
+<li><b>7.5</b>：才加入 KL 项，<b>并解释它为什么可能有害</b>。</li>
+</ul>
+<p>原文在 6.2 节的 Note 里已经提醒：<i>readers experienced with GRPO might wonder about the use of clipped policy ratios; we'll cover them in the next chapter</i>。<b>这个「图 6.9 里出现的东西要到第 7 章才实现」的落差，正是「图比正文先行」的典型例子。</b></p>
+</div>
+
+<h2 class="deriv">四、\(1/|o_i|\) 这个项：后续所有改进的战场</h2>
+
+<p>原版 GRPO 对<b>每个 token</b>等权。而 \(\hat{A}_i\) 是整段共享的常数，所以 token 级权重实际上由 \(\hat{A}_i/|o_i|\) 决定。这意味着：</p>
+
+<p><b>长序列的每个 token 受到的推动力更小。</b>这是一个<b>隐式的长度惩罚</b>——在组内归一化已经消掉「奖励的绝对尺度」之后，长度偏好就成为唯一残留的尺度效应。</p>
+
+<div class="tw">
+<table>
+<thead><tr><th>方法</th><th>聚合方式</th><th>后果</th></tr></thead>
+<tbody>
+<tr><td>原版 GRPO</td><td>token 级 mean：\(\frac{1}{|o_i|}\sum_t\)</td><td>对<b>错误答案的</b>长推理惩罚更重（低质量轨迹被压得更扁）</td></tr>
+<tr><td><b>DAPO</b></td><td>token 级 mean，但<b>去掉长度分组归一化</b></td><td>避免长答案被系统性压低</td></tr>
+<tr><td><b>Dr. GRPO</b></td><td><b>序列级</b>：不除 \(|o_i|\)，用 \(\frac{1}{G}\sum_i\sum_t\)</td><td>每个 rollout 对总梯度贡献正比于其长度</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="warn">
+<span class="tag">Dr. GRPO 指出的两个偏差</span>
+<p><b>（1）长度偏置。</b>原版 GRPO 里 \(\frac{1}{|o_i|}\) 让长 rollout 的<b>单个 token 权重</b>被稀释，而这条轨迹里的 token 本来就更可能是错的——<b>错误被重复惩罚</b>，模型学到「越短越安全」的捷径。</p>
+<p><b>（2）组内标准化偏置。</b>\(\hat{A}_i = (r_i - \bar r)/\sigma_r\) 里的 \(\sigma_r\) 是<b>随机变量</b>。当组内奖励方差大时 \(\sigma_r\) 大，advantage 被压小；方差小时被放大。而这个缩放<b>与该 prompt 本身的质量无关</b>，纯粹引入了噪声。Dr. GRPO 的建议是直接用 \(r_i - \bar r\)，不除标准差。</p>
+<p>两条改进的完整讨论见 <a href="page-73.html">7.6.3</a>。</p>
+</div>
+
+<h2 class="deriv">五、零信号组：GRPO 特有的失效</h2>
+
+<p>因为 \(\hat{A}_i\) 来自组内相对比较，<b>组内奖励全同</b>时（\(\sigma_r = 0\)）：</p>
+
+\[
+\hat{A}_i = \frac{r_i - r_i}{0} = \frac{0}{0} \;\text{（未定义）}
+\]
+
+<p>实践中靠两条防线：</p>
+
+<ol class="steps">
+<li><b>数学上</b>：\(r_i \equiv c\) 时分子恰为 0，代码里用 <code>std + 1e-4</code> 之类的小量兜底，得到 \(\hat{A} = 0\)，梯度为 0（<a href="page-58-detail.html">6.7 推导 · 4.4</a>）。</li>
+<li><b>算法上</b>：DAPO 的 <b>dynamic sampling</b> 直接<b>丢弃</b>这些组，并继续采样直到攒够 \(G\) 个<b>有效</b>组——把算力花在有信号的样本上。</li>
+</ol>
+
+<div class="eq-note">
+<b>这解释了 GRPO 训练曲线上一个常见现象：</b>简单 prompt 很快全对 → 组内无方差 → 该 prompt 贡献 0 梯度；只有难题持续贡献信号。所以 <code>reward_avg</code> 上升的同时，<b>有效样本比例</b>在下降——这是正常的，不是 bug。
+</div>
+
+<h2 class="deriv">六、公式里的每个 \(\sum\) 对应到哪段代码</h2>
+
+<div class="tw">
+<table>
+<thead><tr><th>公式项</th><th>代码（listing 6.6 / 6.9）</th><th>详解</th></tr></thead>
+<tbody>
+<tr><td>\(\log\pi_\theta(y_t|\cdot)\)</td><td><code>new_logps</code></td><td><a href="page-58-detail.html">6.8</a></td></tr>
+<tr><td>\(\log\pi_{\text{old}}(y_t|\cdot)\)</td><td><code>old_logps</code></td><td><a href="page-58-detail.html">6.8</a></td></tr>
+<tr><td>\(\rho_{i,t} = e^{\text{new} - \text{old}}\)</td><td><code>torch.exp(new_logps - old_logps)</code></td><td><a href="page-67-detail.html">7.4</a></td></tr>
+<tr><td>\(\hat{A}_i\)</td><td><code>adv = (rewards - mean) / std</code></td><td><a href="page-58-detail.html">6.7</a></td></tr>
+<tr><td>\(\min(\cdot, \text{clip}(\cdot))\hat{A}\)</td><td><code>torch.min(ratio*adv, clipped_ratio*adv)</code></td><td><a href="page-67-detail.html">7.4</a></td></tr>
+<tr><td>\(\frac{1}{|o_i|}\sum_t\)</td><td>—（DeepSeekMath 论文有；<b>本书用序列级 sum</b>）</td><td>第四节</td></tr>
+<tr><td>\(\beta\cdot\mathrm{KL}\)</td><td><code>kl_loss</code>（<code>kl_coeff=0</code> 时关掉）</td><td><a href="page-70-detail.html">7.5</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="key">
+<span class="tag">一个必须说清的落差</span>
+<p>DeepSeekMath 论文里的 GRPO 目标函数带有 <code>1/|o_i|</code>（token 级平均），但本书的实现与正文明确写的是 <b>序列级 sum</b>：<i>that kind of length-based rescaling is not part of the original GRPO formulation, which instead uses sequence-level logprobs for the whole rollout</i>。两条表述不一致——论文公式有除法，本书代码没有。</p>
+<p>本书这样做有两个实际理由：<b>（1）</b>让 6.9 节的 −2.5764 能直接用手算验证（见 <a href="page-58-detail.html">6.9 推导 · 5.4</a>）；<b>（2）</b>少一个除法就少一个可以错的地方。后续 Dr. GRPO 与 DAPO 对 <code>1/|o_i|</code> 的批评，针对的正是论文公式那一侧——见第四节。</p>
+</div>
+
+<nav class="deriv-nav">
+<a href="page-58-detail.html"><span class="dir">详解</span>核心：6.7–6.9 序列 logprob 与策略梯度损失</a>
+<a href="page-67-detail.html"><span class="dir">详解</span>7.4 裁剪策略比率</a>
+<a href="page-54.html"><span class="dir">原文</span>6.2 用 GRPO 做 RLVR</a>
+</nav>
+
+</main>
+
+<script defer src="assets/katex/katex.min.js"></script>
+<script defer src="assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>

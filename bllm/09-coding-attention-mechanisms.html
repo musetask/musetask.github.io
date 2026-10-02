@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="generator" content="pdf2html2.py">
+<title>Coding attention mechanisms · Build a Large Language Model (From Scratch)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f5f8f'/%3E%3Cpath d='M9 8h9a4.5 4.5 0 0 1 0 9H9zm0 9h9a4.5 4.5 0 0 1 0 9H9z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="assets/detail.css">
+<script>(function(){try{var t=localStorage.getItem('pdf2html-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn" href="index.html" title="Contents">&#9776;</a>
+  <a class="brand" href="index.html">Coding attention mechanisms</a>
+  <button class="btn" id="themeToggle" aria-label="Toggle dark mode">&#9788;</button>
+</header>
+<main id="main">
+<details class="toc"><summary>本章目录</summary><ul><li class="l2"><a href="#this-chapter-covers-3">This chapter covers</a></li><li class="l2"><a href="#the-problem-with-modeling-long-sequences">3.1 The problem with modeling long sequences</a></li><li class="l2"><a href="#capturing-data-dependencies-with-attention-mechanisms">3.2 Capturing data dependencies with attention mechanisms</a></li><li class="l2"><a href="#attending-to-different-parts-of-the-input-with-self-attention">3.3 Attending to different parts of the input with self-attention</a></li><li class="l3"><a href="#the-self-in-self-attention">The “self” in self-attention</a></li><li class="l3"><a href="#a-simple-self-attention-mechanism-without-trainable-weights">3.3.1 A simple self-attention mechanism without trainable weights</a></li><li class="l3"><a href="#understanding-dot-products">Understanding dot products</a></li><li class="l3"><a href="#computing-attention-weights-for-all-input-tokens">3.3.2 Computing attention weights for all input tokens</a></li><li class="l2"><a href="#implementing-self-attention-with-trainable-weights">3.4 Implementing self-attention with trainable weights</a></li><li class="l3"><a href="#computing-the-attention-weights-step-by-step">3.4.1 Computing the attention weights step by step</a></li><li class="l3"><a href="#weight-parameters-vs-attention-weights">Weight parameters vs. attention weights</a></li><li class="l3"><a href="#the-rationale-behind-scaled-dot-product-attention">The rationale behind scaled-dot product attention</a></li><li class="l3"><a href="#why-query-key-and-value">Why query, key, and value?</a></li><li class="l3"><a href="#implementing-a-compact-self-attention-python-class">3.4.2 Implementing a compact self-attention Python class</a></li><li class="l3"><a href="#exercise-3-1-comparing-selfattention-v1-and-selfattention-v2">Exercise 3.1 Comparing SelfAttention_v1 and SelfAttention_v2</a></li><li class="l2"><a href="#hiding-future-words-with-causal-attention">3.5 Hiding future words with causal attention</a></li><li class="l3"><a href="#applying-a-causal-attention-mask">3.5.1 Applying a causal attention mask</a></li><li class="l3"><a href="#information-leakage">Information leakage</a></li><li class="l3"><a href="#masking-additional-attention-weights-with-dropout">3.5.2 Masking additional attention weights with dropout</a></li><li class="l3"><a href="#implementing-a-compact-causal-attention-class">3.5.3 Implementing a compact causal attention class</a></li><li class="l2"><a href="#extending-single-head-attention-to-multi-head-attention">3.6 Extending single-head attention to multi-head attention</a></li><li class="l3"><a href="#stacking-multiple-single-head-attention-layers">3.6.1 Stacking multiple single-head attention layers</a></li><li class="l3"><a href="#exercise-3-2-returning-two-dimensional-embedding-vectors">Exercise 3.2 Returning two-dimensional embedding vectors</a></li><li class="l3"><a href="#implementing-multi-head-attention-with-weight-splits">3.6.2 Implementing multi-head attention with weight splits</a></li><li class="l3"><a href="#exercise-3-3-initializing-gpt-2-size-attention-modules">Exercise 3.3 Initializing GPT-2 size attention modules</a></li><li class="l2"><a href="#summary-3">Summary</a></li></ul></details><h1 id="coding-attention-mechanisms">Coding attention mechanisms<a class="anchor" href="#coding-attention-mechanisms">#</a></h1>
+<h2 id="this-chapter-covers-3">This chapter covers<a class="anchor" href="#this-chapter-covers-3">#</a></h2>
+<p>At this point, you know how to prepare the input text for training LLMs by splitting text into individual word and subword tokens, which can be encoded into vector representations, embeddings, for the LLM. </p>
+<p> Now, we will look at an integral part of the LLM architecture itself, attention mechanisms, as illustrated in figure 3.1. We will largely look at attention mechanisms in isolation and focus on them at a mechanistic level. Then we will code the remaining</p>
+<p><strong>50</strong></p>
+<div class="pdfpage" data-page="72">PDF p. 72</div>
+<figure><img src="assets/fig-0038.png" alt="" loading="lazy"><figcaption>Figure 3.1 The three main stages of coding an LLM. This chapter focuses on step 2 of stage 1: implementing  attention mechanisms, which are an integral part of the LLM architecture.</figcaption></figure>
+<figure><img src="assets/fig-0039.png" alt="" loading="lazy"><figcaption>Figure 3.2 The figure depicts different attention mechanisms we will code in this chapter, starting  with a simplified version of self-attention before adding the trainable weights. The causal attention  mechanism adds a mask to self-attention that allows the LLM to generate one word at a time. Finally,  multi-head attention organizes the attention mechanism into multiple heads, allowing the model to  capture various aspects of the input data in parallel.</figcaption></figure>
+<p>parts of the LLM surrounding the self-attention mechanism to see it in action and to create a model to generate text.</p>
+<p> We will implement four different variants of attention mechanisms, as illustrated in figure 3.2. These different attention variants build on each other, and the goal is to</p>
+<div class="pdfpage" data-page="73">PDF p. 73</div>
+<figure><img src="assets/fig-0040.png" alt="" loading="lazy"><figcaption>Figure 3.3 When translating text from one language to another, such as German to English, it’s not  possible to merely translate word by word. Instead, the translation process requires contextual  understanding and grammatical alignment. </figcaption></figure>
+<p>arrive at a compact and efficient implementation of multi-head attention that we can then plug into the LLM architecture we will code in the next chapter.</p>
+<h2 id="the-problem-with-modeling-long-sequences">3.1 The problem with modeling long sequences<a class="anchor" href="#the-problem-with-modeling-long-sequences">#</a></h2>
+<p>Before we dive into the <em>self-attention </em>mechanism at the heart of LLMs, let’s consider the problem with pre-LLM architectures that do not include attention mechanisms. Suppose we want to develop a language translation model that translates text from one language into another. As shown in figure 3.3, we can’t simply translate a text word by word due to the grammatical structures in the source and target language.</p>
+<p>To address this problem, it is common to use a deep neural network with two submodules, an <em>encoder</em> and a <em>decoder</em>. The job of the encoder is to first read in and process the entire text, and the decoder then produces the translated text.</p>
+<p> Before the advent of transformers, <em>recurrent neural networks</em> (RNNs) were the most popular encoder–decoder architecture for language translation. An RNN is a type of neural network where outputs from previous steps are fed as inputs to the current</p>
+<div class="pdfpage" data-page="74">PDF p. 74</div>
+<figure><img src="assets/fig-0041.png" alt="" loading="lazy"><figcaption>Figure 3.4 Before the advent of transformer models, encoder–decoder RNNs were a popular choice  for machine translation. The encoder takes a sequence of tokens from the source language as input,  where a hidden state (an intermediate neural network layer) of the encoder encodes a compressed  representation of the entire input sequence. Then, the decoder uses its current hidden state to begin  the translation, token by token.</figcaption></figure>
+<p>step, making them well-suited for sequential data like text. If you are unfamiliar with RNNs, don’t worry—you don’t need to know the detailed workings of RNNs to follow this discussion; our focus here is more on the general concept of the encoder– decoder setup. </p>
+<p> In an encoder–decoder RNN, the input text is fed into the encoder, which processes it sequentially. The encoder updates its hidden state (the internal values at the hidden layers) at each step, trying to capture the entire meaning of the input sentence in the final hidden state, as illustrated in figure 3.4. The decoder then takes this final hidden state to start generating the translated sentence, one word at a time. It also updates its hidden state at each step, which is supposed to carry the context necessary for the next-word prediction.</p>
+<p>While we don’t need to know the inner workings of these encoder–decoder RNNs, the key idea here is that the encoder part processes the entire input text into a hidden state (memory cell). The decoder then takes in this hidden state to produce the output. You can think of this hidden state as an embedding vector, a concept we discussed in chapter 2.</p>
+<p> The big limitation of encoder–decoder RNNs is that the RNN can’t directly access earlier hidden states from the encoder during the decoding phase. Consequently, it relies solely on the current hidden state, which encapsulates all relevant information. This can lead to a loss of context, especially in complex sentences where dependencies might span long distances.</p>
+<div class="pdfpage" data-page="75">PDF p. 75</div>
+<figure><img src="assets/fig-0042.png" alt="" loading="lazy"><figcaption>Figure 3.5 Using an attention mechanism, the text-generating decoder part of the network can  access all input tokens selectively. This means that some input tokens are more important than others  for generating a given output token. The importance is determined by the attention weights, which we  will compute later. Note that this figure shows the general idea behind attention and does not depict  the exact implementation of the Bahdanau mechanism, which is an RNN method outside this book’s  scope.</figcaption></figure>
+<p> Fortunately, it is not essential to understand RNNs to build an LLM. Just remember that encoder–decoder RNNs had a shortcoming that motivated the design of attention mechanisms.</p>
+<h2 id="capturing-data-dependencies-with-attention-mechanisms">3.2 Capturing data dependencies with attention  mechanisms<a class="anchor" href="#capturing-data-dependencies-with-attention-mechanisms">#</a></h2>
+<p>Although RNNs work fine for translating short sentences, they don’t work well for longer texts as they don’t have direct access to previous words in the input. One major shortcoming in this approach is that the RNN must remember the entire encoded input in a single hidden state before passing it to the decoder (figure 3.4).</p>
+<p> Hence, researchers developed the <em>Bahdanau attention</em> mechanism for RNNs in 2014 (named after the first author of the respective paper; for more information, see appendix B), which modifies the encoder–decoder RNN such that the decoder can selectively access different parts of the input sequence at each decoding step as illustrated in figure 3.5.</p>
+<p>Interestingly, only three years later, researchers found that RNN architectures are not required for building deep neural networks for natural language processing and</p>
+<div class="pdfpage" data-page="76">PDF p. 76</div>
+<figure><img src="assets/fig-0043.png" alt="" loading="lazy"><figcaption>Figure 3.6 Self-attention is a mechanism in transformers used to compute  more efficient input representations by allowing each position in a sequence to  interact with and weigh the importance of all other positions within the same  sequence. In this chapter, we will code this self-attention mechanism from the  ground up before we code the remaining parts of the GPT-like LLM in the  following chapter.</figcaption></figure>
+<p>proposed the original <em>transformer</em> architecture (discussed in chapter 1) including a self-attention mechanism inspired by the Bahdanau attention mechanism. </p>
+<p> Self-attention is a mechanism that allows each position in the input sequence to consider the relevancy of, or “attend to,” all other positions in the same sequence when computing the representation of a sequence. Self-attention is a key component of contemporary LLMs based on the transformer architecture, such as the GPT series.   This chapter focuses on coding and understanding this self-attention mechanism used in GPT-like models, as illustrated in figure 3.6. In the next chapter, we will code the remaining parts of the LLM.</p>
+<h2 id="attending-to-different-parts-of-the-input-with-self-attention">3.3 Attending to different parts of the input  with self-attention<a class="anchor" href="#attending-to-different-parts-of-the-input-with-self-attention">#</a></h2>
+<p>We’ll now cover the inner workings of the self-attention mechanism and learn how to code it from the ground up. Self-attention serves as the cornerstone of every LLM based on the transformer architecture. This topic may require a lot of focus and attention (no pun intended), but once you grasp its fundamentals, you will have conquered one of the toughest aspects of this book and LLM implementation in general.</p>
+<div class="pdfpage" data-page="77">PDF p. 77</div>
+<figure><img src="assets/fig-0044.png" alt="" loading="lazy"><figcaption>Figure 3.7 The goal of self-attention is to compute a context vector for each input  element that combines information from all other input elements. In this example,  we compute the context vector z(2). The importance or contribution of each input  element for computing z(2) is determined by the attention weights 21 to 2T. When  computing z(2), the attention weights are calculated with respect to input element  x(2) and all other inputs.</figcaption></figure>
+<h3 id="the-self-in-self-attention">The “self” in self-attention <a class="anchor" href="#the-self-in-self-attention">#</a></h3>
+<div class="plainbox"><p>In self-attention, the “self” refers to the mechanism’s ability to compute attention</p><p>weights by relating different positions within a single input sequence. It assesses and</p><p>learns the relationships and dependencies between various parts of the input itself,</p><p>such as words in a sentence or pixels in an image. </p><p>This is in contrast to traditional attention mechanisms, where the focus is on the rela-</p><p>tionships between elements of two different sequences, such as in sequence-to-</p><p>sequence models where the attention might be between an input sequence and an</p><p>output sequence, such as the example depicted in figure 3.5.</p></div>
+<p>Since self-attention can appear complex, especially if you are encountering it for the first time, we will begin by examining a simplified version of it. Then we will implement the self-attention mechanism with trainable weights used in LLMs.</p>
+<h3 id="a-simple-self-attention-mechanism-without-trainable-weights">3.3.1 A simple self-attention mechanism without trainable weights<a class="anchor" href="#a-simple-self-attention-mechanism-without-trainable-weights">#</a></h3>
+<p>Let’s begin by implementing a simplified variant of self-attention, free from any trainable weights, as summarized in figure 3.7. The goal is to illustrate a few key concepts in self-attention before adding trainable weights.</p>
+<div class="pdfpage" data-page="78">PDF p. 78</div>
+<p>Figure 3.7 shows an input sequence, denoted as <em>x</em>, consisting of <em>T</em> elements represented as <em>x</em>(1) to <em>x</em>(T). This sequence typically represents text, such as a sentence, that has already been transformed into token embeddings.</p>
+<p> For example, consider an input text like “Your journey starts with one step.” In this case, each element of the sequence, such as <em>x</em>(1), corresponds to a <em>d</em>-dimensional embedding vector representing a specific token, like “Your.” Figure 3.7 shows these input vectors as three-dimensional embeddings.</p>
+<p> In self-attention, our goal is to calculate context vectors <em>z</em>(i) for each element <em>x</em>(i) in the input sequence. A <em>context vector</em> can be interpreted as an enriched embedding vector.</p>
+<p> To illustrate this concept, let’s focus on the embedding vector of the second input element, <em>x</em>(2) (which corresponds to the token “journey”), and the corresponding context vector, <em>z</em>(2), shown at the bottom of figure 3.7. This enhanced context vector, <em>z</em>(2), is an embedding that contains information about <em>x</em>(2) and all other input elements,</p>
+<p><em>x</em>(1) to <em>x</em>(T).</p>
+<p> Context vectors play a crucial role in self-attention. Their purpose is to create enriched representations of each element in an input sequence (like a sentence) by incorporating information from all other elements in the sequence (figure 3.7). This is essential in LLMs, which need to understand the relationship and relevance of words in a sentence to each other. Later, we will add trainable weights that help an LLM learn to construct these context vectors so that they are relevant for the LLM to generate the next token. But first, let’s implement a simplified self-attention mechanism to compute these weights and the resulting context vector one step at a time. </p>
+<p> Consider the following input sentence, which has already been embedded into three-dimensional vectors (see chapter 2). I’ve chosen a small embedding dimension to ensure it fits on the page without line breaks:</p>
+<div class="codeblock"><pre><code><span class="t-kw">import</span> <span class="t-bi">torch</span>
+inputs <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>(
+ [[<span class="t-num">0.43</span>, <span class="t-num">0.15</span>, <span class="t-num">0.89</span>], <span class="t-com"># Your (x^1)
+ [0.55, 0.87, 0.66], # journey (x^2)
+ [0.57, 0.85, 0.64], # starts (x^3)
+ [0.22, 0.58, 0.33], # with (x^4)
+ [0.77, 0.25, 0.10], # one (x^5)
+ [0.05, 0.80, 0.55]] # step (x^6)
+)</span></code></pre></div>
+<p>The first step of implementing self-attention is to compute the intermediate values ω, referred to as attention scores, as illustrated in figure 3.8. Due to spatial constraints, the figure displays the values of the preceding <code>inputs</code> tensor in a truncated version; for example, 0.87 is truncated to 0.8. In this truncated version, the embeddings of the words “journey” and “starts” may appear similar by random chance.</p>
+<div class="pdfpage" data-page="79">PDF p. 79</div>
+<figure><img src="assets/fig-0045.png" alt="" loading="lazy"><figcaption>The overall goal is to illustrate the computation of the context vector z(2) using the  Figure 3.8 second input element, x(2) as a query. This figure shows the first intermediate step, computing the  attention scores  between the query x(2) and all other input elements as a dot product. (Note that  the numbers are truncated to one digit after the decimal point to reduce visual clutter.)</figcaption></figure>
+<p>Figure 3.8 illustrates how we calculate the intermediate attention scores between the query token and each input token. We determine these scores by computing the dot product of the query, <em>x</em>(2), with every other input token:</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>The second input token serves as the query.</li></ul></details><pre><code>query <span class="t-op">=</span> inputs[<span class="t-num">1</span>]
+attn_scores_2 <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">empty</span>(inputs.shape[<span class="t-num">0</span>])
+<span class="t-kw">for</span> i, x_i <span class="t-kw">in</span> <span class="t-bi">enumerate</span>(inputs):
+ attn_scores_2[i] <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">dot</span>(x_i, query)
+<span class="t-bi">print</span>(attn_scores_2)</code></pre></div>
+<p>The computed attention scores are</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([<span class="t-num">0.9544</span>, <span class="t-num">1.4950</span>, <span class="t-num">1.4754</span>, <span class="t-num">0.8434</span>, <span class="t-num">0.7070</span>, <span class="t-num">1.0865</span>])</code></pre></div>
+<h3 id="understanding-dot-products">Understanding dot products <a class="anchor" href="#understanding-dot-products">#</a></h3>
+<aside class="detail-link"><span class="tag">数学推导详解</span>点积、softmax 归一化与 <code>√d<sub>k</sub></code> 缩放的完整推导，见 <a href="09-coding-attention-mechanisms-detail.html"><b>3.3–3.5 自注意力与因果掩码</b></a>。全部推导页的索引见 <a href="math-detail.html">math-detail.html</a>。</aside>
+<div class="plainbox"><p>A dot product is essentially a concise way of multiplying two vectors element-wise and</p><p>then summing the products, which can be demonstrated as follows:</p></div>
+<div class="codeblock"><pre><code>res <span class="t-op">=</span> <span class="t-num">0.</span>
+<span class="t-kw">for</span> idx, element <span class="t-kw">in</span> <span class="t-bi">enumerate</span>(inputs[<span class="t-num">0</span>]):
+ res <span class="t-op">+=</span> inputs[<span class="t-num">0</span>][idx] <span class="t-op">*</span> query[idx]
+<span class="t-bi">print</span>(res)
+<span class="t-bi">print</span>(<span class="t-bi">torch</span>.<span class="t-fn">dot</span>(inputs[<span class="t-num">0</span>], query))</code></pre></div>
+<div class="plainbox"><p>The output confirms that the sum of the element-wise multiplication gives the same</p><p>results as the dot product:</p></div>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>(<span class="t-num">0.9544</span>)
+<span class="t-fn">tensor</span>(<span class="t-num">0.9544</span>)</code></pre></div>
+<div class="pdfpage" data-page="80">PDF p. 80</div>
+<figure><img src="assets/fig-0046.png" alt="" loading="lazy"><figcaption>After computing the attention scores 21 to 2T with respect to the input query x(2), the next  Figure 3.9 step is to obtain the attention weights 21 to 2T by normalizing the attention scores.</figcaption></figure>
+<div class="plainbox"><p>Beyond viewing the dot product operation as a mathematical tool that combines</p><p>two vectors to yield a scalar value, the dot product is a measure of similarity</p><p>because it quantifies how closely two vectors are aligned: a higher dot product indi-</p><p>cates a greater degree of alignment or similarity between the vectors. In the con-</p><p>text of self-attention mechanisms, the dot product determines the extent to which</p><p>each element in a sequence focuses on, or “attends to,” any other element: the</p><p>higher the dot product, the higher the similarity and attention score between two</p><p>elements.</p></div>
+<p>In the next step, as shown in figure 3.9, we normalize each of the attention scores we computed previously. The main goal behind the normalization is to obtain attention weights that sum up to 1. This normalization is a convention that is useful for interpretation and maintaining training stability in an LLM. Here’s a straightforward method for achieving this normalization step:</p>
+<div class="codeblock"><pre><code>attn_weights_2_tmp <span class="t-op">=</span> attn_scores_2 <span class="t-op">/</span> attn_scores_2.<span class="t-bi">sum</span>()
+<span class="t-bi">print</span>(<span class="t-str">"Attention weights:"</span>, attn_weights_2_tmp)
+<span class="t-bi">print</span>(<span class="t-str">"Sum:"</span>, attn_weights_2_tmp.<span class="t-bi">sum</span>())</code></pre></div>
+<p>As the output shows, the attention weights now sum to 1: </p>
+<div class="codeblock"><pre><code>Attention weights: <span class="t-fn">tensor</span>([<span class="t-num">0.1455</span>, <span class="t-num">0.2278</span>, <span class="t-num">0.2249</span>, <span class="t-num">0.1285</span>, <span class="t-num">0.1077</span>, <span class="t-num">0.1656</span>])
+Sum: <span class="t-fn">tensor</span>(<span class="t-num">1.0000</span>)</code></pre></div>
+<p>In practice, it’s more common and advisable to use the softmax function for normalization. This approach is better at managing extreme values and offers more favorable gradient properties during training. The following is a basic implementation of the softmax function for normalizing the attention scores:</p>
+<div class="pdfpage" data-page="81">PDF p. 81</div>
+<div class="codeblock"><pre><code><span class="t-kw">def</span> <span class="t-fn">softmax_naive</span>(x):
+ <span class="t-kw">return</span> <span class="t-bi">torch</span>.<span class="t-fn">exp</span>(x) <span class="t-op">/</span> <span class="t-bi">torch</span>.<span class="t-fn">exp</span>(x).<span class="t-bi">sum</span>(dim<span class="t-op">=</span><span class="t-num">0</span>)
+attn_weights_2_naive <span class="t-op">=</span> <span class="t-fn">softmax_naive</span>(attn_scores_2)
+<span class="t-bi">print</span>(<span class="t-str">"Attention weights:"</span>, attn_weights_2_naive)
+<span class="t-bi">print</span>(<span class="t-str">"Sum:"</span>, attn_weights_2_naive.<span class="t-bi">sum</span>())</code></pre></div>
+<p>As the output shows, the softmax function also meets the objective and normalizes the attention weights such that they sum to 1:</p>
+<div class="codeblock"><pre><code>Attention weights: <span class="t-fn">tensor</span>([<span class="t-num">0.1385</span>, <span class="t-num">0.2379</span>, <span class="t-num">0.2333</span>, <span class="t-num">0.1240</span>, <span class="t-num">0.1082</span>, <span class="t-num">0.1581</span>])
+Sum: <span class="t-fn">tensor</span>(<span class="t-num">1.</span>)</code></pre></div>
+<p>In addition, the softmax function ensures that the attention weights are always positive. This makes the output interpretable as probabilities or relative importance, where higher weights indicate greater importance.</p>
+<p> Note that this naive softmax implementation (<code>softmax_naive</code>) may encounter numerical instability problems, such as overflow and underflow, when dealing with large or small input values. Therefore, in practice, it’s advisable to use the PyTorch implementation of softmax, which has been extensively optimized for performance:</p>
+<div class="codeblock"><pre><code>attn_weights_2 <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">softmax</span>(attn_scores_2, dim<span class="t-op">=</span><span class="t-num">0</span>)
+<span class="t-bi">print</span>(<span class="t-str">"Attention weights:"</span>, attn_weights_2)
+<span class="t-bi">print</span>(<span class="t-str">"Sum:"</span>, attn_weights_2.<span class="t-bi">sum</span>())</code></pre></div>
+<p>In this case, it yields the same results as our previous <code>softmax_naive</code> function:</p>
+<div class="codeblock"><pre><code>Attention weights: <span class="t-fn">tensor</span>([<span class="t-num">0.1385</span>, <span class="t-num">0.2379</span>, <span class="t-num">0.2333</span>, <span class="t-num">0.1240</span>, <span class="t-num">0.1082</span>, <span class="t-num">0.1581</span>])
+Sum: <span class="t-fn">tensor</span>(<span class="t-num">1.</span>)</code></pre></div>
+<p>Now that we have computed the normalized attention weights, we are ready for the final step, as shown in figure 3.10: calculating the context vector <em>z</em>(2) by multiplying the embedded input tokens, <em>x</em>(i), with the corresponding attention weights and then summing the resulting vectors. Thus, context vector <em>z</em>(2) is the weighted sum of all input vectors, obtained by multiplying each input vector by its corresponding attention weight:</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>The second input token is the query.</li></ul></details><pre><code>query <span class="t-op">=</span> inputs[<span class="t-num">1</span>]
+context_vec_2 <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">zeros</span>(query.shape)
+<span class="t-kw">for</span> i,x_i <span class="t-kw">in</span> <span class="t-bi">enumerate</span>(inputs):
+ context_vec_2 <span class="t-op">+=</span> attn_weights_2[i]<span class="t-op">*</span>x_i
+<span class="t-bi">print</span>(context_vec_2)</code></pre></div>
+<p>The results of this computation are</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([<span class="t-num">0.4419</span>, <span class="t-num">0.6515</span>, <span class="t-num">0.5683</span>])</code></pre></div>
+<div class="pdfpage" data-page="82">PDF p. 82</div>
+<figure><img src="assets/fig-0047.png" alt="" loading="lazy"><figcaption>Figure 3.10 The final step, after calculating and normalizing the attention scores to obtain the  attention weights for query x(2), is to compute the context vector z(2). This context vector is a  combination of all input vectors x(1) to x(T) weighted by the attention weights.</figcaption></figure>
+<figure><img src="assets/fig-0048.png" alt="" loading="lazy"><figcaption>Figure 3.11 The highlighted row shows the attention weights for the second  input element as a query. Now we will generalize the computation to obtain  all other attention weights. (Please note that the numbers in this figure are  truncated to two digits after the decimal point to reduce visual clutter. The  values in each row should add up to 1.0 or 100%.)</figcaption></figure>
+<p><sup>+</sup></p>
+<aside class="sidenote">Multiply each input vector</aside>
+<aside class="sidenote">This is the second context vector because</aside>
+<p>Next, we will generalize this procedure for computing context vectors to calculate all context vectors simultaneously.</p>
+<h3 id="computing-attention-weights-for-all-input-tokens">3.3.2 Computing attention weights for all input tokens<a class="anchor" href="#computing-attention-weights-for-all-input-tokens">#</a></h3>
+<p>So far, we have computed attention weights and the context vector for input 2, as shown in the highlighted row in figure 3.11. Now let’s extend this computation to calculate attention weights and context vectors for all inputs.</p>
+<div class="pdfpage" data-page="83">PDF p. 83</div>
+<figure><img src="assets/fig-0049.png" alt="" loading="lazy"><figcaption>Figure 3.12 In step 1, we add an additional for loop to compute the dot  products for all pairs of inputs.</figcaption></figure>
+<p>We follow the same three steps as before (see figure 3.12), except that we make a few modifications in the code to compute all context vectors instead of only the second one, <em>z</em>(2):</p>
+<div class="codeblock"><pre><code>attn_scores <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">empty</span>(<span class="t-num">6</span>, <span class="t-num">6</span>)
+<span class="t-kw">for</span> i, x_i <span class="t-kw">in</span> <span class="t-bi">enumerate</span>(inputs):
+ <span class="t-kw">for</span> j, x_j <span class="t-kw">in</span> <span class="t-bi">enumerate</span>(inputs):
+ attn_scores[i, j] <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">dot</span>(x_i, x_j)
+<span class="t-bi">print</span>(attn_scores)</code></pre></div>
+<p>The resulting attention scores are as follows:</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[<span class="t-num">0.9995</span>, <span class="t-num">0.9544</span>, <span class="t-num">0.9422</span>, <span class="t-num">0.4753</span>, <span class="t-num">0.4576</span>, <span class="t-num">0.6310</span>],
+ [<span class="t-num">0.9544</span>, <span class="t-num">1.4950</span>, <span class="t-num">1.4754</span>, <span class="t-num">0.8434</span>, <span class="t-num">0.7070</span>, <span class="t-num">1.0865</span>],
+ [<span class="t-num">0.9422</span>, <span class="t-num">1.4754</span>, <span class="t-num">1.4570</span>, <span class="t-num">0.8296</span>, <span class="t-num">0.7154</span>, <span class="t-num">1.0605</span>],
+ [<span class="t-num">0.4753</span>, <span class="t-num">0.8434</span>, <span class="t-num">0.8296</span>, <span class="t-num">0.4937</span>, <span class="t-num">0.3474</span>, <span class="t-num">0.6565</span>],
+ [<span class="t-num">0.4576</span>, <span class="t-num">0.7070</span>, <span class="t-num">0.7154</span>, <span class="t-num">0.3474</span>, <span class="t-num">0.6654</span>, <span class="t-num">0.2935</span>],
+ [<span class="t-num">0.6310</span>, <span class="t-num">1.0865</span>, <span class="t-num">1.0605</span>, <span class="t-num">0.6565</span>, <span class="t-num">0.2935</span>, <span class="t-num">0.9450</span>]])</code></pre></div>
+<p>Each element in the tensor represents an attention score between each pair of inputs, as we saw in figure 3.11. Note that the values in that figure are normalized, which is why they differ from the unnormalized attention scores in the preceding tensor. We will take care of the normalization later. </p>
+<p> When computing the preceding attention score tensor, we used <code>for</code> loops in Python. However, <code>for</code> loops are generally slow, and we can achieve the same results using matrix multiplication:</p>
+<div class="codeblock"><pre><code>attn_scores <span class="t-op">=</span> inputs @ inputs.T
+<span class="t-bi">print</span>(attn_scores)</code></pre></div>
+<p>We can visually confirm that the results are the same as before:</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[<span class="t-num">0.9995</span>, <span class="t-num">0.9544</span>, <span class="t-num">0.9422</span>, <span class="t-num">0.4753</span>, <span class="t-num">0.4576</span>, <span class="t-num">0.6310</span>],
+ [<span class="t-num">0.9544</span>, <span class="t-num">1.4950</span>, <span class="t-num">1.4754</span>, <span class="t-num">0.8434</span>, <span class="t-num">0.7070</span>, <span class="t-num">1.0865</span>],
+ [<span class="t-num">0.9422</span>, <span class="t-num">1.4754</span>, <span class="t-num">1.4570</span>, <span class="t-num">0.8296</span>, <span class="t-num">0.7154</span>, <span class="t-num">1.0605</span>],
+ [<span class="t-num">0.4753</span>, <span class="t-num">0.8434</span>, <span class="t-num">0.8296</span>, <span class="t-num">0.4937</span>, <span class="t-num">0.3474</span>, <span class="t-num">0.6565</span>],
+ [<span class="t-num">0.4576</span>, <span class="t-num">0.7070</span>, <span class="t-num">0.7154</span>, <span class="t-num">0.3474</span>, <span class="t-num">0.6654</span>, <span class="t-num">0.2935</span>],
+ [<span class="t-num">0.6310</span>, <span class="t-num">1.0865</span>, <span class="t-num">1.0605</span>, <span class="t-num">0.6565</span>, <span class="t-num">0.2935</span>, <span class="t-num">0.9450</span>]])</code></pre></div>
+<div class="pdfpage" data-page="84">PDF p. 84</div>
+<p>In step 2 of figure 3.12, we normalize each row so that the values in each row sum to 1:</p>
+<div class="codeblock"><pre><code>attn_weights <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">softmax</span>(attn_scores, dim<span class="t-op">=-</span><span class="t-num">1</span>)
+<span class="t-bi">print</span>(attn_weights)</code></pre></div>
+<p>This returns the following attention weight tensor that matches the values shown in figure 3.10:</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[<span class="t-num">0.2098</span>, <span class="t-num">0.2006</span>, <span class="t-num">0.1981</span>, <span class="t-num">0.1242</span>, <span class="t-num">0.1220</span>, <span class="t-num">0.1452</span>],
+ [<span class="t-num">0.1385</span>, <span class="t-num">0.2379</span>, <span class="t-num">0.2333</span>, <span class="t-num">0.1240</span>, <span class="t-num">0.1082</span>, <span class="t-num">0.1581</span>],
+ [<span class="t-num">0.1390</span>, <span class="t-num">0.2369</span>, <span class="t-num">0.2326</span>, <span class="t-num">0.1242</span>, <span class="t-num">0.1108</span>, <span class="t-num">0.1565</span>],
+ [<span class="t-num">0.1435</span>, <span class="t-num">0.2074</span>, <span class="t-num">0.2046</span>, <span class="t-num">0.1462</span>, <span class="t-num">0.1263</span>, <span class="t-num">0.1720</span>],
+ [<span class="t-num">0.1526</span>, <span class="t-num">0.1958</span>, <span class="t-num">0.1975</span>, <span class="t-num">0.1367</span>, <span class="t-num">0.1879</span>, <span class="t-num">0.1295</span>],
+ [<span class="t-num">0.1385</span>, <span class="t-num">0.2184</span>, <span class="t-num">0.2128</span>, <span class="t-num">0.1420</span>, <span class="t-num">0.0988</span>, <span class="t-num">0.1896</span>]])</code></pre></div>
+<p>In the context of using PyTorch, the dim parameter in functions like <code>torch.softmax</code> specifies the dimension of the input tensor along which the function will be computed. By setting <code>dim=-1</code>, we are instructing the <code>softmax</code> function to apply the normalization along the last dimension of the <code>attn_scores</code> tensor. If <code>attn_scores</code> is a two-dimensional tensor (for example, with a shape of [rows, columns]), it will normalize across the columns so that the values in each row (summing over the column dimension) sum up to 1.</p>
+<p> We can verify that the rows indeed all sum to 1:</p>
+<div class="codeblock"><pre><code>row_2_sum <span class="t-op">=</span> <span class="t-bi">sum</span>([<span class="t-num">0.1385</span>, <span class="t-num">0.2379</span>, <span class="t-num">0.2333</span>, <span class="t-num">0.1240</span>, <span class="t-num">0.1082</span>, <span class="t-num">0.1581</span>])
+<span class="t-bi">print</span>(<span class="t-str">"Row 2 sum:"</span>, row_2_sum)
+<span class="t-bi">print</span>(<span class="t-str">"All row sums:"</span>, attn_weights.<span class="t-bi">sum</span>(dim<span class="t-op">=-</span><span class="t-num">1</span>))</code></pre></div>
+<p>The result is</p>
+<div class="codeblock"><pre><code>Row <span class="t-num">2</span> <span class="t-bi">sum</span>: <span class="t-num">1.0</span>
+All row sums: <span class="t-fn">tensor</span>([<span class="t-num">1.0000</span>, <span class="t-num">1.0000</span>, <span class="t-num">1.0000</span>, <span class="t-num">1.0000</span>, <span class="t-num">1.0000</span>, <span class="t-num">1.0000</span>])</code></pre></div>
+<p>In the third and final step of figure 3.12, we use these attention weights to compute all context vectors via matrix multiplication:</p>
+<div class="codeblock"><pre><code>all_context_vecs <span class="t-op">=</span> attn_weights @ inputs
+<span class="t-bi">print</span>(all_context_vecs)</code></pre></div>
+<p>In the resulting output tensor, each row contains a three-dimensional context vector:</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[<span class="t-num">0.4421</span>, <span class="t-num">0.5931</span>, <span class="t-num">0.5790</span>],
+ [<span class="t-num">0.4419</span>, <span class="t-num">0.6515</span>, <span class="t-num">0.5683</span>],
+ [<span class="t-num">0.4431</span>, <span class="t-num">0.6496</span>, <span class="t-num">0.5671</span>],
+ [<span class="t-num">0.4304</span>, <span class="t-num">0.6298</span>, <span class="t-num">0.5510</span>],
+ [<span class="t-num">0.4671</span>, <span class="t-num">0.5910</span>, <span class="t-num">0.5266</span>],
+ [<span class="t-num">0.4177</span>, <span class="t-num">0.6503</span>, <span class="t-num">0.5645</span>]])</code></pre></div>
+<div class="pdfpage" data-page="85">PDF p. 85</div>
+<figure><img src="assets/fig-0050.png" alt="" loading="lazy"><figcaption>Figure 3.13 Previously, we coded a simplified attention mechanism to understand the basic mechanism behind  attention mechanisms. Now, we add trainable weights to this attention mechanism. Later, we will extend this  self-attention mechanism by adding a causal mask and multiple heads.</figcaption></figure>
+<p>We can double-check that the code is correct by comparing the second row with the context vector <em>z</em>(2) that we computed in section 3.3.1:</p>
+<div class="codeblock"><pre><code><span class="t-bi">print</span>(<span class="t-str">"Previous 2nd context vector:"</span>, context_vec_2)</code></pre></div>
+<p>Based on the result, we can see that the previously calculated <code>context_vec_2</code> matches the second row in the previous tensor exactly: </p>
+<div class="codeblock"><pre><code>Previous <span class="t-num">2nd</span> context vector: <span class="t-fn">tensor</span>([<span class="t-num">0.4419</span>, <span class="t-num">0.6515</span>, <span class="t-num">0.5683</span>])</code></pre></div>
+<p>This concludes the code walkthrough of a simple self-attention mechanism. Next, we will add trainable weights, enabling the LLM to learn from data and improve its performance on specific tasks.</p>
+<h2 id="implementing-self-attention-with-trainable-weights">3.4 Implementing self-attention with trainable weights<a class="anchor" href="#implementing-self-attention-with-trainable-weights">#</a></h2>
+<p>Our next step will be to implement the self-attention mechanism used in the original transformer architecture, the GPT models, and most other popular LLMs. This self-attention mechanism is also called <em>scaled dot-product attention</em>. Figure 3.13 shows how this self-attention mechanism fits into the broader context of implementing an LLM. </p>
+<div class="pdfpage" data-page="86">PDF p. 86</div>
+<figure><img src="assets/fig-0051.png" alt="" loading="lazy"><figcaption>Figure 3.14 In the first step of the self-attention mechanism with trainable weight matrices, we compute query  (q), key (k), and value (v) vectors for input elements x. Similar to previous sections, we designate the second  input, x(2), as the query input. The query vector q(2) is obtained via matrix multiplication between the input x(2) and  the weight matrix Wq. Similarly, we obtain the key and value vectors via matrix multiplication involving the weight  matrices Wk and Wv.</figcaption></figure>
+<p>As illustrated in figure 3.13, the self-attention mechanism with trainable weights builds on the previous concepts: we want to compute context vectors as weighted sums over the input vectors specific to a certain input element. As you will see, there are only slight differences compared to the basic self-attention mechanism we coded earlier.</p>
+<p> The most notable difference is the introduction of weight matrices that are updated during model training. These trainable weight matrices are crucial so that the model (specifically, the attention module inside the model) can learn to produce “good” context vectors. (We will train the LLM in chapter 5.)</p>
+<p> We will tackle this self-attention mechanism in the two subsections. First, we will code it step by step as before. Second, we will organize the code into a compact Python class that can be imported into the LLM architecture.</p>
+<h3 id="computing-the-attention-weights-step-by-step">3.4.1 Computing the attention weights step by step<a class="anchor" href="#computing-the-attention-weights-step-by-step">#</a></h3>
+<p>We will implement the self-attention mechanism step by step by introducing the three trainable weight matrices <em>W</em>q, <em>W</em>k, and <em>W</em>v. These three matrices are used to project the embedded input tokens, <em>x</em>(i), into query, key, and value vectors, respectively, as illustrated in figure 3.14.</p>
+<aside class="sidenote">The second input token serves as the current input vector to create the query</aside>
+<div class="plainbox"><p><strong>k</strong>ey</p><p><strong>v</strong>alue</p></div>
+<p>Earlier, we defined the second input element <em>x</em>(2) as the query when we computed the simplified attention weights to compute the context vector <em>z</em>(2). Then we generalized this to compute all context vectors <em>z</em>(1)<em> ... z</em>(T) for the six-word input sentence “Your journey starts with one step.” </p>
+<div class="pdfpage" data-page="87">PDF p. 87</div>
+<figure><img src="assets/fig-0052.png" alt="" loading="lazy"></figure>
+<p> Similarly, we start here by computing only one context vector, <em>z</em>(2), for illustration purposes. We will then modify this code to calculate all context vectors.</p>
+<p> Let’s begin by defining a few variables:</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 4 条</summary><ul><li>The second</li><li>input element</li><li>The input embedding</li><li>The output embedding size, d_out=2</li></ul></details><pre><code>x_2 <span class="t-op">=</span> inputs[<span class="t-num">1</span>] d_in <span class="t-op">=</span> inputs.shape[<span class="t-num">1</span>] size, d<span class="t-op">=</span><span class="t-num">3</span>
+d_out <span class="t-op">=</span> <span class="t-num">2</span></code></pre></div>
+<p>Note that in GPT-like models, the input and output dimensions are usually the same, but to better follow the computation, we’ll use different input (<code>d_in=3</code>) and output (<code>d_out=2</code>) dimensions here.</p>
+<p> Next, we initialize the three weight matrices <em>W</em>q, <em>W</em>k, and <em>W</em>v shown in figure 3.14:</p>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)
+W_query <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-bi">nn</span>.<span class="t-fn">Parameter</span>(<span class="t-bi">torch</span>.<span class="t-fn">rand</span>(d_in, d_out), requires_grad<span class="t-op">=</span><span class="t-kw">False</span>)
+W_key <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-bi">nn</span>.<span class="t-fn">Parameter</span>(<span class="t-bi">torch</span>.<span class="t-fn">rand</span>(d_in, d_out), requires_grad<span class="t-op">=</span><span class="t-kw">False</span>)
+W_value <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-bi">nn</span>.<span class="t-fn">Parameter</span>(<span class="t-bi">torch</span>.<span class="t-fn">rand</span>(d_in, d_out), requires_grad<span class="t-op">=</span><span class="t-kw">False</span>)</code></pre></div>
+<p>We set <code>requires_grad=False</code> to reduce clutter in the outputs, but if we were to use the weight matrices for model training, we would set <code>requires_grad=True</code> to update these matrices during model training.</p>
+<p> Next, we compute the query, key, and value vectors:</p>
+<div class="codeblock"><pre><code>query_2 <span class="t-op">=</span> x_2 @ W_query
+key_2 <span class="t-op">=</span> x_2 @ W_key
+value_2 <span class="t-op">=</span> x_2 @ W_value
+<span class="t-bi">print</span>(query_2)</code></pre></div>
+<p>The output for the query results in a two-dimensional vector since we set the number of columns of the corresponding weight matrix, via <code>d_out</code>, to 2:</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([<span class="t-num">0.4306</span>, <span class="t-num">1.4551</span>])</code></pre></div>
+<h3 id="weight-parameters-vs-attention-weights">Weight parameters vs. attention weights <a class="anchor" href="#weight-parameters-vs-attention-weights">#</a></h3>
+<div class="plainbox"><p>In the weight matrices <em>W</em>, the term “weight” is short for “weight parameters,” the val-</p><p>ues of a neural network that are optimized during training. This is not to be confused</p><p>with the attention weights. As we already saw, attention weights determine the extent</p><p>to which a context vector depends on the different parts of the input (i.e., to what</p><p>extent the network focuses on different parts of the input). </p><p>In summary, weight parameters are the fundamental, learned coefficients that define</p><p>the network’s connections, while attention weights are dynamic, context-specific values.</p></div>
+<div class="pdfpage" data-page="88">PDF p. 88</div>
+<figure><img src="assets/fig-0053.png" alt="" loading="lazy"><figcaption>Figure 3.15 The attention score computation is a dot-product computation similar to what we used in the  simplified self-attention mechanism in section 3.3. The new aspect here is that we are not directly computing the  dot-product between the input elements but using the query and key obtained by transforming the inputs via the  respective weight matrices.</figcaption></figure>
+<p>Even though our temporary goal is only to compute the one context vector, <em>z</em>(2), we still require the key and value vectors for all input elements as they are involved in computing the attention weights with respect to the query <em>q</em>(2) (see figure 3.14).</p>
+<p> We can obtain all keys and values via matrix multiplication:</p>
+<div class="codeblock"><pre><code>keys <span class="t-op">=</span> inputs @ W_key
+values <span class="t-op">=</span> inputs @ W_value
+<span class="t-bi">print</span>(<span class="t-str">"keys.shape:"</span>, keys.shape)
+<span class="t-bi">print</span>(<span class="t-str">"values.shape:"</span>, values.shape)</code></pre></div>
+<p>As we can tell from the outputs, we successfully projected the six input tokens from a three-dimensional onto a two-dimensional embedding space:</p>
+<div class="codeblock"><pre><code>keys.shape: <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">6</span>, <span class="t-num">2</span>])
+values.shape: <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">6</span>, <span class="t-num">2</span>])</code></pre></div>
+<p>The second step is to compute the attention scores, as shown in figure 3.15.</p>
+<p>First, let’s compute the attention score ω22:</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>Remember that Python starts indexing at 0.</li></ul></details><pre><code>keys_2 <span class="t-op">=</span> keys[<span class="t-num">1</span>]
+attn_score_22 <span class="t-op">=</span> query_2.<span class="t-fn">dot</span>(keys_2)
+<span class="t-bi">print</span>(attn_score_22)</code></pre></div>
+<div class="pdfpage" data-page="89">PDF p. 89</div>
+<figure><img src="assets/fig-0054.png" alt="" loading="lazy"></figure>
+<p>The result for the unnormalized attention score is</p>
+<p><code>tensor(1.8524)</code></p>
+<p>Again, we can generalize this computation to all attention scores via matrix multiplication:</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>All attention scores for given query</li></ul></details><pre><code>attn_scores_2 <span class="t-op">=</span> query_2 @ keys.T
+<span class="t-bi">print</span>(attn_scores_2)</code></pre></div>
+<p>As we can see, as a quick check, the second element in the output matches the <code>attn_score_22</code> we computed previously:</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([<span class="t-num">1.2705</span>, <span class="t-num">1.8524</span>, <span class="t-num">1.8111</span>, <span class="t-num">1.0795</span>, <span class="t-num">0.5577</span>, <span class="t-num">1.5440</span>])</code></pre></div>
+<p>Now, we want to go from the attention scores to the attention weights, as illustrated in figure 3.16. We compute the attention weights by scaling the attention scores and using the softmax function. However, now we scale the attention scores by dividing them by the square root of the embedding dimension of the keys (taking the square root is mathematically the same as exponentiating by 0.5):</p>
+<div class="codeblock"><pre><code>d_k <span class="t-op">=</span> keys.shape[<span class="t-op">-</span><span class="t-num">1</span>]
+attn_weights_2 <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">softmax</span>(attn_scores_2 <span class="t-op">/</span> d_k<span class="t-op">**</span><span class="t-num">0.5</span>, dim<span class="t-op">=-</span><span class="t-num">1</span>)
+<span class="t-bi">print</span>(attn_weights_2)</code></pre></div>
+<div class="plainbox"><p><strong>k</strong>ey</p><p><strong>v</strong>alue</p></div>
+<div class="plainbox"><p><strong>q</strong>uery<em> q</em>(2)</p></div>
+<p><sub>q</sub><sub>(2)</sub></p>
+<p class="caption">After computing the attention scores , the next step is to normalize these scores using the  Figure 3.16 softmax function to obtain the attention weights .</p>
+<div class="pdfpage" data-page="90">PDF p. 90</div>
+<figure><img src="assets/fig-0055.png" alt="" loading="lazy"><figcaption>Figure 3.17 In the final step of the self-attention computation, we compute the context vector by combining all  value vectors via the attention weights. </figcaption></figure>
+<p>The resulting attention weights are</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([<span class="t-num">0.1500</span>, <span class="t-num">0.2264</span>, <span class="t-num">0.2199</span>, <span class="t-num">0.1311</span>, <span class="t-num">0.0906</span>, <span class="t-num">0.1820</span>])</code></pre></div>
+<h3 id="the-rationale-behind-scaled-dot-product-attention">The rationale behind scaled-dot product attention<a class="anchor" href="#the-rationale-behind-scaled-dot-product-attention">#</a></h3>
+<div class="plainbox"><p>The reason for the normalization by the embedding dimension size is to improve the</p><p>training performance by avoiding small gradients. For instance, when scaling up the</p><p>embedding dimension, which is typically greater than 1,000 for GPT-like LLMs, large</p><p>dot products can result in very small gradients during backpropagation due to the</p><p>softmax function applied to them. As dot products increase, the softmax function</p><p>behaves more like a step function, resulting in gradients nearing zero. These small</p><p>gradients can drastically slow down learning or cause training to stagnate.</p><p>The scaling by the square root of the embedding dimension is the reason why this</p><p>self-attention mechanism is also called scaled-dot product attention. </p></div>
+<p>Now, the final step is to compute the context vectors, as illustrated in figure 3.17.</p>
+<p>Similar to when we computed the context vector as a weighted sum over the input vectors (see section 3.3), we now compute the context vector as a weighted sum over the value vectors. Here, the attention weights serve as a weighting factor that weighs</p>
+<div class="pdfpage" data-page="91">PDF p. 91</div>
+<p class="listing-title"><span class="no">Listing 3.1</span><span class="tl">A compact self-attention class</span></p>
+<p>the respective importance of each value vector. Also as before, we can use matrix multiplication to obtain the output in one step:</p>
+<div class="codeblock"><pre><code>context_vec_2 <span class="t-op">=</span> attn_weights_2 @ values
+<span class="t-bi">print</span>(context_vec_2)</code></pre></div>
+<p>The contents of the resulting vector are as follows:</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([<span class="t-num">0.3061</span>, <span class="t-num">0.8210</span>])</code></pre></div>
+<p>So far, we’ve only computed a single context vector, <em>z</em>(2). Next, we will generalize the code to compute all context vectors in the input sequence, <em>z</em>(1) to <em>z</em>(T).</p>
+<h3 id="why-query-key-and-value">Why query, key, and value?<a class="anchor" href="#why-query-key-and-value">#</a></h3>
+<div class="plainbox"><p>The terms “key,” “query,” and “value” in the context of attention mechanisms are</p><p>borrowed from the domain of information retrieval and databases, where similar con-</p><p>cepts are used to store, search, and retrieve information.</p><p>A <em>query</em> is analogous to a search query in a database. It represents the current item</p><p>(e.g., a word or token in a sentence) the model focuses on or tries to understand.</p><p>The query is used to probe the other parts of the input sequence to determine how</p><p>much attention to pay to them.</p><p>The <em>key</em> is like a database key used for indexing and searching. In the attention mech-</p><p>anism, each item in the input sequence (e.g., each word in a sentence) has an asso-</p><p>ciated key. These keys are used to match the query. </p><p>The <em>value</em> in this context is similar to the value in a key-value pair in a database. It</p><p>represents the actual content or representation of the input items. Once the model</p><p>determines which keys (and thus which parts of the input) are most relevant to the</p><p>query (the current focus item), it retrieves the corresponding values.</p></div>
+<h3 id="implementing-a-compact-self-attention-python-class">3.4.2 Implementing a compact self-attention Python class<a class="anchor" href="#implementing-a-compact-self-attention-python-class">#</a></h3>
+<p>At this point, we have gone through a lot of steps to compute the self-attention outputs. We did so mainly for illustration purposes so we could go through one step at a time. In practice, with the LLM implementation in the next chapter in mind, it is helpful to organize this code into a Python class, as shown in the following listing.</p>
+<div class="codeblock"><pre><code><span class="t-kw">import</span> <span class="t-bi">torch</span>.<span class="t-bi">nn</span> <span class="t-kw">as</span> <span class="t-bi">nn</span>
+<span class="t-kw">class</span> <span class="t-fn">SelfAttention_v1</span>(<span class="t-bi">nn</span>.Module):
+ <span class="t-kw">def</span> <span class="t-fn">__init__</span>(<span class="t-kw">self</span>, d_in, d_out):
+ <span class="t-fn">super</span>().<span class="t-fn">__init__</span>()
+ <span class="t-kw">self</span>.W_query <span class="t-op">=</span> <span class="t-bi">nn</span>.<span class="t-fn">Parameter</span>(<span class="t-bi">torch</span>.<span class="t-fn">rand</span>(d_in, d_out))
+ <span class="t-kw">self</span>.W_key <span class="t-op">=</span> <span class="t-bi">nn</span>.<span class="t-fn">Parameter</span>(<span class="t-bi">torch</span>.<span class="t-fn">rand</span>(d_in, d_out))
+ <span class="t-kw">self</span>.W_value <span class="t-op">=</span> <span class="t-bi">nn</span>.<span class="t-fn">Parameter</span>(<span class="t-bi">torch</span>.<span class="t-fn">rand</span>(d_in, d_out))
+ <span class="t-kw">def</span> <span class="t-fn">forward</span>(<span class="t-kw">self</span>, x):
+ keys <span class="t-op">=</span> x @ <span class="t-kw">self</span>.W_key
+ queries <span class="t-op">=</span> x @ <span class="t-kw">self</span>.W_query
+ values <span class="t-op">=</span> x @ <span class="t-kw">self</span>.W_value
+ attn_scores <span class="t-op">=</span> queries @ keys.T <span class="t-com"># omega
+ attn_weights = torch.softmax(
+ attn_scores / keys.shape[-1]**0.5, dim=-1
+ )
+ context_vec = attn_weights @ values
+ return context_vec</span></code></pre></div>
+<div class="pdfpage" data-page="92">PDF p. 92</div>
+<p>In this PyTorch code, <code>SelfAttention_v1</code> is a class derived from <code>nn.Module</code>, which is a fundamental building block of PyTorch models that provides necessary functionalities for model layer creation and management. </p>
+<p> The <code>__init__</code> method initializes trainable weight matrices (<code>W_query</code>, <code>W_key</code>, and <code>W_value</code>) for queries, keys, and values, each transforming the input dimension <code>d_in</code> to an output dimension <code>d_out</code>. </p>
+<p> During the forward pass, using the forward method, we compute the attention scores (<code>attn_scores</code>) by multiplying queries and keys, normalizing these scores using softmax. Finally, we create a context vector by weighting the values with these normalized attention scores.</p>
+<p> We can use this class as follows:</p>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)
+sa_v1 <span class="t-op">=</span> <span class="t-fn">SelfAttention_v1</span>(d_in, d_out)
+<span class="t-bi">print</span>(<span class="t-fn">sa_v1</span>(inputs))</code></pre></div>
+<p>Since <code>inputs</code> contains six embedding vectors, this results in a matrix storing the six context vectors:</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[<span class="t-num">0.2996</span>, <span class="t-num">0.8053</span>],
+ [<span class="t-num">0.3061</span>, <span class="t-num">0.8210</span>],
+ [<span class="t-num">0.3058</span>, <span class="t-num">0.8203</span>],
+ [<span class="t-num">0.2948</span>, <span class="t-num">0.7939</span>],
+ [<span class="t-num">0.2927</span>, <span class="t-num">0.7891</span>],
+ [<span class="t-num">0.2990</span>, <span class="t-num">0.8040</span>]], grad_fn<span class="t-op">=&lt;</span>MmBackward0<span class="t-op">&gt;</span>)</code></pre></div>
+<p>As a quick check, notice that the second row (<code>[0.3061,</code> <code>0.8210]</code>) matches the contents of <code>context_vec_2</code> in the previous section. Figure 3.18 summarizes the self-attention mechanism we just implemented.</p>
+<p> Self-attention involves the trainable weight matrices <em>W</em>q, <em>W</em>k, and <em>W</em>v. These matrices transform input data into queries, keys, and values, respectively, which are crucial components of the attention mechanism. As the model is exposed to more data during training, it adjusts these trainable weights, as we will see in upcoming chapters.</p>
+<p> We can improve the <code>SelfAttention_v1</code> implementation further by utilizing PyTorch’s <code>nn.Linear</code> layers, which effectively perform matrix multiplication when the bias units are disabled. Additionally, a significant advantage of using <code>nn.Linear</code></p>
+<div class="pdfpage" data-page="93">PDF p. 93</div>
+<figure><img src="assets/fig-0056.png" alt="" loading="lazy"><figcaption>Figure 3.18 In self-attention, we transform the input vectors in the input matrix X with the three weight  matrices, Wq, Wk, and Wv. The new compute the attention weight matrix based on the resulting queries (Q) and  keys (K). Using the attention weights and values (V), we then compute the context vectors (Z). For visual clarity,  we focus on a single input text with n tokens, not a batch of multiple inputs. Consequently, the three-dimensional  input tensor is simplified to a two-dimensional matrix in this context. This approach allows for a more straightforward  visualization and understanding of the processes involved. For consistency with later figures, the values in the  attention matrix do not depict the real attention weights. (The numbers in this figure are truncated to two digits  after the decimal point to reduce visual clutter. The values in each row should add up to 1.0 or 100%.)</figcaption></figure>
+<p class="listing-title"><span class="no">Listing 3.2</span><span class="tl">A self-attention class using PyTorch’s Linear layers</span></p>
+<p>instead of manually implementing <code>nn.Parameter(torch.rand(...))</code> is that <code>nn.Linear</code> has an optimized weight initialization scheme, contributing to more stable and effective model training.</p>
+<div class="codeblock"><pre><code><span class="t-kw">class</span> <span class="t-fn">SelfAttention_v2</span>(<span class="t-bi">nn</span>.Module):
+ <span class="t-kw">def</span> <span class="t-fn">__init__</span>(<span class="t-kw">self</span>, d_in, d_out, qkv_bias<span class="t-op">=</span><span class="t-kw">False</span>):
+ <span class="t-fn">super</span>().<span class="t-fn">__init__</span>()
+ <span class="t-kw">self</span>.W_query <span class="t-op">=</span> <span class="t-bi">nn</span>.<span class="t-fn">Linear</span>(d_in, d_out, bias<span class="t-op">=</span>qkv_bias)
+ <span class="t-kw">self</span>.W_key <span class="t-op">=</span> <span class="t-bi">nn</span>.<span class="t-fn">Linear</span>(d_in, d_out, bias<span class="t-op">=</span>qkv_bias)
+ <span class="t-kw">self</span>.W_value <span class="t-op">=</span> <span class="t-bi">nn</span>.<span class="t-fn">Linear</span>(d_in, d_out, bias<span class="t-op">=</span>qkv_bias)
+ <span class="t-kw">def</span> <span class="t-fn">forward</span>(<span class="t-kw">self</span>, x):
+ keys <span class="t-op">=</span> <span class="t-kw">self</span>.<span class="t-fn">W_key</span>(x)
+ queries <span class="t-op">=</span> <span class="t-kw">self</span>.<span class="t-fn">W_query</span>(x)
+ values <span class="t-op">=</span> <span class="t-kw">self</span>.<span class="t-fn">W_value</span>(x)
+ attn_scores <span class="t-op">=</span> queries @ keys.T
+ attn_weights <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">softmax</span>(
+ attn_scores <span class="t-op">/</span> keys.shape[<span class="t-op">-</span><span class="t-num">1</span>]<span class="t-op">**</span><span class="t-num">0.5</span>, dim<span class="t-op">=-</span><span class="t-num">1</span>
+ )
+ context_vec <span class="t-op">=</span> attn_weights @ values
+ <span class="t-kw">return</span> context_vec
+You can use the SelfAttention_v2 similar to SelfAttention_v1:
+<span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">789</span>)
+sa_v2 <span class="t-op">=</span> <span class="t-fn">SelfAttention_v2</span>(d_in, d_out)
+<span class="t-bi">print</span>(<span class="t-fn">sa_v2</span>(inputs))</code></pre></div>
+<div class="pdfpage" data-page="94">PDF p. 94</div>
+<p>The output is</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[<span class="t-op">-</span><span class="t-num">0.0739</span>, <span class="t-num">0.0713</span>],
+ [<span class="t-op">-</span><span class="t-num">0.0748</span>, <span class="t-num">0.0703</span>],
+ [<span class="t-op">-</span><span class="t-num">0.0749</span>, <span class="t-num">0.0702</span>],
+ [<span class="t-op">-</span><span class="t-num">0.0760</span>, <span class="t-num">0.0685</span>],
+ [<span class="t-op">-</span><span class="t-num">0.0763</span>, <span class="t-num">0.0679</span>],
+ [<span class="t-op">-</span><span class="t-num">0.0754</span>, <span class="t-num">0.0693</span>]], grad_fn<span class="t-op">=&lt;</span>MmBackward0<span class="t-op">&gt;</span>)</code></pre></div>
+<p>Note that <code>SelfAttention_v1</code> and <code>SelfAttention_v2</code> give different outputs because they use different initial weights for the weight matrices since <code>nn.Linear</code> uses a more sophisticated weight initialization scheme.</p>
+<h3 id="exercise-3-1-comparing-selfattention-v1-and-selfattention-v2">Exercise 3.1 Comparing SelfAttention_v1 and SelfAttention_v2<a class="anchor" href="#exercise-3-1-comparing-selfattention-v1-and-selfattention-v2">#</a></h3>
+<p>Note that <code>nn.Linear</code> in <code>SelfAttention_v2</code> uses a different weight initialization</p>
+<div class="codeblock"><pre><code>scheme <span class="t-kw">as</span> <span class="t-bi">nn</span>.<span class="t-fn">Parameter</span>(<span class="t-bi">torch</span>.<span class="t-fn">rand</span>(d_in, d_out)) used <span class="t-kw">in</span> SelfAttention_v1,</code></pre></div>
+<div class="plainbox"><p>which causes both mechanisms to produce different results. To check that both</p><p>implementations, <code>SelfAttention_v1</code> and <code>SelfAttention_v2</code>, are otherwise simi-</p><p>lar, we can transfer the weight matrices from a <code>SelfAttention_v2</code> object to a <code>Self-</code></p></div>
+<p><code>Attention_v1</code>, such that both objects then produce the same results.</p>
+<div class="plainbox"><p>Your task is to correctly assign the weights from an instance of <code>SelfAttention_v2</code></p><p>to an instance of <code>SelfAttention_v1</code>. To do this, you need to understand the rela-</p><p>tionship between the weights in both versions. (Hint: <code>nn.Linear</code> stores the weight</p><p>matrix in a transposed form.) After the assignment, you should observe that both</p><p>instances produce the same outputs.</p></div>
+<div class="pdfpage" data-page="95">PDF p. 95</div>
+<figure><img src="assets/fig-0057.png" alt="" loading="lazy"><figcaption>Figure 3.19 In causal attention, we mask out the attention weights above the diagonal such that for  a given input, the LLM can’t access future tokens when computing the context vectors using the  attention weights. For example, for the word “journey” in the second row, we only keep the attention  weights for the words before (“Your”) and in the current position (“journey”).</figcaption></figure>
+<p>Next, we will make enhancements to the self-attention mechanism, focusing specifically on incorporating causal and multi-head elements. The causal aspect involves modifying the attention mechanism to prevent the model from accessing future information in the sequence, which is crucial for tasks like language modeling, where each word prediction should only depend on previous words. </p>
+<p> The multi-head component involves splitting the attention mechanism into multiple “heads.” Each head learns different aspects of the data, allowing the model to simultaneously attend to information from different representation subspaces at different positions. This improves the model’s performance in complex tasks.</p>
+<h2 id="hiding-future-words-with-causal-attention">3.5 Hiding future words with causal attention<a class="anchor" href="#hiding-future-words-with-causal-attention">#</a></h2>
+<p>For many LLM tasks, you will want the self-attention mechanism to consider only the tokens that appear prior to the current position when predicting the next token in a sequence. Causal attention, also known as <em>masked attention</em>, is a specialized form of selfattention. It restricts a model to only consider previous and current inputs in a sequence when processing any given token when computing attention scores. This is in contrast to the standard self-attention mechanism, which allows access to the entire input sequence at once.</p>
+<p> Now, we will modify the standard self-attention mechanism to create a <em>causal</em> <em>attention</em> mechanism, which is essential for developing an LLM in the subsequent chapters. To achieve this in GPT-like LLMs, for each token processed, we mask out the future tokens, which come after the current token in the input text, as illustrated in figure 3.19. We mask out the attention weights above the diagonal, and we</p>
+<div class="pdfpage" data-page="96">PDF p. 96</div>
+<figure><img src="assets/fig-0058.png" alt="" loading="lazy"><figcaption>Figure 3.20 One way to obtain the masked attention weight matrix in causal attention is to apply the  softmax function to the attention scores, zeroing out the elements above the diagonal and normalizing  the resulting matrix.</figcaption></figure>
+<p>normalize the nonmasked attention weights such that the attention weights sum to 1 in each row. Later, we will implement this masking and normalization procedure in code.</p>
+<h3 id="applying-a-causal-attention-mask">3.5.1 Applying a causal attention mask<a class="anchor" href="#applying-a-causal-attention-mask">#</a></h3>
+<aside class="detail-link"><span class="tag">数学推导详解</span>因果掩码为何不泄漏信息（含完整证明）与 <code>-inf</code> 技巧，见 <a href="09-coding-attention-mechanisms-detail.html"><b>3.3–3.5 自注意力与因果掩码</b></a>。全部推导页的索引见 <a href="math-detail.html">math-detail.html</a>。</aside>
+<p>Our next step is to implement the causal attention mask in code. To implement the steps to apply a causal attention mask to obtain the masked attention weights, as summarized in figure 3.20, let’s work with the attention scores and weights from the previous section to code the causal attention mechanism. </p>
+<p>In the first step, we compute the attention weights using the softmax function as we have done previously:</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>Reuses the query and key weight matrices of the SelfAttention_v2 object from the previous section for convenience</li></ul></details><pre><code>queries <span class="t-op">=</span> sa_v2.<span class="t-fn">W_query</span>(inputs)
+keys <span class="t-op">=</span> sa_v2.<span class="t-fn">W_key</span>(inputs)
+attn_scores <span class="t-op">=</span> queries @ keys.T
+attn_weights <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">softmax</span>(attn_scores <span class="t-op">/</span> keys.shape[<span class="t-op">-</span><span class="t-num">1</span>]<span class="t-op">**</span><span class="t-num">0.5</span>, dim<span class="t-op">=-</span><span class="t-num">1</span>)
+<span class="t-bi">print</span>(attn_weights)</code></pre></div>
+<p>This results in the following attention weights:</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[<span class="t-num">0.1921</span>, <span class="t-num">0.1646</span>, <span class="t-num">0.1652</span>, <span class="t-num">0.1550</span>, <span class="t-num">0.1721</span>, <span class="t-num">0.1510</span>],
+ [<span class="t-num">0.2041</span>, <span class="t-num">0.1659</span>, <span class="t-num">0.1662</span>, <span class="t-num">0.1496</span>, <span class="t-num">0.1665</span>, <span class="t-num">0.1477</span>],
+ [<span class="t-num">0.2036</span>, <span class="t-num">0.1659</span>, <span class="t-num">0.1662</span>, <span class="t-num">0.1498</span>, <span class="t-num">0.1664</span>, <span class="t-num">0.1480</span>],
+ [<span class="t-num">0.1869</span>, <span class="t-num">0.1667</span>, <span class="t-num">0.1668</span>, <span class="t-num">0.1571</span>, <span class="t-num">0.1661</span>, <span class="t-num">0.1564</span>],
+ [<span class="t-num">0.1830</span>, <span class="t-num">0.1669</span>, <span class="t-num">0.1670</span>, <span class="t-num">0.1588</span>, <span class="t-num">0.1658</span>, <span class="t-num">0.1585</span>],
+ [<span class="t-num">0.1935</span>, <span class="t-num">0.1663</span>, <span class="t-num">0.1666</span>, <span class="t-num">0.1542</span>, <span class="t-num">0.1666</span>, <span class="t-num">0.1529</span>]],
+ grad_fn<span class="t-op">=&lt;</span>SoftmaxBackward0<span class="t-op">&gt;</span>)</code></pre></div>
+<p>We can implement the second step using PyTorch’s <code>tril</code> function to create a mask where the values above the diagonal are zero:</p>
+<div class="codeblock"><pre><code>context_length <span class="t-op">=</span> attn_scores.shape[<span class="t-num">0</span>]
+mask_simple <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tril</span>(<span class="t-bi">torch</span>.<span class="t-fn">ones</span>(context_length, context_length))
+<span class="t-bi">print</span>(mask_simple)</code></pre></div>
+<div class="pdfpage" data-page="97">PDF p. 97</div>
+<p>The resulting mask is</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[<span class="t-num">1.</span>, <span class="t-num">0.</span>, <span class="t-num">0.</span>, <span class="t-num">0.</span>, <span class="t-num">0.</span>, <span class="t-num">0.</span>],
+ [<span class="t-num">1.</span>, <span class="t-num">1.</span>, <span class="t-num">0.</span>, <span class="t-num">0.</span>, <span class="t-num">0.</span>, <span class="t-num">0.</span>],
+ [<span class="t-num">1.</span>, <span class="t-num">1.</span>, <span class="t-num">1.</span>, <span class="t-num">0.</span>, <span class="t-num">0.</span>, <span class="t-num">0.</span>],
+ [<span class="t-num">1.</span>, <span class="t-num">1.</span>, <span class="t-num">1.</span>, <span class="t-num">1.</span>, <span class="t-num">0.</span>, <span class="t-num">0.</span>],
+ [<span class="t-num">1.</span>, <span class="t-num">1.</span>, <span class="t-num">1.</span>, <span class="t-num">1.</span>, <span class="t-num">1.</span>, <span class="t-num">0.</span>],
+ [<span class="t-num">1.</span>, <span class="t-num">1.</span>, <span class="t-num">1.</span>, <span class="t-num">1.</span>, <span class="t-num">1.</span>, <span class="t-num">1.</span>]])</code></pre></div>
+<p>Now, we can multiply this mask with the attention weights to zero-out the values above the diagonal:</p>
+<div class="codeblock"><pre><code>masked_simple <span class="t-op">=</span> attn_weights<span class="t-op">*</span>mask_simple
+<span class="t-bi">print</span>(masked_simple)</code></pre></div>
+<p>As we can see, the elements above the diagonal are successfully zeroed out:</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[<span class="t-num">0.1921</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>],
+ [<span class="t-num">0.2041</span>, <span class="t-num">0.1659</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>],
+ [<span class="t-num">0.2036</span>, <span class="t-num">0.1659</span>, <span class="t-num">0.1662</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>],
+ [<span class="t-num">0.1869</span>, <span class="t-num">0.1667</span>, <span class="t-num">0.1668</span>, <span class="t-num">0.1571</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>],
+ [<span class="t-num">0.1830</span>, <span class="t-num">0.1669</span>, <span class="t-num">0.1670</span>, <span class="t-num">0.1588</span>, <span class="t-num">0.1658</span>, <span class="t-num">0.0000</span>],
+ [<span class="t-num">0.1935</span>, <span class="t-num">0.1663</span>, <span class="t-num">0.1666</span>, <span class="t-num">0.1542</span>, <span class="t-num">0.1666</span>, <span class="t-num">0.1529</span>]],
+ grad_fn<span class="t-op">=&lt;</span>MulBackward0<span class="t-op">&gt;</span>)</code></pre></div>
+<p>The third step is to renormalize the attention weights to sum up to 1 again in each row. We can achieve this by dividing each element in each row by the sum in each row:</p>
+<div class="codeblock"><pre><code>row_sums <span class="t-op">=</span> masked_simple.<span class="t-bi">sum</span>(dim<span class="t-op">=-</span><span class="t-num">1</span>, keepdim<span class="t-op">=</span><span class="t-kw">True</span>)
+masked_simple_norm <span class="t-op">=</span> masked_simple <span class="t-op">/</span> row_sums
+<span class="t-bi">print</span>(masked_simple_norm)</code></pre></div>
+<p>The result is an attention weight matrix where the attention weights above the diagonal are zeroed-out, and the rows sum to 1:</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[<span class="t-num">1.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>],
+ [<span class="t-num">0.5517</span>, <span class="t-num">0.4483</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>],
+ [<span class="t-num">0.3800</span>, <span class="t-num">0.3097</span>, <span class="t-num">0.3103</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>],
+ [<span class="t-num">0.2758</span>, <span class="t-num">0.2460</span>, <span class="t-num">0.2462</span>, <span class="t-num">0.2319</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>],
+ [<span class="t-num">0.2175</span>, <span class="t-num">0.1983</span>, <span class="t-num">0.1984</span>, <span class="t-num">0.1888</span>, <span class="t-num">0.1971</span>, <span class="t-num">0.0000</span>],
+ [<span class="t-num">0.1935</span>, <span class="t-num">0.1663</span>, <span class="t-num">0.1666</span>, <span class="t-num">0.1542</span>, <span class="t-num">0.1666</span>, <span class="t-num">0.1529</span>]],
+ grad_fn<span class="t-op">=&lt;</span>DivBackward0<span class="t-op">&gt;</span>)</code></pre></div>
+<h3 id="information-leakage">Information leakage<a class="anchor" href="#information-leakage">#</a></h3>
+<div class="plainbox"><p>When we apply a mask and then renormalize the attention weights, it might initially</p><p>appear that information from future tokens (which we intend to mask) could still influ-</p><p>ence the current token because their values are part of the softmax calculation. How-</p><p>ever, the key insight is that when we renormalize the attention weights after masking,</p></div>
+<div class="pdfpage" data-page="98">PDF p. 98</div>
+<figure><img src="assets/fig-0059.png" alt="" loading="lazy"><figcaption>Figure 3.21 A more efficient way to obtain the masked attention weight matrix in  causal attention is to mask the attention scores with negative infinity values before  applying the softmax function.</figcaption></figure>
+<div class="plainbox"><p>what we’re essentially doing is recalculating the softmax over a smaller subset (since</p><p>masked positions don’t contribute to the softmax value).</p><p>The mathematical elegance of softmax is that despite initially including all positions</p><p>in the denominator, after masking and renormalizing, the effect of the masked posi-</p><p>tions is nullified—they don’t contribute to the softmax score in any meaningful way.</p><p>In simpler terms, after masking and renormalization, the distribution of attention</p><p>weights is as if it was calculated only among the unmasked positions to begin with.</p><p>This ensures there’s no information leakage from future (or otherwise masked)</p><p>tokens as we intended.</p></div>
+<p>While we could wrap up our implementation of causal attention at this point, we can still improve it. Let’s take a mathematical property of the softmax function and implement the computation of the masked attention weights more efficiently in fewer steps, as shown in figure 3.21.</p>
+<p>The softmax function converts its inputs into a probability distribution. When negative infinity values (<code>-</code>∞) are present in a row, the softmax function treats them as zero probability. (Mathematically, this is because <em>e</em><em> </em><em>–</em>∞ approaches 0.)</p>
+<p> We can implement this more efficient masking “trick” by creating a mask with 1s above the diagonal and then replacing these 1s with negative infinity (<code>-inf</code>) values:</p>
+<div class="codeblock"><pre><code>mask <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">triu</span>(<span class="t-bi">torch</span>.<span class="t-fn">ones</span>(context_length, context_length), diagonal<span class="t-op">=</span><span class="t-num">1</span>)
+masked <span class="t-op">=</span> attn_scores.<span class="t-fn">masked_fill</span>(mask.<span class="t-bi">bool</span>(), <span class="t-op">-</span><span class="t-bi">torch</span>.inf)
+<span class="t-bi">print</span>(masked)</code></pre></div>
+<p>This results in the following mask:</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[<span class="t-num">0.2899</span>, <span class="t-op">-</span>inf, <span class="t-op">-</span>inf, <span class="t-op">-</span>inf, <span class="t-op">-</span>inf, <span class="t-op">-</span>inf],
+ [<span class="t-num">0.4656</span>, <span class="t-num">0.1723</span>, <span class="t-op">-</span>inf, <span class="t-op">-</span>inf, <span class="t-op">-</span>inf, <span class="t-op">-</span>inf],
+ [<span class="t-num">0.4594</span>, <span class="t-num">0.1703</span>, <span class="t-num">0.1731</span>, <span class="t-op">-</span>inf, <span class="t-op">-</span>inf, <span class="t-op">-</span>inf],
+ [<span class="t-num">0.2642</span>, <span class="t-num">0.1024</span>, <span class="t-num">0.1036</span>, <span class="t-num">0.0186</span>, <span class="t-op">-</span>inf, <span class="t-op">-</span>inf],
+ [<span class="t-num">0.2183</span>, <span class="t-num">0.0874</span>, <span class="t-num">0.0882</span>, <span class="t-num">0.0177</span>, <span class="t-num">0.0786</span>, <span class="t-op">-</span>inf],
+ [<span class="t-num">0.3408</span>, <span class="t-num">0.1270</span>, <span class="t-num">0.1290</span>, <span class="t-num">0.0198</span>, <span class="t-num">0.1290</span>, <span class="t-num">0.0078</span>]],
+ grad_fn<span class="t-op">=&lt;</span>MaskedFillBackward0<span class="t-op">&gt;</span>)</code></pre></div>
+<div class="pdfpage" data-page="99">PDF p. 99</div>
+<figure><img src="assets/fig-0060.png" alt="" loading="lazy"></figure>
+<p>Now all we need to do is apply the softmax function to these masked results, and we are done:</p>
+<div class="codeblock"><pre><code>attn_weights <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">softmax</span>(masked <span class="t-op">/</span> keys.shape[<span class="t-op">-</span><span class="t-num">1</span>]<span class="t-op">**</span><span class="t-num">0.5</span>, dim<span class="t-op">=</span><span class="t-num">1</span>)
+<span class="t-bi">print</span>(attn_weights)</code></pre></div>
+<p>As we can see based on the output, the values in each row sum to 1, and no further normalization is necessary:</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[<span class="t-num">1.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>],
+ [<span class="t-num">0.5517</span>, <span class="t-num">0.4483</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>],
+ [<span class="t-num">0.3800</span>, <span class="t-num">0.3097</span>, <span class="t-num">0.3103</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>],
+ [<span class="t-num">0.2758</span>, <span class="t-num">0.2460</span>, <span class="t-num">0.2462</span>, <span class="t-num">0.2319</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>],
+ [<span class="t-num">0.2175</span>, <span class="t-num">0.1983</span>, <span class="t-num">0.1984</span>, <span class="t-num">0.1888</span>, <span class="t-num">0.1971</span>, <span class="t-num">0.0000</span>],
+ [<span class="t-num">0.1935</span>, <span class="t-num">0.1663</span>, <span class="t-num">0.1666</span>, <span class="t-num">0.1542</span>, <span class="t-num">0.1666</span>, <span class="t-num">0.1529</span>]],
+ grad_fn<span class="t-op">=&lt;</span>SoftmaxBackward0<span class="t-op">&gt;</span>)</code></pre></div>
+<p>We could now use the modified attention weights to compute the context vectors via <code>context_vec</code> <code>=</code> <code>attn_weights</code> <code>@</code> <code>values</code>, as in section 3.4. However, we will first cover another minor tweak to the causal attention mechanism that is useful for reducing overfitting when training LLMs.</p>
+<h3 id="masking-additional-attention-weights-with-dropout">3.5.2 Masking additional attention weights with dropout<a class="anchor" href="#masking-additional-attention-weights-with-dropout">#</a></h3>
+<p><em>Dropout</em> in deep learning is a technique where randomly selected hidden layer units are ignored during training, effectively “dropping” them out. This method helps prevent overfitting by ensuring that a model does not become overly reliant on any specific set of hidden layer units. It’s important to emphasize that dropout is only used during training and is disabled afterward.</p>
+<p> In the transformer architecture, including models like GPT, dropout in the attention mechanism is typically applied at two specific times: after calculating the attention weights or after applying the attention weights to the value vectors. Here we will apply the dropout mask after computing the attention weights, as illustrated in figure 3.22, because it’s the more common variant in practice.</p>
+<p> In the following code example, we use a dropout rate of 50%, which means masking out half of the attention weights. (When we train the GPT model in later chapters, we will use a lower dropout rate, such as 0.1 or 0.2.) We apply PyTorch’s dropout implementation first to a 6 × 6 tensor consisting of 1s for simplicity:</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 2 条</summary><ul><li>We choose a dropout rate of 50%.</li><li>Here, we create a matrix of 1s.</li></ul></details><pre><code><span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)dropout <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-bi">nn</span>.<span class="t-fn">Dropout</span>(<span class="t-num">0.5</span>)
+example <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">ones</span>(<span class="t-num">6</span>, <span class="t-num">6</span>)
+<span class="t-bi">print</span>(<span class="t-fn">dropout</span>(example))</code></pre></div>
+<div class="pdfpage" data-page="100">PDF p. 100</div>
+<figure><img src="assets/fig-0061.png" alt="" loading="lazy"><figcaption>Figure 3.22 Using the causal attention mask (upper left), we apply an additional  dropout mask (upper right) to zero out additional attention weights to reduce overfitting  during training.</figcaption></figure>
+<p>As we can see, approximately half of the values are zeroed out:</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[<span class="t-num">2.</span>, <span class="t-num">2.</span>, <span class="t-num">0.</span>, <span class="t-num">2.</span>, <span class="t-num">2.</span>, <span class="t-num">0.</span>],
+ [<span class="t-num">0.</span>, <span class="t-num">0.</span>, <span class="t-num">0.</span>, <span class="t-num">2.</span>, <span class="t-num">0.</span>, <span class="t-num">2.</span>],
+ [<span class="t-num">2.</span>, <span class="t-num">2.</span>, <span class="t-num">2.</span>, <span class="t-num">2.</span>, <span class="t-num">0.</span>, <span class="t-num">2.</span>],
+ [<span class="t-num">0.</span>, <span class="t-num">2.</span>, <span class="t-num">2.</span>, <span class="t-num">0.</span>, <span class="t-num">0.</span>, <span class="t-num">2.</span>],
+ [<span class="t-num">0.</span>, <span class="t-num">2.</span>, <span class="t-num">0.</span>, <span class="t-num">2.</span>, <span class="t-num">0.</span>, <span class="t-num">2.</span>],
+ [<span class="t-num">0.</span>, <span class="t-num">2.</span>, <span class="t-num">2.</span>, <span class="t-num">2.</span>, <span class="t-num">2.</span>, <span class="t-num">0.</span>]])</code></pre></div>
+<p>When applying dropout to an attention weight matrix with a rate of 50%, half of the elements in the matrix are randomly set to zero. To compensate for the reduction in active elements, the values of the remaining elements in the matrix are scaled up by a factor of 1/0.5 = 2. This scaling is crucial to maintain the overall balance of the atten-</p>
+<div class="pdfpage" data-page="101">PDF p. 101</div>
+<p>consistent during both the training and inference phases.</p>
+<p> Now let’s apply dropout to the attention weight matrix itself:</p>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)
+<span class="t-bi">print</span>(<span class="t-fn">dropout</span>(attn_weights))</code></pre></div>
+<p>The resulting attention weight matrix now has additional elements zeroed out and the remaining 1s rescaled:</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[<span class="t-num">2.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0</span> <span class="t-num">.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>],
+ [<span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>],
+ [<span class="t-num">0.7599</span>, <span class="t-num">0.6194</span>, <span class="t-num">0.6206</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>],
+ [<span class="t-num">0.0000</span>, <span class="t-num">0.4921</span>, <span class="t-num">0.4925</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>],
+ [<span class="t-num">0.0000</span>, <span class="t-num">0.3966</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.3775</span>, <span class="t-num">0.0000</span>, <span class="t-num">0.0000</span>],
+ [<span class="t-num">0.0000</span>, <span class="t-num">0.3327</span>, <span class="t-num">0.3331</span>, <span class="t-num">0.3084</span>, <span class="t-num">0.3331</span>, <span class="t-num">0.0000</span>]],
+ grad_fn<span class="t-op">=&lt;</span>MulBackward0<span class="t-op">&gt;</span></code></pre></div>
+<p>Note that the resulting dropout outputs may look different depending on your operating system; you can read more about this inconsistency here on the PyTorch issue tracker at <a href="https://github.com/pytorch/pytorch/issues/121595" rel="noopener">https://github.com/pytorch/pytorch/issues/121595</a>.</p>
+<p> Having gained an understanding of causal attention and dropout masking, we can now develop a concise Python class. This class is designed to facilitate the efficient application of these two techniques.</p>
+<h3 id="implementing-a-compact-causal-attention-class">3.5.3 Implementing a compact causal attention class<a class="anchor" href="#implementing-a-compact-causal-attention-class">#</a></h3>
+<p>We will now incorporate the causal attention and dropout modifications into the <code>SelfAttention</code> Python class we developed in section 3.4. This class will then serve as a template for developing <em>multi-head attention</em>, which is the final attention class we will implement.</p>
+<p> But before we begin, let’s ensure that the code can handle batches consisting of more than one input so that the <code>CausalAttention</code> class supports the batch outputs produced by the data loader we implemented in chapter 2.</p>
+<p> For simplicity, to simulate such batch inputs, we duplicate the input text example:</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>Two inputs with six tokens each; each</li></ul></details><pre><code>batch <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">stack</span>((inputs, inputs), dim<span class="t-op">=</span><span class="t-num">0</span>)<span class="t-bi">print</span>(batch.shape) token has embedding dimension <span class="t-num">3.</span></code></pre></div>
+<p>This results in a three-dimensional tensor consisting of two input texts with six tokens each, where each token is a three-dimensional embedding vector:</p>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">6</span>, <span class="t-num">3</span>])</code></pre></div>
+<p>The following <code>CausalAttention</code> class is similar to the <code>SelfAttention</code> class we implemented earlier, except that we added the dropout and causal mask components.</p>
+<div class="pdfpage" data-page="102">PDF p. 102</div>
+<p class="listing-title"><span class="no">Listing 3.3</span><span class="tl">A compact causal attention class</span></p>
+<figure><img src="assets/fig-0062.png" alt="" loading="lazy"></figure>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 2 条</summary><ul><li>Compared to the previous SelfAttention_v1 class, we added a dropout layer.</li><li>The register_buffer call is also a new addition (more information is provided in the following text).</li></ul></details><pre><code><span class="t-kw">class</span> <span class="t-fn">CausalAttention</span>(<span class="t-bi">nn</span>.Module):
+ <span class="t-kw">def</span> <span class="t-fn">__init__</span>(<span class="t-kw">self</span>, d_in, d_out, context_length,
+ dropout, qkv_bias<span class="t-op">=</span><span class="t-kw">False</span>):
+ <span class="t-fn">super</span>().<span class="t-fn">__init__</span>()
+ <span class="t-kw">self</span>.d_out <span class="t-op">=</span> d_out
+ <span class="t-kw">self</span>.W_query <span class="t-op">=</span> <span class="t-bi">nn</span>.<span class="t-fn">Linear</span>(d_in, d_out, bias<span class="t-op">=</span>qkv_bias)
+ <span class="t-kw">self</span>.W_key <span class="t-op">=</span> <span class="t-bi">nn</span>.<span class="t-fn">Linear</span>(d_in, d_out, bias<span class="t-op">=</span>qkv_bias)
+ <span class="t-kw">self</span>.W_value <span class="t-op">=</span> <span class="t-bi">nn</span>.<span class="t-fn">Linear</span>(d_in, d_out, bias<span class="t-op">=</span>qkv_bias)
+ <span class="t-kw">self</span>.dropout <span class="t-op">=</span> <span class="t-bi">nn</span>.<span class="t-fn">Dropout</span>(dropout)
+ <span class="t-kw">self</span>.<span class="t-fn">register_buffer</span>(
+ <span class="t-str">'mask'</span>,
+ <span class="t-bi">torch</span>.<span class="t-fn">triu</span>(<span class="t-bi">torch</span>.<span class="t-fn">ones</span>(context_length, context_length),
+ diagonal<span class="t-op">=</span><span class="t-num">1</span>)
+ )
+ <span class="t-kw">def</span> <span class="t-fn">forward</span>(<span class="t-kw">self</span>, x):
+ b, num_tokens, d_in <span class="t-op">=</span> x.shape</code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 3 条</summary><ul><li>We transpose dimensions 1 and 2, keeping the batch dimension at the first position (0).</li><li>In PyTorch, operations</li><li>with a trailing underscore are performed in-place, avoiding unnecessary memory copies.</li></ul></details><pre><code> keys <span class="t-op">=</span> <span class="t-kw">self</span>.<span class="t-fn">W_key</span>(x)
+ queries <span class="t-op">=</span> <span class="t-kw">self</span>.<span class="t-fn">W_query</span>(x)
+ values <span class="t-op">=</span> <span class="t-kw">self</span>.<span class="t-fn">W_value</span>(x)
+ attn_scores <span class="t-op">=</span> queries @ keys.<span class="t-fn">transpose</span>(<span class="t-num">1</span>, <span class="t-num">2</span>)
+ attn_scores.<span class="t-fn">masked_fill_</span>(
+ <span class="t-kw">self</span>.mask.<span class="t-bi">bool</span>()[:num_tokens, :num_tokens], <span class="t-op">-</span><span class="t-bi">torch</span>.inf)
+ attn_weights <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">softmax</span>(
+ attn_scores <span class="t-op">/</span> keys.shape[<span class="t-op">-</span><span class="t-num">1</span>]<span class="t-op">**</span><span class="t-num">0.5</span>, dim<span class="t-op">=-</span><span class="t-num">1</span>
+ )
+ attn_weights <span class="t-op">=</span> <span class="t-kw">self</span>.<span class="t-fn">dropout</span>(attn_weights)
+ context_vec <span class="t-op">=</span> attn_weights @ values
+ <span class="t-kw">return</span> context_vec</code></pre></div>
+<p>While all added code lines should be familiar at this point, we now added a <code>self</code></p>
+<p><code>.register_buffer()</code> call in the <code>__init__</code> method. The use of <code>register_buffer</code> in</p>
+<p>PyTorch is not strictly necessary for all use cases but offers several advantages here. For instance, when we use the <code>CausalAttention</code> class in our LLM, buffers are automatically moved to the appropriate device (CPU or GPU) along with our model, which will be relevant when training our LLM. This means we don’t need to manually ensure these tensors are on the same device as your model parameters, avoiding device mismatch errors.</p>
+<p> We can use the <code>CausalAttention</code> class as follows, similar to <code>SelfAttention</code> previously:</p>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)
+context_length <span class="t-op">=</span> batch.shape[<span class="t-num">1</span>]
+ca <span class="t-op">=</span> <span class="t-fn">CausalAttention</span>(d_in, d_out, context_length, <span class="t-num">0.0</span>)
+context_vecs <span class="t-op">=</span> <span class="t-fn">ca</span>(batch)
+<span class="t-bi">print</span>(<span class="t-str">"context_vecs.shape:"</span>, context_vecs.shape)</code></pre></div>
+<div class="pdfpage" data-page="103">PDF p. 103</div>
+<figure><img src="assets/fig-0063.png" alt="" loading="lazy"><figcaption>Figure 3.23 Here’s what we’ve done so far. We began with a simplified attention mechanism, added trainable  weights, and then added a causal attention mask. Next, we will extend the causal attention mechanism and code  multi-head attention, which we will use in our LLM.</figcaption></figure>
+<p>The resulting context vector is a three-dimensional tensor where each token is now represented by a two-dimensional embedding:</p>
+<div class="codeblock"><pre><code>context_vecs.shape: <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">6</span>, <span class="t-num">2</span>])</code></pre></div>
+<p>Figure 3.23 summarizes what we have accomplished so far. We have focused on the concept and implementation of causal attention in neural networks. Next, we will expand on this concept and implement a multi-head attention module that implements several causal attention mechanisms in parallel.</p>
+<h2 id="extending-single-head-attention-to-multi-head-attention">3.6 Extending single-head attention to multi-head  attention<a class="anchor" href="#extending-single-head-attention-to-multi-head-attention">#</a></h2>
+<p>Our final step will be to extend the previously implemented causal attention class over multiple heads. This is also called <em>multi-head attention</em>. </p>
+<p> The term “multi-head” refers to dividing the attention mechanism into multiple “heads,” each operating independently. In this context, a single causal attention module can be considered single-head attention, where there is only one set of attention weights processing the input sequentially.</p>
+<p> We will tackle this expansion from causal attention to multi-head attention. First, we will intuitively build a multi-head attention module by stacking multiple <code>Causal-</code> <code>Attention</code> modules. Then we will then implement the same multi-head attention module in a more complicated but more computationally efficient way.</p>
+<h3 id="stacking-multiple-single-head-attention-layers">3.6.1 Stacking multiple single-head attention layers<a class="anchor" href="#stacking-multiple-single-head-attention-layers">#</a></h3>
+<p>In practical terms, implementing multi-head attention involves creating multiple instances of the self-attention mechanism (see figure 3.18), each with its own weights, and then combining their outputs. Using multiple instances of the self-attention mechanism can be computationally intensive, but it’s crucial for the kind of complex pattern recognition that models like transformer-based LLMs are known for. </p>
+<div class="pdfpage" data-page="104">PDF p. 104</div>
+<figure><img src="assets/fig-0064.png" alt="" loading="lazy"></figure>
+<p> Figure 3.24 illustrates the structure of a multi-head attention module, which consists of multiple single-head attention modules, as previously depicted in figure 3.18, stacked on top of each other.</p>
+<aside class="sidenote">The embedded input tokens remain unchanged.</aside>
+<aside class="sidenote">Instead of one value weightmatrix Wv in single-head</aside>
+<p class="caption">Inputs</p>
+<aside class="sidenote">attention, use two matricesWv1 and</aside>
+<p><em>W</em>v2<sub>.</sub></p>
+<aside class="sidenote">The values of the 5th row (input) are shown as an example.</aside>
+<aside class="sidenote">Instead of one query matrixhave two query matrices Q1andQ, we</aside>
+<p><em>Q</em>2<sub>.</sub></p>
+<aside class="sidenote">We now have two sets ofcontext vectors, Z1and</aside>
+<p><em>Z</em>2<sub>.</sub></p>
+<p class="caption">Figure 3.24 The multi-head attention module includes two single-head attention modules stacked on top of  each other. So, instead of using a single matrix Wv for computing the value matrices, in a multi-head attention  module with two heads, we now have two value weight matrices: Wv1 and Wv2. The same applies to the other  weight matrices, WQ and Wk. We obtain two sets of context vectors Z1 and Z2 that we can combine into a single  context vector matrix Z.</p>
+<p>As mentioned before, the main idea behind multi-head attention is to run the attention mechanism multiple times (in parallel) with different, learned linear projections—the results of multiplying the input data (like the query, key, and value vectors in attention mechanisms) by a weight matrix. In code, we can achieve this by implementing a simple <code>MultiHeadAttentionWrapper</code> class that stacks multiple instances of our previously implemented <code>CausalAttention</code> module.</p>
+<div class="pdfpage" data-page="105">PDF p. 105</div>
+<p class="listing-title"><span class="no">Listing 3.4</span><span class="tl">A wrapper class to implement multi-head attention</span></p>
+<figure><img src="assets/fig-0065.png" alt="" loading="lazy"><figcaption>InputsX Multi-head attention</figcaption></figure>
+<div class="codeblock"><pre><code><span class="t-kw">class</span> <span class="t-fn">MultiHeadAttentionWrapper</span>(<span class="t-bi">nn</span>.Module):
+ <span class="t-kw">def</span> <span class="t-fn">__init__</span>(<span class="t-kw">self</span>, d_in, d_out, context_length,
+ dropout, num_heads, qkv_bias<span class="t-op">=</span><span class="t-kw">False</span>):
+ <span class="t-fn">super</span>().<span class="t-fn">__init__</span>()
+ <span class="t-kw">self</span>.heads <span class="t-op">=</span> <span class="t-bi">nn</span>.<span class="t-fn">ModuleList</span>(
+ [<span class="t-fn">CausalAttention</span>(
+ d_in, d_out, context_length, dropout, qkv_bias
+ )
+ <span class="t-kw">for</span> _ <span class="t-kw">in</span> <span class="t-bi">range</span>(num_heads)]
+ )
+ <span class="t-kw">def</span> <span class="t-fn">forward</span>(<span class="t-kw">self</span>, x):
+ <span class="t-kw">return</span> <span class="t-bi">torch</span>.<span class="t-fn">cat</span>([<span class="t-fn">head</span>(x) <span class="t-kw">for</span> head <span class="t-kw">in</span> <span class="t-kw">self</span>.heads], dim<span class="t-op">=-</span><span class="t-num">1</span>)</code></pre></div>
+<p>For example, if we use this <code>MultiHeadAttentionWrapper</code> class with two attention heads (via <code>num_heads=2</code>) and <code>CausalAttention</code> output dimension <code>d_out=2</code>, we get a fourdimensional context vector (<code>d_out*num_heads=4</code>), as depicted in figure 3.25.</p>
+<p><sub>Z</sub></p>
+<aside class="sidenote">Two attention heads produces a Z2</aside>
+<p><sub>Z</sub><sub>1</sub><sub> Z</sub><sub>2</sub></p>
+<aside class="sidenote">tensor stacking two matrices that represent the context vectors.</aside>
+<p class="caption">Using the MultiHeadAttentionWrapper, we specified the number of  Figure 3.25 attention heads (num_heads). If we set num_heads=2, as in this example, we obtain  a tensor with two sets of context vector matrices. In each context vector matrix, the  rows represent the context vectors corresponding to the tokens, and the columns  correspond to the embedding dimension specified via d_out=4. We concatenate these  context vector matrices along the column dimension. Since we have two attention  heads and an embedding dimension of 2, the final embedding dimension is 2 × 2 = 4.</p>
+<p>To illustrate this further with a concrete example, we can use the <code>MultiHeadAttention-</code> <code>Wrapper</code> class similar to the <code>CausalAttention</code> class before:</p>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)
+context_length <span class="t-op">=</span> batch.shape[<span class="t-num">1</span>] <span class="t-com"># This is the number of tokens
+d_in, d_out = 3, 2
+mha = MultiHeadAttentionWrapper(
+ d_in, d_out, context_length, 0.0, num_heads=2
+)
+context_vecs = mha(batch)
+print(context_vecs)
+print("context_vecs.shape:", context_vecs.shape)</span></code></pre></div>
+<div class="pdfpage" data-page="106">PDF p. 106</div>
+<p>This results in the following tensor representing the context vectors:</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[[<span class="t-op">-</span><span class="t-num">0.4519</span>, <span class="t-num">0.2216</span>, <span class="t-num">0.4772</span>, <span class="t-num">0.1063</span>],
+ [<span class="t-op">-</span><span class="t-num">0.5874</span>, <span class="t-num">0.0058</span>, <span class="t-num">0.5891</span>, <span class="t-num">0.3257</span>],
+ [<span class="t-op">-</span><span class="t-num">0.6300</span>, <span class="t-op">-</span><span class="t-num">0.0632</span>, <span class="t-num">0.6202</span>, <span class="t-num">0.3860</span>],
+ [<span class="t-op">-</span><span class="t-num">0.5675</span>, <span class="t-op">-</span><span class="t-num">0.0843</span>, <span class="t-num">0.5478</span>, <span class="t-num">0.3589</span>],
+ [<span class="t-op">-</span><span class="t-num">0.5526</span>, <span class="t-op">-</span><span class="t-num">0.0981</span>, <span class="t-num">0.5321</span>, <span class="t-num">0.3428</span>],
+ [<span class="t-op">-</span><span class="t-num">0.5299</span>, <span class="t-op">-</span><span class="t-num">0.1081</span>, <span class="t-num">0.5077</span>, <span class="t-num">0.3493</span>]],
+ [[<span class="t-op">-</span><span class="t-num">0.4519</span>, <span class="t-num">0.2216</span>, <span class="t-num">0.4772</span>, <span class="t-num">0.1063</span>],
+ [<span class="t-op">-</span><span class="t-num">0.5874</span>, <span class="t-num">0.0058</span>, <span class="t-num">0.5891</span>, <span class="t-num">0.3257</span>],
+ [<span class="t-op">-</span><span class="t-num">0.6300</span>, <span class="t-op">-</span><span class="t-num">0.0632</span>, <span class="t-num">0.6202</span>, <span class="t-num">0.3860</span>],
+ [<span class="t-op">-</span><span class="t-num">0.5675</span>, <span class="t-op">-</span><span class="t-num">0.0843</span>, <span class="t-num">0.5478</span>, <span class="t-num">0.3589</span>],
+ [<span class="t-op">-</span><span class="t-num">0.5526</span>, <span class="t-op">-</span><span class="t-num">0.0981</span>, <span class="t-num">0.5321</span>, <span class="t-num">0.3428</span>],
+ [<span class="t-op">-</span><span class="t-num">0.5299</span>, <span class="t-op">-</span><span class="t-num">0.1081</span>, <span class="t-num">0.5077</span>, <span class="t-num">0.3493</span>]]], grad_fn<span class="t-op">=&lt;</span>CatBackward0<span class="t-op">&gt;</span>)
+context_vecs.shape: <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">6</span>, <span class="t-num">4</span>])</code></pre></div>
+<p>The first dimension of the resulting <code>context_vecs</code> tensor is 2 since we have two input texts (the input texts are duplicated, which is why the context vectors are exactly the same for those). The second dimension refers to the 6 tokens in each input. The third dimension refers to the four-dimensional embedding of each token.</p>
+<h3 id="exercise-3-2-returning-two-dimensional-embedding-vectors">Exercise 3.2 Returning two-dimensional embedding vectors <a class="anchor" href="#exercise-3-2-returning-two-dimensional-embedding-vectors">#</a></h3>
+<div class="plainbox"><p>Change the input arguments for the <code>MultiHeadAttentionWrapper(...,</code> <code>num_</code></p></div>
+<p><code>heads=2)</code> call such that the output context vectors are two-dimensional instead of</p>
+<div class="plainbox"><p>four dimensional while keeping the setting <code>num_heads=2</code>. Hint: You don’t have to</p><p>modify the class implementation; you just have to change one of the other input</p><p>arguments.</p></div>
+<p>Up to this point, we have implemented a <code>MultiHeadAttentionWrapper</code> that combined multiple single-head attention modules. However, these are processed sequentially via <code>[head(x)</code> <code>for</code> <code>head</code> <code>in</code> <code>self.heads]</code> in the forward method. We can improve this implementation by processing the heads in parallel. One way to achieve this is by computing the outputs for all attention heads simultaneously via matrix multiplication.</p>
+<div class="pdfpage" data-page="107">PDF p. 107</div>
+<p class="listing-title"><span class="no">Listing 3.5</span><span class="tl">An efficient multi-head attention class</span></p>
+<h3 id="implementing-multi-head-attention-with-weight-splits">3.6.2 Implementing multi-head attention with weight splits<a class="anchor" href="#implementing-multi-head-attention-with-weight-splits">#</a></h3>
+<p>So far, we have created a <code>MultiHeadAttentionWrapper</code> to implement multi-head attention by stacking multiple single-head attention modules. This was done by instantiating and combining several <code>CausalAttention</code> objects.</p>
+<p> Instead of maintaining two separate classes, <code>MultiHeadAttentionWrapper</code> and <code>CausalAttention</code>, we can combine these concepts into a single <code>MultiHeadAttention</code> class. Also, in addition to merging the <code>MultiHeadAttentionWrapper</code> with the <code>Causal-</code> <code>Attention</code> code, we will make some other modifications to implement multi-head attention more efficiently.</p>
+<p> In the <code>MultiHeadAttentionWrapper</code>, multiple heads are implemented by creating a list of <code>CausalAttention</code> objects (<code>self.heads</code>), each representing a separate attention head. The <code>CausalAttention</code> class independently performs the attention mechanism, and the results from each head are concatenated. In contrast, the following <code>MultiHeadAttention</code> class integrates the multi-head functionality within a single class. It splits the input into multiple heads by reshaping the projected query, key, and value tensors and then combines the results from these heads after computing attention.</p>
+<p> Let’s take a look at the <code>MultiHeadAttention</code> class before we discuss it further.</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 3 条</summary><ul><li>Reduces the projection dim to match the desired output dim</li><li>Uses a Linear layer to combine head outputs</li><li>Tensor shape: (b, num_tokens, d_out)</li></ul></details><pre><code><span class="t-kw">class</span> <span class="t-fn">MultiHeadAttention</span>(<span class="t-bi">nn</span>.Module):
+ <span class="t-kw">def</span> <span class="t-fn">__init__</span>(<span class="t-kw">self</span>, d_in, d_out,
+ context_length, dropout, num_heads, qkv_bias<span class="t-op">=</span><span class="t-kw">False</span>):
+ <span class="t-fn">super</span>().<span class="t-fn">__init__</span>()
+ <span class="t-kw">assert</span> (d_out <span class="t-op">%</span> num_heads <span class="t-op">==</span> <span class="t-num">0</span>), \
+ <span class="t-str">"d_out must be divisible by num_heads"</span>
+ <span class="t-kw">self</span>.d_out <span class="t-op">=</span> d_out
+ <span class="t-kw">self</span>.num_heads <span class="t-op">=</span> num_heads
+ <span class="t-kw">self</span>.head_dim <span class="t-op">=</span> d_out <span class="t-op">//</span> num_heads
+ <span class="t-kw">self</span>.W_query <span class="t-op">=</span> <span class="t-bi">nn</span>.<span class="t-fn">Linear</span>(d_in, d_out, bias<span class="t-op">=</span>qkv_bias)
+ <span class="t-kw">self</span>.W_key <span class="t-op">=</span> <span class="t-bi">nn</span>.<span class="t-fn">Linear</span>(d_in, d_out, bias<span class="t-op">=</span>qkv_bias)
+ <span class="t-kw">self</span>.W_value <span class="t-op">=</span> <span class="t-bi">nn</span>.<span class="t-fn">Linear</span>(d_in, d_out, bias<span class="t-op">=</span>qkv_bias)
+ <span class="t-kw">self</span>.out_proj <span class="t-op">=</span> <span class="t-bi">nn</span>.<span class="t-fn">Linear</span>(d_out, d_out)
+ <span class="t-kw">self</span>.dropout <span class="t-op">=</span> <span class="t-bi">nn</span>.<span class="t-fn">Dropout</span>(dropout)
+ <span class="t-kw">self</span>.<span class="t-fn">register_buffer</span>(
+ <span class="t-str">"mask"</span>,
+ <span class="t-bi">torch</span>.<span class="t-fn">triu</span>(<span class="t-bi">torch</span>.<span class="t-fn">ones</span>(context_length, context_length),
+ diagonal<span class="t-op">=</span><span class="t-num">1</span>)
+ )
+ <span class="t-kw">def</span> <span class="t-fn">forward</span>(<span class="t-kw">self</span>, x):
+ b, num_tokens, d_in <span class="t-op">=</span> x.shape
+ keys <span class="t-op">=</span> <span class="t-kw">self</span>.<span class="t-fn">W_key</span>(x)
+ queries <span class="t-op">=</span> <span class="t-kw">self</span>.<span class="t-fn">W_query</span>(x)
+ values <span class="t-op">=</span> <span class="t-kw">self</span>.<span class="t-fn">W_value</span>(x)</code></pre></div>
+<div class="pdfpage" data-page="108">PDF p. 108</div>
+<figure><img src="assets/fig-0066.png" alt="" loading="lazy"></figure>
+<figure><img src="assets/fig-0067.png" alt="" loading="lazy"></figure>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 2 条</summary><ul><li>We implicitly</li><li>split the matrix by adding a num_heads</li></ul></details><pre><code> keys <span class="t-op">=</span> keys.<span class="t-fn">view</span>(b, num_tokens, <span class="t-kw">self</span>.num_heads, <span class="t-kw">self</span>.head_dim)
+ values <span class="t-op">=</span> values.<span class="t-fn">view</span>(b, num_tokens, <span class="t-kw">self</span>.num_heads, <span class="t-kw">self</span>.head_dim)
+ queries <span class="t-op">=</span> queries.<span class="t-fn">view</span>(
+ b, num_tokens, <span class="t-kw">self</span>.num_heads, <span class="t-kw">self</span>.head_dim</code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 7 条</summary><ul><li>dimension. Then we unroll the )</li><li>last dim: (b, Transposes from shape (b, num_tokens,</li><li>num_tokens, num_heads, head_dim) to (b, num_heads,</li><li>d_out) -&gt; (b, num_tokens, head_dim)</li><li>num_tokens, num_heads,</li><li>Masks truncated to the number</li><li>dot productComputes of tokens</li></ul></details><pre><code> keys <span class="t-op">=</span> keys.<span class="t-fn">transpose</span>(<span class="t-num">1</span>, <span class="t-num">2</span>)
+ queries <span class="t-op">=</span> queries.<span class="t-fn">transpose</span>(<span class="t-num">1</span>, <span class="t-num">2</span>)
+ values <span class="t-op">=</span> values.<span class="t-fn">transpose</span>(<span class="t-num">1</span>, <span class="t-num">2</span>)
+head_dim). attn_scores <span class="t-op">=</span> queries @ keys.<span class="t-fn">transpose</span>(<span class="t-num">2</span>, <span class="t-num">3</span>)  mask_bool <span class="t-op">=</span> <span class="t-kw">self</span>.mask.<span class="t-bi">bool</span>()[:num_tokens, :num_tokens]
+
+ attn_scores.<span class="t-fn">masked_fill_</span>(mask_bool, <span class="t-op">-</span><span class="t-bi">torch</span>.inf)</code></pre></div>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 5 条</summary><ul><li>Uses the mask to fill</li><li>attention scores</li><li>Tensor shape: (b, num_tokens, n_heads, head_dim)</li><li>Combines heads, where self.d_out Adds an optional linear projection</li><li>= self.num_heads * self.head_dim</li></ul></details><pre><code><span class="t-kw">for</span> each head attn_weights <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">softmax</span>(
+ attn_scores <span class="t-op">/</span> keys.shape[<span class="t-op">-</span><span class="t-num">1</span>]<span class="t-op">**</span><span class="t-num">0.5</span>, dim<span class="t-op">=-</span><span class="t-num">1</span>)
+ attn_weights <span class="t-op">=</span> <span class="t-kw">self</span>.<span class="t-fn">dropout</span>(attn_weights)
+ context_vec <span class="t-op">=</span> (attn_weights @ values).<span class="t-fn">transpose</span>(<span class="t-num">1</span>, <span class="t-num">2</span>)
+
+ context_vec <span class="t-op">=</span> context_vec.<span class="t-fn">contiguous</span>().<span class="t-fn">view</span>(
+ b, num_tokens, <span class="t-kw">self</span>.d_out
+ )
+ context_vec <span class="t-op">=</span> <span class="t-kw">self</span>.<span class="t-fn">out_proj</span>(context_vec)
+ <span class="t-kw">return</span> context_vec</code></pre></div>
+<p>Even though the reshaping (<code>.view</code>) and transposing (<code>.transpose</code>) of tensors inside the <code>MultiHeadAttention</code> class looks very mathematically complicated, the <code>Multi-</code> <code>HeadAttention</code> class implements the same concept as the <code>MultiHeadAttention-</code> <code>Wrapper</code> earlier. </p>
+<p> On a big-picture level, in the previous <code>MultiHeadAttentionWrapper</code>, we stacked multiple single-head attention layers that we combined into a multi-head attention layer. The <code>MultiHeadAttention</code> class takes an integrated approach. It starts with a multi-head layer and then internally splits this layer into individual attention heads, as illustrated in figure 3.26.</p>
+<p> The splitting of the query, key, and value tensors is achieved through tensor reshaping and transposing operations using PyTorch’s <code>.view</code> and <code>.transpose</code> methods. The input is first transformed (via linear layers for queries, keys, and values) and then reshaped to represent multiple heads. </p>
+<p> The key operation is to split the <code>d_out</code> dimension into <code>num_heads</code> and <code>head_dim</code>, where <code>head_dim</code> <code>=</code> <code>d_out</code> <code>/</code> <code>num_heads</code>. This splitting is then achieved using the <code>.view</code> method: a tensor of dimensions <code>(b,</code> <code>num_tokens,</code> <code>d_out)</code> is reshaped to dimension</p>
+<div class="codeblock"><pre><code>(b, num_tokens, num_heads, head_dim).</code></pre></div>
+<div class="pdfpage" data-page="109">PDF p. 109</div>
+<figure><img src="assets/fig-0069.png" alt="" loading="lazy"><figcaption>Inputs X</figcaption></figure>
+<figure><img src="assets/fig-0070.png" alt="" loading="lazy"><figcaption>Inputs</figcaption></figure>
+<figure><img src="assets/fig-0068.png" alt="" loading="lazy"></figure>
+<aside class="sidenote">Perform two matrix multiplications to obtainthe two query matrices, Q1and</aside>
+<p><em>Q</em>2<sub>.</sub></p>
+<aside class="sidenote">Then split queriesQ1and Q into</aside>
+<aside class="sidenote">Obtain queriesmatrix multiplication.Qwith only one</aside>
+<p><sup>Q</sup><sup>2</sup><sup>.</sup></p>
+<p class="caption">Figure 3.26 In the MultiHeadAttentionWrapper class with two attention heads,  we initialized two weight matrices, Wq1 and Wq2, and computed two query matrices, Q1  and Q2 (top). In the MultiheadAttention class, we initialize one larger weight matrix  Wq, only perform one matrix multiplication with the inputs to obtain a query matrix Q, and  then split the query matrix into Q1 and Q2 (bottom). We do the same for the keys and  values, which are not shown to reduce visual clutter.</p>
+<p>The tensors are then transposed to bring the <code>num_heads</code> dimension before the <code>num_</code> <code>tokens</code> dimension, resulting in a shape of <code>(b,</code> <code>num_heads,</code> <code>num_tokens,</code> <code>head_dim)</code>. This transposition is crucial for correctly aligning the queries, keys, and values across the different heads and performing batched matrix multiplications efficiently.</p>
+<p> To illustrate this batched matrix multiplication, suppose we have the following tensor:</p>
+<div class="codeblock"><details class="cnotes"><summary>代码旁注 1 条</summary><ul><li>The shape of this tensor is (b, num_heads, num_tokens, head_dim) = (1, 2, 3, 4).</li></ul></details><pre><code>a <span class="t-op">=</span> <span class="t-bi">torch</span>.<span class="t-fn">tensor</span>([[[[<span class="t-num">0.2745</span>, <span class="t-num">0.6584</span>, <span class="t-num">0.2775</span>, <span class="t-num">0.8573</span>],
+ [<span class="t-num">0.8993</span>, <span class="t-num">0.0390</span>, <span class="t-num">0.9268</span>, <span class="t-num">0.7388</span>],
+ [<span class="t-num">0.7179</span>, <span class="t-num">0.7058</span>, <span class="t-num">0.9156</span>, <span class="t-num">0.4340</span>]],
+ [[<span class="t-num">0.0772</span>, <span class="t-num">0.3565</span>, <span class="t-num">0.1479</span>, <span class="t-num">0.5331</span>],
+ [<span class="t-num">0.4066</span>, <span class="t-num">0.2318</span>, <span class="t-num">0.4545</span>, <span class="t-num">0.9737</span>],
+ [<span class="t-num">0.4606</span>, <span class="t-num">0.5159</span>, <span class="t-num">0.4220</span>, <span class="t-num">0.5786</span>]]]])</code></pre></div>
+<div class="pdfpage" data-page="110">PDF p. 110</div>
+<p>Now we perform a batched matrix multiplication between the tensor itself and a view of the tensor where we transposed the last two dimensions, <code>num_tokens</code> and <code>head_dim</code>:</p>
+<p><code>print(a @ a.transpose(2, 3))</code></p>
+<p>The result is</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[[[<span class="t-num">1.3208</span>, <span class="t-num">1.1631</span>, <span class="t-num">1.2879</span>],
+ [<span class="t-num">1.1631</span>, <span class="t-num">2.2150</span>, <span class="t-num">1.8424</span>],
+ [<span class="t-num">1.2879</span>, <span class="t-num">1.8424</span>, <span class="t-num">2.0402</span>]],
+ [[<span class="t-num">0.4391</span>, <span class="t-num">0.7003</span>, <span class="t-num">0.5903</span>],
+ [<span class="t-num">0.7003</span>, <span class="t-num">1.3737</span>, <span class="t-num">1.0620</span>],
+ [<span class="t-num">0.5903</span>, <span class="t-num">1.0620</span>, <span class="t-num">0.9912</span>]]]])</code></pre></div>
+<p>In this case, the matrix multiplication implementation in PyTorch handles the fourdimensional input tensor so that the matrix multiplication is carried out between the two last dimensions <code>(num_tokens,</code> <code>head_dim)</code> and then repeated for the individual heads. </p>
+<p> For instance, the preceding becomes a more compact way to compute the matrix multiplication for each head separately:</p>
+<div class="codeblock"><pre><code>first_head <span class="t-op">=</span> a[<span class="t-num">0</span>, <span class="t-num">0</span>, :, :]
+first_res <span class="t-op">=</span> first_head @ first_head.T
+<span class="t-bi">print</span>(<span class="t-str">"First head:\n"</span>, first_res)
+second_head <span class="t-op">=</span> a[<span class="t-num">0</span>, <span class="t-num">1</span>, :, :]
+second_res <span class="t-op">=</span> second_head @ second_head.T
+<span class="t-bi">print</span>(<span class="t-str">"\nSecond head:\n"</span>, second_res)</code></pre></div>
+<p>The results are exactly the same results as those we obtained when using the batched</p>
+<p>matrix multiplication <code>print(a</code> <code>@</code> <code>a.transpose(2,</code> <code>3))</code>:</p>
+<div class="codeblock"><pre><code>First head:
+ <span class="t-fn">tensor</span>([[<span class="t-num">1.3208</span>, <span class="t-num">1.1631</span>, <span class="t-num">1.2879</span>],
+ [<span class="t-num">1.1631</span>, <span class="t-num">2.2150</span>, <span class="t-num">1.8424</span>],
+ [<span class="t-num">1.2879</span>, <span class="t-num">1.8424</span>, <span class="t-num">2.0402</span>]])
+Second head:
+ <span class="t-fn">tensor</span>([[<span class="t-num">0.4391</span>, <span class="t-num">0.7003</span>, <span class="t-num">0.5903</span>],
+ [<span class="t-num">0.7003</span>, <span class="t-num">1.3737</span>, <span class="t-num">1.0620</span>],
+ [<span class="t-num">0.5903</span>, <span class="t-num">1.0620</span>, <span class="t-num">0.9912</span>]])</code></pre></div>
+<p>Continuing with <code>MultiHeadAttention</code>, after computing the attention weights and context vectors, the context vectors from all heads are transposed back to the shape <code>(b,</code> <code>num_tokens,</code> <code>num_heads,</code> <code>head_dim)</code>. These vectors are then reshaped (flattened) into the shape <code>(b,</code> <code>num_tokens,</code> <code>d_out)</code>, effectively combining the outputs from all heads.</p>
+<p> Additionally, we added an output projection layer (<code>self.out_proj</code>) to <code>Multi-</code> <code>HeadAttention</code> after combining the heads, which is not present in the <code>Causal-</code> <code>Attention</code> class. This output projection layer is not strictly necessary (see appendix B for more details), but it is commonly used in many LLM architectures, which is why I added it here for completeness.</p>
+<div class="pdfpage" data-page="111">PDF p. 111</div>
+<p> Even though the <code>MultiHeadAttention</code> class looks more complicated than the <code>MultiHeadAttentionWrapper</code> due to the additional reshaping and transposition of tensors, it is more efficient. The reason is that we only need one matrix multiplication to compute the keys, for instance, <code>keys</code> <code>=</code> <code>self.W_key(x)</code> (the same is true for the queries and values). In the <code>MultiHeadAttentionWrapper</code>, we needed to repeat this matrix multiplication, which is computationally one of the most expensive steps, for each attention head.</p>
+<p> The <code>MultiHeadAttention</code> class can be used similar to the <code>SelfAttention</code> and <code>CausalAttention</code> classes we implemented earlier:</p>
+<div class="codeblock"><pre><code><span class="t-bi">torch</span>.<span class="t-fn">manual_seed</span>(<span class="t-num">123</span>)
+batch_size, context_length, d_in <span class="t-op">=</span> batch.shape
+d_out <span class="t-op">=</span> <span class="t-num">2</span>
+mha <span class="t-op">=</span> <span class="t-fn">MultiHeadAttention</span>(d_in, d_out, context_length, <span class="t-num">0.0</span>, num_heads<span class="t-op">=</span><span class="t-num">2</span>)
+context_vecs <span class="t-op">=</span> <span class="t-fn">mha</span>(batch)
+<span class="t-bi">print</span>(context_vecs)
+<span class="t-bi">print</span>(<span class="t-str">"context_vecs.shape:"</span>, context_vecs.shape)</code></pre></div>
+<p>The results show that the output dimension is directly controlled by the <code>d_out</code> argument:</p>
+<div class="codeblock"><pre><code><span class="t-fn">tensor</span>([[[<span class="t-num">0.3190</span>, <span class="t-num">0.4858</span>],
+ [<span class="t-num">0.2943</span>, <span class="t-num">0.3897</span>],
+ [<span class="t-num">0.2856</span>, <span class="t-num">0.3593</span>],
+ [<span class="t-num">0.2693</span>, <span class="t-num">0.3873</span>],
+ [<span class="t-num">0.2639</span>, <span class="t-num">0.3928</span>],
+ [<span class="t-num">0.2575</span>, <span class="t-num">0.4028</span>]],
+ [[<span class="t-num">0.3190</span>, <span class="t-num">0.4858</span>],
+ [<span class="t-num">0.2943</span>, <span class="t-num">0.3897</span>],
+ [<span class="t-num">0.2856</span>, <span class="t-num">0.3593</span>],
+ [<span class="t-num">0.2693</span>, <span class="t-num">0.3873</span>],
+ [<span class="t-num">0.2639</span>, <span class="t-num">0.3928</span>],
+ [<span class="t-num">0.2575</span>, <span class="t-num">0.4028</span>]]], grad_fn<span class="t-op">=&lt;</span>ViewBackward0<span class="t-op">&gt;</span>)
+context_vecs.shape: <span class="t-bi">torch</span>.<span class="t-fn">Size</span>([<span class="t-num">2</span>, <span class="t-num">6</span>, <span class="t-num">2</span>])</code></pre></div>
+<p>We have now implemented the <code>MultiHeadAttention</code> class that we will use when we implement and train the LLM. Note that while the code is fully functional, I used relatively small embedding sizes and numbers of attention heads to keep the outputs readable.</p>
+<p> For comparison, the smallest GPT-2 model (117 million parameters) has 12 attention heads and a context vector embedding size of 768. The largest GPT-2 model (1.5 billion parameters) has 25 attention heads and a context vector embedding size of 1,600. The embedding sizes of the token inputs and context embeddings are the same in GPT models (<code>d_in</code> <code>=</code> <code>d_out</code>).</p>
+<div class="pdfpage" data-page="112">PDF p. 112</div>
+<ul><li>  Attention mechanisms transform input elements into enhanced context vector representations that incorporate information about all inputs.</li><li>  A self-attention mechanism computes the context vector representation as a weighted sum over the inputs.</li><li>  In a simplified attention mechanism, the attention weights are computed via dot products.</li><li>  A dot product is a concise way of multiplying two vectors element-wise and then summing the products.</li><li>  Matrix multiplications, while not strictly required, help us implement computations more efficiently and compactly by replacing nested <code>for</code> loops. </li><li>  In self-attention mechanisms used in LLMs, also called scaled-dot product attention, we include trainable weight matrices to compute intermediate transformations of the inputs: queries, values, and keys.</li><li>  When working with LLMs that read and generate text from left to right, we add a causal attention mask to prevent the LLM from accessing future tokens.</li><li>  In addition to causal attention masks to zero-out attention weights, we can add a dropout mask to reduce overfitting in LLMs.</li><li>  The attention modules in transformer-based LLMs involve multiple instances of causal attention, which is called multi-head attention.</li><li>  We can create a multi-head attention module by stacking multiple instances of causal attention modules.</li><li>  A more efficient way of creating multi-head attention modules involves batched matrix multiplications.</li></ul>
+<h3 id="exercise-3-3-initializing-gpt-2-size-attention-modules">Exercise 3.3 Initializing GPT-2 size attention modules<a class="anchor" href="#exercise-3-3-initializing-gpt-2-size-attention-modules">#</a></h3>
+<div class="plainbox"><p>Using the <code>MultiHeadAttention</code> class, initialize a multi-head attention module that</p><p>has the same number of attention heads as the smallest GPT-2 model (12 attention</p><p>heads). Also ensure that you use the respective input and output embedding sizes</p><p>similar to GPT-2 (768 dimensions). Note that the smallest GPT-2 model supports a</p><p>context length of 1,024 tokens.</p></div>
+<h2 id="summary-3">Summary<a class="anchor" href="#summary-3">#</a></h2>
+<div class="pdfpage" data-page="113">PDF p. 113</div>
+<ul><li>  Coding a GPT-like large language model (LLM)  that can be trained to generate human-like text</li><li>  Normalizing layer activations to stabilize neural  network training</li><li>  Adding shortcut connections in deep neural  networks </li><li>  Implementing transformer blocks to create GPT  models of various sizes</li><li>  Computing the number of parameters and  storage requirements of GPT models</li></ul><div class="colophon"><p>由 <code>pdf2html2.py</code> 从 <code>bllm2.pdf</code> 转换。插图为原书矢量图按区域渲染的截图，代码块带语法高亮，连字符断词已按全书词表还原。</p></div>
+</main>
+<nav class="chapnav" aria-label="Chapter navigation"><div class="chapnav-inner">
+<a class="prev" href="08-working-with-text-data.html"><span class="lbl">上一章</span><span class="nm">Working with text data</span></a><a class="next" href="10-implementing-a-gpt-model-from-scratch-to-generate-text.html"><span class="lbl">下一章</span><span class="nm">Implementing a GPT model from scratch to generate text</span></a>
+</div></nav>
+<script src="app.js"></script>
+</body>
+</html>

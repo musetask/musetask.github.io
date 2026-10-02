@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>8.4 Building training examples · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-75.html">
+<link rel="next" href="page-77.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 76 页 / 共 108 页</span></div>
+<h2 id="h2-building-training-examples"><span class="num">8.4</span>Building training examples</h2>
+<p>Next, we’ll convert the raw dataset entries into training examples that can be consumed by the model. At a high level, this means formatting the prompts and answers consistently, tokenizing them, and storing the resulting token IDs together with the prompt length. This preprocessing stage is shown in figure 8.7.</p>
+<p>Most of the work here is straightforward preprocessing. In the RLVR chapters, we performed similar preparation on the fly because each training example was sampled once and then discarded. Distillation is different, and we usually loop over the </p>
+<figure><a class="zoom" href="assets/figure-8.7.png" tabindex="-1"><img src="assets/figure-8.7.png" alt="" width="1143" height="763" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 8.7</span>Bringing the loaded dataset into a format suitable for model training by understanding the tokenizer, tokenizing the examples, and filtering and splitting the dataset</figcaption></figure>
+<p>same examples for multiple <em>training epochs</em>. It is therefore more efficient to format and tokenize the dataset once, store the processed examples, and reuse them during training. This is also one reason distillation is often easier to iterate on than RLVR, once the teacher data has been collected.</p>
+<h3 id="h3-what-are-training-epochs">What are training epochs?</h3>
+<div class="lead">A training epoch, or epoch for short, is a standard machine learning and deep learning term. An epoch is one complete pass through the full training dataset. For example, if we train for three epochs, the model sees each training example three times, usually in a different order each time. Multiple epochs help the model gradually improve by revisiting the same data more than once.</div>
+<h3 id="h3-loading-and-understanding-the-tokenizer"><span class="num">8.4.1</span>Loading and understanding the tokenizer</h3>
+<p>We’ll begin with the tokenizer. Here, we are using the Qwen3 reasoning tokenizer because it supports the <code>&lt;think&gt;...&lt;/think&gt;</code> tokens introduced in chapter 7.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.qwen3 <span class="tok-kw">import</span> (
+    download_qwen3_small,
+    Qwen3Tokenizer,
+)
+<span class="tok-kw">def</span> load_reasoning_tokenizer(local_dir=<span class="tok-st">"qwen3"</span>):
+    download_qwen3_small<span class="tok-kw">(</span>
+        kind=<span class="tok-st">"reasoning"</span>, tokenizer_only=<span class="tok-kw">True</span>, out_dir=local_dir
+    <span class="tok-kw">)</span>
+    tokenizer_path = Path<span class="tok-kw">(</span>local_dir<span class="tok-kw">)</span> / <span class="tok-st">"tokenizer-reasoning.json"</span>
+    tokenizer = Qwen3Tokenizer<span class="tok-kw">(</span>
+        tokenizer_file_path=tokenizer_path,
+        apply_chat_template=<span class="tok-kw">True</span>,
+        add_generation_prompt=<span class="tok-kw">True</span>,
+        add_thinking=<span class="tok-kw">True</span>,
+    <span class="tok-kw">)</span>
+    <span class="tok-kw">return</span> tokenizer
+tokenizer = load_reasoning_tokenizer<span class="tok-kw">()</span>
+We set apply_chat_template=True and add_generation_prompt=True so that the</code></pre><figcaption><span class="lbl">Listing 8.3</span>Loading the Qwen3 reasoning tokenizer</figcaption></figure>
+<p>tokenizer applies the same prompt-formatting style used for Qwen3’s chat and reasoning models. The following example shows the additional wrapper tokens that are inserted automatically.</p>
+<pre><code class="language-python">prompt = <span class="tok-st">"Sam is hired for a 20-day period..."</span>
+prompt_ids = tokenizer.encode<span class="tok-kw">(</span>prompt<span class="tok-kw">)</span>
+decoded_prompt = tokenizer.decode<span class="tok-kw">(</span>prompt_ids<span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>decoded_prompt<span class="tok-kw">)</span></code></pre>
+<p>The formatted text is as follows:</p>
+<pre><code class="language-python">&lt;|im_start|&gt;user
+Sam is hired for a 20-day period...&lt;|im_end|&gt;
+&lt;|im_start|&gt;assistant</code></pre>
+<p>The <code>&lt;|im_start|&gt;user</code> marks the start of the user prompt, <code>&lt;|im_end|&gt;</code> marks the end of the prompt, and <code>&lt;|im_start|&gt;assistant</code> marks the start of the model response. This chat-style wrapping is optional, but it is a common convention for instruction and chat fine-tuning.</p>
+<p>For the target answer, we’ll disable this wrapping by setting <code>chat_wrapped=False</code>. Otherwise, both the prompt and the answer would introduce their own assistant-start tokens, which is not what we want when concatenating them into a single training sequence:</p>
+<pre><code class="language-python">answer = (
+    <span class="tok-st">"&lt;think&gt;Okay, let me try to solve "</span>
+    <span class="tok-st">"this problem...&lt;/think&gt; </span>\\<span class="tok-st">boxed</span>{4}<span class="tok-st">"</span>
+)
+answer_ids = tokenizer.encode<span class="tok-kw">(</span>answer, chat_wrapped=<span class="tok-kw">False)</span>
+decoded_answer = tokenizer.decode<span class="tok-kw">(</span>answer_ids<span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>decoded_answer<span class="tok-kw">)</span></code></pre>
+<p>As shown, the <code>chat_wrapped=False</code> setting suppressed the chat template for the answer tokens:</p>
+<pre><code class="language-python">&lt;think&gt;Okay, let me try to solve this problem...&lt;/think&gt; \boxed{4}</code></pre>
+<p>For training, we need the full sequence of token IDs: the wrapped prompt, followed by the teacher answer, followed by an end-of-sequence token. This is the sequence the model will see during next-token prediction:</p>
+<pre><code class="language-python">token_ids = prompt_ids + answer_ids + [tokenizer.eos_token_id]
+decoded_token_ids = tokenizer.decode<span class="tok-kw">(</span>token_ids<span class="tok-kw">)</span>
+print<span class="tok-kw">(</span>decoded_token_ids<span class="tok-kw">)</span></code></pre>
+<p>The formatted string is as follows:</p>
+<pre><code class="language-python">&lt;|im_start|&gt;user
+Sam is hired for a 20-day period...&lt;|im_end|&gt;
+&lt;|im_start|&gt;assistant
+&lt;think&gt;Okay, let me try to solve this problem...&lt;/think&gt;\boxed{4}&lt;|im_end|&gt;</code></pre>
+<p>It is worth emphasizing that the reasoning tokenizer is mainly convenient because it already includes the <code>&lt;think&gt;&lt;/think&gt;</code> tokens. In principle, though, we could also use the base tokenizer. Likewise, the chat template is not strictly required. We will keep it here because it matches the formatting used by Qwen3’s own reasoning models and helps keep the training and evaluation setup consistent.</p>
+<p>If you later evaluate the model with the scripts from earlier chapters, remember to use the <code>--which_model</code> <code>"reasoning"</code> setting so that the evaluation uses the same tokenizer variant.</p>
+<h3 id="h3-formatting-and-tokenizing-the-dataset"><span class="num">8.4.2</span>Formatting and tokenizing the dataset</h3>
+<p>Now that we’ve loaded the tokenizer, we can apply the formatting and tokenization steps to the whole dataset, as illustrated in figure 8.8.</p>
+<p>With the tokenizer in place, we can now apply the formatting and tokenization steps consistently across the whole dataset via a <code>build_examples</code> function. The full formatting and tokenization pipeline for a single training sample is illustrated in figure 8.9.</p>
+<p>Here, the <code>build_examples</code> function performs three steps. First, it renders and tokenizes the prompt. Second, it formats and tokenizes the teacher answer. Third, it concatenates both parts and records the prompt length so that we can later compute the loss only on the answer tokens. The following listing shows how we can implement that in code.</p>
+<figure><a class="zoom" href="assets/figure-8.8.png" tabindex="-1"><img src="assets/figure-8.8.png" alt="" width="896" height="341" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 8.8</span>With tokenization complete, we can now apply the formatting and tokenization steps to the whole dataset. Example of the encoded math “&lt;|im_start|&gt;user problem prompt and answer You are a helpful math assistant… that we need for training “&lt;|im_start|&gt;user Sam is hired for a 20-day period... You are a helpful math assistant… Answer: Sam is hired for a 20-day period... &lt;|im_end|&gt; [151644, 872, 198, … &lt;|im_start|&gt;assistant” Answer: 151667, 32313, 11, &lt;|im_end|&gt; &lt;think&gt;Okay, let's see. Sam was …, eos_token_id] &lt;|im_start|&gt;assistant” hired for 20 days.&lt;/think&gt; Sam did not work \boxed{6} days. &lt;|im_end|&gt;“ 3 Example of the encoded math [151644, 872, 198, …] [151667, 32313, 11, …] problem prompt encode(…, encode(…) chat_wrapped=False) Tokenizer Tokenizer Formats answer without adding chat tokens 12,000 math problems “&lt;think&gt;Okay, let's “You are a helpful (&lt;|im_start|&gt;, etc.) and solutions (via math assistant… see. Sam was hired for DeepSeek-R1) 20 days.&lt;/think&gt;</figcaption></figure>
+<figure><a class="zoom" href="assets/figure-8.9.png" tabindex="-1"><img src="assets/figure-8.9.png" alt="" width="1143" height="951" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure 8.9</span>Example of the tokenization pipeline for one training sample. The math problem is rendered into the chat prompt format, the teacher reasoning trace and final answer are combined via format_distilled_answer, and both parts are concatenated into one token sequence.</figcaption></figure>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.ch03 <span class="tok-kw">import</span> render_prompt
+<span class="tok-kw">def</span> build_examples(data, tokenizer):
+    examples = []
+    skipped = <span class="tok-fn">0</span>
+    <span class="tok-kw">for</span> entry <span class="tok-kw">in</span> data:
+        <span class="tok-kw">try</span>:
+            prompt = render_prompt<span class="tok-kw">(</span>entry<span class="tok-kw">[</span><span class="tok-st">"problem"</span><span class="tok-kw">])</span>
+            prompt_ids = tokenizer.encode<span class="tok-kw">(</span>prompt<span class="tok-kw">)</span>
+            target_answer = format_distilled_answer<span class="tok-kw">(</span>entry<span class="tok-kw">)</span>
+            answer_ids = tokenizer.encode<span class="tok-kw">(</span>
+                target_answer, chat_wrapped=<span class="tok-kw">False</span>
+            <span class="tok-kw">)</span>
+            token_ids = (
+                prompt_ids + answer_ids + [tokenizer.eos_token_id]
+            )
+            <span class="tok-kw">if</span> len<span class="tok-kw">(</span>token_ids<span class="tok-kw">)</span> &lt; <span class="tok-fn">2</span>:
+                skipped += <span class="tok-fn">1</span>
+                <span class="tok-kw">continue</span>
+            examples.append<span class="tok-kw">(</span>{
+                <span class="tok-st">"token_ids"</span>: token_ids,
+                <span class="tok-st">"prompt_len"</span>: len<span class="tok-kw">(</span>prompt_ids<span class="tok-kw">)</span>,
+            }<span class="tok-kw">)</span>
+        <span class="tok-kw">except</span> (KeyError, TypeError, ValueError):
+            skipped += <span class="tok-fn">1</span>
+    <span class="tok-kw">return</span> examples, skipped
+examples, skipped = build_examples<span class="tok-kw">(</span>math_train, tokenizer<span class="tok-kw">)</span>
+print<span class="tok-kw">(</span><span class="tok-st">"Number of examples:"</span>, len<span class="tok-kw">(</span>examples<span class="tok-kw">))</span>
+print<span class="tok-kw">(</span><span class="tok-st">"Number of skipped examples:"</span>, skipped<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing 8.4</span>Building and inspecting tokenized distillation examples</figcaption></figure>
+<p>The resulting numbers after running the code in listing 8.4 are as follows:</p>
+<pre><code class="language-python">Number of examples: 12000
+Number of skipped examples: 0</code></pre>
+<p>Next, let’s decode one of the training examples to inspect it further:</p>
+<pre><code class="language-python">print<span class="tok-kw">(</span>tokenizer.decode<span class="tok-kw">(</span>examples<span class="tok-kw">[</span><span class="tok-fn">4</span><span class="tok-kw">]</span>[<span class="tok-st">"token_ids"</span>]<span class="tok-kw">))</span></code></pre>
+<p>This is the output:</p>
+<pre><code class="language-python">&lt;|im_start|&gt;user
+You are a helpful math assistant.
+Answer the question and write the final result on a new line as:
+\boxed{ANSWER}
+Question:
+Sam is hired for a 20-day period...
+Answer:&lt;|im_end|&gt;
+&lt;|im_start|&gt;assistant
+&lt;think&gt;Okay, let's see. Sam was hired for 20 days.... So answer is 6 days not
+worked.&lt;/think&gt;
+...Sam did not work \(\boxed{6}\) days.&lt;|im_end|&gt;</code></pre>
+<p>Looking at the preceding output, we can confirm that it meets all the formatting requirements. For instance, it uses the chat template correctly, and the answer’s reasoning trace is correctly enclosed in <code>&lt;think&gt;&lt;/think&gt;</code> tags. Finally, the answer ends with an end-of-sequence token, <code>&lt;|im_end|&gt;</code>.</p>
+<nav class="pager"><a class="prev" href="page-75.html" rel="prev"><span class="dir">上一页</span><span class="t">8.2 Generating a dataset for reasoning distillation</span></a><a class="next" href="page-77.html" rel="next"><span class="dir">下一页</span><span class="t">8.4.3 Filtering and splitting the dataset</span></a></nav>
+</main>
+</body>
+</html>

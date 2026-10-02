@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="author" content="Sebastian Raschka">
+<meta name="generator" content="pdf2html">
+<title>G.3 Downloading the scripts · Build a Reasoning Model (From Scratch)</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="prev" href="page-104.html">
+<link rel="next" href="page-106.html">
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="bar">
+<span class="title">Build a Reasoning Model (From Scratch)</span>
+<a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">第 105 页 / 共 108 页</span></div>
+<h2 id="h2-downloading-the-scripts"><span class="num">G.3</span>Downloading the scripts</h2>
+<p>If you cloned the repository, the files are already present in <code>chG/01_main-chapter-code</code>, and you can skip this section. Otherwise, as discussed in chapter 7, you can use <code>download_from_github(...)</code> to fetch the two scripts.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">from</span> reasoning_from_scratch.ch07 <span class="tok-kw">import</span> download_from_github
+download_from_github<span class="tok-kw">(</span>
+    "chG/01_main-chapter-code/qwen3_chat_interface.py"
+<span class="tok-kw">)</span>
+download_from_github<span class="tok-kw">(</span>
+    "chG/01_main-chapter-code/qwen3_chat_interface_multiturn.py"
+<span class="tok-kw">)</span></code></pre><figcaption><span class="lbl">Listing G.1</span>Downloading Chainlit scripts</figcaption></figure>
+<h2 id="h2-the-regular-single-turn-script"><span class="num">G.4</span>The regular single-turn script</h2>
+<p>The regular single-turn version of the interface, in <code>qwen3_chat_interface.py</code>, is intentionally compact. It reuses the LLM and inference code from chapter 2 almost directly and wraps it in the minimum amount of Chainlit-specific logic. Here, “single-turn” means that we can submit multiple queries, but each query is independent of the others and doesn’t know about the previous query.</p>
+<p>The code, which is relatively short, is shown here in its entirety.</p>
+<figure class="listing"><pre><code class="language-python"><span class="tok-kw">import</span> os
+<span class="tok-kw">from</span> pathlib <span class="tok-kw">import</span> Path
+<span class="tok-kw">import</span> torch
+<span class="tok-kw">import</span> chainlit
+<span class="tok-kw">from</span> reasoning_from_scratch.ch02 <span class="tok-kw">import</span> (
+    get_device,
+)
+<span class="tok-kw">from</span> reasoning_from_scratch.ch02 <span class="tok-kw">import</span> generate_text_basic_stream_cache
+<span class="tok-kw">from</span> reasoning_from_scratch.ch03 <span class="tok-kw">import</span> (
+    load_model_and_tokenizer,
+    load_tokenizer_only
+)
+<span class="tok-kw">from</span> reasoning_from_scratch.qwen3 <span class="tok-kw">import</span> Qwen3Model, QWEN_CONFIG_06_B</code></pre><figcaption><span class="lbl">Listing G.2</span>Chainlit script for single-turn queries</figcaption></figure>
+<pre><code class="language-python">WHICH_MODEL = "reasoning"
+MAX_NEW_TOKENS = <span class="tok-fn">38912</span>
+LOCAL_DIR = "qwen3"
+CHECKPOINT_PATH = os.getenv<span class="tok-kw">(</span>"CHECKPOINT_PATH"<span class="tok-kw">)</span>
+COMPILE = <span class="tok-kw">False</span></code></pre>
+<pre><code class="language-python">DEVICE = get_device<span class="tok-kw">()</span></code></pre>
+<pre><code class="language-python"><span class="tok-kw">def</span> load_app_model_and_tokenizer():
+    <span class="tok-kw">if</span> CHECKPOINT_PATH <span class="tok-kw">is</span> <span class="tok-kw">None</span>:
+        <span class="tok-kw">return</span> load_model_and_tokenizer<span class="tok-kw">(</span>
+            which_model=WHICH_MODEL,
+            device=DEVICE,
+            use_compile=COMPILE,
+            local_dir=LOCAL_DIR,
+        <span class="tok-kw">)</span>
+    checkpoint_path = Path<span class="tok-kw">(</span>CHECKPOINT_PATH<span class="tok-kw">)</span>
+    <span class="tok-kw">if</span> <span class="tok-kw">not</span> checkpoint_path.exists<span class="tok-kw">()</span>:
+        <span class="tok-kw">raise</span> FileNotFoundError<span class="tok-kw">(</span>
+            f"Checkpoint file <span class="tok-kw">not</span> found: {checkpoint_path}"
+        <span class="tok-kw">)</span>
+    tokenizer = load_tokenizer_only<span class="tok-kw">(</span>
+        which_model=WHICH_MODEL, local_dir=LOCAL_DIR
+    <span class="tok-kw">)</span>
+    model = Qwen3Model<span class="tok-kw">(</span>QWEN_CONFIG_06_B<span class="tok-kw">)</span>
+    model.load_state_dict<span class="tok-kw">(</span>
+        torch.load<span class="tok-kw">(</span>checkpoint_path, map_location="cpu"<span class="tok-kw">)</span>
+    <span class="tok-kw">)</span>
+    model.to<span class="tok-kw">(</span>DEVICE<span class="tok-kw">)</span>
+    <span class="tok-kw">if</span> COMPILE:
+        torch._dynamo.config.allow_unspec_int_on_nn_module = <span class="tok-kw">True</span>
+        model = torch.compile<span class="tok-kw">(</span>model<span class="tok-kw">)</span>
+    <span class="tok-kw">return</span> model, tokenizer</code></pre>
+<pre><code class="language-python">MODEL, TOKENIZER = load_app_model_and_tokenizer<span class="tok-kw">()</span>
+EOS_TOKEN_IDS = (
+    TOKENIZER.encode<span class="tok-kw">(</span>"&lt;|im_end|&gt;"<span class="tok-kw">)</span>[<span class="tok-fn">0</span>],
+    TOKENIZER.encode<span class="tok-kw">(</span>"&lt;|endoftext|&gt;"<span class="tok-kw">)</span>[<span class="tok-fn">0</span>]
+)</code></pre>
+<pre><code class="language-python">@chainlit.on_chat_start
+<span class="tok-kw">async</span> <span class="tok-kw">def</span> on_start():
+    chainlit.user_session.set<span class="tok-kw">(</span>"history", []<span class="tok-kw">)</span>
+    chainlit.user_session.get<span class="tok-kw">(</span>"history"<span class="tok-kw">)</span>.append<span class="tok-kw">(</span>
+        {"role": "system", "content": "You are a helpful assistant."}
+    <span class="tok-kw">)</span></code></pre>
+<pre><code class="language-python">@chainlit.on_message
+<span class="tok-kw">async</span> <span class="tok-kw">def</span> main(message: chainlit.Message):
+    input_ids = TOKENIZER.encode<span class="tok-kw">(</span>message.content<span class="tok-kw">)</span>
+    input_ids_tensor = torch.tensor<span class="tok-kw">(</span>input_ids, device=DEVICE<span class="tok-kw">)</span>.unsqueeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span></code></pre>
+<pre><code class="language-python">    out_msg = chainlit.Message<span class="tok-kw">(</span>content=""<span class="tok-kw">)</span>
+    <span class="tok-kw">await</span> out_msg.send<span class="tok-kw">()</span></code></pre>
+<pre><code class="language-python">    <span class="tok-kw">for</span> tok <span class="tok-kw">in</span> generate_text_basic_stream_cache<span class="tok-kw">(</span>
+        model=MODEL,
+        token_ids=input_ids_tensor,
+        max_new_tokens=MAX_NEW_TOKENS,
+    <span class="tok-kw">)</span>:
+        token_id = tok.squeeze<span class="tok-kw">(</span><span class="tok-fn">0</span><span class="tok-kw">)</span>.item<span class="tok-kw">()</span>
+        <span class="tok-kw">if</span> token_id <span class="tok-kw">in</span> EOS_TOKEN_IDS:
+            <span class="tok-kw">break</span>
+        piece = TOKENIZER.decode<span class="tok-kw">(</span>[token_id]<span class="tok-kw">)</span>
+        <span class="tok-kw">await</span> out_msg.stream_token<span class="tok-kw">(</span>piece<span class="tok-kw">)</span></code></pre>
+<pre><code class="language-python">    <span class="tok-kw">await</span> out_msg.update<span class="tok-kw">()</span></code></pre>
+<p>The <code>CHECKPOINT_PATH</code> environment variable in listing G.2 is optional. If it is set, the script loads that custom <code>.pth</code> checkpoint instead of the default official weights. The <code>load_app_model_and_tokenizer()</code> helper handles these two cases. If no custom checkpoint is provided, it delegates to <code>load_model_and_tokenizer(...)</code> from chapter 3. If a custom checkpoint path is provided, it loads only the tokenizer via <code>load_tokenizer_ only(...)</code>, constructs a fresh <code>Qwen3Model(QWEN_CONFIG_06_B)</code>, and then loads the weights from the custom state dictionary.</p>
+<p>This is useful because it means the single-turn Chainlit interface can also be used to inspect chapter 6, 7, and 8 checkpoints interactively, provided that the tokenizer setting remains aligned with the checkpoint. The next section explains exactly how the custom checkpoint can be provided as input from the command line.</p>
+<p>The <code>@chainlit.on_chat_start</code> function initializes a history object and inserts a default system message, which is a common convention:</p>
+<pre><code class="language-python">{"role": "system", "content": "You are a helpful assistant."}</code></pre>
+<p>But the single-turn script does not actually use that stored history when generating the response. Inside <code>main(...)</code>, the prompt is built only from the current <code>message </code></p>
+<pre><code class="language-python">.content:
+input_ids = TOKENIZER.encode<span class="tok-kw">(</span>message.content<span class="tok-kw">)</span></code></pre>
+<p>So even though the browser UI looks like a chat application, the single-turn version behaves more like a prompt box that shows earlier messages visually, without the model actually remembering earlier conversations. In other words, the model itself sees only the current user message and treats each turn independently.</p>
+<p>The rest of the generation logic is very similar to what you saw in chapter 2.</p>
+<h2 id="h2-running-the-single-turn-script"><span class="num">G.5</span>Running the single-turn script</h2>
+<p>If you are inside the supplementary code repository, the most convenient command to launch the user interface is usually the following:</p>
+<pre><code class="language-python">uv run chainlit run chG/01_main-chapter-code/qwen3_chat_interface.py</code></pre>
+<p>If you saved the code under another filename, such as <code>app.py</code>, you can simply replace the path accordingly:</p>
+<pre><code class="language-python">uv run chainlit run app.py</code></pre>
+<p>After launching the server, Chainlit usually opens a browser tab automatically. If it doesn’t, you can copy the local address shown in the terminal to the browser manually. </p>
+<pre><code class="language-python">Typically this is http: //localhost: 8000.</code></pre>
+<p>Figure G.2 shows some example output in the Chainlit interface.</p>
+<figure><a class="zoom" href="assets/figure-G.2.png" tabindex="-1"><img src="assets/figure-G.2.png" alt="" width="1143" height="786" loading="lazy" decoding="async"></a><figcaption><span class="lbl">Figure G.2</span>Example response in the Chainlit interface</figcaption></figure>
+<p>By default, the script initializes the Qwen3 reasoning variant I briefly introduced in chapter 3, which produced the response shown in figure G.2. To run the same script with a custom checkpoint, you can pass the path via the <code>CHECKPOINT_PATH</code> environment variable. Here’s an example:</p>
+<pre><code class="language-python">CHECKPOINT_PATH=path/to/qwen3-0.6B-distill-step06682-epoch1.pth \
+uv run chainlit run chG/01_main-chapter-code/qwen3_chat_interface.py</code></pre>
+<p>When doing so, <code>WHICH_MODEL</code> must remain aligned with the tokenizer expected by the checkpoint. The chapter 8 distillation checkpoints use the reasoning tokenizer, so in that case you should keep <code>WHICH_MODEL = "reasoning"</code>. For the chapter 6 checkpoints, for example, you would change it to <code>WHICH_MODEL = "base"</code>.</p>
+<p>Editing the configuration directly in the script may seem a bit cumbersome. The reason for doing this, rather than using command-line arguments, is that Chainlit itself launches and manages the application entry point via <code>chainlit run ...</code>. As a result, the script does not behave like a normal standalone Python program where we can freely define and parse custom command-line arguments with the Python <code>argparse</code> library, for example. For simple options such as model choice, generation length, or checkpoint paths, it is more convenient to keep the settings in the script or pass them via environment variables.</p>
+<h3 id="h3-downloading-model-checkpoints">Downloading model checkpoints</h3>
+<div class="lead">If you want to explore some of the model checkpoints from chapters 6, 7, or 8 but don’t have the compute capacity to train them yourself, you can find information on how to download them in the supplementary materials at https://github.com/rasbt/reasoning-from-scratch/tree/main/ch07/04_download_trainining_ checkpoints and https://github.com/rasbt/reasoning-from-scratch/tree/main/ch08/05_download_training_checkpoints.</div>
+<nav class="pager"><a class="prev" href="page-104.html" rel="prev"><span class="dir">上一页</span><span class="t">F.5.2 Evaluating responses with a grading rubric</span></a><a class="next" href="page-106.html" rel="next"><span class="dir">下一页</span><span class="t">G.6 The multi-turn interface</span></a></nav>
+</main>
+</body>
+</html>

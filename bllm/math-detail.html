@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>数学推导详解 · 索引 · Build a Large Language Model (From Scratch)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f5f8f'/%3E%3Cpath d='M9 8h9a4.5 4.5 0 0 1 0 9H9zm0 9h9a4.5 4.5 0 0 1 0 9H9z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+<script>(function(){try{var t=localStorage.getItem('pdf2html-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="math-detail.html">数学推导详解</a>
+  <button class="btn" id="themeToggle" aria-label="切换深色模式">&#9788;</button>
+</header>
+<main id="main">
+
+<h1>数学推导详解</h1>
+
+<div class="plainbox">
+<p>原书用<b>代码驱动</b>的方式讲数学：给一段 PyTorch 代码，打印出一个张量，然后说「这就完成了归一化」。这种方式对动手复现很友好，但<b>跳过了公式本身的推导</b>——读者知道每个数字是什么，却不一定知道为什么是这个公式。</p>
+<p>这一组补充页面把中间步骤补上：<b>公式用 KaTeX 排版</b>，<b>所有数字用原书给出的输入手算复核过</b>，可以逐个对回原文。建议用法：<b>先跑通原文代码，再回来看推导，看每个打印值是怎么来的。</b></p>
+</div>
+
+<h2>按章节</h2>
+
+<div class="deriv-nav">
+<a href="09-coding-attention-mechanisms-detail.html">
+<span class="dir">第 3 章 · 自注意力</span>
+<b>3.3–3.5 点积、softmax、缩放与因果掩码</b><br>
+<span style="font-size:.86em;color:var(--muted)">点积为什么是相似度、softmax 为何是指数放大器、<b>为什么要除以 \(\sqrt{d_k}\)</b>（附方差推导与梯度表）、因果掩码为何不泄漏信息（含完整证明）。</span>
+</a>
+<a href="10-implementing-a-gpt-model-from-scratch-to-generate-text-detail.html">
+<span class="dir">第 4 章 · GPT 架构</span>
+<b>4.2–4.6 LayerNorm、GELU、残差与参数量</b><br>
+<span style="font-size:.86em;color:var(--muted)">有偏方差的含义、0.044715 的来源、残差把梯度从 2e-4 拉到 0.22、<b>把 163,009,536 逐项加出来</b>。</span>
+</a>
+<a href="11-pretraining-on-unlabeled-data-detail.html">
+<span class="dir">第 5 章 · 预训练</span>
+<b>5.1–5.3 交叉熵、困惑度与采样</b><br>
+<span style="font-size:.86em;color:var(--muted)">把 figure 5.7 的六步还原成一个公式、<b>困惑度 = 有效词表大小</b>的严格含义、温度如何缩放概率<b>比值</b>、1000 次采样为何对不上理论值。</span>
+</a>
+<a href="12-fine-tuning-for-classification-detail.html">
+<span class="dir">第 6 章 · 分类微调</span>
+<b>6.6–6.7 分类损失与 argmax</b><br>
+<span style="font-size:.86em;color:var(--muted)">argmax 与 softmax 等价性的证明、准确率为何不可微、<b>0.693 是分类的随机基线</b>、初始 loss 2.153 说明什么。</span>
+</a>
+<a href="13-fine-tuning-to-follow-instructions-detail.html">
+<span class="dir">第 7 章 · 指令微调</span>
+<b>7.3 <code>-100</code> 掩码与损失聚合</b><br>
+<span style="font-size:.86em;color:var(--muted)"><b>分子分母同时变</b>（不只是加零）、三个数字 1.1269 / 0.7936 的手算、token-level 平均的副作用、要不要掩 instruction 的争议。</span>
+</a>
+<a href="14-appendix-a-introduction-to-pytorch-detail.html">
+<span class="dir">附录 A · PyTorch</span>
+<b>A.3–A.4 链式法则与自动微分</b><br>
+<span style="font-size:.86em;color:var(--muted)"><b>手算原书那两个没推导的梯度 −0.0898 / −0.0817</b>、sigmoid 导数为何饱和、训练循环三行 = 手工流程八步。</span>
+</a>
+</div>
+
+<h2>建议的阅读顺序</h2>
+
+<p>如果你的目标是<b>真正读懂 LLM 的数学</b>（而不是跑通代码），按这个顺序：</p>
+
+<ol class="steps">
+<li><b>第 5 章</b> — 先建立交叉熵和困惑度的直觉。这是全书的度量基础，后面每一章都在最小化它。<b>务必理解「困惑度 = 等效词表大小」这句话</b>，它让 48,726 这种数字变得可解释。</li>
+<li><b>第 3 章</b> — 缩放点积是全书最值得反复看的一节。除以 \(\sqrt{d_k}\) 的方差推导，和第 5 章 softmax 的指数放大效应是<b>同一个问题的两面</b>，对照着看收获最大。</li>
+<li><b>附录 A</b> — 补上链式法则。这两个梯度是全书唯一手算梯度的地方，算通之后「backward 在做什么」就不再是黑箱。</li>
+<li><b>第 4 章</b> — 此时你已经知道梯度会消失，LayerNorm / GELU / 残差三个设计就都能对上了。最后的参数量推导是纯粹的手工练习，但能建立对「词表占 47%」这类事实的直觉。</li>
+<li><b>第 6、7 章</b> — 最后读。这两章的数学本身很浅，但涉及<b>损失聚合方式</b>这个全书最容易被忽略的决策：5 章用 mean、6 章只取最后一个 token、7 章用 ignore_index 改分母。<b>把这三处放在一起看，才能理解「聚合方式」不是细节而是设计。</b></li>
+</ol>
+
+<h2>五个自查题</h2>
+
+<p>能独立答对这五道题，前四章的数学就真的通了。</p>
+
+<ol class="steps">
+<li>为什么除以 \(\sqrt{d_k}\) 而不是 \(d_k\)？<br>
+<span style="color:var(--muted);font-size:.9em">→ <a href="09-coding-attention-mechanisms-detail.html">3.1 与 3.4</a>。答不出「方差 vs 标准差」这一层就说明没真懂。</span></li>
+<li>掩码之后为什么还要归一化？不归一化会怎样？<br>
+<span style="color:var(--muted);font-size:.9em">→ <a href="09-coding-attention-mechanisms-detail.html">4.1–4.3</a>。答不出「掩码位置在归一化时被整除抵消」就说明没读懂泄漏问题。</span></li>
+<li>困惑度 48,726 是什么意思？为什么它约等于词表大小 50,257？<br>
+<span style="color:var(--muted);font-size:.9em">→ <a href="11-pretraining-on-unlabeled-data-detail.html">2.2</a>。关键是能自己推出均匀分布的 PPL 正好等于 \(V\)。</span></li>
+<li>163,009,536 和 124,412,160 差在哪？为什么原书要做两次计算？<br>
+<span style="color:var(--muted);font-size:.9em">→ <a href="10-implementing-a-gpt-model-from-scratch-to-generate-text-detail.html">4.2</a>。差的是 out_head 的 38,597,376，来源是 weight tying。</span></li>
+<li><code>targets</code> 里的 <code>-100</code> 是被「加零」还是「整项删掉」？为什么？<br>
+<span style="color:var(--muted);font-size:.9em">→ <a href="13-fine-tuning-to-follow-instructions-detail.html">2.1</a>。整项删掉（分子分母都变），这正是 <code>loss_1 == loss_3</code> 严格成立的原因。</span></li>
+</ol>
+
+<h2>一条贯穿全书的暗线</h2>
+
+<div class="key">
+<span class="tag">梯度必须能流回去</span>
+<p>附录 A 说 <b>sigmoid 导数会饱和</b>；第 3 章说 <b>大 logits 让 softmax 梯度归零</b>；第 4 章说 <b>残差连接提供梯度旁路</b>。</p>
+<p>这三处是<b>同一个问题的三个侧面：如何让梯度在几十层内不消失</b>。答案是三管齐下——<b>缩放 logits</b>（3.4）+ <b>用导数不饱和的激活函数</b>（4.3）+ <b>加残差旁路</b>（4.4）。</p>
+<p>现代 LLM 架构里大半的「非标准」设计，都是为了这一条。</p>
+</div>
+
+<nav class="deriv-nav">
+<a href="09-coding-attention-mechanisms-detail.html"><span class="dir">直接开始</span>3.3–3.5 自注意力与因果掩码</a>
+<a href="11-pretraining-on-unlabeled-data-detail.html"><span class="dir">从度量开始</span>5.1 交叉熵与困惑度</a>
+</nav>
+
+</main>
+<nav class="chapnav" aria-label="导航"><div class="chapnav-inner">
+<a class="prev" href="14-appendix-a-introduction-to-pytorch.html"><span class="lbl">上一章</span><span class="nm">appendix A Introduction to PyTorch</span></a><a class="next" href="09-coding-attention-mechanisms-detail.html"><span class="lbl">开始阅读</span><span class="nm">3. 自注意力机制的数学推导</span></a>
+</div></nav>
+<script src="app.js"></script>
+<script defer src="assets/katex/katex.min.js"></script>
+<script defer src="assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>
