@@ -63,6 +63,28 @@
 
 <p>其中 \(\theta_j\) 是两向量夹角。于是分数由两部分决定：<b>向量的模长</b>和<b>夹角</b>。原书说「higher dot product indicates a greater degree of alignment」，说的就是夹角那一项。</p>
 
+<div class="prereq">
+<span class="tag">预备知识：余弦定理与向量模长</span>
+<p>向量 \(\mathbf{a}=(a_1,\dots,a_d)\) 的模长（长度）定义为 \(\lVert\mathbf{a}\rVert=\sqrt{\sum_{i=1}^{d}a_i^2}\)，于是 \(\lVert\mathbf{a}\rVert^2=\sum_{i=1}^{d}a_i^2\)。</p>
+<p><b>余弦定理</b>：三角形三边为 \(A,B,C\)，\(C\) 所对的角为 \(\theta\)，则 \(C^2=A^2+B^2-2AB\cos\theta\)。把 \(\mathbf{a}\)、\(\mathbf{b}\)、\(\mathbf{a}-\mathbf{b}\) 看成三角形的三条边，\(\theta\) 就是 \(\mathbf{a}\) 与 \(\mathbf{b}\) 的夹角，于是 \(\lVert\mathbf{a}-\mathbf{b}\rVert^2=\lVert\mathbf{a}\rVert^2+\lVert\mathbf{b}\rVert^2-2\lVert\mathbf{a}\rVert\lVert\mathbf{b}\rVert\cos\theta\)。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：点积 \(=\lVert\mathbf{a}\rVert\lVert\mathbf{b}\rVert\cos\theta\)</span>
+<p>把余弦定理左边的 \(\lVert\mathbf{a}-\mathbf{b}\rVert^2\) 按分量展开：</p>
+<p>\[
+\begin{aligned}
+\lVert\mathbf{a}-\mathbf{b}\rVert^2
+&= \sum_{i=1}^{d}(a_i-b_i)^2 \\
+&= \sum_{i=1}^{d}\left(a_i^2-2a_ib_i+b_i^2\right) \\
+&= \underbrace{\sum_{i=1}^{d}a_i^2}_{\lVert\mathbf{a}\rVert^2}
+   -2\underbrace{\sum_{i=1}^{d}a_ib_i}_{\mathbf{a}\cdot\mathbf{b}}
+   +\underbrace{\sum_{i=1}^{d}b_i^2}_{\lVert\mathbf{b}\rVert^2}
+\end{aligned}
+\]</p>
+<p>与余弦定理 \(\lVert\mathbf{a}-\mathbf{b}\rVert^2=\lVert\mathbf{a}\rVert^2+\lVert\mathbf{b}\rVert^2-2\lVert\mathbf{a}\rVert\lVert\mathbf{b}\rVert\cos\theta\) 对比，两边同时消去 \(\lVert\mathbf{a}\rVert^2+\lVert\mathbf{b}\rVert^2\)，得到 \(-2(\mathbf{a}\cdot\mathbf{b})=-2\lVert\mathbf{a}\rVert\lVert\mathbf{b}\rVert\cos\theta\)，即 \(\mathbf{a}\cdot\mathbf{b}=\lVert\mathbf{a}\rVert\lVert\mathbf{b}\rVert\cos\theta\)。证毕。</p>
+</div>
+
 <p>这也解释了一个容易困惑的现象：<b>"journey" 自己给自己打了最高分 1.4950，但这不是「相似」</b>。它是因为 \(\mathbf{x}^{(2)}\) 和 \(\mathbf{x}^{(2)}\) 夹角为 0（\(\cos 0 = 1\)），模长也最大。在自注意力里，token 天然会关注自己，这正是我们要的。</p>
 
 <div class="key">
@@ -97,6 +119,26 @@
 \[
 \alpha_{2j} = \frac{\exp(\omega_{2j})}{\sum_{k=1}^{T} \exp(\omega_{2k})}
 \]
+
+<div class="prereq">
+<span class="tag">预备知识：指数函数的三条性质</span>
+<p>① \(\exp(x)=e^x>0\) 对一切实数 \(x\) 恒成立，所以 softmax 的分子永远为正；② \(\exp(a-b)=\exp(a)/\exp(b)\)，分式上下同乘 \(\exp(c)\) 可以约分；③ \(\exp\) 严格单调递增：\(a&gt;b\Rightarrow e^a&gt;e^b\)，这是 softmax「保序」的来源。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：softmax 的三个性质</span>
+<p><b>归一（和为 1）。</b>把所有 \(\alpha_{2j}\) 相加：</p>
+<p>\[
+\sum_{j=1}^{T}\alpha_{2j}=\sum_{j=1}^{T}\frac{\exp(\omega_{2j})}{\sum_{k=1}^{T}\exp(\omega_{2k})}=\frac{\sum_{j=1}^{T}\exp(\omega_{2j})}{\sum_{k=1}^{T}\exp(\omega_{2k})}=1
+\]</p>
+<p>分母与 \(j\) 无关，可以提到求和号外面；分子求和后与分母完全相同，约成 1。</p>
+<p><b>恒正。</b>\(\exp(\omega_{2j})&gt;0\)，分母是正数之和，故 \(\alpha_{2j}&gt;0\)。</p>
+<p><b>保序与比值公式。</b>若 \(\omega_{2i}&gt;\omega_{2j}\)，由 \(\exp\) 单调递增得 \(\exp(\omega_{2i})&gt;\exp(\omega_{2j})\)，分母相同，故 \(\alpha_{2i}&gt;\alpha_{2j}\)。两式相除，分母约掉：</p>
+<p>\[
+\frac{\alpha_{2i}}{\alpha_{2j}}=\frac{\exp(\omega_{2i})}{\exp(\omega_{2j})}=\exp(\omega_{2i}-\omega_{2j})
+\]</p>
+<p>代入正文数字：\(\omega_{22}-\omega_{24}=1.4950-0.8434=0.6516\)，\(\exp(0.6516)\approx1.9186\)，与正文一致。</p>
+</div>
 
 <p>softmax 的三个性质：<b>恒正</b>（分子恒正）、<b>归一</b>（分母就是所有分子之和）、<b>保序且放大差距</b>。第三点值得展开，因为它正是下一节除以 \(\sqrt{d_k}\) 要对付的东西。</p>
 
@@ -137,6 +179,18 @@ attn_weights_2 = torch.softmax(attn_scores_2 / d_k**<span class="t-num">0.5</spa
 \mathrm{Var}(\omega) \;=\; \sum_{i=1}^{d_k} \mathrm{Var}(q_i k_i) \;=\; d_k
 \]
 
+<div class="prereq">
+<span class="tag">预备知识：期望与方差的三条运算法则</span>
+<p>① 方差定义：\(\mathrm{Var}(X)=\mathrm{E}[X^2]-(\mathrm{E}[X])^2\)，移项得 \(\mathrm{E}[X^2]=\mathrm{Var}(X)+(\mathrm{E}[X])^2\)；② 若 \(X,Y\) 相互独立，则 \(\mathrm{E}[XY]=\mathrm{E}[X]\,\mathrm{E}[Y]\)（乘积的期望可分解）；③ 若 \(X_1,\dots,X_n\) 相互独立，则 \(\mathrm{Var}\left(\sum_i X_i\right)=\sum_i\mathrm{Var}(X_i)\)（和的方差可加——注意一般情形需要独立，相关时会有协方差项）。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：\(\mathrm{Var}(q_ik_i)=1\) 的每一步</span>
+<p>记 \(X=q_ik_i\)。先算 \(\mathrm{E}[X]\)：由独立性，\(\mathrm{E}[q_ik_i]=\mathrm{E}[q_i]\,\mathrm{E}[k_i]=0\times0=0\)。</p>
+<p>再算 \(\mathrm{E}[X^2]=\mathrm{E}[q_i^2k_i^2]\)：同样由独立性，\(=\mathrm{E}[q_i^2]\,\mathrm{E}[k_i^2]\)。用 ① 的移项形式，\(\mathrm{E}[q_i^2]=\mathrm{Var}(q_i)+(\mathrm{E}[q_i])^2=1+0=1\)，同理 \(\mathrm{E}[k_i^2]=1\)，故 \(\mathrm{E}[X^2]=1\times1=1\)。</p>
+<p>代入方差定义：\(\mathrm{Var}(q_ik_i)=1-0^2=1\)。\(d_k\) 个这样的独立项求和，由 ③ 得 \(\mathrm{Var}(\omega)=d_k\cdot1=d_k\)，标准差为 \(\sqrt{d_k}\)。</p>
+</div>
+
 <p>所以标准差是 \(\sqrt{d_k}\)。<b>除以 \(\sqrt{d_k}\) 恰好把方差拉回 1</b>，让分数的分布与维度无关。</p>
 
 <div class="tablewrap">
@@ -156,6 +210,23 @@ attn_weights_2 = torch.softmax(attn_scores_2 / d_k**<span class="t-num">0.5</spa
 <h3>3.2 不除会怎样：梯度消失的定量分析</h3>
 
 <p>softmax 的雅可比矩阵对角元是 \(\alpha_i(1-\alpha_i)\)。这个值<b>在两端都趋于 0</b>，只在 \(\alpha=0.5\) 时最大（0.25）。分布越陡，梯度越小：</p>
+
+<div class="prereq">
+<span class="tag">预备知识：商法则</span>
+<p>对 \(f(x)=u(x)/v(x)\) 求导：\(f'(x)=\dfrac{u'v-uv'}{v^2}\)。另需 \((\exp x)'=\exp x\)。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：softmax 对角元 \(\alpha_i(1-\alpha_i)\)</span>
+<p>记 \(\alpha_i=e^{\omega_i}/S\)，其中 \(S=\sum_k e^{\omega_k}\)。对 \(\omega_i\) 求偏导时注意 \(S\) 也含有 \(\omega_i\)，且 \(\partial S/\partial\omega_i=e^{\omega_i}\)。用商法则：</p>
+<p>\[
+\frac{\partial\alpha_i}{\partial\omega_i}
+=\frac{e^{\omega_i}\cdot S-e^{\omega_i}\cdot e^{\omega_i}}{S^2}
+=\frac{e^{\omega_i}}{S}-\left(\frac{e^{\omega_i}}{S}\right)^2
+=\alpha_i(1-\alpha_i)
+\]</p>
+<p>再看它何时最大。令 \(g(x)=x(1-x)=x-x^2\)，\(g'(x)=1-2x=0\) 得 \(x=\tfrac12\)，\(g(\tfrac12)=\tfrac14=0.25\)。当 \(\alpha_i\to0\) 或 \(\alpha_i\to1\) 时 \(g\to0\)——这正是正文表格里「分布越陡、梯度越小」的来源。</p>
+</div>
 
 <div class="tablewrap">
 <table>
@@ -264,6 +335,11 @@ u_j = \frac{e^{\omega_{ij}}}{\sum_{k=1}^{T} e^{\omega_{ik}}}
 e^{-\infty} = 0
 \]
 
+<div class="prereq">
+<span class="tag">预备知识：\(\lim_{x\to-\infty}e^x=0\)</span>
+<p>\(e^x=1/e^{-x}\)，当 \(x\to-\infty\) 时分母 \(e^{-x}\to+\infty\)，故极限为 0。在 PyTorch 里 <code>torch.exp(torch.tensor(-float('inf')))</code> 直接得到精确的 0，不是近似值。</p>
+</div>
+
 <p>于是被掩位置自动得到权重 0，且剩下位置的 softmax 分母<b>只累加可见位置</b>，一次 softmax 就得到最终结果。原书的代码：</p>
 
 <pre><code>mask = torch.triu(torch.ones(context_length, context_length), diagonal=<span class="t-num">1</span>)
@@ -309,6 +385,27 @@ attn_weights = torch.softmax(masked / keys.shape[-1]**<span class="t-num">0.5</s
 \[Z = \mathrm{Concat}\big(\mathrm{head}_1, \dots, \mathrm{head}_h\big) W^O, \qquad
 \mathrm{head}_i = \mathrm{softmax}\!\left(\frac{Q_i K_i^\top}{\sqrt{d_k}}\right) V_i
 \]
+
+<div class="prereq">
+<span class="tag">预备知识：矩阵乘法的维度规则</span>
+<p>\((m\times n)\) 矩阵乘 \((n\times p)\) 矩阵得 \((m\times p)\) 矩阵——中间维度 \(n\) 必须相同，结果取两头。转置把 \((m\times n)\) 变成 \((n\times m)\)。\(\mathrm{Concat}\) 把 \(h\) 个 \((T\times d_k)\) 矩阵沿列方向拼成一个 \((T\times h d_k)\) 矩阵。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：多头注意力的维度流转（以 GPT-2 124M 为例）</span>
+<p>\(d_{\text{model}}=768\)，\(h=12\)，故 \(d_k=768/12=64\)。设序列长度为 \(T\)：</p>
+<p>\[
+\begin{aligned}
+Q_i,K_i,V_i &: T\times 64 \\
+Q_iK_i^\top &: (T\times64)\times(64\times T)\to T\times T \\
+\mathrm{softmax}(Q_iK_i^\top/\sqrt{d_k}) &: T\times T\quad\text{（按行归一，维度不变）} \\
+\mathrm{head}_i=\mathrm{softmax}(\cdots)V_i &: (T\times T)\times(T\times64)\to T\times64 \\
+\mathrm{Concat}(\mathrm{head}_1,\dots,\mathrm{head}_{12}) &: T\times(12\times64)=T\times768 \\
+Z=\mathrm{Concat}(\cdots)W^O &: (T\times768)\times(768\times768)\to T\times768
+\end{aligned}
+\]</p>
+<p>输出 \(Z\) 是 \(T\times768\)，与输入同形——这正是它能堆叠 12 层的原因。注意 \(W^O\) 的权重部分是 \(768\times768=589{,}824\) 个参数，与正文参数量表里 <code>out_proj</code> 的 \(768\times768\) 一致（表里另有 768 个 bias）。</p>
+</div>
 
 <p>其中 \(Q_i, K_i, V_i\) 是把 \(d_{\text{model}}\) <b>切成 \(h\) 份</b>得到的，每份维度 \(d_k = d_{\text{model}}/h\)。GPT-2 124M 的配置是 \(d_{\text{model}}=768\)、\(h=12\)，所以 <b>每个头的 \(d_k=64\)</b>。</p>
 

@@ -66,11 +66,39 @@ z = x_1 w_1 + b, \qquad a = \sigma(z), \qquad \mathcal{L} = -\left[y\log a + (1-
 \frac{\partial \mathcal{L}}{\partial a} = -\frac{y}{a} + \frac{1-y}{1-a}
 \]
 
+<div class="prereq">
+<span class="tag">预备知识：两条求导法则</span>
+<p>① \((\log x)'=1/x\)（\(x>0\)）；② <b>链式法则</b>：复合函数 \(f(g(x))\) 的导数是 \(f'(g(x))\cdot g'(x)\)——「外层导数乘以内层导数」。下面两处推导只用这两条。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：二元交叉熵对 \(a\) 求导</span>
+<p>\(\mathcal{L}=-[y\log a+(1-y)\log(1-a)]\)，逐项求导。第一项：\((-y\log a)'=-y\cdot\frac1a\)。第二项是复合函数 \(\log(1-a)\)，用链式法则——外层 \((\log u)'=1/u\)（其中 \(u=1-a\)），内层 \((1-a)'=-1\)：</p>
+<p>\[
+\frac{d}{da}\big[-(1-y)\log(1-a)\big]=-(1-y)\cdot\frac{1}{1-a}\cdot(-1)=+\frac{1-y}{1-a}
+\]</p>
+<p>两项相加即得 \(\frac{\partial\mathcal{L}}{\partial a}=-\frac{y}{a}+\frac{1-y}{1-a}\)。<b>注意那个关键的负负得正</b>：内层导数 \(-1\) 与外面的负号相消。代入 \(y=1,\ a=0.91834\)：\(-1/0.91834+0=-1.08892\)，与正文 2.2 节第 4 步一致。</p>
+</div>
+
 <p><b>② sigmoid 的导数。</b>这是最值得记的一个：</p>
 
 \[
 \sigma'(z) = \sigma(z)\,(1-\sigma(z)) = a(1-a)
 \]
+
+<div class="derivation">
+<span class="tag">推导：\(\sigma'(z)=\sigma(z)(1-\sigma(z))\) 完整版</span>
+<p>把 \(\sigma(z)=\dfrac{1}{1+e^{-z}}\) 写成 \((1+e^{-z})^{-1}\)，用链式法则（外层 \((u^{-1})'=-u^{-2}\)，内层 \((e^{-z})'=-e^{-z}\)）：</p>
+<p>\[
+\sigma'(z)=-(1+e^{-z})^{-2}\cdot(-e^{-z})=\frac{e^{-z}}{(1+e^{-z})^2}
+\]</p>
+<p>现在做因式分解，把分式拆成两项之积：</p>
+<p>\[
+\frac{e^{-z}}{(1+e^{-z})^2}
+=\underbrace{\frac{1}{1+e^{-z}}}_{\sigma(z)}\cdot\underbrace{\frac{e^{-z}}{1+e^{-z}}}_{1-\sigma(z)}
+\]</p>
+<p>第二项化简：\(\dfrac{e^{-z}}{1+e^{-z}}=\dfrac{(1+e^{-z})-1}{1+e^{-z}}=1-\dfrac{1}{1+e^{-z}}=1-\sigma(z)\)。于是 \(\sigma'(z)=\sigma(z)(1-\sigma(z))\)。<b>这个形式的价值</b>：求导不需要重新算指数——前向时已经算出 \(a=\sigma(z)\)，反向直接用 \(a(1-a)\)，一次乘法搞定。这也是 PyTorch 里 sigmoid backward 的实现方式。</p>
+</div>
 
 <p><b>③ 线性层的导数。</b>\(z = x_1w_1+b\)，所以</p>
 
@@ -187,6 +215,22 @@ optimizer.step()                        <span class="t-com"># 更新：θ ← θ
 \[
 \theta_{\text{new}} = \theta - \eta \cdot \frac{\partial \mathcal{L}}{\partial\theta}
 \]
+
+<div class="prereq">
+<span class="tag">预备知识：一阶泰勒展开</span>
+<p>光滑函数在 \(x\) 附近可用切线近似：\(f(x+\Delta x)\approx f(x)+f'(x)\,\Delta x\)（\(\Delta x\) 很小时）。多元版本：\(\mathcal{L}(\theta+\Delta\theta)\approx\mathcal{L}(\theta)+\nabla\mathcal{L}\cdot\Delta\theta\)，其中 \(\nabla\mathcal{L}\cdot\Delta\theta\) 是梯度向量与位移向量的点积。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：为什么更新 \(\theta-\eta\nabla\mathcal{L}\) 能让 loss 下降</span>
+<p>把位移 \(\Delta\theta=-\eta\,\nabla\mathcal{L}\) 代入一阶泰勒展开：</p>
+<p>\[
+\mathcal{L}(\theta-\eta\nabla\mathcal{L})
+\approx \mathcal{L}(\theta) + \nabla\mathcal{L}\cdot(-\eta\nabla\mathcal{L})
+= \mathcal{L}(\theta) - \eta\,\|\nabla\mathcal{L}\|^2
+\]</p>
+<p>因为 \(\|\nabla\mathcal{L}\|^2\ge 0\) 且 \(\eta>0\)，只要 \(\eta\) 足够小（泰勒近似成立），<b>新 loss 一定比旧 loss 小</b>，下降量约为 \(\eta\|\nabla\mathcal{L}\|^2\)。这就是「沿负梯度方向走」的全部数学依据——<b>负梯度是局部下降最快的方向</b>（在所有单位位移中，它让点积 \(\nabla\mathcal{L}\cdot\Delta\theta\) 最小）。\(\eta\) 太大则泰勒近似失效，loss 反而可能上升——这就是学习率需要调参的原因。</p>
+</div>
 
 <p>在附录 A 的两个输入两个输出的小网络上，初始梯度量级约 0.1–0.5，乘以 \(\eta=0.5\) 后单步更新约 0.05–0.25。<b>这个学习率相对于参数量级是很大的</b>，所以收敛极快（3 个 epoch 就到 0）。</p>
 

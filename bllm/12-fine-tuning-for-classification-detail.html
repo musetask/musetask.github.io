@@ -101,6 +101,18 @@
 \mathcal{L} = -\frac{1}{B}\sum_{b=1}^{B}\left[y_b \log p_1^{(b)} + (1-y_b)\log p_0^{(b)}\right]
 \]
 
+<div class="derivation">
+<span class="tag">推导：二分类交叉熵是一般交叉熵的特例</span>
+<p>一般交叉熵（见第 5 章）是 \(\mathcal{L}=-\sum_{c}p_c\log q_c\)，真实分布 \(p\) 为 one-hot。\(C=2\) 时只有两类，记真实标签 \(y_b\in\{0,1\}\)：</p>
+<p>\[
+\begin{aligned}
+y_b=1\ (\text{spam})&:\quad -\sum_{c=0}^{1}p_c\log q_c = -(0\cdot\log p_0 + 1\cdot\log p_1) = -\log p_1^{(b)} \\
+y_b=0\ (\text{not spam})&:\quad -(1\cdot\log p_0 + 0\cdot\log p_1) = -\log p_0^{(b)}
+\end{aligned}
+\]</p>
+<p>把两种情况写成一个式子：\(-[y_b\log p_1^{(b)}+(1-y_b)\log p_0^{(b)}]\)——\(y_b=1\) 时第二项系数 \((1-y_b)=0\) 自动消失，\(y_b=0\) 时第一项消失。再对 \(B\) 个样本取平均，即得正文公式。<b>本质没变：每次只惩罚真实类别的负对数概率。</b></p>
+</div>
+
 <p>关键性质：<b>对正确类别的预测越自信，loss 越小，且下降是平滑单调的</b>。即使 argmax 早就正确（准确率不再变化），loss <b>仍在下降</b>，梯度<b>仍在推动模型</b>。</p>
 
 <div class="tablewrap">
@@ -188,6 +200,22 @@ Test accuracy:       <span class="t-num">48.75</span>%</code></pre>
 \[
 \mathrm{SE} = \sqrt{\frac{0.5 \times 0.5}{320}} = 0.0280 \;\Rightarrow\; 2.80\%
 \]
+
+<div class="prereq">
+<span class="tag">预备知识：伯努利分布的均值与方差</span>
+<p>一次「猜对/猜错」是伯努利试验：\(X=1\)（猜对）概率 \(p\)，\(X=0\) 概率 \(1-p\)。均值 \(\mathrm{E}[X]=1\cdot p+0\cdot(1-p)=p\)；方差 \(\mathrm{Var}(X)=\mathrm{E}[X^2]-(\mathrm{E}[X])^2=p-p^2=p(1-p)\)（因为 \(X\) 只取 0/1，所以 \(X^2=X\)）。\(p=0.5\) 时方差最大，为 0.25。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：比例的标准误 \(\mathrm{SE}=\sqrt{p(1-p)/n}\)</span>
+<p>320 个样本的准确率是 320 个独立伯努利变量的平均：\(\hat p=\frac1n\sum_{i=1}^n X_i\)（此处 \(n=320\)）。方差满足 \(\mathrm{Var}(aX)=a^2\mathrm{Var}(X)\)，且独立变量和的方差可加：</p>
+<p>\[
+\mathrm{Var}(\hat p)=\mathrm{Var}\!\left(\frac1n\sum_{i=1}^n X_i\right)
+=\frac{1}{n^2}\sum_{i=1}^n\mathrm{Var}(X_i)
+=\frac{1}{n^2}\cdot n\cdot p(1-p)=\frac{p(1-p)}{n}
+\]</p>
+<p>标准误就是标准差：\(\mathrm{SE}=\sqrt{p(1-p)/n}\)。代入 \(p=0.5,\ n=320\) 得 \(\sqrt{0.25/320}=0.0280\)。含义：<b>纯随机猜测下，320 个样本的准确率天然有 ±2.8% 的抖动</b>——所以 46.25% 与 50% 的差距（约 1.3σ）在统计上什么都说明不了。</p>
+</div>
 
 <p>所以 46.25%、45.00%、48.75% 全部落在 \(50\% \pm 1.8\sigma\) 内，<b>与随机猜测无法区分</b>。原书的结论「As we can see, the prediction accuracies are near a random prediction」✓。</p>
 

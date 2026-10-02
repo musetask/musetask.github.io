@@ -37,6 +37,28 @@ D_{\text{KL}}(P \| Q) = \sum_{v} P(v) \log \frac{P(v)}{Q(v)}
 
 <p>在 LLM 上下文里，两个分布都是<b>每个位置的 next-token 分布</b>，所以是词表上的求和（151,936 项）。</p>
 
+<div class="prereq">
+<span class="tag">预备知识：Jensen 不等式</span>
+<p>若 \(\varphi\) 是<b>凹函数</b>（图像向下弯，如 \(\log\)），则 \(\mathrm{E}[\varphi(X)] \le \varphi(\mathrm{E}[X])\)——"函数的期望 ≤ 期望的函数"。\(\log\) 的二阶导数 \((\log x)'' = -1/x^2 &lt; 0\)，故为凹函数。另外约定：凡 \(P(v) &gt; 0\) 处必须有 \(Q(v) &gt; 0\)，否则 \(\log(P/0) = \infty\)。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：Gibbs 不等式（\(D_{\text{KL}} \ge 0\)）</span>
+<p>把定义式改写成"负的期望"：</p>
+<p>\[
+D_{\text{KL}}(P\|Q) = \sum_v P(v)\log\frac{P(v)}{Q(v)} = -\sum_v P(v)\log\frac{Q(v)}{P(v)} = -\,\mathrm{E}_{v\sim P}\!\left[\log\frac{Q(v)}{P(v)}\right]
+\]</p>
+<p>对凹函数 \(\log\) 用 Jensen 不等式：</p>
+<p>\[
+\mathrm{E}_{v\sim P}\!\left[\log\frac{Q(v)}{P(v)}\right]
+\le \log\!\left(\mathrm{E}_{v\sim P}\!\left[\frac{Q(v)}{P(v)}\right]\right)
+= \log\!\left(\sum_v P(v)\cdot\frac{Q(v)}{P(v)}\right)
+= \log\!\left(\sum_v Q(v)\right)
+= \log 1 = 0
+\]</p>
+<p>两边取负，不等号反向：\(D_{\text{KL}}(P\|Q) \ge 0\)。等号成立当且仅当 \(Q(v)/P(v)\) 为常数，即 \(Q = P\)。<b>这就是 KL 能当惩罚项的数学根基</b>：它恒非负，且只在两分布完全相同时为 0，最小化它就是在把 \(P\) 往 \(Q\) 上拉。</p>
+</div>
+
 <h3>1.2 两个关键性质</h3>
 
 <div class="tw">
@@ -70,6 +92,11 @@ D_{\text{KL}}(P \| Q) &= \sum_v P(v)\, \log\frac{P(v)}{Q(v)} \\[4pt] &= \sum_v P
 \[
 D_{\text{KL}}(P\|Q) = \mathbb{E}_{v \sim P}\big[\log P(v) - \log Q(v)\big]
 \]
+
+<div class="prereq">
+<span class="tag">预备知识：\(\mathbb{E}_{v \sim P}\) 记号</span>
+<p>\(\mathbb{E}_{v \sim P}[f(v)]\) 就是 \(\sum_v P(v)\,f(v)\) 的简写，读作"按分布 \(P\) 抽 \(v\)，算 \(f(v)\) 的平均"。期望是线性的：\(\mathbb{E}[aX + bY] = a\,\mathbb{E}[X] + b\,\mathbb{E}[Y]\)。</p>
+</div>
 
 <div class="key">
 <span class="tag">这就是代码里 <code>mean(new_logps - ref_logps)</code> 的来源——以及它缺了什么</span>
@@ -186,6 +213,16 @@ because the rollouts are sampled from the old policy, this simple sampled surrog
 \]
 
 <p>要最小化它，就要<b>压低</b>\(\log \pi_\theta(y_t)\)——也就是<b>降低模型给已经采样出来的那些 token 的概率</b>。</p>
+
+<div class="derivation">
+<span class="tag">推导：梯度方向的形式化</span>
+<p>\(\log \pi_{\text{ref}}(y_t)\) 已 detach，是<b>常数</b>，对 \(\theta\) 求导时消失：</p>
+<p>\[
+\nabla_\theta \,\mathcal{L}_{\text{KL}} = \frac{\beta}{T}\sum_{t=1}^{T} \nabla_\theta \log \pi_\theta(y_t)
+\]</p>
+<p>梯度下降更新 \(\theta \leftarrow \theta - \eta\,\nabla_\theta \mathcal{L}\)，即沿 \(-\nabla_\theta \log \pi_\theta(y_t)\) 方向走一小步——<b>每一步都在减少已采样 token 的对数概率</b>。注意求和只跑在"采样出来的那 \(T\) 个 token"上，词表里其他 151,929 个 token 不在求和里、梯度为 0。</p>
+<p>概率总和恒为 1：压低这 \(T\) 个 token 的质量，质量必然流向<b>没被采样的其他 token</b>，分布变平坦 → 熵上升。这就是正文"失效模式"的数学全貌：<b>surrogate KL 的梯度只"踩"已采样 token，而精确 KL 的梯度会同时"抬"参考分布质量高的 token</b>，一字之差，方向相反。</p>
+</div>
 
 <div class="warn">
 <span class="tag">这是反直觉的部分</span>

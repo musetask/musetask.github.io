@@ -68,6 +68,15 @@ P(y_1, \dots, y_T \mid x, \theta)
 
 <p>注意最后一项的下标是 \(y_{&lt;T}\)，而第一项 \(y_0\) 是空集，所以 \(P(y_1 \mid x, \theta)\) 里的条件里没有 \(y\)。这个结构就是「自回归」的数学含义：<b>第 \(t\) 个 token 的条件分布，依赖前 \(t-1\) 个已确定的 token</b>。</p>
 
+<div class="prereq">
+<span class="tag">预备知识：概率的链式法则</span>
+<p>对任意两个事件，\(P(A, B) = P(A)\cdot P(B \mid A)\)——「\(A\) 和 \(B\) 都发生」等于「\(A\) 发生」乘以「在 \(A\) 已发生的条件下 \(B\) 发生」。把 \((y_1,\dots,y_{T-1})\) 看成 \(A\)、\(y_T\) 看成 \(B\)：</p>
+<p>\[
+P(y_1,\dots,y_T \mid x) = P(y_1,\dots,y_{T-1} \mid x)\cdot P(y_T \mid y_{<T}, x)
+\]</p>
+<p>再对 \(P(y_1,\dots,y_{T-1}\mid x)\) 递归用同一招式，剥到只剩 \(P(y_1\mid x)\)，就得到正文的连乘式。它不是模型的假设，而是概率论的恒等式——任何联合分布都能这样分解；「自回归」只是说模型选择<b>按这个顺序</b>逐个建模条件分布。</p>
+</div>
+
 <h3>1.2 为什么必须取对数</h3>
 
 <p>上面这个连乘在数值上是不可用的。考虑一个 265 token 的回答（后面 2.1 节我们会看到，真实例子正好是这个数）。即使每个 token 的概率都相当高，比如 0.9：</p>
@@ -75,6 +84,16 @@ P(y_1, \dots, y_T \mid x, \theta)
 \[
 0.9^{265} \approx 10^{-12.3}
 \]
+
+<div class="derivation">
+<span class="tag">推导：\(0.9^{265}\) 怎么换算成 10 的幂</span>
+<p>用换底公式 \(\log_{10}(a^b) = b\cdot\log_{10} a\)。先算 \(\log_{10} 0.9\)：</p>
+<p>\[
+\log_{10} 0.9 = \log_{10}\frac{9}{10} = \log_{10} 9 - 1 = 2\log_{10} 3 - 1 \approx 2\times 0.4771 - 1 = -0.0458
+\]</p>
+<p>于是 \(\log_{10}(0.9^{265}) = 265 \times (-0.0458) \approx -12.1\)，即 \(0.9^{265} \approx 10^{-12.1}\)（原文写 \(10^{-12.3}\)，同一量级，差来自四舍五入）。</p>
+<p>关键不在小数点后几位，而在<b>趋势</b>：每多一个 token 就乘一个 \(<1\) 的数，265 步后只剩约万亿分之一。回答再长几倍就会逼近 float64 下限 \(10^{-308}\)——取对数把连乘变连加，正是为了躲开这个指数衰减。</p>
+</div>
 
 <p>如果再长一点，概率就落到 float64 能表示的范围之外了（float64 最小正规数约 \(10^{-308}\)），再往后会直接下溢成 0。<b>下溢之后你无法区分「几乎不可能」和「真的不可能」，梯度信息彻底丢失。</b></p>
 
@@ -110,6 +129,18 @@ P(y_t \mid y_{&lt;t}, x, \theta)
 \]
 
 <p>其中求和遍历整个词表。本书 Qwen3 0.6B 的词表大小是 151,936。PyTorch 里对应 <code>torch.log_softmax(logits, dim=-1)</code>，它<b>直接</b>返回对数概率，内部用数值稳定技巧实现，没有真的先算 exp 再取 log。</p>
+
+<div class="derivation">
+<span class="tag">推导：\(\log\mathrm{softmax}\) 的恒等式（log-sum-exp 形式）</span>
+<p>记 \(\mathbf{z} = \text{logits}_t\)，\(z_i\) 为实际 token 对应的分量。对 softmax 公式两边取对数，用 \(\log(a/b) = \log a - \log b\)：</p>
+<p>\[
+\log P(y_t \mid \cdots) = \log\frac{e^{z_i}}{\sum_v e^{z_v}}
+= \log e^{z_i} - \log\sum_v e^{z_v}
+= z_i - \log\sum_{v\in V} e^{z_v}
+\]</p>
+<p>右边第二项 \(\log\sum_v e^{z_v}\) 叫 <b>log-sum-exp</b>，是这一整行 logits 的归一化常数（与 \(i\) 无关，整行共用）。所以「取对数概率」在数学上等价于「<b>logit 减去 log-sum-exp</b>」。</p>
+<p>这解释了 <code>log_softmax</code> 的数值稳定技巧：先减去 \(\max_v z_v\)（分子分母同乘 \(e^{-\max z}\)，值不变），再算 exp——\(\sum_v e^{z_v - \max z}\) 里最大项恰为 \(e^0 = 1\)，既不会上溢，分母也不会下溢成 0。</p>
+</div>
 
 <div class="warn">
 <span class="tag">注意</span>
@@ -231,6 +262,12 @@ next_token_logps = logprobs[t_idx, next_tokens]</code></pre>
 
 <p>这是<b>可加的</b>——每个 token 各贡献一份梯度，\(T\) 越长总梯度越大。GRPO 的 loss 形式是 \(\mathcal{L} \propto A_i \cdot \log\pi_\theta(y^{(i)})\)，代入：</p>
 
+<div class="prereq">
+<span class="tag">预备知识：求导的线性性质</span>
+<p>「和的导数 = 导数的和」：\(\frac{\partial}{\partial\theta}\sum_{t=1}^{T} f_t(\theta) = \sum_{t=1}^{T}\frac{\partial f_t}{\partial\theta}\)。这是导数定义（差商的极限）直接推出的，极限运算与有限求和可交换次序。</p>
+<p>用到 \(\log P(y_{1:T}) = \sum_t \log P(y_t\mid\cdots)\) 上，立刻得到正文的梯度可加式。注意<b>求和与求导交换次序</b>这一步只对<b>有限项</b>无条件成立——这里 \(T\) 有限，所以没问题。</p>
+</div>
+
 \[
 \frac{\partial \mathcal{L}}{\partial \theta} = A_i \sum_{t=1}^{T_i} \frac{\partial}{\partial \theta}\log P(y_t \mid y_{&lt;t}, x, \theta)
 \]
@@ -315,6 +352,25 @@ A_i = \frac{r_i - \mu_r}{\sigma_r + \epsilon}, \qquad \mu_r = \frac{1}{N}\sum_{j
 
 <p>（分母是 \(n-1\)，因为 PyTorch 的 <code>torch.std</code> 默认取<b>无偏估计</b>）</p>
 
+<div class="prereq">
+<span class="tag">预备知识：为什么样本方差除以 \(n-1\)（Bessel 修正）</span>
+<p>若 \(x_1,\dots,x_n\) 独立同分布，均值 \(\mu\)、方差 \(\sigma^2\)，样本均值记 \(\bar{x} = \frac{1}{n}\sum_i x_i\)。直接算 \(\mathbb{E}\big[\sum_i (x_i - \bar{x})^2\big]\)：</p>
+<p>\[
+\begin{aligned}
+\sum_i (x_i - \bar{x})^2
+&= \sum_i x_i^2 - 2\bar{x}\sum_i x_i + n\bar{x}^2
+ = \sum_i x_i^2 - n\bar{x}^2
+\end{aligned}
+\]</p>
+<p>取期望。\(\mathbb{E}[x_i^2] = \sigma^2 + \mu^2\)（方差定义移项），故 \(\mathbb{E}[\sum_i x_i^2] = n(\sigma^2+\mu^2)\)；而 \(\mathbb{E}[\bar{x}^2] = \mathrm{Var}(\bar{x}) + (\mathbb{E}\bar{x})^2 = \frac{\sigma^2}{n} + \mu^2\)（样本均值的方差是 \(\sigma^2/n\)）。代入：</p>
+<p>\[
+\mathbb{E}\Big[\sum_i (x_i-\bar{x})^2\Big]
+= n(\sigma^2+\mu^2) - n\Big(\frac{\sigma^2}{n}+\mu^2\Big)
+= (n-1)\sigma^2
+\]</p>
+<p>所以<b>除以 \(n-1\) 才是 \(\sigma^2\) 的无偏估计</b>；若除以 \(n\) 会系统性低估（因为 \(\bar{x}\) 本身是从数据算的，「吃掉」了一个自由度）。\(n = 4\) 时两者差 4/3 倍，不可忽略——这就是正文 \(\sigma_r = \sqrt{1.0/3}\) 的分母 3 的来源。</p>
+</div>
+
 \[
 A_i = \frac{1-0.5}{0.5774} \approx 0.866, \qquad \frac{0-0.5}{0.5774} \approx -0.866
 \]
@@ -334,6 +390,29 @@ A_i = \frac{1-0.5}{0.5774} \approx 0.866, \qquad \frac{0-0.5}{0.5774} \approx -0
 \]
 
 <p>其中 <b>advantage</b> 其实是 \(A = Q - V\)：把「绝对好坏」减去「这个状态下平均能拿多少」。减掉 baseline \(V\) 的目的是让梯度只反映<b>「比预期好多少」</b>，而不是在所有状态上无差别地往好的方向推。</p>
+
+<div class="derivation">
+<span class="tag">推导：log-derivative trick（score function 估计量）与 baseline 为何不引入偏差</span>
+<p>目标是最大化期望奖励 \(J(\theta) = \mathbb{E}_{y\sim\pi_\theta}[r(y)] = \sum_y \pi_\theta(y)\,r(y)\)（离散求和；连续情形把 \(\sum\) 换成 \(\int\)，推导完全相同）。对 \(\theta\) 求导，\(r(y)\) 与 \(\theta\) 无关：</p>
+<p>\[
+\nabla_\theta J = \sum_y \nabla_\theta\pi_\theta(y)\; r(y)
+\]</p>
+<p>关键技巧：分子分母同乘 \(\pi_\theta(y)\)，凑出 \(\nabla\log\pi\)。用恒等式 \(\nabla_\theta\log\pi_\theta(y) = \frac{\nabla_\theta\pi_\theta(y)}{\pi_\theta(y)}\)（即 \((\log f)' = f'/f\)）：</p>
+<p>\[
+\nabla_\theta J
+= \sum_y \pi_\theta(y)\,\frac{\nabla_\theta\pi_\theta(y)}{\pi_\theta(y)}\,r(y)
+= \mathbb{E}_{y\sim\pi_\theta}\big[\,r(y)\,\nabla_\theta\log\pi_\theta(y)\,\big]
+\]</p>
+<p>这就是策略梯度定理的核心：<b>期望的梯度 = 带权梯度的期望</b>，权重恰是 \(\nabla\log\pi\)。采样 \(N\) 个 rollout 取平均即得 Monte Carlo 估计。</p>
+<p><b>为什么减 baseline 不改变期望？</b>设 baseline 为常数 \(b\)（GRPO 里 \(b = \mu_r\)），考察它贡献的项：</p>
+<p>\[
+\mathbb{E}_{y\sim\pi_\theta}\big[\,b\,\nabla_\theta\log\pi_\theta(y)\,\big]
+= b\sum_y \nabla_\theta\pi_\theta(y)
+= b\,\nabla_\theta\underbrace{\sum_y \pi_\theta(y)}_{=\,1}
+= b\,\nabla_\theta 1 = 0
+\]</p>
+<p>因为概率总和恒为 1，其梯度为 0。所以 \(\mathbb{E}[(r-b)\nabla\log\pi] = \mathbb{E}[r\nabla\log\pi]\)——<b>减 baseline 不引入任何偏差</b>，只减小方差（\(r - b\) 的波动比 \(r\) 小，梯度估计更稳定）。这就是正文说「减掉 baseline 让梯度只反映比预期好多少」的严格依据。</p>
+</div>
 
 <p>跨 prompt 而言 reward 的绝对值<b>不可比</b>：一道题 4 个 rollout 全对（\(r=[1,1,1,1]\)）和另一道题的全错，reward 都是常数 1 或 0，但难度天差地别。</p>
 
@@ -490,6 +569,12 @@ A &= [0.8659,\ 0.8659,\ -0.8659,\ -0.8659]
 \[
 \text{其中}\quad \rho_i = \frac{\pi_\theta(y^{(i)} \mid x^{(i)})}{\pi_{\theta_{\text{old}}}(y^{(i)} \mid x^{(i)})} = \exp\big(\log\pi_\theta - \log\pi_{\theta_\text{old}}\big)
 \]
+
+<div class="prereq">
+<span class="tag">预备知识：\(\mathrm{clip}\) 函数与 \(\min\) 的「悲观界」思想</span>
+<p>\(\mathrm{clip}(\rho, 1-\epsilon, 1+\epsilon)\) 就是把 \(\rho\) 钳在区间 \([1-\epsilon,\,1+\epsilon]\) 内：小于下界取下界，大于上界取上界，\(\epsilon\) 通常取 0.2。它限制<b>单次更新中策略的变化幅度</b>。</p>
+<p>\(\min\big(\rho_i A_i,\; \mathrm{clip}(\rho_i)A_i\big)\) 取两者中<b>更小的那个</b>（注意 \(A_i\) 可正可负，\(\min\) 作用在乘积上）：当 \(A_i > 0\) 时，\(\min\) 会压住 \(\rho_i\) 过大带来的过度乐观估计——这就是 PPO/GRPO 的「悲观界」（pessimistic bound）思想：<b>宁可低估改进，也不让一次更新把策略推得太远</b>。完整的裁剪比率推导见 <a href="page-67-detail.html">7.4 详解</a>，那里会逐步展开 \(\rho_i\) 的每一步。</p>
+</div>
 
 <p>这里有个本章埋下的关键点：<b>6.9 算 logprob 时用的是 <code>model.eval()</code> 的同一个模型，没有第二个副本。</b>而 \(\rho_i\) 的分母需要「采样时的策略」\(\pi_{\theta_\text{old}}\)。Ch7 用 <code>inner_epochs</code> 控制这件事：</p>
 

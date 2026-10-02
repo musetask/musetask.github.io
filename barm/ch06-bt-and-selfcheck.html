@@ -239,6 +239,11 @@ details.mtoc li.l2{padding-left:.9rem; font-size:.85rem; color:var(--mute)}
 </div>
 
 <p>这也是第 6 章里从链式法则一路推到 \(\log\pi\) 的原因——不是为了「数学上更优雅」，是因为<b>不取对数就算不出来</b>。</p>
+<div class="derivation">
+<span class="tag">推导：\(0.9^{300}\approx10^{-13.7}\)</span>
+<p>取以 10 为底的对数：\(\log_{10}(0.9^{300})=300\cdot\log_{10}0.9\)。\(\log_{10}0.9=\dfrac{\ln0.9}{\ln10}\approx\dfrac{-0.10536}{2.30259}\approx-0.04576\)，乘以 300 得 \(-13.73\)。所以 \(0.9^{300}\approx10^{-13.73}\)——300 个 token 就掉了将近 14 个数量级。</p>
+</div>
+
 
 <h3>0.3 sigmoid 和 logit</h3>
 
@@ -256,6 +261,13 @@ details.mtoc li.l2{padding-left:.9rem; font-size:.85rem; color:var(--mute)}
 <div class="eq-note">
 一个高频困惑：为什么不能用 <code>softmax</code> 直接当概率？——因为 softmax 需要<b>一组</b> logit（一个向量）才能算出归一化的分布，而 sigmoid 只吃<b>一个</b>标量。两者关系：把 sigmoid 写成 \(\frac{e^z}{e^z + 1} = \frac{e^z}{e^z + e^0}\)，就看出它就是<b>只有两个 logit（\(z\) 和 0）的 softmax</b>。这个观察在 1.4 节会用到。
 </div>
+<div class="prereq">
+<span class="tag">预备知识：σ 和 logit 互为反函数（把 p 解回 z）</span>
+<p>由 \(p=\dfrac{1}{1+e^{-z}}\) 出发，两边取倒数：\(\dfrac{1}{p}=1+e^{-z}\)，移项得 \(e^{-z}=\dfrac{1-p}{p}\)，两边取对数：\(-z=\ln\dfrac{1-p}{p}\)，于是</p>
+<p>\[z=\ln\frac{p}{1-p}=\operatorname{logit}(p)\]</p>
+<p>反过来验算 \(\sigma(\operatorname{logit}(p))=p\) 也成立。所以以后看到 \(\log\dfrac{\sigma(\theta)}{1-\sigma(\theta)}\) 可以直接认出它就是 \(\theta\)——1.7 节的玩具模型会用上这一步。</p>
+</div>
+
 
 <h3>0.4 「似然」和「极大似然」</h3>
 
@@ -434,6 +446,22 @@ details.mtoc li.l2{padding-left:.9rem; font-size:.85rem; color:var(--mute)}
 <div class="eq-note">
 这个变形的直觉：<b>「赢的概率」除以「输的概率」</b>，就是 \(G\)。也就是赔率（odds）。这是一个在所有对数线性模型里反复出现的标准技巧——把有界的概率搬到无界的实数轴上，才能做加法。
 </div>
+<div class="derivation">
+<span class="tag">推导：\(G(d)=\dfrac{F(d)}{1-F(d)}\) 代回去确实还原，且 \(G(-d)=1/G(d)\)</span>
+<p><b>还原。</b>把 \(G=F/(1-F)\) 代入 \(G/(1+G)\)：</p>
+<p>\[\frac{G(d)}{1+G(d)}=\frac{\dfrac{F(d)}{1-F(d)}}{1+\dfrac{F(d)}{1-F(d)}}=\frac{\dfrac{F(d)}{1-F(d)}}{\dfrac{1-F(d)+F(d)}{1-F(d)}}=\frac{F(d)}{1}=F(d)\]</p>
+<p>分母通分后 \(1-F(d)+F(d)=1\)，\((1-F(d))\) 上下约掉。所以这个变形不损失任何信息。</p>
+<p><b>倒数关系。</b>由 \(F(-d)=1-F(d)\)：</p>
+<p>\[G(-d)=\frac{F(-d)}{1-F(-d)}=\frac{1-F(d)}{1-(1-F(d))}=\frac{1-F(d)}{F(d)}=\frac{1}{G(d)}\]</p>
+<p>即 \(G(-d)\,G(d)=1\)。这一步在下面第 2 步约分母时要用。</p>
+<p><b>单调性保持。</b>商法则：\(G'(d)=\dfrac{F'(d)(1-F(d))-F(d)(-F'(d))}{(1-F(d))^2}=\dfrac{F'(d)}{(1-F(d))^2}\)，分母恒正，所以 \(G'(d)\) 与 \(F'(d)\) 同号——\(F\) 单调增当且仅当 \(G\) 单调增。</p>
+</div>
+
+<div class="prereq">
+<span class="tag">预备知识：\(F(d)+F(-d)=1\) 是哪来的</span>
+<p>它就是「没有平局」：\(P(y_a\succ y_b)+P(y_b\succ y_a)=1\)。偏好标注里每一对比较必有胜负（标注员必须二选一），所以两者概率之和为 1。特别地，\(F(0)=\tfrac12\)（自己跟自己比，胜率一半）。</p>
+</div>
+
 
 <h4>第 2 步：代入假设 2</h4>
 
@@ -463,6 +491,17 @@ details.mtoc li.l2{padding-left:.9rem; font-size:.85rem; color:var(--mute)}
 <p>约掉之后剩下：</p>
 
 \[G(d_1)\,G(d_2) \;=\; G(d_1 + d_2)\]
+<div class="derivation">
+<span class="tag">推导：第 2 步分母约掉的完整代数</span>
+<p>记 \(D=(1+G(d_1))(1+G(d_2))\)。假设 2 右边逐项代入 \(F=G/(1+G)\)：</p>
+<p>\[\text{分子}=\frac{G(d_1)}{1+G(d_1)}\cdot\frac{G(d_2)}{1+G(d_2)}=\frac{G(d_1)G(d_2)}{D}\]</p>
+<p>分母第二项用上一步的 \(G(-d)=1/G(d)\)：分子部分 \(G(-d_1)G(-d_2)=\dfrac{1}{G(d_1)G(d_2)}\)；分母部分</p>
+<p>\[(1+G(-d_1))(1+G(-d_2))=\left(1+\frac{1}{G(d_1)}\right)\left(1+\frac{1}{G(d_2)}\right)=\frac{G(d_1)+1}{G(d_1)}\cdot\frac{G(d_2)+1}{G(d_2)}=\frac{D}{G(d_1)G(d_2)}\]</p>
+<p>于是分母第二项 \(=\dfrac{1/[G(d_1)G(d_2)]}{D/[G(d_1)G(d_2)]}=\dfrac{1}{D}\)——注意它和第一项<b>分母都是 \(D\)</b>，这就是正文说的「共享因子」。</p>
+<p>假设 2 右边 \(=\dfrac{G(d_1)G(d_2)/D}{G(d_1)G(d_2)/D+1/D}=\dfrac{G(d_1)G(d_2)}{G(d_1)G(d_2)+1}\)，而左边按假设 1 是 \(F(d_1+d_2)=\dfrac{G(d_1+d_2)}{1+G(d_1+d_2)}\)。函数 \(h(x)=\dfrac{x}{1+x}\;(x>0)\) 严格单调增（\(h'(x)=1/(1+x)^2>0\)），从而是单射，两边相等推出</p>
+<p>\[\boxed{G(d_1+d_2)=G(d_1)\,G(d_2)}\]</p>
+</div>
+
 
 <h4>第 3 步：这个方程的解是什么</h4>
 
@@ -488,6 +527,13 @@ details.mtoc li.l2{padding-left:.9rem; font-size:.85rem; color:var(--mute)}
 <p>取 \(\lambda = 1\)（相当于把 \(\lambda\) 吸收进 \(r\) 的尺度）就是熟悉的 BT 形式：</p>
 
 \[P(y_w \succ y_l \mid x) = \frac{\exp\big(r_\phi(x, y_w)\big)}{\exp\big(r_\phi(x, y_w)\big) + \exp\big(r_\phi(x, y_l)\big)} = \sigma\big(r_\phi(x, y_w) - r_\phi(x, y_l)\big)\]
+<div class="derivation">
+<span class="tag">推导：两种写法互相化（上下同除）</span>
+<p>\(\dfrac{e^{\lambda d}}{1+e^{\lambda d}}\)：分子分母同除以 \(e^{\lambda d}\)，得 \(\dfrac{1}{e^{-\lambda d}+1}=\dfrac{1}{1+e^{-\lambda d}}=\sigma(\lambda d)\)。</p>
+<p>\(\dfrac{\exp(r_w)}{\exp(r_w)+\exp(r_l)}\)：分子分母同除以 \(\exp(r_w)\)，得 \(\dfrac{1}{1+\exp(r_l-r_w)}=\dfrac{1}{1+\exp(-(r_w-r_l))}=\sigma(r_w-r_l)\)。</p>
+<p>技巧就是：分式上下同除以分子，指数相减，差就跑到分母的指数上去了。</p>
+</div>
+
 
 <h4>验算：假设 2 真的被满足吗</h4>
 
@@ -537,6 +583,11 @@ details.mtoc li.l2{padding-left:.9rem; font-size:.85rem; color:var(--mute)}
 </ol>
 
 <p>形式上，它和「二分类的交叉熵」完全一样——因为 1.4 节说了这就是个二分类器。</p>
+<div class="derivation">
+<span class="tag">推导：BT 损失就是标签为 1 的二分类交叉熵</span>
+<p>二分类交叉熵 \(\mathrm{BCE}(y,p)=-\big[y\log p+(1-y)\log(1-p)\big]\)。奖励模型是二分类器：标签 \(y=1\) 表示「第一个赢」，预测 \(p=\sigma(r_w-r_l)\)。代入得 \(\mathrm{BCE}(1,p)=-\log\sigma(r_w-r_l)\)，与上面第 3 步里被期望的那一项完全一致。所以「训奖励模型」和「训一个二分类器」是同一件事。</p>
+</div>
+
 
 <h3 id="bt-16">1.6 三个性质</h3>
 
@@ -576,6 +627,13 @@ details.mtoc li.l2{padding-left:.9rem; font-size:.85rem; color:var(--mute)}
 \[\frac{d}{dd}\Big[-\log\sigma(d)\Big] = \frac{d}{dd}\Big[\log(1 + e^{-d})\Big] = \frac{-e^{-d}}{1 + e^{-d}} = \sigma(d) - 1 = -(1 - \sigma(d))\]
 
 <p>当 \(d\) 越大，\(\sigma(d)\) 越接近 1，梯度就越接近 0。</p>
+<div class="prereq">
+<span class="tag">预备知识：\(\log\sigma\) 求导的两种写法（自查题 1 要用）</span>
+<p>上面算的是 \(-\log\sigma\) 的导数。去掉负号的版本同样常用：\(\log\sigma(\theta)=-\log(1+e^{-\theta})\)，链式法则：</p>
+<p>\[\frac{d}{d\theta}\log\sigma(\theta)=-\frac{1}{1+e^{-\theta}}\cdot(-e^{-\theta})=\frac{e^{-\theta}}{1+e^{-\theta}}=1-\sigma(\theta)\]</p>
+<p>最后一步用了 \(1-\sigma(\theta)=\dfrac{e^{-\theta}}{1+e^{-\theta}}\)（通分即得）。记住这个恒等式：\(\dfrac{d}{d\theta}\log\sigma(\theta)=1-\sigma(\theta)\)。</p>
+</div>
+
 
 <div class="eq-note">
 <b>白话版</b>：奖励模型「已经分得够开了」，再继续加大差距也换不来多少分数。它会<b>自动停手</b>，不会无限拉大分差去刷分。这是 BT 自带的稳定机制。
@@ -622,6 +680,12 @@ details.mtoc li.l2{padding-left:.9rem; font-size:.85rem; color:var(--mute)}
 \[r(x, y) \;=\; r_\phi(x, y) \;-\; \beta \log \frac{\pi_\theta(y|x)}{\pi_{\text{ref}}(y|x)}\]
 
 <p>这就是 KL 散度（取对数形式）。它的作用是<b>把参考模型锚住</b>，禁止策略漂移。注意方向：这是<b>减</b>号——离参考模型越远，实际拿到的奖励越低。</p>
+<div class="prereq">
+<span class="tag">预备知识：KL 散度就是这个期望</span>
+<p>离散分布 \(P,Q\) 的 KL 散度定义为 \(\mathrm{KL}(P\|Q)=\sum_x P(x)\log\dfrac{P(x)}{Q(x)}=\mathbb{E}_{x\sim P}\left[\log\dfrac{P(x)}{Q(x)}\right]\)。</p>
+<p>惩罚项 \(-\beta\log\dfrac{\pi_\theta(y|x)}{\pi_{\mathrm{ref}}(y|x)}\) 对 \(y\sim\pi_\theta\) 取期望，正好是 \(-\beta\cdot\mathrm{KL}(\pi_\theta\|\pi_{\mathrm{ref}})\)。注意顺序：期望是对<b>当前策略</b>取的，所以是 \(\mathrm{KL}(\pi_\theta\|\pi_{\mathrm{ref}})\)（forward KL）；\(\pi_\theta\) 离 \(\pi_{\mathrm{ref}}\) 越远它越大，减号把它变成惩罚。</p>
+</div>
+
 
 <div class="key">
 <span class="tag">结论</span>
@@ -643,6 +707,13 @@ details.mtoc li.l2{padding-left:.9rem; font-size:.85rem; color:var(--mute)}
 <div>
 \[\mathcal{L} = -\frac{1}{2}\Big[A_1\log\sigma(\theta) + A_2\log\sigma(-\theta)\Big] = -\frac{A}{2}\Big[\log\sigma(\theta) - \log\sigma(-\theta)\Big]\]
 <p>而 \(\log\sigma(\theta) - \log\sigma(-\theta) = \log\dfrac{\sigma(\theta)}{1-\sigma(\theta)} = \operatorname{logit}(\theta) = \theta\)。所以：</p>
+<div class="derivation">
+<span class="tag">推导：\(\log\sigma(\theta)-\log\sigma(-\theta)=\theta\)</span>
+<p>先证 \(\sigma(-\theta)=1-\sigma(\theta)\)：\(1-\sigma(\theta)=1-\dfrac{1}{1+e^{-\theta}}=\dfrac{e^{-\theta}}{1+e^{-\theta}}\)，分子分母同乘 \(e^{\theta}\) 得 \(\dfrac{1}{e^{\theta}+1}=\sigma(-\theta)\)。于是</p>
+<p>\[\frac{\sigma(\theta)}{1-\sigma(\theta)}=\frac{\sigma(\theta)}{\sigma(-\theta)}=\frac{1/(1+e^{-\theta})}{1/(1+e^{\theta})}=\frac{1+e^{\theta}}{1+e^{-\theta}}=e^{\theta}\]</p>
+<p>最后一步用了 \(1+e^{\theta}=e^{\theta}(1+e^{-\theta})\)，\((1+e^{-\theta})\) 上下约掉。取对数即得 \(\theta\)。</p>
+</div>
+
 \[\boxed{\mathcal{L} = -\frac{A}{2}\,\theta} = -0.43295\,\theta\]
 <p>实测确认：\(\theta=1\) 时 \(\mathcal{L} = -0.432950\)，\(-0.43295\times 1 = -0.432950\)；\(\theta=2\) 时两者都是 \(-0.865900\)。</p>
 <p><b>梯度是常数</b> \(-A/2\)，与 \(\theta\) 无关。这意味着一件事：<b>梯度下降永远往同一个方向走，永远不会停</b>。没有任何平衡点。</p>
@@ -693,6 +764,16 @@ details.mtoc li.l2{padding-left:.9rem; font-size:.85rem; color:var(--mute)}
 <summary>一个反直觉的细节：β 不是越大越好，小了根本挡不住</summary>
 <div>
 <p>KL 的恢复力是 \(\sigma(\theta)(1-\sigma(\theta))\theta\)。这个函数<b>有上限</b>：</p>
+<div class="derivation">
+<span class="tag">推导：恢复力 \(\sigma(\theta)(1-\sigma(\theta))\,\theta\) 从哪来</span>
+<p>玩具模型里参考策略在 \(\theta=0\)（\(\pi_{\mathrm{ref}}(X)=0.5\)）。记 \(p=\sigma(\theta)\)，则</p>
+<p>\[\mathrm{KL}(\pi_\theta\|\pi_{\mathrm{ref}})=p\log\frac{p}{1/2}+(1-p)\log\frac{1-p}{1/2}=p\log p+(1-p)\log(1-p)+\log2\]</p>
+<p>对 \(\theta\) 求导。先对 \(p\) 求导：\(\dfrac{d}{dp}[p\log p+(1-p)\log(1-p)]=\log p+1-\log(1-p)-1=\log\dfrac{p}{1-p}=\theta\)（正是 logit！）。再链式法则乘 \(\dfrac{dp}{d\theta}=\sigma(\theta)(1-\sigma(\theta))\)：</p>
+<p>\[\frac{d\,\mathrm{KL}}{d\theta}=\theta\cdot\sigma(\theta)\,(1-\sigma(\theta))\]</p>
+<p>带 KL 的总损失 \(\mathcal{L}=-\tfrac{A}{2}\theta+\beta\cdot\mathrm{KL}\)，梯度 \(=-\tfrac{A}{2}+\beta\,\sigma(\theta)(1-\sigma(\theta))\,\theta\)。平衡点要求恢复力盖过推力：\(\beta\cdot\max_\theta[\sigma(1-\sigma)\theta]>|A|/2\)。</p>
+<p>最大值点：记 \(f(\theta)=\sigma(\theta)(1-\sigma(\theta))\,\theta\)，则 \(f'(\theta)=\sigma(1-\sigma)\,[\theta(1-2\sigma(\theta))+1]=0\) 得 \(\theta(1-2\sigma(\theta))=-1\)。这个方程没有初等闭式解，数值解 \(\theta\approx1.5434\)，\(f_{\max}\approx0.2239\)。于是 \(\beta>0.433/0.2239\approx1.93\)，与正文实测一致。</p>
+</div>
+
 <p>实测它关于 \(\theta\) 的最大值是 <b>0.2239</b>（在 \(\theta \approx 1.54\) 处取得）。</p>
 <p>而策略梯度的推力是常数 \(|A|/2 = 0.433\)。所以<b>必须</b>满足</p>
 \[\beta \times 0.2239 > 0.433 \;\Longrightarrow\; \beta > 1.93\]
@@ -717,6 +798,13 @@ details.mtoc li.l2{padding-left:.9rem; font-size:.85rem; color:var(--mute)}
 </div>
 
 <p>为什么同构？两者都是 \(\frac{1}{1 + \text{某个底数的负幂}}\)，只是底数和尺度不同。取 \(\lambda = \ln 10/400 \approx 0.0057565\)，两者<b>完全相同</b>。实测 \(d = 2\) 时：</p>
+<div class="derivation">
+<span class="tag">推导：\(\lambda=\ln10/400\) 怎么来的</span>
+<p>记 \(d=R_w-R_l\)，则 \(R_l-R_w=-d\)。Elo 公式 \(=\dfrac{1}{1+10^{-d/400}}\)。换底：\(10^{x}=e^{x\ln10}\)，所以 \(10^{-d/400}=e^{-(d/400)\ln10}=e^{-d\cdot(\ln10/400)}\)。于是</p>
+<p>\[\frac{1}{1+10^{-d/400}}=\frac{1}{1+e^{-d\cdot(\ln10/400)}}=\sigma\!\left(\frac{\ln10}{400}\,d\right)\]</p>
+<p>即 \(\lambda=\ln10/400\approx0.0057565\)。底数 10 和 \(e\) 的差别被 \(\ln10\) 吃掉了，剩下的只是尺度。</p>
+</div>
+
 
 <div class="tw">
 <table>
@@ -991,6 +1079,12 @@ for d in [0, 1, 2, 3, 5, 6]:
 <p>给两条 rollout：\(A_1 = +0.8659\)、\(A_2 = -0.8659\)。</p>
 <p>梯度可以解析求出：</p>
 \[\frac{d\log\sigma(\theta)}{d\theta} = 1-\sigma(\theta), \qquad \frac{d\log\sigma(-\theta)}{d\theta} = -\sigma(\theta)\]
+<div class="derivation">
+<span class="tag">推导：\(\dfrac{d}{d\theta}\log\sigma(-\theta)=-\sigma(\theta)\)</span>
+<p>换元 \(u=-\theta\)，链式法则：\(\dfrac{d}{d\theta}\log\sigma(-\theta)=\left.\dfrac{d}{du}\log\sigma(u)\right|_{u=-\theta}\cdot\dfrac{du}{d\theta}=(1-\sigma(-\theta))\cdot(-1)\)。而 \(1-\sigma(-\theta)=\sigma(\theta)\)（上面证过），故 \(=-\sigma(\theta)\)。</p>
+<p>于是 \(\dfrac{d\mathcal{L}}{d\theta}=-\tfrac12\big[A(1-\sigma)+(-A)(-\sigma)\big]=-\tfrac12\big[A-A\sigma+A\sigma\big]=-\tfrac{A}{2}\)——中间两项恰好抵消，这就是梯度为常数的来源。</p>
+</div>
+
 \[\Rightarrow\quad \frac{d\mathcal{L}}{d\theta} = -\frac{1}{2}\Big[A(1-\sigma) + (-A)(-\sigma)\Big] = -\frac{A}{2} = -0.433\]
 <p><b>梯度是常数，和 \(\theta\) 无关。</b>梯度下降就是 \(\theta \leftarrow \theta + 0.5\times 0.433\)，单调上升。跑 12 步：</p>
 <div class="tw">

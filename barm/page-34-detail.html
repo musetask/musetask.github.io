@@ -62,6 +62,25 @@ max_token_id = torch.argmax(next_token_logits)  <span class="tok-cm"># 19846</sp
 \text{softmax}(\mathbf{z})_i = \frac{\exp(z_i)}{\sum_{j=1}^{|V|}\exp(z_j)}, \qquad \sum_i \text{softmax}(\mathbf{z})_i = 1
 \]
 
+<div class="prereq">
+<span class="tag">预备知识：指数函数的三条性质与求和记号</span>
+<p>① \(\exp(x) = e^x &gt; 0\) 对一切实数 \(x\) 恒成立；② \(\exp(a-b) = \exp(a)/\exp(b)\)；③ \(\exp\) 严格单调递增：\(a &gt; b \Rightarrow e^a &gt; e^b\)。另注意分母 \(\sum_{j=1}^{|V|}\exp(z_j)\) 里<b>没有 \(i\)</b>——它对每个 \(i\) 都是同一个常数。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：softmax 的三个性质</span>
+<p><b>恒正。</b>分子 \(\exp(z_i) &gt; 0\)，分母是 \(|V|\) 个正数之和 \(&gt; 0\)，故每一项 \(&gt; 0\)。</p>
+<p><b>归一（和为 1）。</b>把所有项相加：</p>
+<p>\[
+\sum_{i=1}^{|V|} \text{softmax}(\mathbf{z})_i
+= \sum_{i=1}^{|V|} \frac{\exp(z_i)}{\sum_{j=1}^{|V|}\exp(z_j)}
+= \frac{\sum_{i=1}^{|V|}\exp(z_i)}{\sum_{j=1}^{|V|}\exp(z_j)}
+= 1
+\]</p>
+<p>关键一步：分母与求和指标 \(i\) 无关，可以整体提到 \(\sum_i\) 外面；此时分子 \(\sum_i \exp(z_i)\) 与分母 \(\sum_j \exp(z_j)\) 是<b>同一个和</b>（只是哑指标名字不同），相除得 1。</p>
+<p><b>保序。</b>若 \(z_a &gt; z_b\)，由 \(\exp\) 单调递增得 \(\exp(z_a) &gt; \exp(z_b)\)，分母相同，故 \(\text{softmax}_a &gt; \text{softmax}_b\)——logit 的排名原样保留。</p>
+</div>
+
 <pre><code>rescaled_logits = scale_logits_by_temperature(next_token_logits, <span class="tok-nu">5.0</span>)
 next_token_probas = torch.softmax(rescaled_logits, dim=<span class="tok-nu">-1</span>)
 <span class="tok-fn">print</span>(<span class="tok-st">"Probability sum:"</span>, torch.sum(next_token_probas))  <span class="tok-cm"># 1.0000</span></code></pre>
@@ -75,6 +94,18 @@ next_token_probas = torch.softmax(rescaled_logits, dim=<span class="tok-nu">-1</
 \[
 \frac{\exp(z_i - m)}{\sum_j \exp(z_j - m)} \;\; \xrightarrow{\; \times e^{-m}\;} \;\; \frac{\exp(z_i)}{\sum_j \exp(z_j)}
 \]
+
+<div class="derivation">
+<span class="tag">推导：减最大值为什么等价</span>
+<p>用恒等式 \(\exp(a - b) = \exp(a)\cdot\exp(-b)\) 把每项拆开：</p>
+<p>\[
+\frac{\exp(z_i - m)}{\sum_j \exp(z_j - m)}
+= \frac{\exp(z_i)\cdot e^{-m}}{\sum_j \big(\exp(z_j)\cdot e^{-m}\big)}
+= \frac{\exp(z_i)\cdot e^{-m}}{e^{-m}\cdot\sum_j \exp(z_j)}
+\]</p>
+<p>分母里 \(e^{-m}\) 与求和指标 \(j\) 无关，可提到求和号外面；然后分子分母的 \(e^{-m}\) 约掉，得到右边。换句话说，<b>分子分母同乘 \(e^{+m}\)</b>（原文箭头上写 \(e^{-m}\) 是笔误，应为 \(e^{+m}\)）。</p>
+<p>数值意义：减去 \(m\) 后所有指数的输入都 \(\le 0\)，\(\exp\) 的值落在 \((0,1]\)，float32 下既不会上溢，分母也不会下溢成 0。</p>
+</div>
 
 <p>数学上完全等价（分子分母同乘 \(e^{-m}\)），但所有指数的输入都变成 \(\le 0\)，<b>\(\exp\) 的结果必然在 \((0, 1]\) 区间</b>，永远不会溢出。PyTorch 的 <code>torch.softmax</code> / <code>torch.log_softmax</code> 内部都做了这件事。</p>
 
@@ -106,6 +137,21 @@ P_T(i) = \text{softmax}\!\left(\frac{\mathbf{z}}{T}\right)_i = \frac{\exp(z_i / 
 \frac{P(1)}{P(2)} = \frac{\exp(z_1/T)}{\exp(z_2/T)} = \exp\!\left(\frac{z_1 - z_2}{T}\right) = \exp\!\left(\frac{\Delta}{T}\right)
 \]
 
+<div class="derivation">
+<span class="tag">推导：概率比只看 logit 差</span>
+<p>把 \(P(1), P(2)\) 的定义代入，记公共分母 \(S = \sum_j \exp(z_j/T)\)：</p>
+<p>\[
+\frac{P(1)}{P(2)}
+= \frac{\exp(z_1/T)\,/\,S}{\exp(z_2/T)\,/\,S}
+= \frac{\exp(z_1/T)}{\exp(z_2/T)}
+\]</p>
+<p>分母 \(S\) 在相除时约掉——<b>这就是为什么只有相对差距 \(\Delta\) 重要，绝对高度不重要</b>。再用 \(\exp(a)/\exp(b) = \exp(a-b)\)：</p>
+<p>\[
+\frac{\exp(z_1/T)}{\exp(z_2/T)} = \exp\!\left(\frac{z_1}{T} - \frac{z_2}{T}\right) = \exp\!\left(\frac{\Delta}{T}\right)
+\]</p>
+<p>于是温度的作用一目了然：\(T &lt; 1\) 时 \(\Delta/T &gt; \Delta\)，指数更大，比值拉大（更尖锐）；\(T &gt; 1\) 时反之（更平坦）。</p>
+</div>
+
 <p>所以：</p>
 
 <div class="tw">
@@ -132,6 +178,23 @@ T \to 0^+ \;\Longrightarrow\; P(i) \to \begin{cases} 1 & \arg\max_j z_j = i \\ 0
 \qquad
 T \to \infty \;\Longrightarrow\; P(i) \to \frac{1}{|V|}
 \]
+
+<div class="prereq">
+<span class="tag">预备知识：\(\lim_{x\to-\infty}e^x = 0\)</span>
+<p>\(e^x = 1/e^{-x}\)；当 \(x \to -\infty\) 时分母 \(e^{-x} \to +\infty\)，故极限为 0。另记住 \(\exp(0) = 1\)。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：两个极限</span>
+<p><b>\(T \to 0^+\)（变 one-hot）。</b>设 \(z_1\) 是唯一的最高 logit，记它与其他项的差距 \(\Delta_j = z_1 - z_j &gt; 0\)（\(j \ne 1\)）。把 \(P(1)\) 的分子分母同除 \(\exp(z_1/T)\)：</p>
+<p>\[
+P(1) = \frac{\exp(z_1/T)}{\sum_j \exp(z_j/T)}
+= \frac{1}{1 + \sum_{j \ne 1}\exp\!\big(\frac{z_j - z_1}{T}\big)}
+= \frac{1}{1 + \sum_{j \ne 1}\exp\!\big(-\frac{\Delta_j}{T}\big)}
+\]</p>
+<p>当 \(T \to 0^+\)，\(-\Delta_j/T \to -\infty\)，每一项 \(\exp(-\Delta_j/T) \to 0\)，分母 \(\to 1\)，故 \(P(1) \to 1\)。而对 \(i \ne 1\)，\(P(i) = P(1)\cdot\exp(-\Delta_i/T) \to 1 \times 0 = 0\)。</p>
+<p><b>\(T \to \infty\)（变均匀）。</b>\(z_i/T \to 0\)，故 \(\exp(z_i/T) \to \exp(0) = 1\)。每个 token 的概率都趋向 \(\frac{1}{\sum_j 1} = \frac{1}{|V|}\)——与 logit 完全无关的均匀分布。</p>
+</div>
 
 <p>原文的实际演示很有说服力：<b>T = 5.0 下采样 1 个 token，得到的是 <code>65094</code>，即 <code>" mistress"</code></b>——在「德国的首都是」这个语境下完全说不通。就是这么被随机出来的。</p>
 

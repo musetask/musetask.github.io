@@ -33,6 +33,11 @@
 J(\theta) = \mathbb{E}_{x \sim \mathcal{D}}\ \mathbb{E}_{y \sim \pi_\theta(\cdot|x)}\big[R(x, y)\big]
 \]
 
+<div class="prereq">
+<span class="tag">预备知识：双重期望 \(\mathbb{E}_{x}\mathbb{E}_{y}\) 的含义</span>
+<p>从内往外读：先固定一个 prompt \(x\)，从<b>当前策略</b> \(\pi_\theta(\cdot|x)\) 采样回答 \(y\) 并算奖励 \(R(x,y)\)，对 \(y\) 取平均；再对数据集 \(\mathcal{D}\) 里的所有 \(x\) 取平均。注意内层期望<b>依赖 \(\theta\)</b>——策略一变，采样的 \(y\) 分布就变，这正是策略梯度要求导的根源。</p>
+</div>
+
 <p>DeepSeekMath 论文给出的完整 GRPO 定义式（以及 <a href="page-53-detail.html">6.1.1 推导</a>第二节的 RLVR 奖励 \(R = r_{\text{verifier}}\)）：</p>
 
 \[
@@ -75,6 +80,15 @@ J(\theta) = \mathbb{E}_{x \sim \mathcal{D}}\ \mathbb{E}_{y \sim \pi_\theta(\cdot
 \hat{A}_i = \frac{r_i - \text{mean}(\{r_1,\dots,r_G\})}{\text{std}(\{r_1,\dots,r_G\})}
 \]
 
+<div class="prereq">
+<span class="tag">预备知识：z-score 标准化的两个性质</span>
+<p>记 \(\bar r = \frac{1}{G}\sum_i r_i\)，\(\sigma_r^2 = \frac{1}{G}\sum_i (r_i-\bar r)^2\)。则标准化后的 \(\hat{A}_i\) 满足：</p>
+<p>\[
+\frac{1}{G}\sum_{i=1}^{G}\hat{A}_i = \frac{1}{\sigma_r}\left(\frac{1}{G}\sum_i r_i - \bar r\right) = 0, \qquad \frac{1}{G}\sum_{i=1}^{G}\hat{A}_i^2 = \frac{\sigma_r^2}{\sigma_r^2} = 1
+\]</p>
+<p>即<b>均值恒为 0、方差恒为 1</b>——无论原始奖励是 0/1 二值还是百分制，advantage 永远落在同一尺度上。这就是"组内相对排名"的数学实质。</p>
+</div>
+
 <p>推导与「为什么 adv_avg 恒为 0」在 <a href="page-58-detail.html">6.7 推导</a>里。<b>用组内相对排名代替 critic</b>，就省掉了 value model 及其全部成本：</p>
 
 <div class="tw">
@@ -109,6 +123,15 @@ J(\theta) = \mathbb{E}_{x \sim \mathcal{D}}\ \mathbb{E}_{y \sim \pi_\theta(\cdot
 
 <p>即：<b>「变好」有上限，「变坏」不设上限</b>。完整分析（为什么必须用 <code>min</code> 而不是两边都裁剪、20.09 → 11.00 的手算）见 <a href="page-67-detail.html">7.4 推导</a>。</p>
 
+<div class="derivation">
+<span class="tag">推导：\(\hat{A} < 0\) 时 \(\min\) 取哪一边（\(\hat{A} > 0\) 的情形正文已展开）</span>
+<p>\(\min\) 里两项都含因子 \(\hat{A}\)，\(\hat{A} < 0\) 时乘以负数会翻转不等式方向：\(\min(\rho\hat{A},\,c(\rho)\hat{A}) = \hat{A}\cdot\max(\rho,\,c(\rho))\)，其中 \(c(\rho) = \mathrm{clip}(\rho, 1\pm\epsilon)\)。而 \(\max(\rho, c(\rho))\) 化简得 \(\max(\rho, 1-\epsilon)\)，于是</p>
+<p>\[
+\min\big(\rho\hat{A},\,c(\rho)\hat{A}\big) = \begin{cases}\rho\hat{A} & \rho \ge 1-\epsilon \\ (1-\epsilon)\hat{A} & \rho < 1-\epsilon\end{cases} \qquad (\hat{A}<0)
+\]</p>
+<p>即<b>"变坏"有下限（\(\rho\) 跌破 \(1-\epsilon\) 时被托住），"变得更坏"的方向不设限</b>——与 \(\hat{A}>0\) 的情形镜像对称。两边合起来就是"悲观界"：永远取让目标更小的那一边。</p>
+</div>
+
 <h3>2.4 KL 项：为什么它乘在 \(\frac{1}{|o_i|}\sum_t\) 内部</h3>
 
 <p>注意 KL 项的写法是<b>逐 token 求和</b>的（<a href="page-69.html">7.5.1</a> 的 <code>kl_loss</code> 逐位置计算 logprob 之差再求和）：</p>
@@ -116,6 +139,16 @@ J(\theta) = \mathbb{E}_{x \sim \mathcal{D}}\ \mathbb{E}_{y \sim \pi_\theta(\cdot
 \[
 \sum_{t=1}^{|o_i|}\big[\log\pi_\theta(y_t|\cdot) - \log\pi_{\text{ref}}(y_t|\cdot)\big] \approx |o_i| \cdot \mathrm{KL}\big(\pi_\theta \,\|\, \pi_{\text{ref}}\big)
 \]
+
+<div class="derivation">
+<span class="tag">推导：逐 token 求和 \(\approx |o_i|\cdot\mathrm{KL}\)</span>
+<p>先写 KL 的定义（逐位置）：\(\mathrm{KL}(\pi_\theta\|\pi_{\text{ref}}) = \mathbb{E}_{y_t\sim\pi_\theta}\big[\log\pi_\theta(y_t|\cdot) - \log\pi_{\text{ref}}(y_t|\cdot)\big]\)，即"对数概率差的期望"。</p>
+<p>公式左边的求和 \(\sum_t [\log\pi_\theta(y_t) - \log\pi_{\text{ref}}(y_t)]\) 是把<b>实际采样到的</b> \(|o_i|\) 个 token 的对数差加起来——它是 \(|o_i|\) 个"期望的样本"的和。由期望的线性：</p>
+<p>\[
+\mathbb{E}\left[\sum_{t=1}^{|o_i|}(\cdots)\right] = \sum_{t=1}^{|o_i|}\underbrace{\mathbb{E}[\log\pi_\theta - \log\pi_{\text{ref}}]}_{\text{第 }t\text{ 个位置的 KL}} \approx |o_i|\cdot\overline{\mathrm{KL}}
+\]</p>
+<p>其中 \(\overline{\mathrm{KL}}\) 是各位置 KL 的平均值。于是<b>求和式天然正比于序列长度</b>——这就是下文 warn 框里"长序列的 KL 惩罚天然更大"的来源，也是把它挪到求和外会改变长度偏好的原因。</p>
+</div>
 
 <div class="warn">
 <span class="tag">放在求和内 vs 求和外，效果完全不同</span>

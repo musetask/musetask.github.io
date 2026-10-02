@@ -43,6 +43,21 @@ A_i = \frac{r_i - \mu_r}{\sigma_r + \epsilon}
     adv_std = advantages.std().item()
     <span class="tok-kw">return</span> advantages, adv_avg, adv_std</code></pre>
 
+<div class="prereq">
+<span class="tag">预备知识：方差的缩放性质</span>
+<p>\(\mathrm{Var}(aX + b) = a^2\,\mathrm{Var}(X)\)。证明：\(\mathrm{Var}(aX+b) = \mathrm{E}[((aX+b) - (a\mu+b))^2] = \mathrm{E}[a^2(X-\mu)^2] = a^2\mathrm{Var}(X)\)。直觉：<b>平移 \(b\) 不改变离散程度，缩放 \(a\) 倍则方差变 \(a^2\) 倍</b>。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：为什么除以 \(\sigma_r\) 后标准差恒为 1</span>
+<p>忽略小量 \(\epsilon\)，记 \(A = (r - \mu_r)/\sigma_r\)。用上面的性质（\(a = 1/\sigma_r\)，\(b = -\mu_r/\sigma_r\)）：</p>
+<p>\[
+\mathrm{Var}(A) = \frac{1}{\sigma_r^2}\,\mathrm{Var}(r - \mu_r) = \frac{\mathrm{Var}(r)}{\sigma_r^2} = \frac{\sigma_r^2}{\sigma_r^2} = 1
+\]</p>
+<p>故 \(\mathrm{std}(A) = 1\)——这就是代码输出 <code>std = 0.9998</code> 的来源（0.0002 的偏差来自 \(\epsilon\) 和样本标准差的 \(N-1\) 修正）。</p>
+<p>意义：除以 \(\sigma_r\) 让 advantage 的<b>尺度与 reward 的原始量级无关</b>。无论 reward 是 0/1 还是 0/100，\(A_i\) 永远是"偏离均值几个标准差"，学习率不用跟着 reward 的量级重新调。这就是 z-score 标准化的全部作用。</p>
+</div>
+
 <h3>1.2 均值恒为 0（设计使然）</h3>
 
 <div class="tw">
@@ -103,6 +118,31 @@ A_i = \frac{r_i - \mu_r}{\sigma_r + \epsilon}
 \[
 H(P) = -\sum_{v=1}^{|V|} P(v) \log P(v)
 \]
+
+<div class="prereq">
+<span class="tag">预备知识：拉格朗日乘子法（求条件极值）</span>
+<p>要在约束 \(g(p) = 0\) 下求 \(f(p)\) 的极值，构造 \(L = f - \lambda g\)，然后对每个变量求偏导并令其为 0，\(\lambda\) 叫拉格朗日乘子。另需 \((x\ln x)' = \ln x + 1\)（乘积法则：\((x\cdot\ln x)' = 1\cdot\ln x + x\cdot\frac{1}{x}\)）。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：均匀分布时熵最大，最大值为 \(\log|V|\)</span>
+<p>在约束 \(\sum_v p_v = 1\)（且 \(p_v \ge 0\)）下最大化 \(H = -\sum_v p_v\log p_v\)。构造拉格朗日函数：</p>
+<p>\[
+L = -\sum_{v=1}^{|V|} p_v\log p_v \;-\; \lambda\!\left(\sum_{v=1}^{|V|} p_v - 1\right)
+\]</p>
+<p>对 \(p_v\) 求偏导并令为 0：</p>
+<p>\[
+\frac{\partial L}{\partial p_v} = -(\log p_v + 1) - \lambda = 0
+\quad\Longrightarrow\quad
+\log p_v = -(1 + \lambda)
+\]</p>
+<p>右边与 \(v\) 无关，故<b>所有 \(p_v\) 相等</b>。结合 \(\sum_v p_v = 1\) 得 \(p_v = 1/|V|\)——均匀分布。代回熵的定义：</p>
+<p>\[
+H_{\max} = -\sum_{v=1}^{|V|}\frac{1}{|V|}\log\frac{1}{|V|}
+= -\log\frac{1}{|V|} = \log|V|
+\]</p>
+<p>（\(-x\log x\) 是凹函数，所以这个稳定点是极大值而非极小值。）这就证明了正文表格里的两个极端：集中分布熵为 0，均匀分布熵为 \(\log|V|\)，其他分布都落在中间。</p>
+</div>
 
 <p>两个极端：</p>
 

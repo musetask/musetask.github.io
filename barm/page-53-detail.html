@@ -56,6 +56,15 @@ P_\phi(y_w \succ y_l \mid x) = \frac{\exp\big(r_\phi(x, y_w)\big)}{\exp\big(r_\p
 = \sigma\!\big(r_\phi(x, y_w) - r_\phi(x, y_l)\big)
 \]
 
+<div class="derivation">
+<span class="tag">推导：二元 softmax 退化为 sigmoid</span>
+<p>记 \(a = r_\phi(x,y_w)\)，\(b = r_\phi(x,y_l)\)。分子分母同除以 \(e^{a}\)：</p>
+<p>\[
+\frac{e^{a}}{e^{a}+e^{b}} = \frac{1}{1+e^{b-a}} = \frac{1}{1+e^{-(a-b)}} = \sigma(a-b)
+\]</p>
+<p>其中 \(\sigma(z) = 1/(1+e^{-z})\) 是 sigmoid 函数。所以"两个输出的 softmax 偏好概率"本质上只依赖<b>奖励之差</b> \(a - b\)——差越大，\(\sigma\) 越接近 1。这也是下文 2.3 节"只需要差值、整体平移无害"的代数根源。</p>
+</div>
+
 <div class="eq-note">
 <b>这里出现了一个 softmax。</b>把第 F.4 节的 \(1/(1+10^{-\Delta R/400})\) 换成自然指数形式就得到它——<b>两处是同一个函数</b>，区别只在 Elo 用 10 为底、BT 用 \(e\) 为底。Elo 那边 400 的角色，在这里相当于一个温度超参。
 </div>
@@ -71,6 +80,11 @@ P_\phi(y_w \succ y_l \mid x) = \frac{\exp\big(r_\phi(x, y_w)\big)}{\exp\big(r_\p
 \[
 \mathcal{L}_{\text{RM}}(\phi) = -\mathbb{E}_{(x, y_w, y_l)\sim D}\Big[\log \sigma\big(r_\phi(x, y_w) - r_\phi(x, y_l)\big)\Big]
 \]
+
+<div class="prereq">
+<span class="tag">预备知识：极大似然 → 最小化负对数似然</span>
+<p><b>极大似然估计</b>：选参数 \(\phi\) 使"观测到的数据"的概率最大。假设各偏好对相互独立，数据似然为 \(\prod_{(x,y_w,y_l)\in D} P_\phi(y_w\succ y_l|x)\)。取对数（单调变换，不改变最优点）把连乘变成求和，再取负号把"最大化"翻成"最小化"，即得上式的 \(\mathcal{L}_{\text{RM}}\)。\(\mathbb{E}\) 只是把"对数据集求平均"写成期望形式。</p>
+</div>
 
 <p>这个损失有几个值得注意的性质：</p>
 
@@ -95,6 +109,19 @@ J(\theta) = \mathbb{E}_{y \sim \pi_\theta(\cdot|x)}\big[r_\phi(x, y)\big]
 \[
 \nabla_\theta J = \mathbb{E}\big[\nabla_\theta \log \pi_\theta(y|x) \cdot A(x, y)\big]
 \]
+
+<div class="derivation">
+<span class="tag">推导：log-derivative trick（策略梯度定理的核心一步）</span>
+<p>目标 \(J(\theta) = \sum_y \pi_\theta(y|x)\,r(y)\)（离散求和；连续时换成积分，道理相同）。直接求导：</p>
+<p>\[
+\nabla_\theta J = \sum_y \nabla_\theta\pi_\theta(y|x)\cdot r(y)
+\]</p>
+<p>关键恒等式：\(\nabla_\theta \log\pi_\theta = \dfrac{\nabla_\theta\pi_\theta}{\pi_\theta}\)（链式法则：\(\frac{d}{d\theta}\log f = f'/f\)），移项得 \(\nabla_\theta\pi_\theta = \pi_\theta\cdot\nabla_\theta\log\pi_\theta\)。代入：</p>
+<p>\[
+\nabla_\theta J = \sum_y \pi_\theta(y|x)\,\nabla_\theta\log\pi_\theta(y|x)\,r(y) = \mathbb{E}_{y\sim\pi_\theta}\big[\nabla_\theta\log\pi_\theta(y|x)\cdot r(y)\big]
+\]</p>
+<p>把 \(r(y)\) 换成"比平均好多少"的 advantage \(A(x,y)\)（减去基线不改变期望，因为 \(\mathbb{E}[\nabla\log\pi\cdot b] = b\cdot\nabla\sum_y\pi = b\cdot\nabla 1 = 0\)），即得正文公式。这个技巧的价值：<b>梯度变成了"可采样的期望"</b>——只需从当前策略采样 \(y\)，算 \(\nabla\log\pi\) 乘奖励，无需求出 \(\nabla\pi\) 本身。</p>
+</div>
 
 <p>其中 advantage \(A\) 衡量「这个动作比平均水平好多少」。<b>问题在于方差极大</b>——整段序列的奖励只在最后才知道，中途完全无法分解，所以每个 token 都在背一个高噪声的信号。</p>
 

@@ -38,6 +38,22 @@
 
 <p>负号的作用和 6.9 一样：<b>PyTorch 只最小化，而「模型更确信」对应 logprob 更大（即 loss 更小）。</b>所以要取负，让「loss 小」等价于「模型对正确答案更有信心」。</p>
 
+<div class="prereq">
+<span class="tag">预备知识：交叉熵与 one-hot 分布</span>
+<p>交叉熵定义为 \(H(p, q) = -\sum_v p(v)\log q(v)\)，其中 \(p\) 是<b>真实分布</b>，\(q\) 是<b>模型分布</b>。监督学习里"真实"就是 one-hot：正确答案 token \(t\) 处 \(p(t) = 1\)，其余位置 \(p(v) = 0\)。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：交叉熵退化成负对数概率</span>
+<p>把 one-hot 的 \(p\) 代入交叉熵定义：</p>
+<p>\[
+H(p, q) = -\sum_v p(v)\log q(v) = -\big[\,1\cdot\log q(t) + \sum_{v \ne t} 0\cdot\log q(v)\,\big] = -\log q(t)
+\]</p>
+<p>所有 \(v \ne t\) 的项都被 0 乘掉，只剩正确答案那一项。对 \(T\) 个位置取平均，即得页面开头的公式。</p>
+<p><b>为什么 \(\mathcal{L}_{\text{CE}} \ge 0\)：</b>\(q(t)\) 是概率，\(q(t) \le 1 \Rightarrow \log q(t) \le 0 \Rightarrow -\log q(t) \ge 0\)。等号成立当且仅当每个位置 \(q(t) = 1\)——模型对每个正确答案都 100% 确定（"完美记忆"）。</p>
+<p>附带结论：交叉熵恒有 \(H(p,q) = H(p) + D_{\text{KL}}(p\|q)\)；one-hot 时 \(H(p) = 0\)，故<b>最小化交叉熵 = 最小化模型分布到 one-hot 的 KL 散度</b>，和上一页的 KL 是同一个数学对象。</p>
+</div>
+
 <h3>1.2 用原文的例子算一遍</h3>
 
 <p>原文沿用第 5 章的 <code>"The capital of Germany is Berlin"</code>：5 个目标 token（<code>capital</code>、<code>of</code>、<code>Germany</code>、<code>is</code>、<code>Berlin</code>），序列 logprob = −16.6250。</p>
@@ -102,6 +118,18 @@ avg_logprob = -seq_logprob / num_answer_tokens
 \]
 
 <p>它等价于 <code>-(target * log_softmax(logits)).sum(dim).mean()</code>，用交叉熵融合算子实现可以省内存。</p>
+
+<div class="derivation">
+<span class="tag">推导：这个公式就是 log_softmax + gather</span>
+<p>先看内层。用 \(\log(a/b) = \log a - \log b\) 展开：</p>
+<p>\[
+-\log\frac{\exp(z_t)}{\sum_v \exp(z_v)}
+= -\big[\log\exp(z_t) - \log\sum_v \exp(z_v)\big]
+= -z_t + \log\sum_v \exp(z_v)
+\]</p>
+<p>而 \(\text{log\_softmax}(\mathbf{z})_t\) 的定义恰好是 \(z_t - \log\sum_v \exp(z_v)\)，所以内层 \(= -\text{log\_softmax}(\mathbf{z})_t\)。</p>
+<p>三层结构对应代码的三个操作：<b>括号内</b> = <code>log_softmax(logits)</code>（整行变对数概率）；<b>\(\text{target}[i]\) 下标</b> = <code>gather</code>（只取正确答案那一列）；<b>外层 \(\frac{1}{N}\sum_i\)</b> = <code>.mean()</code>。合起来就是"对答案位置的 logprob 取负再平均"，与手写的 <code>-seq_logprob / num_answer_tokens</code> 完全一致——这正是正文 2.4 节两种实现算出同一个 1.68 的原因。</p>
+</div>
 
 <h3>2.2 关键：只算答案部分</h3>
 

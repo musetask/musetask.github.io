@@ -54,6 +54,24 @@ y_i = \gamma_i\, \hat{x}_i + \beta_i
 <p>因为 \(\frac{1}{d}\sum_i \hat{x}_i = 0\) 且 \(\frac{1}{d}\sum_i \hat{x}_i^2 = 1\)，所以输出<b>恰好</b>零均值、单位方差（当 \(\gamma = 1, \beta = 0\) 时）。这正是图 C.2 右侧标注的 "Zero-centered mean and unit variance after normalization"。</p>
 </div>
 
+<div class="derivation">
+<span class="tag">推导：为什么标准化后均值恰为 0、平方均值恰为 1</span>
+<p>先算均值。把 \(\hat{x}_i = (x_i - \mu)/\sigma\) 代入，\(\sigma\) 与 \(i\) 无关可提出：</p>
+<p>\[
+\frac{1}{d}\sum_{i=1}^{d}\hat{x}_i
+= \frac{1}{d\sigma}\sum_{i=1}^{d}(x_i - \mu)
+= \frac{1}{d\sigma}\left(\sum_{i=1}^{d}x_i - d\mu\right)
+\]</p>
+<p>而 \(\mu\) 的定义就是 \(\mu = \frac{1}{d}\sum_i x_i\)，即 \(\sum_i x_i = d\mu\)，括号里 \(= d\mu - d\mu = 0\)。故均值<b>恒为</b> 0——注意这里没用任何近似，是恒等式。</p>
+<p>再算平方均值：</p>
+<p>\[
+\frac{1}{d}\sum_{i=1}^{d}\hat{x}_i^2
+= \frac{1}{d\sigma^2}\sum_{i=1}^{d}(x_i - \mu)^2
+\]</p>
+<p>而 \(\sigma^2\) 的定义恰是 \(\sigma^2 = \frac{1}{d}\sum_i (x_i-\mu)^2\)，即 \(\sum_i (x_i-\mu)^2 = d\sigma^2\)，代入得 \(\frac{d\sigma^2}{d\sigma^2} = 1\)。证毕。</p>
+<p>一句话记忆：<b>LayerNorm 保证的量，恰好就是它减掉和除掉的那两个量</b>——减均值保证零均值，除标准差保证单位方差。下一节会看到，RMSNorm 保证的也是「它除的那个量」。</p>
+</div>
+
 <h2 class="deriv">三、RMSNorm 的定义式：只去掉减均值这一步</h2>
 
 <p>RMSNorm 把「减均值」整个删掉，直接除以均方根（root mean square）：</p>
@@ -68,6 +86,23 @@ y_i = \gamma_i\, \hat{x}_i + \beta_i
 y_i = \gamma_i \cdot \frac{x_i}{\mathrm{RMS}(\mathbf{x})},
 \qquad \text{（默认没有 } \beta \text{）}
 \]
+
+<div class="derivation">
+<span class="tag">推导：\(\mathrm{RMS}^2 = \sigma^2 + \mu^2\)</span>
+<p>把每个 \(x_i\) 写成「偏离均值的部分」加「均值本身」：\(x_i = (x_i - \mu) + \mu\)，然后平方展开：</p>
+<p>\[
+\begin{aligned}
+\frac{1}{d}\sum_{i=1}^{d} x_i^2
+&= \frac{1}{d}\sum_{i=1}^{d}\big[(x_i - \mu) + \mu\big]^2 \\
+&= \frac{1}{d}\sum_{i=1}^{d}(x_i - \mu)^2
+   + \frac{2\mu}{d}\underbrace{\sum_{i=1}^{d}(x_i - \mu)}_{=\,0}
+   + \frac{1}{d}\sum_{i=1}^{d}\mu^2 \\
+&= \sigma^2 + 0 + \mu^2
+\end{aligned}
+\]</p>
+<p>中间那项为 0 的原因：\(\sum_i (x_i - \mu) = \sum_i x_i - d\mu = d\mu - d\mu = 0\)（正是上一节证过的「中心化后求和为 0」）。两边开方即得 \(\mathrm{RMS} = \sqrt{\sigma^2 + \mu^2}\)。</p>
+<p>这个恒等式说明：<b>RMS 的平方 = 方差 + 均值的平方</b>，它永远 \(\geq \sigma^2\)，等号只在 \(\mu = 0\) 时成立——这就是 warn 框里「只有当 \(\mu=0\) 时两者才相等」的来源。</p>
+</div>
 
 <div class="warn">
 <span class="tag">最容易算错的一步</span>
@@ -183,6 +218,23 @@ y_i = \gamma_i \cdot \frac{x_i}{\mathrm{RMS}(\mathbf{x})},
 = \frac{5.9993}{6} = 0.9999 \approx 1
 \]
 
+<div class="derivation">
+<span class="tag">推导：\(\mathrm{mean}(y) = \mu/\mathrm{RMS}\)，\(\mathrm{var}(y) = \sigma^2/\mathrm{RMS}^2\)</span>
+<p>由 \(y_i = x_i / \mathrm{RMS}\)，分母是常数（与 \(i\) 无关），可直接提出求和号：</p>
+<p>\[
+\mathrm{mean}(y) = \frac{1}{d}\sum_i \frac{x_i}{\mathrm{RMS}}
+= \frac{1}{\mathrm{RMS}}\cdot\frac{1}{d}\sum_i x_i
+= \frac{\mu}{\mathrm{RMS}}
+\]</p>
+<p>方差同理。记 \(\bar{y} = \mu/\mathrm{RMS}\)，则 \(y_i - \bar{y} = (x_i - \mu)/\mathrm{RMS}\)，于是</p>
+<p>\[
+\mathrm{var}(y) = \frac{1}{d}\sum_i (y_i - \bar{y})^2
+= \frac{1}{\mathrm{RMS}^2}\cdot\frac{1}{d}\sum_i (x_i - \mu)^2
+= \frac{\sigma^2}{\mathrm{RMS}^2}
+\]</p>
+<p>注意这里用的是<b>总体方差</b>（除以 \(d\)），和 LayerNorm 定义里的 \(\sigma^2\) 一致。下面恒等式用的正是这两个关系。</p>
+</div>
+
 <div class="key">
 <span class="tag">顺带一个漂亮的恒等式</span>
 <p>因为 \(\mathrm{var}(y) = \frac{\sigma^2}{\mathrm{RMS}^2}\) 且 \(\mathrm{mean}(y) = \frac{\mu}{\mathrm{RMS}}\)，两者相加有：</p>
@@ -257,6 +309,21 @@ y_i = \gamma_i \cdot \frac{x_i}{\mathrm{RMS}(\mathbf{x})},
 \qquad
 \frac{\partial r}{\partial x_j} = \frac{x_j}{d\,r}
 \]
+
+<div class="derivation">
+<span class="tag">推导：\(\partial r / \partial x_j = x_j/(dr)\)（链式法则）</span>
+<p>把 \(r\) 写成复合函数：\(r = u^{1/2}\)，其中 \(u = \frac{1}{d}\sum_{k=1}^{d} x_k^2\)。链式法则 \(\frac{\partial r}{\partial x_j} = \frac{dr}{du}\cdot\frac{\partial u}{\partial x_j}\)：</p>
+<p>\[
+\frac{dr}{du} = \frac{1}{2}u^{-1/2} = \frac{1}{2r},
+\qquad
+\frac{\partial u}{\partial x_j} = \frac{1}{d}\cdot 2x_j = \frac{2x_j}{d}
+\]</p>
+<p>（第二步：求和里只有 \(k = j\) 那一项含 \(x_j\)，\(\frac{\partial}{\partial x_j}x_j^2 = 2x_j\)，其余项导数为 0。）相乘：</p>
+<p>\[
+\frac{\partial r}{\partial x_j} = \frac{1}{2r}\cdot\frac{2x_j}{d} = \frac{x_j}{d\,r}
+\]</p>
+<p>直观理解：\(r\) 是整体的「尺度」，\(x_j\) 越大，它对尺度的贡献越大，导数 \(\propto x_j\) 正是这个意思。分母的 \(d\) 来自均值里的 \(1/d\)。</p>
+</div>
 
 <p>于是（\(\gamma_i = 1\) 时）：</p>
 

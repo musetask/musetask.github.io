@@ -36,6 +36,17 @@ S = \min\Big\{ k \;:\; \sum_{i=1}^{k} p_{(i)} \ge p \Big\}
 
 <p>其中 \(p_{(i)}\) 表示排序后第 \(i\) 大的概率。保留 \(p_1, \dots, p_S\)，其余置 0，再<b>重新归一化</b>使其和为 1，然后从这 \(S\) 个里采样。</p>
 
+<div class="prereq">
+<span class="tag">预备知识：顺序统计量</span>
+<p>把概率从大到小重排：\(p_{(1)} \ge p_{(2)} \ge \cdots \ge p_{(|V|)}\)。\(p_{(i)}\) 读作"第 \(i\) 个顺序统计量"，就是"第 \(i\) 大的概率"。注意它和原来的词表下标 \(p_i\) 是两回事——\(p_{(1)}\) 未必是 \(p_1\)。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：这个 \(\min\) 在说什么</span>
+<p>集合 \(\big\{ k : \sum_{i=1}^{k} p_{(i)} \ge p \big\}\) 是"累积质量够 \(p\) 的所有 \(k\)"。因为每项 \(p_{(i)} \ge 0\)，累积和随 \(k\) 单调递增，所以这个集合形如 \(\{S, S+1, S+2, \dots\}\)——从某个 \(S\) 开始往后全满足。取 \(\min\) 就是取<b>刚好够 \(p\) 的最少 token 数</b>。</p>
+<p>用正文的数字走一遍（\(p = 0.8\)）：\(k=1\) 时和 \(= 0.4538 &lt; 0.8\)；\(k=2\) 时和 \(= 0.7290 &lt; 0.8\)；\(k=3\) 时和 \(= 0.8119 \ge 0.8\)。故 \(S = 3\)，与代码的 <code>n_kept = 3</code> 一致。</p>
+</div>
+
 <div class="key">
 <span class="tag">top-p 的设计哲学</span>
 <p>它保留的是<b>自适应数量</b>的 token：分布尖锐时只留 1–2 个，分布平坦时留几十上百个。而 top-k 保留<b>固定数量</b>。</p>
@@ -73,6 +84,15 @@ c_k = \sum_{i=1}^{k} q_i
 \]
 
 <p><b>就是前 \(k-1\) 个 token 的累积质量，不含第 \(k\) 个自己。</b></p>
+
+<div class="derivation">
+<span class="tag">推导：\(c_k - q_k\) 的展开</span>
+<p>把 \(c_k\) 按定义展开成连加：</p>
+<p>\[
+c_k - q_k = \big(q_1 + q_2 + \cdots + q_{k-1} + q_k\big) - q_k = q_1 + q_2 + \cdots + q_{k-1} = \sum_{i=1}^{k-1} q_i
+\]</p>
+<p>最后一项 \(q_k\) 被消掉，剩下的恰好是"前 \(k-1\) 项的和"。所以代码里的 <code>(cumsum - sorted_probas) &lt; top_p</code> 是在逐个问：<b>"不算我自己，前面攒的质量还不够 \(p\) 吗？"</b>——不够就说明需要我来凑，必须保留；够了就说明我已经是越界之后的多余项，可以砍。</p>
+</div>
 
 <p>那么 <code>keep_mask = (cumsum - sorted_probas) &lt; top_p</code> 就是在问：<b>「我加入这个 token <i>之前</i>，累积质量还不到 \(p\) 吗？」</b>如果是，说明我需要它来把质量凑到 \(p\)，必须保留。</p>
 
@@ -116,6 +136,18 @@ renormalized = filtered / denom
 \]
 
 <p>验算：\(0.4538 / 0.8119 = 0.5589\)，\(0.0829 / 0.8119 = 0.1021\)，\(0.2752 / 0.8119 = 0.3390\)。✓</p>
+
+<div class="derivation">
+<span class="tag">推导：重归一化后和为 1</span>
+<p>记保留集合的总质量 \(C = \sum_{j \in S} p_j\)（正文例子里 \(C = 0.8119\)，满足 \(0 &lt; C \le 1\)）。把所有 \(\tilde{p}_i\) 相加：</p>
+<p>\[
+\sum_i \tilde{p}_i
+= \sum_{i \in S}\frac{p_i}{C} + \sum_{i \notin S} 0
+= \frac{1}{C}\sum_{i \in S} p_i
+= \frac{C}{C} = 1
+\]</p>
+<p>一般规律：<b>要让一组非负数之和为 1，就除以它们的总和。</b>这和 softmax 的分母是同一个思想——softmax 的分母 \(\sum_j \exp(z_j)\) 也是"所有项的总和"。另外注意相对比例不变：\(\tilde{p}_a / \tilde{p}_b = p_a / p_b\)（\(C\) 约掉了），所以重归一化只改变尺度，不改变保留 token 之间的相对排序。</p>
+</div>
 
 <div class="eq-note">
 <b><code>.clamp_min(1e-12)</code> 防什么？</b>如果 <code>keep_mask</code> 一个都没保留（<b>极端情况下所有概率都很小</b>，比如 top_p 设得极小），<code>denom</code> 会是 0，导致 0/0 = NaN。<code>clamp_min</code> 给一个下界防止除零。这是工程细节，但值得知道。

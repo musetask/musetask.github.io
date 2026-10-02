@@ -133,3 +133,33 @@ body.detail table{font-size:.88rem}
 @media print{
   .katex-display{overflow:visible}
 }
+
+/* 补充推导 / 预备知识块（Batch 7 统一样式） */
+.derivation{
+  background:var(--panel);
+  border:1px solid var(--rule);
+  border-left:3px solid var(--accent);
+  border-radius:0 6px 6px 0;
+  padding:.7rem .85rem;
+  margin:0 0 1.1rem;
+}
+.derivation .tag{
+  font:700 .7rem/1 var(--sans); letter-spacing:.1em;
+  text-transform:uppercase; color:var(--accent);
+  display:block; margin-bottom:.3rem;
+}
+.prereq{
+  background:var(--accent-soft);
+  border:1px solid var(--rule);
+  border-left:3px solid var(--warm);
+  border-radius:0 6px 6px 0;
+  padding:.7rem .85rem;
+  margin:0 0 1.1rem;
+}
+.prereq .tag{
+  font:700 .7rem/1 var(--sans); letter-spacing:.1em;
+  text-transform:uppercase; color:var(--warm);
+  display:block; margin-bottom:.3rem;
+}
+.derivation p:last-child,.prereq p:last-child{margin-bottom:0}
+html[data-theme="dark"] .prereq{background:#241a1c}

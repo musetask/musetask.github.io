@@ -37,11 +37,38 @@
 \mathcal{L} = -\frac{1}{N}\sum_{n=1}^{N} \log p_{y_n}
 \]
 
+<div class="prereq">
+<span class="tag">预备知识：对数的三条运算法则</span>
+<p>① <b>乘法变加法</b>：\(\log(ab)=\log a+\log b\)（\(a,b>0\)）；② <b>除法变减法</b>：\(\log(a/b)=\log a-\log b\)，特别地 \(\log(1/x)=-\log x\)；③ <b>幂变乘法</b>：\(\log(a^k)=k\log a\)。另有一条单调性：\(\log x\) 严格递增，即 \(0<a<b\Rightarrow\log a<\log b\)。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：为什么「最大化概率」等价于「最小化负对数」</span>
+<p>训练目标是让正确 token 的概率 \(p_y\) 尽量大，即求 \(\arg\max p_y\)。由对数的单调性，\(p\) 越大 \(\log p\) 越大，所以</p>
+<p>\[
+\arg\max_y p_y = \arg\max_y \log p_y = \arg\min_y (-\log p_y)
+\]</p>
+<p>取负号只是把「求最大」翻成「求最小」，不改变最优解的位置。对 \(N\) 个 token 取平均，就得到 \(\mathcal{L}=-\frac1N\sum_n\log p_{y_n}\)。取对数的真正好处是数值：概率连乘几十次会下溢到 0，而对数把连乘变成求和（见正文 1.1 的 <code>key</code> 框）。</p>
+</div>
+
 <p>这叫<b>负对数似然</b>（negative log-likelihood, NLL）。它就是交叉熵在「真实分布是 one-hot」这个特例下的形式：</p>
 
 \[
 H(p,q) = -\sum_{v=1}^{V} p_v \log q_v
 \]
+
+<div class="derivation">
+<span class="tag">推导：交叉熵 = 熵 + KL 散度</span>
+<p>在 \(-\sum_v p_v\log q_v\) 里加一项再减一项（\(\sum_v p_v\log p_v\)），用除法法则合并：</p>
+<p>\[
+\begin{aligned}
+H(p,q) &= -\sum_{v=1}^{V} p_v\log q_v \\
+&= -\sum_{v=1}^{V} p_v\log p_v + \sum_{v=1}^{V} p_v\log p_v - \sum_{v=1}^{V} p_v\log q_v \\
+&= \underbrace{-\sum_{v=1}^{V} p_v\log p_v}_{H(p)\ \text{信息熵}} + \underbrace{\sum_{v=1}^{V} p_v\log\frac{p_v}{q_v}}_{D_{\mathrm{KL}}(p\|q)\ \text{KL 散度}}
+\end{aligned}
+\]</p>
+<p>第一项 \(H(p)\) 只与真实分布有关，训练时是常数；第二项 \(D_{\mathrm{KL}}(p\|q)\ge 0\)（Gibbs 不等式），当且仅当 \(q=p\) 时为 0。<b>所以最小化交叉熵等价于最小化 KL 散度</b>——也就是让模型分布 \(q\) 去逼近真实分布 \(p\)。one-hot 时 \(H(p)=0\)，交叉熵退化为纯粹的 \(-\log q_y\)。</p>
+</div>
 
 <p>其中 \(p\) 是真实分布（本例中 \(p_{y}=1\)，其余为 0），\(q\) 是模型分布。one-hot 代入后，\(-\sum_v p_v\log q_v = -1\cdot\log q_y\)，<b>只剩一项</b>。</p>
 
@@ -69,6 +96,17 @@ H(p,q) = -\sum_{v=1}^{V} p_v \log q_v
 \[
 \log p_y = z_y - \log\sum_{j=1}^{V} e^{z_j} = z_y - \mathrm{logsumexp}(z)
 \]
+
+<div class="derivation">
+<span class="tag">推导：\(\log p_y = z_y - \mathrm{logsumexp}(z)\)</span>
+<p>从 softmax 定义 \(p_y = e^{z_y}/\sum_j e^{z_j}\) 出发，两边取对数，用除法法则 \(\log(a/b)=\log a-\log b\)：</p>
+<p>\[
+\log p_y = \log\left(\frac{e^{z_y}}{\sum_{j=1}^{V}e^{z_j}}\right)
+= \log\big(e^{z_y}\big) - \log\left(\sum_{j=1}^{V}e^{z_j}\right)
+= z_y - \log\sum_{j=1}^{V}e^{z_j}
+\]</p>
+<p>其中用到了 \(\log(e^{z_y})=z_y\)（幂法则的逆用）。记 \(\mathrm{logsumexp}(z)=\log\sum_j e^{z_j}\)，即得恒等式。<b>实际意义</b>：PyTorch 的 <code>cross_entropy</code> 内部直接算 \(z_y-\mathrm{logsumexp}(z)\)，根本不构造 50257 维的概率向量——这就是正文说的「数值效率与稳定性」。</p>
+</div>
 
 <p>这解释了 appendix A 的那句注释：<i>"PyTorch's commonly used loss functions combine the softmax operation with the negative log-likelihood loss in a single class. The reason for this is numerical efficiency and stability."</i>——<b>根本不显式构造 <code>probas</code> 这个 50257 维的概率向量</b>，而是直接算 logsumexp。</p>
 
@@ -112,6 +150,20 @@ H(p,q) = -\sum_{v=1}^{V} p_v \log q_v
 \[
 \mathrm{PPL} = \exp(\mathcal{L}) = \exp\left(-\frac{1}{N}\sum_{n=1}^{N}\log p_{y_n}\right)
 \]
+
+<div class="derivation">
+<span class="tag">推导：困惑度 = 逆概率的几何平均</span>
+<p>把指数里的求和搬出来，用 \(\exp(\sum)=\prod\exp\) 和 \(\exp(k\log a)=a^k\)：</p>
+<p>\[
+\begin{aligned}
+\mathrm{PPL} &= \exp\left(-\frac{1}{N}\sum_{n=1}^{N}\log p_{y_n}\right)
+= \prod_{n=1}^{N}\exp\left(-\frac{1}{N}\log p_{y_n}\right) \\
+&= \prod_{n=1}^{N}\left(p_{y_n}^{-1}\right)^{1/N}
+= \left(\prod_{n=1}^{N}\frac{1}{p_{y_n}}\right)^{1/N}
+\end{aligned}
+\]</p>
+<p>最后一步正是<b>几何平均</b>的定义：\(N\) 个数的几何平均 = 乘积开 \(N\) 次方。所以困惑度就是「每个正确 token 的逆概率」的几何平均——模型平均每个 token 要在<b>多少个等可能的候选</b>里猜，这正是正文 2.2「有效词表大小」的来源。</p>
+</div>
 
 <p>代入原书的 10.7940：</p>
 
@@ -186,6 +238,24 @@ p_i(T) = \frac{\exp(z_i / T)}{\sum_{j=1}^{V} \exp(z_j / T)}
 \[
 \frac{p_i(T)}{p_j(T)} = \exp\!\left(\frac{z_i - z_j}{T}\right)
 \]
+
+<div class="derivation">
+<span class="tag">推导：温度只缩放 logit 差（附平移不变性）</span>
+<p>把 \(p_i(T)\) 与 \(p_j(T)\) 的定义相除，分母 \(\sum_k\exp(z_k/T)\) 完全相同，直接约掉：</p>
+<p>\[
+\frac{p_i(T)}{p_j(T)}
+= \frac{\exp(z_i/T)/\sum_k\exp(z_k/T)}{\exp(z_j/T)/\sum_k\exp(z_k/T)}
+= \frac{\exp(z_i/T)}{\exp(z_j/T)}
+= \exp\!\left(\frac{z_i-z_j}{T}\right)
+\]</p>
+<p>用到了 \(\exp(a)/\exp(b)=\exp(a-b)\)。同理可证<b>平移不变性</b>：所有 logit 加常数 \(c\) 时，分子分母同乘 \(\exp(c/T)\)，概率不变——</p>
+<p>\[
+\frac{\exp((z_i+c)/T)}{\sum_j\exp((z_j+c)/T)}
+= \frac{\exp(c/T)\exp(z_i/T)}{\exp(c/T)\sum_j\exp(z_j/T)}
+= p_i(T)
+\]</p>
+<p>所以温度 \(T\) 只改变 logit <b>之间差值</b>的缩放比例，不改变它们的相对顺序。这就是为什么 \(T\to 0\) 时分布坍缩到 argmax（差值被放大到无穷），\(T\to\infty\) 时趋于均匀（差值被压缩到 0）。</p>
+</div>
 
 <p>这解释了温度的两种效果<b>是同一件事的两面</b>：</p>
 

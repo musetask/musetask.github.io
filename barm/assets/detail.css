@@ -149,3 +149,32 @@ body.detail table th:first-child{white-space:nowrap}
 @media print{
   .katex-display{overflow:visible; background:none}
 }
+
+/* 补充推导 / 预备知识块（统一样式） */
+.derivation{
+  background:#fff;
+  border:1px solid var(--rule);
+  border-left:3px solid var(--accent);
+  border-radius:0 5px 5px 0;
+  padding:.7rem .85rem;
+  margin:0 0 1.1rem;
+}
+.derivation .tag{
+  font:600 .68rem/1 "Iowan Old Style",serif; letter-spacing:.09em;
+  text-transform:uppercase; color:var(--accent);
+  display:block; margin-bottom:.3rem;
+}
+.prereq{
+  background:var(--soft);
+  border:1px solid var(--rule);
+  border-left:3px solid #b4553f;
+  border-radius:0 5px 5px 0;
+  padding:.7rem .85rem;
+  margin:0 0 1.1rem;
+}
+.prereq .tag{
+  font:600 .68rem/1 "Iowan Old Style",serif; letter-spacing:.09em;
+  text-transform:uppercase; color:#b4553f;
+  display:block; margin-bottom:.3rem;
+}
+.derivation p:last-child,.prereq p:last-child{margin-bottom:0}

@@ -63,6 +63,11 @@
 \log \rho_i = \log \pi_\theta - \log \pi_{\theta_{\text{old}}} \quad\Longrightarrow\quad \rho_i = \exp\big(\log \pi_\theta - \log \pi_{\text{old}}\big)
 \]
 
+<div class="prereq">
+<span class="tag">预备知识：对数与指数的互逆</span>
+<p>\(\log(a/b) = \log a - \log b\)（\(a,b>0\)），且 \(\exp(\log x) = x\)。于是 \(\rho_i = \pi_\theta/\pi_{\text{old}}\) 取对数得 \(\log\rho_i = \log\pi_\theta - \log\pi_{\text{old}}\)，再取指数即回到 \(\rho_i\) 本身——"取 log 做减法再 exp 回去"不改变值，只改变数值稳定性。</p>
+</div>
+
 <pre><code>new_logps = logprobs                                       <span class="tok-cm"># 假想更新后的模型</span>
 old_logps = torch.tensor([<span class="tok-nu">-10.9243</span>, <span class="tok-nu">-20.3546</span>, <span class="tok-nu">-14.6130</span>, <span class="tok-nu">-23.3677</span>])
 
@@ -115,6 +120,11 @@ ratio     = torch.exp(log_ratio)
 \text{clip}(\rho_i,\, 1-\epsilon,\, 1+\epsilon) = \min\big(\max(\rho_i,\; 1-\epsilon),\; 1+\epsilon\big)
 \]
 
+<div class="prereq">
+<span class="tag">预备知识：\(\min(\max(\cdot))\) 就是"掐头去尾"</span>
+<p>内层 \(\max(\rho_i, 1-\epsilon)\)：若 \(\rho_i\) 小于下界就抬到下界；外层 \(\min(\cdot, 1+\epsilon)\)：若超过上界就压到上界。合起来 \(\rho_i\) 被强制落进 \([1-\epsilon,\,1+\epsilon]\)，区间内的值原样不动。</p>
+</div>
+
 <pre><code>clip_eps = <span class="tok-nu">10.0</span>   <span class="tok-cm"># DeepSeek-R1 用的值，非常宽松</span>
 clipped_ratio = torch.clamp(ratio, <span class="tok-nu">1.0</span> - clip_eps, <span class="tok-nu">1.0</span> + clip_eps)
 <span class="tok-fn">print</span>(<span class="tok-st">"Clipped ratio:"</span>, clipped_ratio)
@@ -154,6 +164,22 @@ clipped_pg_loss = -torch.<span class="tok-fn">mean</span>(obj)</code></pre>
 <tr><td>\(A &lt; 0,\ \rho = 1.0\)</td><td>\(-0.8659\)</td><td>−0.8659</td><td>−0.8659</td><td>没被裁 → 正常压低</td></tr>
 </tbody>
 </table>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：\(\min\) 在 \(A>0\) 与 \(A<0\) 时各取哪一边</span>
+<p>关键点：\(\min\) 里两项都含有因子 \(A\)，而 \(A\) 的符号会翻转不等式方向。记 \(c(\rho) = \mathrm{clip}(\rho, 1-\epsilon, 1+\epsilon)\)。</p>
+<p><b>情形一：\(A > 0\)。</b>此时 \(\min(\rho A, c(\rho)A) = A\cdot\min(\rho, c(\rho))\)。因为 \(c(\rho) \le 1+\epsilon\) 恒成立：</p>
+<p>\[
+\min(\rho A, c(\rho)A) = A\cdot\min(\rho,\,1+\epsilon) = \begin{cases}\rho A & \rho \le 1+\epsilon \\ (1+\epsilon)A & \rho > 1+\epsilon\end{cases}
+\]</p>
+<p>即<b>只在"变好太多"（\(\rho\) 冲破上界）时被按住</b>；\(\rho\) 偏小（更新让好答案变差了）时不干预——对应上表第 2 行"没被裁"（第 3、4 行是 \(A<0\) 的情形，见下）。</p>
+<p><b>情形二：\(A < 0\)。</b>乘以负数翻转方向，\(\min(\rho A, c(\rho)A) = A\cdot\max(\rho, c(\rho))\)。因为 \(c(\rho) \ge 1-\epsilon\) 恒成立：</p>
+<p>\[
+\min(\rho A, c(\rho)A) = A\cdot\max(\rho,\,1-\epsilon) = \begin{cases}\rho A & \rho \ge 1-\epsilon \\ (1-\epsilon)A & \rho < 1-\epsilon\end{cases}
+\]</p>
+<p>即<b>只在"变坏太多"（\(\rho\) 跌破下界）时被托住</b>；\(\rho\) 偏大（坏答案概率反而上升）时不干预。</p>
+<p>合起来：\(\min\) 永远取"让目标函数更小的那一边"——<b>裁掉过于激进的改进，保留过于保守的退步</b>，这就是上文 warn 框里"悲观界（pessimistic bound）"的数学含义。</p>
 </div>
 
 <h3>3.4 算一下完整 loss</h3>

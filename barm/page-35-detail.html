@@ -59,6 +59,15 @@ I_{\text{sample}} \sim \text{Categorical}(\mathbf{p}) \quad(\text{随机，} \Pr
 \frac{N_i}{n} \xrightarrow[n \to \infty]{\text{几乎必然}} p_i
 \]
 
+<div class="prereq">
+<span class="tag">预备知识：大数定律（用在这里的形式）</span>
+<p>单次抽样里 token \(i\) 是否出现是一次伯努利试验（成功概率 \(p_i\)）。\(n\) 次独立重复后，出现次数 \(N_i \sim \mathrm{Binomial}(n, p_i)\)，频率的均值与方差为</p>
+<p>\[
+\mathrm{E}\left[\frac{N_i}{n}\right] = p_i, \qquad \mathrm{Var}\left(\frac{N_i}{n}\right) = \frac{p_i(1-p_i)}{n} \xrightarrow[n\to\infty]{} 0
+\]</p>
+<p><b>大数定律</b>：独立重复试验下，频率 \(N_i/n\) 向概率 \(p_i\) 集中——方差以 \(1/n\) 的速度缩到 0 就是最直观的原因。</p>
+</div>
+
 <p>于是：</p>
 
 \[
@@ -90,6 +99,19 @@ I_{\text{sample}} \sim \text{Categorical}(\mathbf{p}) \quad(\text{随机，} \Pr
 (1 - 0.10)^{1000} = 0.9^{1000} \approx e^{1000 \ln 0.9} = e^{-105.36} \approx 1.7\times 10^{-46}
 \]
 
+<div class="derivation">
+<span class="tag">推导：\(0.9^{1000} \approx 1.7\times 10^{-46}\) 的每一步</span>
+<p>第一步用恒等式 \(a^b = e^{b\ln a}\)（两边取对数即得 \(\ln(a^b) = b\ln a\)）：</p>
+<p>\[
+0.9^{1000} = e^{1000 \ln 0.9}
+\]</p>
+<p>第二步算 \(\ln 0.9 = \ln(1-0.1)\)。用 \(\ln(1-x) \approx -x - x^2/2\)（\(x\) 很小时成立）：\(\ln 0.9 \approx -0.1 - 0.005 = -0.105\)，精确值是 \(-0.10536\)。于是</p>
+<p>\[
+1000 \times (-0.10536) = -105.36, \qquad e^{-105.36} \approx 1.7\times 10^{-46}
+\]</p>
+<p>（换算成 10 的幂：\(-105.36/\ln 10 = -45.76\)，故 \(= 10^{-45.76} \approx 1.7\times 10^{-46}\)。）指数是 \(-105\) 量级——这就是"约等于不可能"的定量含义。</p>
+</div>
+
 <p>——约等于不可能。「但 both remain possible outcomes」不是修辞，是字面上的意思。</p>
 
 <h2 class="deriv">三、怎么实现一次抽样</h2>
@@ -108,6 +130,11 @@ I = \min\{k : F_k > u\}
 \Pr(I = i) = \Pr(F_{i-1} \le u < F_i) = F_i - F_{i-1} = p_i \quad\blacksquare
 \]
 
+<div class="prereq">
+<span class="tag">预备知识：均匀分布的区间概率</span>
+<p>若 \(u \sim \mathrm{Uniform}(0,1)\)，则对 \(0 \le a < b \le 1\) 有 \(\Pr(a \le u < b) = b - a\)（概率就等于区间长度）。上式第二步 \(\Pr(F_{i-1} \le u < F_i) = F_i - F_{i-1}\) 用的正是这一条。</p>
+</div>
+
 <p>干净利落。<b>注意这个推导用到了 \(\text{Uniform}(0,1)\) 与 CDF 的关系</b>——这正是 <a href="page-36-detail.html">4.5 节里 <code>torch.cumsum</code> 那个技巧</a>的理论依据，也是为什么 top-p 只需要一次 <code>cumsum</code>。</p>
 
 <h3>3.2 Gumbel-max 法（softmax 的另一种用法）</h3>
@@ -119,6 +146,24 @@ I = \arg\max_i \big(\log p_i + g_i\big)
 \]
 
 <p>同样满足 \(\Pr(I = i) = p_i\)（Gumbel-max trick）。由于 \(g_i = -\log(-\log u_i)\)，这等价于把随机数 \(u_i\) 代入逆 CDF。<b>这个式子在实践中极重要：</b>温度缩放的 \(p_i = e^{z_i/T}/\sum_j e^{z_j/T}\) 代入后，\(\log p_i = z_i/T + \text{const}\)，于是</p>
+
+<div class="derivation">
+<span class="tag">推导：Gumbel-max trick（\(\Pr(\arg\max_i(\log p_i + g_i) = k) = p_k\)）</span>
+<p>先写 Gumbel(0,1) 的分布函数：\(F(x) = \Pr(g \le x) = e^{-e^{-x}}\)（对密度 \(f(x) = e^{-x-e^{-x}}\) 从 \(-\infty\) 积分到 \(x\) 即得）。</p>
+<p>记 \(X_i = \log p_i + g_i\)。事件 \(\{\arg\max_i X_i = k\}\) 意味着 \(X_k \ge X_i\) 对一切 \(i \ne k\) 成立，即 \(g_i \le g_k + \log p_k - \log p_i\)。把 \(g_k\) 固定为 \(g\)，各 \(g_i\) 相互独立，于是</p>
+<p>\[
+\Pr(\arg\max = k \mid g_k = g) = \prod_{i\ne k} F\!\left(g + \log\frac{p_k}{p_i}\right) = \prod_{i\ne k} \exp\!\left(-e^{-g}\cdot\frac{p_i}{p_k}\right) = \exp\!\left(-e^{-g}\cdot\frac{1-p_k}{p_k}\right)
+\]</p>
+<p>（第二步用了 \(F(g+\log(p_k/p_i)) = \exp(-e^{-g}\cdot p_i/p_k)\)，第三步用了 \(\sum_{i\ne k}p_i = 1-p_k\)。）再对 \(g_k\) 的密度积分，记 \(c = (1-p_k)/p_k\)：</p>
+<p>\[
+\Pr(\arg\max = k) = \int_{-\infty}^{\infty} e^{-g-e^{-g}}\cdot e^{-c\,e^{-g}}\,dg = \int_{-\infty}^{\infty} e^{-g}\,e^{-(1+c)e^{-g}}\,dg
+\]</p>
+<p>换元 \(u = (1+c)e^{-g}\)，则 \(du = -(1+c)e^{-g}\,dg\)，即 \(e^{-g}\,dg = -du/(1+c)\)。当 \(g: -\infty\to\infty\) 时 \(u: \infty\to 0\)：</p>
+<p>\[
+\Pr(\arg\max = k) = \int_{\infty}^{0} e^{-u}\left(-\frac{du}{1+c}\right) = \frac{1}{1+c}\int_{0}^{\infty}e^{-u}\,du = \frac{1}{1+c} = p_k \quad\blacksquare
+\]</p>
+<p>最后一步用了 \(1 + c = 1 + (1-p_k)/p_k = 1/p_k\)。证毕。</p>
+</div>
 
 \[
 I = \arg\max_i \left(\frac{z_i}{T} + g_i\right)
@@ -168,6 +213,15 @@ I = \arg\max_i \left(\frac{z_i}{T} + g_i\right)
 
 <p>在这个温度下 " Berlin" 的概率是 <b>0.0003</b>（<a href="page-34-detail.html">4.4 推导页</a>算过）。抽 1,000 次，它出现 \(N\) 次满足 \(N \sim \text{Binomial}(1000, 0.0003)\)，均值 \(\lambda = 0.3\)：</p>
 
+<div class="prereq">
+<span class="tag">预备知识：泊松近似（Poisson limit theorem）</span>
+<p>当 \(n\) 很大、\(p\) 很小、但乘积 \(\lambda = np\) 适中时，二项分布可用泊松分布近似：</p>
+<p>\[
+\Pr(N = k) = \binom{n}{k}p^k(1-p)^{n-k} \;\approx\; e^{-\lambda}\frac{\lambda^k}{k!}, \qquad \lambda = np
+\]</p>
+<p>直观理解：把 \(n\) 次试验切成很多小段，每段至多发生一次，罕见事件的计数就服从泊松分布。这里 \(n = 1000\)、\(p = 0.0003\)、\(\lambda = 0.3\)，正好落在近似成立的区间。</p>
+</div>
+
 \[
 \Pr(N \le 2) \approx e^{-\lambda}\left(1 + \lambda + \frac{\lambda^2}{2}\right)
 = e^{-0.3}(1 + 0.3 + 0.045) = 0.9964
@@ -182,6 +236,15 @@ I = \arg\max_i \left(\frac{z_i}{T} + g_i\right)
 <h3>5.2 温度 0.35：435 次与理论值一致吗</h3>
 
 <p>原文说 <code>probas_lowT[0, 19846]</code> 约等于 <b>42%</b>，而 1,000 次抽到 435 次。检验：</p>
+
+<div class="prereq">
+<span class="tag">预备知识：频率估计的标准误</span>
+<p>\(n\) 次试验中成功 \(N\) 次，频率 \(\hat{p} = N/n\) 是真实概率 \(p\) 的估计。由 \(\mathrm{Var}(N) = np(1-p)\) 得</p>
+<p>\[
+\mathrm{Var}(\hat{p}) = \frac{np(1-p)}{n^2} = \frac{p(1-p)}{n}, \qquad \sigma_{\hat{p}} = \sqrt{\frac{p(1-p)}{n}}
+\]</p>
+<p>\(\sigma_{\hat{p}}\) 叫<b>标准误</b>：它衡量"频率作为估计量"的典型波动幅度。\(|\hat{p} - p|\) 在 2 个标准误以内都属正常波动。</p>
+</div>
 
 \[
 \hat{p} = \frac{435}{1000} = 0.435, \qquad

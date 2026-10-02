@@ -42,6 +42,24 @@
 \mathrm{LayerNorm}(a)_i = \gamma \cdot \frac{a_i - \mu}{\sqrt{\sigma^2 + \epsilon}} + \beta
 \]
 
+<div class="prereq">
+<span class="tag">预备知识：求和符号的线性性质</span>
+<p>\(\sum_{i=1}^{d}(a_i-c)=\sum_{i=1}^{d}a_i-d\cdot c\)（常数 \(c\) 求和 \(d\) 次就是 \(dc\)）；\(\sum_{i=1}^{d}c\cdot a_i=c\sum_{i=1}^{d}a_i\)（常数因子可提出求和号）。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：归一化后均值恰为 0、方差恰为 1</span>
+<p>记 \(z_i=(a_i-\mu)/\sigma\)（先忽略 \(\epsilon\)）。求均值：</p>
+<p>\[
+\frac1d\sum_{i=1}^{d}z_i=\frac1{d\sigma}\sum_{i=1}^{d}(a_i-\mu)=\frac1{d\sigma}\left(\sum_{i=1}^{d}a_i-d\mu\right)=\frac1{d\sigma}(d\mu-d\mu)=0
+\]</p>
+<p>其中用了 \(\sum_i a_i=d\mu\)（这正是 \(\mu\) 的定义移项）。求方差：</p>
+<p>\[
+\frac1d\sum_{i=1}^{d}z_i^2=\frac1{d\sigma^2}\sum_{i=1}^{d}(a_i-\mu)^2=\frac{1}{\sigma^2}\cdot\underbrace{\frac1d\sum_{i=1}^{d}(a_i-\mu)^2}_{\sigma^2\text{ 的定义}}=1
+\]</p>
+<p>所以无论输入是什么分布，\(\gamma=1,\beta=0\) 时输出恒为 0 均值、1 方差——这正是正文手算例子得到均值 0.0000、方差 1.0000 的原因。</p>
+</div>
+
 <p>其中 \(\gamma,\beta\in\mathbb{R}^d\) 是<b>可学习的缩放和平移参数</b>，\(\epsilon\) 是防除零的小常数（PyTorch 默认 1e-5）。</p>
 
 <div class="key">
@@ -90,6 +108,24 @@
 \sigma^2_{\text{biased}} = \frac{1}{d}\sum (a_i-\mu)^2 \qquad
 \sigma^2_{\text{unbiased}} = \frac{1}{d-1}\sum (a_i-\mu)^2
 \]
+
+<div class="prereq">
+<span class="tag">预备知识：样本均值的方差</span>
+<p>设 \(a_1,\dots,a_d\) 独立同分布，均值 \(\mu\)、方差 \(\sigma^2\)。样本均值 \(\bar a=\frac1d\sum_i a_i\) 的方差为 \(\mathrm{Var}(\bar a)=\frac1{d^2}\sum_i\mathrm{Var}(a_i)=\frac{d\sigma^2}{d^2}=\frac{\sigma^2}{d}\)——平均 \(d\) 个独立样本，方差缩小为 \(1/d\)。另需期望的线性：\(\mathrm{E}[\sum_i X_i]=\sum_i\mathrm{E}[X_i]\)。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：为什么除以 \(d-1\) 才是无偏的</span>
+<p>先把平方和拆开（下式中的 \(\mu\) 即样本均值 \(\bar a\)）：</p>
+<p>\[
+\sum_{i=1}^{d}(a_i-\bar a)^2=\sum_{i=1}^{d}a_i^2-2\bar a\sum_{i=1}^{d}a_i+d\bar a^2=\sum_{i=1}^{d}a_i^2-d\bar a^2
+\]</p>
+<p>（第二步用了 \(\sum_i a_i=d\bar a\)。）两边取期望。\(\mathrm{E}[a_i^2]=\sigma^2+\mu^2\)（方差定义 \(\mathrm{Var}(X)=\mathrm{E}[X^2]-(\mathrm{E}X)^2\) 移项），故 \(\mathrm{E}[\sum_i a_i^2]=d(\sigma^2+\mu^2)\)；\(\mathrm{E}[\bar a^2]=\mathrm{Var}(\bar a)+(\mathrm{E}[\bar a])^2=\sigma^2/d+\mu^2\)。相减：</p>
+<p>\[
+\mathrm{E}\left[\sum_{i=1}^{d}(a_i-\bar a)^2\right]=d(\sigma^2+\mu^2)-d\left(\frac{\sigma^2}{d}+\mu^2\right)=(d-1)\sigma^2
+\]</p>
+<p>所以平方和的期望是 \((d-1)\sigma^2\) 而非 \(d\sigma^2\)——除以 \(d\) 会系统性低估，除以 \(d-1\) 才无偏。这就是 Bessel 修正。两版本比值恒为 \(\frac{1/(d-1)}{1/d}=\frac{d}{d-1}\)，与正文表格一致（\(d=6\) 时 \(6/5=1.2\)，即 20% 的差异）。</p>
+</div>
 
 <p>无偏版本（除以 \(d-1\)）叫 <b>Bessel 修正</b>，修正的是「用有限样本估计总体方差时系统性偏低」这个统计偏差。两者比值恒为 \(d/(d-1)\)。</p>
 
@@ -145,6 +181,27 @@
 \[
 \mathrm{GELU}(x) = x \cdot \frac{1}{2}\left(1 + \mathrm{erf}\!\left(\frac{x}{\sqrt{2}}\right)\right)
 \]
+
+<div class="prereq">
+<span class="tag">预备知识：erf、高斯积分与换元积分</span>
+<p>误差函数 \(\mathrm{erf}(z)=\frac{2}{\sqrt\pi}\int_0^{z}e^{-t^2}dt\)。高斯积分 \(\int_{-\infty}^{+\infty}e^{-t^2}dt=\sqrt\pi\)（结论；被积函数偶对称，故 \(\int_{-\infty}^{0}e^{-t^2}dt=\sqrt\pi/2\)）。换元积分：令 \(u=t/\sqrt2\)，则 \(dt=\sqrt2\,du\)，积分限 \(t\in(-\infty,x]\) 对应 \(u\in(-\infty,x/\sqrt2]\)。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：\(\Phi(x)=\tfrac12\left(1+\mathrm{erf}(x/\sqrt2)\right)\)</span>
+<p>对 \(\Phi(x)\) 做换元 \(u=t/\sqrt2\)：</p>
+<p>\[
+\begin{aligned}
+\Phi(x)&=\int_{-\infty}^{x}\frac{1}{\sqrt{2\pi}}e^{-t^2/2}\,dt\\
+&=\int_{-\infty}^{x/\sqrt2}\frac{1}{\sqrt{2\pi}}e^{-u^2}\sqrt2\,du
+=\frac{1}{\sqrt\pi}\int_{-\infty}^{x/\sqrt2}e^{-u^2}\,du\\
+&=\frac{1}{\sqrt\pi}\left(\int_{-\infty}^{0}e^{-u^2}du+\int_{0}^{x/\sqrt2}e^{-u^2}du\right)\\
+&=\frac{1}{\sqrt\pi}\left(\frac{\sqrt\pi}{2}+\frac{\sqrt\pi}{2}\mathrm{erf}\!\left(\frac{x}{\sqrt2}\right)\right)
+=\frac12\left(1+\mathrm{erf}\!\left(\frac{x}{\sqrt2}\right)\right)
+\end{aligned}
+\]</p>
+<p>第三步把积分拆成两段：\((-\infty,0]\) 段用高斯积分得 \(\sqrt\pi/2\)；\([0,x/\sqrt2]\) 段正是 erf 定义式的 \(\frac{\sqrt\pi}{2}\mathrm{erf}(x/\sqrt2)\)。于是 \(\mathrm{GELU}(x)=x\Phi(x)\) 化为正文的显式形式。</p>
+</div>
 
 <div class="key">
 <span class="tag">GELU 是一个「软开关」</span>
@@ -223,6 +280,24 @@
 <p>每一项都带一个小于 1 的雅可比因子（Linear 的雅可比是权重矩阵，ReLU/GELU 的导数 \(\le 1\)）。5 层相乘，<b>指数级衰减</b>。</p>
 
 <p>加了残差后，前向是 \(\mathbf{x}_{l+1} = \mathbf{x}_l + f(\mathbf{x}_l)\)，反向求导时 <code>backward()</code> 会<b>把梯度同时分两路</b>：一路经过 \(f\)，一路直接穿过加号（因为 \(\partial(\mathbf{x}_l + f)/\partial \mathbf{x}_l = I + f'\)，单位矩阵项保证了梯度原封不动地传下去）。</p>
+
+<div class="prereq">
+<span class="tag">预备知识：链式法则与雅可比矩阵</span>
+<p>若 \(y=f(u),\,u=g(x)\)，则 \(\frac{dy}{dx}=\frac{dy}{du}\cdot\frac{du}{dx}\)。向量情形：\(\mathbf{y}=F(\mathbf{x})\)（\(\mathbf{x},\mathbf{y}\in\mathbb{R}^d\)）的雅可比矩阵 \(J\) 的 \((i,j)\) 元为 \(\partial y_i/\partial x_j\)，梯度反向传播时要乘上它。恒等映射 \(\mathbf{y}=\mathbf{x}\) 的雅可比是单位矩阵 \(I\)。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：残差的梯度为什么能「直达」</span>
+<p>残差块前向：\(\mathbf{x}_{l+1}=\mathbf{x}_l+f(\mathbf{x}_l)\)。对 \(\mathbf{x}_l\) 求雅可比（加号求导：\(\mathbf{x}_l\) 对自己导数是 \(I\)，\(f(\mathbf{x}_l)\) 的导数记为 \(J_f\)）：</p>
+<p>\[
+\frac{\partial\mathbf{x}_{l+1}}{\partial\mathbf{x}_l}=I+\underbrace{\frac{\partial f}{\partial\mathbf{x}_l}}_{J_f}
+\]</p>
+<p>记 \(\boldsymbol{\delta}_{l+1}=\partial\mathcal{L}/\partial\mathbf{x}_{l+1}\)，链式法则给出：</p>
+<p>\[
+\boldsymbol{\delta}_{l}=\boldsymbol{\delta}_{l+1}\,(I+J_f)=\boldsymbol{\delta}_{l+1}+\boldsymbol{\delta}_{l+1}J_f
+\]</p>
+<p>关键在第一项 \(\boldsymbol{\delta}_{l+1}\)：<b>它完全不经过 \(f\)</b>，原封不动传给上一层。把 \(L\) 层串起来，总梯度里永远包含一项 \(\boldsymbol{\delta}_{L}\)（从 loss 直达的恒等路径），其余项才经过各层的 \(J_f\)。没有残差时（如正文公式），梯度是 \(\prod_l J_l\) 的连乘，每层雅可比的谱范数 \(<1\) 就指数衰减；有残差时连乘的是 \(\prod_l(I+J_l)\)，展开后恒含 \(I\) 项——这就是正文表格里 layer 0 梯度从 0.000202 变成 0.221698（1099 倍）的数学原因。</p>
+</div>
 
 <div class="tablewrap">
 <table>

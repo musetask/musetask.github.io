@@ -53,6 +53,21 @@
 P(y_{1:T} \mid x) = \prod_{t=1}^{T} P(y_t \mid y_{&lt;t}, x)
 \]
 
+<div class="prereq">
+<span class="tag">预备知识：条件概率的定义</span>
+<p>\(P(A \mid B) = \dfrac{P(A, B)}{P(B)}\)，移项得 <b>\(P(A, B) = P(B)\cdot P(A \mid B)\)</b>——"联合 = 边缘 × 条件"。这是下面一切的起点。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：链式法则（从 \(T=2\) 归纳）</span>
+<p>\(T = 2\) 时直接用定义：\(P(y_1, y_2 \mid x) = P(y_1 \mid x)\cdot P(y_2 \mid y_1, x)\)。\(T = 3\) 时先把 \((y_1, y_2)\) 看成一个整体：</p>
+<p>\[
+P(y_1, y_2, y_3 \mid x) = P(y_1, y_2 \mid x)\cdot P(y_3 \mid y_1, y_2, x)
+\]</p>
+<p>再把 \(P(y_1, y_2 \mid x)\) 用 \(T=2\) 的结果展开，得到三项连乘。依此类推，每次把"前 \(t-1\) 个"看成整体剥出一项 \(P(y_t \mid y_{&lt;t}, x)\)，即得连乘公式。注意 \(y_{&lt;1}\) 是空集，\(P(y_1 \mid y_{&lt;1}, x)\) 就是 \(P(y_1 \mid x)\)。</p>
+<p>这正是自回归模型的数学本质：<b>序列的联合概率 = 每一步"已知历史、预测下一个"的连乘</b>。</p>
+</div>
+
 <p>假设每个 token 概率都是 0.9，看它在不同长度下的表现：</p>
 
 <div class="tw">
@@ -74,6 +89,22 @@ P(y_{1:T} \mid x) = \prod_{t=1}^{T} P(y_t \mid y_{&lt;t}, x)
 \[
 \log P(y_{1:T} \mid x) = \sum_{t=1}^{T} \log P(y_t \mid y_{&lt;t}, x)
 \]
+
+<div class="prereq">
+<span class="tag">预备知识：对数的乘法法则</span>
+<p>\(\log(ab) = \log a + \log b\)（\(a, b &gt; 0\)），反复使用可得 \(\log(a_1 a_2 \cdots a_T) = \sum_{t=1}^{T}\log a_t\)。这是<b>恒等式</b>，不是近似。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：连乘变连加</span>
+<p>对链式法则两边取对数：</p>
+<p>\[
+\log P(y_{1:T} \mid x)
+= \log\!\left(\prod_{t=1}^{T} P(y_t \mid y_{&lt;t}, x)\right)
+= \log\big(P_1 \cdot P_2 \cdots P_T\big)
+\]</p>
+<p>反复用乘法法则剥离：\(\log(P_1 \cdot P_2 \cdots P_T) = \log P_1 + \log(P_2 \cdots P_T) = \cdots = \sum_{t=1}^{T}\log P_t\)，即得公式。因为每一步都是恒等变换，<b>log 空间的求和与原概率空间的连乘在数学上完全等价</b>——只是前者把"越乘越小直至下溢"变成了"越加越负但始终有限"。</p>
+</div>
 
 <p>加法不会有下溢问题：一个 1000 项的和最多是 \(-1000 \times 151936\) 之类的有限数，永远在 float 范围内。</p>
 

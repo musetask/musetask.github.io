@@ -37,6 +37,39 @@ R(\theta) = \begin{pmatrix} \cos\theta & -\sin\theta \\ \sin\theta & \cos\theta 
 
 <p>的矩阵，等于把它<b>转 \(\theta\) 角</b>，且<b>长度不变</b>（\(\det R = \cos^2\theta + \sin^2\theta = 1\)，即 \(R\) 是正交矩阵，满足 \(R^\top R = I\)）。这两条性质是后面一切结论的来源。</p>
 
+<div class="prereq">
+<span class="tag">预备知识：旋转矩阵长什么样</span>
+<p>平面上把向量 \(\mathbf{v} = (x, y)\) 逆时针转 \(\theta\) 角，新坐标为 \((x\cos\theta - y\sin\theta,\; x\sin\theta + y\cos\theta)\)。写成矩阵乘法就是 \(\mathbf{v}' = R(\theta)\mathbf{v}\)，其中 \(R(\theta)\) 正是上面那个矩阵——它的<b>两列</b>分别是转后的基向量 \((1,0) \mapsto (\cos\theta, \sin\theta)\) 和 \((0,1) \mapsto (-\sin\theta, \cos\theta)\)。</p>
+<p>另需两条三角恒等式（后面反复用）：\(\cos(-\theta) = \cos\theta\)（偶函数），\(\sin(-\theta) = -\sin\theta\)（奇函数）。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：\(R(\theta)\) 确实是「转 \(\theta\) 角」且保长</span>
+<p>把 \(\mathbf{v}\) 写成极坐标 \(\mathbf{v} = (r\cos\varphi,\; r\sin\varphi)\)（\(r = \|\mathbf{v}\|\)），代入矩阵乘法：</p>
+<p>\[
+R(\theta)\mathbf{v} =
+\begin{pmatrix}
+r\cos\varphi\cos\theta - r\sin\varphi\sin\theta \\
+r\cos\varphi\sin\theta + r\sin\varphi\cos\theta
+\end{pmatrix}
+\]</p>
+<p>用和角公式 \(\cos(\varphi+\theta) = \cos\varphi\cos\theta - \sin\varphi\sin\theta\)、\(\sin(\varphi+\theta) = \sin\varphi\cos\theta + \cos\varphi\sin\theta\)，得</p>
+<p>\[
+R(\theta)\mathbf{v} = \big(r\cos(\varphi+\theta),\; r\sin(\varphi+\theta)\big)
+\]</p>
+<p>即：模长仍是 \(r\)（<b>长度不变</b>），辐角从 \(\varphi\) 变成 \(\varphi + \theta\)（<b>转了 \(\theta\) 角</b>）。</p>
+<p>正交性 \(R^\top R = I\) 直接乘一下验证：</p>
+<p>\[
+R^\top R =
+\begin{pmatrix} \cos\theta & \sin\theta \\ -\sin\theta & \cos\theta \end{pmatrix}
+\begin{pmatrix} \cos\theta & -\sin\theta \\ \sin\theta & \cos\theta \end{pmatrix}
+=
+\begin{pmatrix} \cos^2\theta+\sin^2\theta & 0 \\ 0 & \sin^2\theta+\cos^2\theta \end{pmatrix}
+= I
+\]</p>
+<p>对角元用 \(\cos^2 + \sin^2 = 1\)，非对角元 \(-\cos\theta\sin\theta + \sin\theta\cos\theta = 0\)。正交矩阵保内积：\((R\mathbf{a})^\top(R\mathbf{b}) = \mathbf{a}^\top R^\top R\,\mathbf{b} = \mathbf{a}^\top\mathbf{b}\)——这条性质在 1.3 和第五节都要用。</p>
+</div>
+
 <h3>1.2 把 \(d\) 维向量拆成 \(d/2\) 个二维块</h3>
 
 <p>RoPE 的核心构造是：把 \(d\) 维 query/key 向量拆成 \(d/2\) 个二元组，第 \(i\) 个二元组用<b>自己的角度</b> \(\theta_i\) 转。位置 \(m\) 处，角度是</p>
@@ -74,6 +107,25 @@ R(-m)R(n) = R(-m + n) = R(n - m)
 \[
 \boxed{\;\mathbf{q}_m^\top \mathbf{k}_n \;=\; \mathbf{q}^\top R(n-m)\, \mathbf{k}\;}
 \]
+
+<div class="derivation">
+<span class="tag">推导：\(R(m)^\top = R(-m)\) 且 \(R(\alpha)R(\beta) = R(\alpha+\beta)\)</span>
+<p><b>第一步：转置等于反向旋转。</b>直接转置 \(R(m)\)（只含一个角度，记作 \(\theta\)）：</p>
+<p>\[
+R(\theta)^\top =
+\begin{pmatrix} \cos\theta & \sin\theta \\ -\sin\theta & \cos\theta \end{pmatrix}
+\]</p>
+<p>而 \(R(-\theta) = \begin{pmatrix} \cos(-\theta) & -\sin(-\theta) \\ \sin(-\theta) & \cos(-\theta) \end{pmatrix}\)，用预备知识里的奇偶性 \(\cos(-\theta)=\cos\theta\)、\(\sin(-\theta)=-\sin\theta\)，得 \(R(-\theta) = \begin{pmatrix} \cos\theta & \sin\theta \\ -\sin\theta & \cos\theta \end{pmatrix}\)。两边完全相同，故 \(R(\theta)^\top = R(-\theta)\)。注意这是<b>分块对角矩阵逐块成立</b>，所以对整个 \(R(m)\) 也成立。</p>
+<p><b>第二步：旋转相乘等于角度相加。</b>直接做矩阵乘法，以 \((1,1)\) 元为例：</p>
+<p>\[
+\big[R(\alpha)R(\beta)\big]_{11}
+= \cos\alpha\cos\beta + (-\sin\alpha)(\sin\beta)
+= \cos\alpha\cos\beta - \sin\alpha\sin\beta
+= \cos(\alpha+\beta)
+\]</p>
+<p>其余三元同理（分别对应 \(-\sin(\alpha+\beta)\)、\(\sin(\alpha+\beta)\)、\(\cos(\alpha+\beta)\)），合起来正是 \(R(\alpha+\beta)\)。同样逐块成立。</p>
+<p><b>合起来</b>：\(\mathbf{q}_m^\top\mathbf{k}_n = \mathbf{q}^\top R(m)^\top R(n)\,\mathbf{k} = \mathbf{q}^\top R(-m)R(n)\,\mathbf{k} = \mathbf{q}^\top R(n-m)\,\mathbf{k}\)。绝对位置 \(m, n\) 只以差的形式出现——这就是相对位置性质的全部证明。</p>
+</div>
 
 <div class="key">
 <span class="tag">绝对位置全部消掉了</span>
@@ -205,7 +257,31 @@ R_{\text{split}}\,\mathbf{k} = P R_{\text{inter}} P^\top \mathbf{k}
 \end{aligned}
 \]
 
-<p>\(\mathbf{q}^\top\mathbf{k}\) 在中间那一坨里<b>完全抵消</b>了。也就是说：<b>两种布局给出逐元素相同的 attention logits</b>，因此逐元素相同的 softmax 权重、逐元素相同的输出。</p>
+<div class="prereq">
+<span class="tag">预备知识：置换矩阵是正交矩阵</span>
+<p>置换矩阵 \(P\) 的每一行、每一列恰有一个 1，其余为 0。它作用在向量上就是<b>重排分量顺序</b>。因为重排不改变各分量的平方和，\(\|P\mathbf{x}\|^2 = \|\mathbf{x}\|^2\)，故 \(P^\top P = I\)（正交）。</p>
+<p>这里的 \(P\) 还是<b>对合</b>（involution）：它把维度 \(i\) 与 \(i+d/2\) 对调，再做一次就换回来，所以 \(P^2 = I\)，从而 \(P^\top = P^{-1} = P\)。正文里 \(P^\top\) 和 \(P\) 混用，正是这个原因。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：把转置一步步展开（不跳步版）</span>
+<p>注意 attention 分数是<b>两个不同位置</b>的内积：query 在位置 \(m\)，key 在位置 \(n\)。记 \(R_s(m)=PR_i(m)P^\top\)（\(P\) 与位置无关，是固定的维度重排），直接展开：</p>
+<p>\[
+\begin{aligned}
+\big(R_s(m)\mathbf{q}\big)^\top\big(R_s(n)\mathbf{k}\big)
+&= \mathbf{q}^\top\big(PR_i(m)P^\top\big)^\top\big(PR_i(n)P^\top\big)\mathbf{k} \\
+&= \mathbf{q}^\top P\,R_i(m)^\top\underbrace{P^\top P}_{=\,I}\,R_i(n)\,P^\top\mathbf{k}
+   \qquad\text{（用 \((XYZ)^\top=Z^\top Y^\top X^\top\)，且 \(P^\top=P\)）}\\
+&= \underbrace{(P^\top\mathbf{q})}_{\tilde{\mathbf{q}}}{}^\top
+   R_i(m)^\top R_i(n)\,\underbrace{(P^\top\mathbf{k})}_{\tilde{\mathbf{k}}} \\
+&= \big(R_i(m)\tilde{\mathbf{q}}\big)^\top\big(R_i(n)\tilde{\mathbf{k}}\big)
+\end{aligned}
+\]</p>
+<p>即：<b>split 布局下 \((\mathbf{q},\mathbf{k})\) 的分数，等于 interleaved 布局下重排后向量 \((\tilde{\mathbf{q}},\tilde{\mathbf{k}})=(P^\top\mathbf{q},P^\top\mathbf{k})\) 的分数</b>——这正是 5.3 节表格"第一列 = 第三列"的由来。反过来读：如果先把 \(W_q,W_k\) 的输出行按 \(P\) 重排（实践中"换实现必须连权重一起重排"），两种布局逐元素给出相同的 logits。</p>
+<p>一个容易混淆的点：\((R\mathbf{q})^\top(R\mathbf{k})=\mathbf{q}^\top\mathbf{k}\) 对任何正交矩阵 \(R\) 都成立，但它只讲<b>同一位置</b>的情形，与"两种布局是否等价"无关；真正的等价性是上面这个跨位置 \((m,n)\) 的恒等式。</p>
+</div>
+
+<p>置换矩阵 \(P\) 在中间以 \(P^\top P=I\) 的形式<b>完全抵消</b>后，剩下 interleaved 布局作用在重排向量上的分数。也就是说：<b>两种布局给出逐元素相同的 attention logits</b>（差一个固定的维度重排），因此逐元素相同的 softmax 权重、逐元素相同的输出。</p>
 
 <div class="key">
 <span class="tag">等价性的真正含义</span>

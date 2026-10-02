@@ -44,11 +44,34 @@ loss_1 = F.cross_entropy(logits_1, targets_1)   <span class="t-com"># tensor(1.1
 -\log p_0 = -\log\frac{e^{-1}}{e^{-1}+e^{1}} = -\log\frac{1}{1+e^{2}} = \log(1+e^{2}) = 2.1269
 \]
 
+<div class="derivation">
+<span class="tag">推导：二分类 softmax 化简为 sigmoid</span>
+<p>关键技巧是<b>分子分母同除以其中一个指数项</b>。以第一个 token 为例，分子分母同除以 \(e^{1}\)：</p>
+<p>\[
+p_0=\frac{e^{-1}}{e^{-1}+e^{1}}
+=\frac{e^{-1}/e^{1}}{(e^{-1}+e^{1})/e^{1}}
+=\frac{e^{-2}}{e^{-2}+1}
+=\frac{1}{1+e^{2}}
+\]</p>
+<p>一般地，记 \(\Delta=z_1-z_0\) 为两 logit 之差，分子分母同除以 \(e^{z_1}\) 得 \(p_1=\dfrac{1}{1+e^{-\Delta}}\)——这正是 <b>sigmoid 函数</b> \(\sigma(\Delta)\)。同除的技巧消掉了绝对数值，只留下<b>差值</b> \(\Delta\)：二分类的概率只取决于两个 logit 的差距，与它们的整体平移无关（softmax 平移不变性的特例）。</p>
+</div>
+
 <p>对第二个 token，logits 是 <code>[-0.5, 1.5]</code>，真实类别是 1：</p>
 
 \[
 -\log p_1 = -\log\frac{e^{1.5}}{e^{-0.5}+e^{1.5}} = -\log\frac{1}{1+e^{-2}} = \log(1+e^{-2}) = 0.1269
 \]
+
+<div class="derivation">
+<span class="tag">推导：二分类交叉熵 = softplus</span>
+<p>接上一步，\(p_1=\dfrac{1}{1+e^{-\Delta}}\)（此处 \(\Delta=2\)）。取负对数，用 \(\log(1/x)=-\log x\)：</p>
+<p>\[
+-\log p_1 = -\log\!\left(\frac{1}{1+e^{-\Delta}}\right)
+= -\big[\log 1 - \log(1+e^{-\Delta})\big]
+= \log\!\big(1+e^{-\Delta}\big)
+\]</p>
+<p>\(\log(1+e^{x})\) 有个专门名字叫 <b>softplus</b>，是 ReLU 的光滑版本。所以二分类交叉熵 = \(\mathrm{softplus}(-\Delta)\)：<b>正确类别领先越多（\(\Delta\) 越大），损失越小</b>；\(\Delta=2\) 时得 \(\log(1+e^{-2})=0.1269\)，\(\Delta=-2\) 时得 \(\log(1+e^{2})=2.1269\)。这也解释了正文 key 框里「两者之和」的关系：\(\log(1+e^{2})=2+\log(1+e^{-2})\)，因为 \(1+e^{2}=e^{2}(1+e^{-2})\)。</p>
+</div>
 
 <p>平均：</p>
 
@@ -100,6 +123,11 @@ print("loss_1 == loss_3:", loss_1 == loss_3)   <span class="t-com"># tensor(True
 \mathcal{L}(\text{logits}_2,\, [0,1,-100]) = \frac{\sum_{n:\, y_n \ne -100} -\log p_{y_n}^{(n)}}{\left|\{n : y_n \ne -100\}\right|}
 = \frac{2.1269 + 0.1269}{2} = 1.1269
 \]
+
+<div class="prereq">
+<span class="tag">预备知识：集合的基数记号 \(|A|\)</span>
+<p>\(|\{n : y_n \ne -100\}|\) 读作「满足 \(y_n\ne-100\) 的下标 \(n\) 组成的集合的元素个数」。竖线在这里不是绝对值，而是<b>集合的基数</b>（cardinality）。本例中有效下标是 \(\{1,2\}\)，基数为 2——这正是分母从 3 变成 2 的数学写法。</p>
+</div>
 
 <div class="warn">
 <span class="tag">最容易理解错的一点：分母也变了</span>
