@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LCPO、DAPO 的公式推导 · LLM 推理的强化学习训练</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f5f8f'/%3E%3Cpath d='M9 8h9a4.5 4.5 0 0 1 0 9H9zm0 9h9a4.5 4.5 0 0 1 0 9H9z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+<script>(function(){try{var t=localStorage.getItem('pdf2html-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">LLM 推理的强化学习训练现状</a>
+  <button class="btn" id="themeToggle" aria-label="切换深色模式">&#9788;</button>
+</header>
+<main id="main">
+
+<h1>LCPO 与 DAPO：公式完整推导</h1>
+
+<div class="plainbox">
+<p>正文第八节出现了三组"长得很像但行为迥异"的公式：<b>LCPO 的绝对值惩罚</b>、<b>LCPO-Max 的 clip 乘法</b>、<b>DAPO 的 token 级损失</b>，以及 <b>clip-higher 非对称裁剪</b>。这一页把它们逐个拆开：分段线性分析、最优点位置、两种平均方式的权重差异。</p>
+<p>记号：\(L_t\) = 用户指定的目标长度，\(L_a\) = 实际生成长度，\(r_c\in\{0,1\}\) = 正确性奖励。</p>
+</div>
+
+<div class="prereq">
+<span class="tag">预备知识：clip 与分段线性</span>
+<p>\(\text{clip}(x,a,b)=\min(\max(x,a),b)\)：\(x<a\) 时取 \(a\)，\(x>b\) 时取 \(b\)，中间原样。它是分段线性函数——每段都是直线，段与段在" kink 点"（\(x=a\) 或 \(x=b\)）拼接。kink 点处不可导，但左右导数都存在（次梯度），梯度下降照常工作，只是那一点的方向取左导或右导。</p>
+</div>
+
+<h2 class="deriv">一、LCPO：\(r = r_c - \alpha\,|L_t - L_a|\)</h2>
+
+<div class="derivation">
+<span class="tag">推导：分段展开与最优点</span>
+<p>把绝对值拆开：</p>
+<p>\[
+r(L_a) = \begin{cases}
+r_c - \alpha\,(L_t - L_a), & L_a \le L_t \quad\text{（太短：每少一个 token 扣 }\alpha\text{）}\\
+r_c - \alpha\,(L_a - L_t), & L_a > L_t \quad\text{（太长：每多一个 token 扣 }\alpha\text{）}
+\end{cases}
+\]</p>
+<p>这是一个以 \(L_a=L_t\) 为顶点的<strong>倒 V 形</strong>（tent 函数）：左右两支斜率分别为 \(+\alpha\) 和 \(-\alpha\)。若 \(r_c\) 与长度无关，最优点恰在 \(L_a=L_t\)，取到最大值 \(r_c\)。</p>
+<p>\(\alpha\) 的角色是<strong>权衡系数</strong>：\(\alpha\to 0\) 时长度惩罚消失，退化成纯正确性奖励；\(\alpha\) 很大时，模型宁可答错也要精确命中长度（因为答对才得 1 分，偏离 100 个 token 就要扣 \(100\alpha\)）。实际训练中 \(\alpha\) 要调到"长度分"和"正确分"同一量级。</p>
+<p>一个微妙点：如果 \(r_c\) 本身随长度变化（长思考更可能做对，\(r_c=r_c(L_a)\) 单调增），最优点会右偏：\(\max_{L_a}\,[r_c(L_a)-\alpha|L_t-L_a|]\) 的一阶条件是 \(r_c'(L_a)=\alpha\)（在 \(L_a>L_t\) 一侧）——模型会在"多想一点更可能对"和"超长被扣分"之间找到边际平衡点。这正是"让用户 trade-off 准确率和算力"的数学含义。</p>
+</div>
+
+<h2 class="deriv">二、LCPO-Max：\(r = r_c\cdot\text{clip}(\alpha(L_t-L_a)+\delta,\,0,\,1)\)</h2>
+
+<div class="derivation">
+<span class="tag">推导：clip 的三段</span>
+<p>记 \(x=\alpha(L_t-L_a)+\delta\)。\(\text{clip}(x,0,1)\) 的两个 kink 点在 \(x=0\) 和 \(x=1\)，解出对应的 \(L_a\)：</p>
+<p>\[
+r(L_a) = \begin{cases}
+r_c, & L_a \le L_t + \dfrac{\delta-1}{\alpha} \quad\text{（足够短：全额给分）}\\
+r_c\cdot\big(\alpha(L_t-L_a)+\delta\big), & L_t+\dfrac{\delta-1}{\alpha} < L_a < L_t+\dfrac{\delta}{\alpha} \quad\text{（缓冲带：线性递减，斜率 }-\alpha r_c\text{）}\\
+0, & L_a \ge L_t+\dfrac{\delta}{\alpha} \quad\text{（超长：直接零分）}
+\end{cases}
+\]</p>
+<p>图像是一个<strong>梯形</strong>：左边平顶（短于阈值随便短，不扣分），中间斜坡，右边直接归零。和 LCPO 的倒 V 形对比，关键差异有三：</p>
+<p>(1) <strong>乘法 vs 加法</strong>：乘法保证 \(r\in[0,r_c]\)，永远不会出现负奖励——LCPO 里答对但超长很多时 \(r_c-\alpha|L_t-L_a|\) 可以一路扣成负数，相当于"答对了还倒扣"，LCPO-Max 没有这个问题；</p>
+<p>(2) <strong>只管上界不管下界</strong>：短于目标不惩罚（"Max"是最大长度的意思），适合"别超过这么长"的场景；</p>
+<p>(3) <strong>\(\delta\) 是缓冲带旋钮</strong>：在 \(L_a=L_t\) 处 \(x=\delta\)。取 \(\delta=1\) 时，恰好命中目标长度得满分 \(r_c\)；\(\delta<1\) 时即使精确命中也要打折——论文用它微调"多严"。</p>
+</div>
+
+<h2 class="deriv">三、DAPO 的 token 级损失 vs 样本级损失</h2>
+
+<p>标准 GRPO（样本级）：先对每个回答的 token 取平均，再对 \(G\) 个回答取平均：</p>
+<p>\[
+\mathcal{L}_{\text{sample}} = \frac{1}{G}\sum_{i=1}^{G}\frac{1}{|o_i|}\sum_{t=1}^{|o_i|}\ell_{i,t}
+\]</p>
+<p>DAPO 改成 token 级：把所有回答的 token 倒进一个池子统一平均：</p>
+<p>\[
+\mathcal{L}_{\text{token}} = \frac{1}{\sum_j|o_j|}\sum_{i=1}^{G}\sum_{t=1}^{|o_i|}\ell_{i,t}
+\]</p>
+
+<div class="derivation">
+<span class="tag">推导：两种平均的权重差异</span>
+<p>把 token 级损失改写成"回答级平均"的形式：</p>
+<p>\[
+\mathcal{L}_{\text{token}}
+= \sum_{i=1}^{G}\underbrace{\frac{|o_i|}{\sum_j|o_j|}}_{\text{权重 }w_i}\cdot\underbrace{\frac{1}{|o_i|}\sum_{t=1}^{|o_i|}\ell_{i,t}}_{\text{回答 }i\text{ 的平均损失}}
+\]</p>
+<p>对比：样本级里每个回答权重是 \(1/G\)（<strong>等权</strong>），token 级里权重是 \(|o_i|/\sum_j|o_j|\)（<strong>按长度加权</strong>）。等价地说——<strong>token 级损失下，每个 token 的权重都相等</strong>（都是 \(1/\sum_j|o_j|\)），而样本级损失下第 \(i\) 个回答的每个 token 权重是 \(\frac{1}{G|o_i|}\)，长回答的 token 被稀释。</p>
+<p>数字例子：\(G=2\)，\(o_1\) 长 10 token，\(o_2\) 长 90 token 且前 80 个 token 是最终答案前的胡话。样本级：两回答各占 \(1/2\)，\(o_2\) 的胡话部分总共只占 \(\frac{1}{2}\times\frac{80}{90}\approx 44\%\) 的权重里再被 \(1/90\) 稀释到每个 token——胡话罚得不够（正文原话）。token 级：\(o_2\) 占 \(90\%\) 权重，每个 token（含胡话）权重相等，该罚多少罚多少。</p>
+<p>这正是上一页第三节长度偏差的"解药"：\(\frac{1}{|o_i|}\) 会把 per-token 梯度稀释掉，token 级平均把它拿掉，长回答的每个 token 照单全收。</p>
+</div>
+
+<h2 class="deriv">四、Clip-higher：非对称裁剪 \(\text{clip}(r,\,1-\varepsilon_{\text{low}},\,1+\varepsilon_{\text{high}})\)</h2>
+
+<div class="derivation">
+<span class="tag">推导：上界放宽的几何意义</span>
+<p>标准 PPO 用对称区间 \([1-\varepsilon,1+\varepsilon]\)（如 \([0.8,1.2]\)）。DAPO 把上界抬高：\([1-\varepsilon_{\text{low}},\,1+\varepsilon_{\text{high}}]\)，如 \([0.8,1.28]\)。</p>
+<p>看 \(A>0\) 的情形（上一页 PPO 详解第三节的情形 1）：目标在 \(r>1+\varepsilon_{\text{high}}\) 才被冻住。\(\varepsilon_{\text{high}}\) 越大，单个 token 的概率允许<strong>更大胆地上调</strong>——尤其那些当前概率很低（\(r\) 容易冲高）的 token。效果是<strong>鼓励探索</strong>：防止训练后期分布越来越尖（熵崩塌，entropy collapse），所有概率质量都挤在已采样过的高频 token 上，模型失去尝试新表达的能力。</p>
+<p>为什么不对称？下界 \(1-\varepsilon_{\text{low}}\) 管的是"坏动作的概率别涨太快"，收紧它更安全；上界管的是"好动作允许涨多快"，放宽它换探索。这是一种<strong>有偏的信任区</strong>：对坏消息保守，对好消息激进。</p>
+</div>
+
+<div class="prereq">
+<span class="tag">预备知识：加权平均</span>
+<p>\(\sum_i w_i x_i\) 其中 \(w_i\ge 0\)、\(\sum_i w_i=1\)。本页的核心技巧就是把两种损失都写成"回答级平均损失的加权平均"，权重一摆出来，差异一目了然。记住：<strong>先平均再平均 ≠ 直接平均</strong>——分组方式决定权重，这就是样本级 vs token 级的全部秘密。</p>
+</div>
+
+<h2 class="deriv">五、自查：三个能独立答对的问题</h2>
+<ol class="steps">
+<li>LCPO 里答对但超长很多，奖励会变成负数吗？LCPO-Max 会吗？为什么？<br>
+<span style="color:var(--muted);font-size:.9em">→ 第一、二节：LCPO 加法会扣成负；LCPO-Max 乘法把奖励锁在 \([0,r_c]\)，超长直接归零。</span></li>
+<li>\(\mathcal{L}_{\text{token}}\) 改写成回答级加权平均后，第 \(i\) 个回答的权重是多少？<br>
+<span style="color:var(--muted);font-size:.9em">→ 第三节：\(|o_i|/\sum_j|o_j|\)，按长度加权；样本级是等权 \(1/G\)。</span></li>
+<li>clip-higher 为什么只抬高上界不放宽下界？<br>
+<span style="color:var(--muted);font-size:.9em">→ 第四节：上界管好动作的上调幅度（换探索），下界管坏动作（保守更安全）。</span></li>
+</ol>
+
+<nav class="deriv-nav">
+<a href="math-grpo.html"><span class="dir">上一篇</span>GRPO、Dr. GRPO 与长度偏差</a>
+<a href="math-ppo.html"><span class="dir">数学详解</span>PPO 五步完整推导</a>
+<a href="index.html"><span class="dir">返回</span>文章正文</a>
+</nav>
+
+</main>
+<script src="app.js"></script>
+<script defer src="assets/katex/katex.min.js"></script>
+<script defer src="assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>

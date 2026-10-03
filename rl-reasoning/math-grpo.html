@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GRPO、Dr. GRPO 与长度偏差 · LLM 推理的强化学习训练</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f5f8f'/%3E%3Cpath d='M9 8h9a4.5 4.5 0 0 1 0 9H9zm0 9h9a4.5 4.5 0 0 1 0 9H9z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+<script>(function(){try{var t=localStorage.getItem('pdf2html-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">LLM 推理的强化学习训练现状</a>
+  <button class="btn" id="themeToggle" aria-label="切换深色模式">&#9788;</button>
+</header>
+<main id="main">
+
+<h1>GRPO、Dr. GRPO 与长度偏差：完整数学推导</h1>
+
+<div class="plainbox">
+<p>正文说 GRPO"扔掉 critic，用组内相对好坏算 advantage"。这一页把 GRPO 的目标函数完整写出来，证明三件事：<b>组内归一化为什么能替代 critic</b>、<b>除以回答长度为什么诱导出"又长又错"</b>、<b>除以奖励标准差为什么扭曲题目权重</b>，以及 Dr. GRPO 的两处删除分别修了什么。</p>
+<p>记号：对同一问题 \(q\) 采样 \(G\) 个回答 \(\{o_1,\dots,o_G\}\)，\(r_i\in\{0,1\}\) 是第 \(i\) 个回答的二元正确性奖励，\(|o_i|\) 是它的 token 数，\(r_{i,t}=\pi_\theta(o_{i,t}\mid q,o_{i,&lt;t})/\pi_{\text{old}}(\cdots)\) 是第 \(t\) 个 token 的重要性比率。</p>
+</div>
+
+<h2 class="deriv">一、GRPO 的目标函数长什么样</h2>
+
+<p>DeepSeekMath 的 GRPO 目标（省去 KL 项先看主体）：</p>
+<p>\[
+J_{\text{GRPO}}(\theta)=\mathbb{E}_{q,\{o_i\}\sim\pi_{\text{old}}}\left[\frac{1}{G}\sum_{i=1}^{G}\frac{1}{|o_i|}\sum_{t=1}^{|o_i|}\min\Big(r_{i,t}\hat A_{i,t},\; \text{clip}(r_{i,t},1-\varepsilon,1+\varepsilon)\,\hat A_{i,t}\Big)\right]
+\]</p>
+<p>其中组相对优势（对同一 \(q\) 的 \(G\) 个回答算一次，\(\hat A_{i,t}\) 对该回答内所有 token 取同一个值）：</p>
+<p>\[
+\hat A_{i,t} \;=\; \hat A_i \;=\; \frac{r_i - \mathrm{mean}(\{r_1,\dots,r_G\})}{\mathrm{std}(\{r_1,\dots,r_G\})}
+\]</p>
+<p class="eq-note">和 PPO 比，变化只有两处：(1) advantage 不再来自 critic，而是组内归一化；(2) 损失先对每个回答的 token 取平均 \(\frac{1}{|o_i|}\sum_t\)，再对 \(G\) 个回答取平均。正是这两处，埋下了后面两个偏差。</p>
+
+<div class="prereq">
+<span class="tag">预备知识：z-score 标准化</span>
+<p>一组数 \(\{x_i\}\) 的 z-score 是 \(z_i=(x_i-\bar x)/s\)，其中 \(\bar x\) 是样本均值、\(s\) 是样本标准差。变换后 \(\{z_i\}\) 的均值为 0、标准差为 1——把不同量纲、不同波动幅度的数据拉到同一尺度上比较。GRPO 的 \(\hat A_i\) 就是奖励的 z-score。</p>
+</div>
+
+<h2 class="deriv">二、组内归一化为什么能替代 critic</h2>
+
+<div class="derivation">
+<span class="tag">推导：组均值是一个合法的 baseline</span>
+<p>上一页已证：策略梯度里减任何与动作无关的常数 \(b\) 都不改变期望，只降方差。对固定的问题 \(q\)，组均值 \(\mathrm{mean}(\{r_j\})\) 相对单个回答 \(o_i\) 就是这样一个常数——它不依赖 \(o_i\) 自身的采样噪声，只反映"这道题当前策略平均能拿几分"。</p>
+<p>于是 \(\hat A_i = r_i - \mathrm{mean}\) 继承了 \(R - V\) 的全部优点：期望不变（上一页第二节的证明逐字适用），方差更小——它扣掉了"这道题本身难不难"这层公共波动，只留下"这个回答比同题其他回答好多少"。critic 要花一个完整 LLM 去学的 \(V\)（"这道题预期得几分"），组均值用 \(G\) 次采样<strong>免费</strong>估计出来了。这就是 GRPO 省掉一个模型的数学依据。</p>
+<p>再除以 \(\mathrm{std}\) 的动机是<strong>尺度归一</strong>：不同题目的奖励波动幅度不同（简单的题组内几乎全对、方差小；中等的题有对有错、方差大），除以标准差后，所有题目的 \(\hat A\) 都在"几个标准差"的统一尺度上，梯度不会被某几道高方差的题主导。——动机是好的，但它正是难度偏差的来源（见第四节）。</p>
+</div>
+
+<h2 class="deriv">三、长度偏差：\(\frac{1}{|o_i|}\) 如何奖励"又长又错"</h2>
+
+<p>看目标函数里对第 \(i\) 个回答的贡献（假设 clip 没触发，\(r_{i,t}\approx 1\)）：</p>
+<p>\[
+\text{贡献}_i \;\approx\; \frac{1}{|o_i|}\sum_{t=1}^{|o_i|} \hat A_i \;=\; \hat A_i
+\]</p>
+<p>咦，\(\frac{1}{|o_i|}\sum_t \hat A_i = \hat A_i\)，和长度无关？陷阱在这里：<strong>目标函数的值</strong>确实与长度无关，但<strong>梯度</strong>不是。梯度是对 \(\theta\) 求导，\(\hat A_i\) 是常数，真正被求导的是 \(r_{i,t}\)：</p>
+
+<div class="derivation">
+<span class="tag">推导：per-token 梯度被长度稀释</span>
+<p>\[
+\nabla_\theta\,\text{贡献}_i \;=\; \frac{1}{|o_i|}\sum_{t=1}^{|o_i|} \hat A_i\,\nabla_\theta r_{i,t}
+\]</p>
+<p>当回答答错（\(\hat A_i < 0\)），每一项 \(\hat A_i\nabla r_{i,t}\) 都是"压低这个 token 概率"的惩罚信号。但注意前面的 \(\frac{1}{|o_i|}\)：<strong>回答越长，每个 token 分到的惩罚权重越小</strong>。</p>
+<p>数字例子：\(\hat A_i=-2\)，回答甲 10 个 token、回答乙 100 个 token，都答错。甲每个 token 背的惩罚权重是 \(2/10=0.2\)，乙只有 \(2/100=0.02\)——<strong>乙每个 token 只背甲 1/10 的锅</strong>。梯度下降时，模型"发现"：答错时把回答写长，总惩罚不变（目标值都是 \(-2\)），但每个 token 受的"疼"轻得多，参数更新更温和。于是它学会<strong>用长度稀释惩罚</strong>：错得越离谱，写得越长。这就是 [14] 对 PPO 的分析（PPO 实现同样按 token 平均损失），也是正文说的"RL 损失在数学上偏爱长回答"。</p>
+<p>反过来答对（\(\hat A_i>0\)）时也有对称的问题：长正确答案里每个 token 分到的奖励 credit 更少，模型更难学到"到底是哪几个 token 立了功"——[3][6] 提倡 token 级奖励，动机正在于此。</p>
+</div>
+
+<div class="key"><span class="tag">一句话总结</span>
+<p>\(\frac{1}{|o_i|}\) 让目标函数的值与长度无关，却让<strong>梯度</strong>与长度成反比：\(|\nabla| \propto 1/|o_i|\)。答错时，写长 = 每 token 少受罚。</p>
+</div>
+
+<h2 class="deriv">四、难度偏差：除以 \(\mathrm{std}\) 为什么扭曲题目权重</h2>
+
+<div class="derivation">
+<span class="tag">推导：低方差题目的少数派样本被放大</span>
+<p>取 \(G=4\)。简单题奖励 \([1,1,1,0]\)：\(\mathrm{mean}=0.75\)，\(\mathrm{std}=\sqrt{((0.25)^2\cdot3+(0.75)^2)/4}\approx0.43\)。唯一的答错样本 \(\hat A=(0-0.75)/0.43\approx\mathbf{-1.73}\)。</p>
+<p>中等题奖励 \([1,1,0,0]\)：\(\mathrm{mean}=0.5\)，\(\mathrm{std}=0.5\)。答错样本 \(\hat A=(0-0.5)/0.5=\mathbf{-1.0}\)。</p>
+<p>同一类"答错了"的样本，在简单题里拿到 \(-1.73\) 的惩罚权重，在中等题里只拿到 \(-1.0\)——<strong>简单题被过度加权了 73%</strong>。对称地，难题 \([1,0,0,0]\) 里唯一的答对样本 \(\hat A=(1-0.25)/0.43\approx+1.73\)，同样被放大。</p>
+<p>根源：\(\hat A\) 是 z-score，除以 \(\mathrm{std}\) 后，低方差题目的少数派偏离（以标准差计）天然更大。直觉上"这道题大家都对、就你错了，问题更大"，听起来有点道理；但训练动力学上，它让简单/难题的梯度主导了更新，而中等难度（信息量最大、方差 \(\mathrm{std}=0.5\) 最大）的题反而权重最小。这就是 [10] 指出的难度偏差。</p>
+</div>
+
+<h2 class="deriv">五、Dr. GRPO：删掉两项归一化</h2>
+
+<p>Dr. GRPO 的修改就两刀：</p>
+<p>\[
+\hat A_i^{\text{Dr}} = r_i - \mathrm{mean}(\{r_j\}), \qquad\text{且损失去掉 }\frac{1}{|o_i|}
+\]</p>
+<p>即：(1) <strong>去掉长度归一化</strong>——损失改成 \(\frac{1}{G}\sum_i\sum_t\)（或等价地每个 token 权重相等），长错误回答的每个 token 照单全收惩罚，不再稀释（修第三节）；(2) <strong>去掉标准差归一化</strong>——\(\hat A\) 回到原始奖励尺度，简单/难题不再被小方差放大（修第四节）。</p>
+<p>代价是不同题目的梯度尺度不再统一，但论文的实验表明：信号更干净了——训练更高效，答错时模型不再有动机写长回答。注意组均值 baseline 还在，所以"替代 critic"的核心机制没动，动的只是两处归一化。</p>
+
+<div class="prereq">
+<span class="tag">预备知识：样本方差</span>
+<p>\(s^2=\frac{1}{n}\sum_i(x_i-\bar x)^2\)（GRPO 实现里常用 \(n\) 而非 \(n-1\) 的版本，常数差异不影响结论）。方差衡量"组内分歧有多大"：全对/全错时方差为 0（实现里要加极小值 \(\epsilon\) 防除零，或直接跳过这种 prompt——DAPO 的"动态采样"就是把这类 prompt 过滤掉）。</p>
+</div>
+
+<h2 class="deriv">六、自查：三个能独立答对的问题</h2>
+<ol class="steps">
+<li>组均值为什么能替代 critic？它估计的是什么？<br>
+<span style="color:var(--muted);font-size:.9em">→ 第二节：它是合法 baseline（不改期望、降方差），免费估计了"这道题预期得几分"。</span></li>
+<li>\(\frac{1}{|o_i|}\) 让目标函数值与长度无关，为什么梯度还会被长度影响？<br>
+<span style="color:var(--muted);font-size:.9em">→ 第三节：求导后 \(\hat A_i\) 是常数，\(\frac{1}{|o_i|}\) 留在每一项梯度前面，per-token 惩罚 \(\propto 1/|o_i|\)。</span></li>
+<li>简单题 \([1,1,1,0]\) 里答错样本的 \(|\hat A|\) 为什么比中等题大？<br>
+<span style="color:var(--muted);font-size:.9em">→ 第四节：z-score 除以小 \(\mathrm{std}\)，少数派偏离被放大到 1.73 个标准差。</span></li>
+</ol>
+
+<nav class="deriv-nav">
+<a href="math-ppo.html"><span class="dir">上一篇</span>PPO 五步完整推导</a>
+<a href="math-lcpo.html"><span class="dir">下一篇</span>LCPO、DAPO 的公式推导</a>
+<a href="index.html"><span class="dir">返回</span>文章正文</a>
+</nav>
+
+</main>
+<script src="app.js"></script>
+<script defer src="assets/katex/katex.min.js"></script>
+<script defer src="assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>

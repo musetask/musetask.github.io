@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PPO 五步完整数学推导 · LLM 推理的强化学习训练</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f5f8f'/%3E%3Cpath d='M9 8h9a4.5 4.5 0 0 1 0 9H9zm0 9h9a4.5 4.5 0 0 1 0 9H9z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+<script>(function(){try{var t=localStorage.getItem('pdf2html-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">LLM 推理的强化学习训练现状</a>
+  <button class="btn" id="themeToggle" aria-label="切换深色模式">&#9788;</button>
+</header>
+<main id="main">
+
+<h1>PPO 五步：完整数学推导</h1>
+
+<div class="plainbox">
+<p>正文用伪代码和厨师类比讲了 PPO 的五步。这一页把每一步还原成真正的数学，并证明三件事：<b>为什么目标函数长成 \(\mathbb{E}[\text{ratio}\cdot A]\) 的样子</b>（重要性采样）、<b>baseline 为什么不改变期望只降方差</b>、<b>\(\min\) 和 \(\text{clip}\) 到底在几何上干了什么</b>，以及 <b>KL 惩罚项的无偏估计量</b>是怎么来的。</p>
+<p>记号：\(\pi_\theta(y\mid x)\) 是参数为 \(\theta\) 的策略（LLM）给回答 \(y\) 的概率；\(\pi_{\text{old}}\) 是采样用的旧策略；\(\pi_{\text{ref}}\) 是参考模型（SFT 模型）。</p>
+</div>
+
+<div class="prereq">
+<span class="tag">预备知识：期望</span>
+<p>离散随机变量 \(X\) 取值 \(x_i\) 的概率为 \(p_i\) 时，期望 \(\mathbb{E}[X]=\sum_i p_i x_i\)。期望是线性的：\(\mathbb{E}[aX+bY]=a\mathbb{E}[X]+b\mathbb{E}[Y]\)。后面会反复用一个技巧：\(\mathbb{E}_{y\sim\pi}[\nabla_\theta\log\pi(y)]=0\)，证明只有一行：</p>
+<p>\[
+\mathbb{E}_{y\sim\pi}[\nabla\log\pi(y)]=\sum_y \pi(y)\frac{\nabla\pi(y)}{\pi(y)}=\sum_y\nabla\pi(y)=\nabla\sum_y\pi(y)=\nabla 1 = 0
+\]</p>
+<p>用到了 \(\nabla\log f = \nabla f / f\)（链式法则）和"概率总和恒为 1，导数为 0"。</p>
+</div>
+
+<h2 class="deriv">一、为什么目标函数是 \(\mathbb{E}[\text{ratio}\cdot A]\)：重要性采样</h2>
+
+<p>策略梯度的目标是最大化期望回报 \(J(\theta)=\mathbb{E}_{y\sim\pi_\theta}[R(y)]\)。直接求导会遇到一个麻烦：期望里面的分布 \(\pi_\theta\) 本身也依赖 \(\theta\)。策略梯度定理说：</p>
+<p>\[
+\nabla_\theta J(\theta) = \mathbb{E}_{y\sim\pi_\theta}\big[\nabla_\theta\log\pi_\theta(y\mid x)\cdot A(y)\big]
+\]</p>
+<p class="eq-note">其中 \(A(y)\) 是优势函数（见第二节）。直觉：让"好"（\(A>0\)）的回答概率上升，\(\nabla\log\pi\) 指向概率上升的方向。</p>
+<p>但训练时样本是从<strong>旧策略</strong> \(\pi_{\text{old}}\) 采的（PPO 是 on-policy 算法的"近亲"，每轮用旧策略采样一批数据做多次更新），而我们想估计的是<strong>新策略</strong>下的期望。这就需要<strong>重要性采样</strong>：</p>
+
+<div class="derivation">
+<span class="tag">推导：重要性采样恒等式</span>
+<p>\[
+\begin{aligned}
+\mathbb{E}_{y\sim\pi_\theta}[A(y)]
+&= \sum_y \pi_\theta(y)\,A(y) \\
+&= \sum_y \pi_{\text{old}}(y)\,\frac{\pi_\theta(y)}{\pi_{\text{old}}(y)}\,A(y) \qquad\text{（分子分母同乘 }\pi_{\text{old}}\text{）}\\
+&= \mathbb{E}_{y\sim\pi_{\text{old}}}\left[\underbrace{\frac{\pi_\theta(y)}{\pi_{\text{old}}(y)}}_{\text{ratio } r(\theta)}\cdot A(y)\right]
+\end{aligned}
+\]</p>
+<p>于是我们最大化<strong>替代目标（surrogate objective）</strong>：</p>
+<p>\[
+L^{\text{CPI}}(\theta) = \mathbb{E}_{y\sim\pi_{\text{old}}}\big[r(\theta)\,A(y)\big], \qquad r(\theta)=\frac{\pi_\theta(y\mid x)}{\pi_{\text{old}}(y\mid x)}
+\]</p>
+<p>验证它和原目标在起点处梯度一致：\(\nabla_\theta\,[r(\theta)A] = \frac{\nabla\pi_\theta}{\pi_{\text{old}}}A = r(\theta)\,\nabla\log\pi_\theta\cdot A\)，在 \(\theta=\theta_{\text{old}}\) 处 \(r=1\)，恰好等于策略梯度。这就是正文第 1–2 步 <code>ratio</code> 和 <code>raw_score = ratio * advantage</code> 的来历。</p>
+</div>
+
+<div class="prereq">
+<span class="tag">预备知识：重要性采样一句话</span>
+<p>想算分布 \(p\) 下的期望，但手里只有从 \(q\) 采的样本，就给每个样本加权 \(p(x)/q(x)\)。要求 \(q(x) > 0\) 的地方 \(p(x)\) 也能取到（LLM 的 softmax 概率恒为正，天然满足）。</p>
+</div>
+
+<h2 class="deriv">二、\(A = r - V\)：baseline 只降方差，不改变期望</h2>
+
+<p>正文把 advantage 简化成 \(\text{actual\_reward} - \text{expected\_reward}\)，即 \(A = R - V\)，其中 \(V\) 是 critic 估计的价值（预期奖励）。为什么减一个 \(V\) 是合法的？</p>
+
+<div class="derivation">
+<span class="tag">推导：baseline 不改变策略梯度的期望</span>
+<p>对任意与动作 \(y\) 无关的常数 \(b\)（baseline）：</p>
+<p>\[
+\begin{aligned}
+\mathbb{E}_{y\sim\pi_\theta}[\nabla\log\pi_\theta(y)\cdot b]
+&= b\cdot\mathbb{E}_{y\sim\pi_\theta}[\nabla\log\pi_\theta(y)] \\
+&= b \cdot 0 = 0 \qquad\text{（用了上面预备知识里的恒等式）}
+\end{aligned}
+\]</p>
+<p>所以 \(\mathbb{E}[\nabla\log\pi\cdot(R-b)] = \mathbb{E}[\nabla\log\pi\cdot R]\)：<strong>减 baseline 不改变梯度的期望</strong>。那为什么要减？因为它能大幅<strong>降低梯度估计的方差</strong>——直觉上，\(R\) 本身波动大（0 到 10 分），而 \(R - V\) 只保留"比预期好多少"这个小波动，采样噪声小得多，训练更稳。critic 的工作就是学好这个 \(V\)，通常用均方误差拟合实际回报来训练。</p>
+</div>
+
+<h2 class="deriv">三、\(\text{clip}\) 与 \(\min\) 的几何：悲观下界</h2>
+
+<p>正文第 3–4 步：</p>
+<p>\[
+L^{\text{CLIP}}(\theta)=\mathbb{E}\Big[\min\big(r(\theta)A,\; \text{clip}(r(\theta),1-\varepsilon,1+\varepsilon)\,A\big)\Big], \qquad \varepsilon=0.2
+\]</p>
+<p>把 \(A\) 的符号分两种情况画出来（固定 \(A\)，看作 \(r\) 的函数）：</p>
+
+<div class="derivation">
+<span class="tag">推导：\(\min\) 的四种情形</span>
+<p><b>情形 1：\(A > 0\)（好动作），\(r > 1+\varepsilon\)。</b>此时 \(\text{clip}(r)=1+\varepsilon\)，\(\min(rA,(1+\varepsilon)A)=(1+\varepsilon)A\)。目标函数被<strong>冻在 \((1+\varepsilon)A\)</strong>，不再随 \(r\) 增长——好消息封顶，不给超额奖励。</p>
+<p><b>情形 2：\(A > 0\)，\(r \le 1+\varepsilon\)。</b>\(\min = rA\)，正常优化。</p>
+<p><b>情形 3：\(A < 0\)（坏动作），\(r < 1-\varepsilon\)</b>（我们在减小坏动作的概率，走对了方向）。\(\text{clip}(r)=1-\varepsilon\)，\(\min(rA,(1-\varepsilon)A)\)：因为 \(A<0\)，\((1-\varepsilon)A < rA\)（例如 \(r=0.5, A=-2\)：\(-1.6 < -1\)），\(\min\) 取 \((1-\varepsilon)A\)——同样被<strong>冻住</strong>，这一步不再奖励你继续压低坏动作的概率。</p>
+<p><b>情形 4：\(A < 0\)，\(r > 1-\varepsilon\)</b>（增大了坏动作的概率，走错了方向）。\(\min = rA\)，惩罚<strong>全额兑现</strong>，梯度原样传回。</p>
+<p>总结：\(\min\) 造出一个<strong>悲观下界（pessimistic bound）</strong>——沿着有利方向走出信任区（trust region）\([1-\varepsilon,1+\varepsilon]\) 后，目标函数不再给分；而沿着不利方向走时，奖励/惩罚一分不少。这正是 "proximal"（近端）的数学含义：每一步只允许在旧策略附近小步更新。</p>
+</div>
+
+<div class="key"><span class="tag">数字例子</span>
+<p>取 \(\varepsilon=0.2\)，旧策略给某回答的概率 0.5，新策略 0.7，则 \(r=1.4\)。若 \(A=+2\)：raw \(=2.8\)，clipped \(=1.2\times2=2.4\)，\(\min=2.4\)（封顶）。若 \(A=-2\) 且 \(r=0.5\)：raw \(=-1\)，clipped \(=0.8\times(-2)=-1.6\)，\(\min=-1.6\)（冻住，不再奖励继续压低）。</p>
+</div>
+
+<h2 class="deriv">四、KL 惩罚项：定义与无偏估计量</h2>
+
+<p>正文第 5 步：\(\text{loss} = -\text{final\_score} + \beta\cdot \mathrm{KL}(\pi_\theta \,\|\, \pi_{\text{ref}})\)。</p>
+
+<div class="prereq">
+<span class="tag">预备知识：KL 散度</span>
+<p>两个分布 \(p,q\) 的 KL 散度 \(\mathrm{KL}(p\|q)=\sum_x p(x)\log\frac{p(x)}{q(x)}=\mathbb{E}_{x\sim p}\left[\log\frac{p(x)}{q(x)}\right]\)，衡量"用 \(q\) 近似 \(p\)"的信息损失。注意它<strong>不是距离</strong>：\(\mathrm{KL}(p\|q)\ne\mathrm{KL}(q\|p)\)。非负性由 Jensen 不等式保证：\(-\mathrm{KL}(p\|q)=\mathbb{E}_p[\log(q/p)]\le\log\mathbb{E}_p[q/p]=\log 1 = 0\)。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：Schulman 的 k3 无偏估计量</span>
+<p>直接算 \(\mathrm{KL}(\pi_\theta\|\pi_{\text{ref}})\) 要对整个词表求和，太贵。实际用单样本无偏估计。记 \(r=\pi_{\text{ref}}(y)/\pi_\theta(y)\)（注意分子分母和第一节反过来了），定义</p>
+<p>\[
+k_3(y) \;=\; r - \log r - 1
+\]</p>
+<p>验证无偏（期望在 \(y\sim\pi_\theta\) 下取）：</p>
+<p>\[
+\begin{aligned}
+\mathbb{E}_{\pi_\theta}[r] &= \sum_y \pi_\theta(y)\frac{\pi_{\text{ref}}(y)}{\pi_\theta(y)} = \sum_y\pi_{\text{ref}}(y) = 1,\\
+\mathbb{E}_{\pi_\theta}[\log r] &= \mathbb{E}_{\pi_\theta}[\log\pi_{\text{ref}}-\log\pi_\theta] = -\mathrm{KL}(\pi_\theta\|\pi_{\text{ref}}),\\
+\Rightarrow\quad \mathbb{E}_{\pi_\theta}[k_3] &= 1 - (-\mathrm{KL}) - 1 = \mathrm{KL}(\pi_\theta\|\pi_{\text{ref}}). \quad\checkmark
+\end{aligned}
+\]</p>
+<p>k3 还有个优点：<strong>逐样本恒非负</strong>。因为对 \(f(x)=x-1-\log x\) 求导得 \(f'(x)=1-1/x\)，\(x=1\) 是唯一极小值点且 \(f(1)=0\)，所以 \(x-\log x-1\ge 0\) 恒成立。而朴素估计量 \(k_1=-\log r\) 单样本可正可负，方差大得多。这就是 InstructGPT/PPO 实现里 token 级 KL 惩罚 \(\frac{\beta}{T}\sum_t k_3(y_t)\) 的来历。</p>
+</div>
+
+<div class="prereq">
+<span class="tag">预备知识：熵奖励</span>
+<p>策略的熵 \(H(\pi)=-\sum_y\pi(y)\log\pi(y)\) 衡量输出的"分散程度"：均匀分布熵最大，one-hot 分布熵为 0。PPO 目标里加 \(+c\cdot H\)（\(c\) 很小），就是给"别太早把概率压到一两个 token 上"一点奖励，促进探索、防止熵崩塌。</p>
+</div>
+
+<div class="prereq">
+<span class="tag">预备知识：GAE（一句话版）</span>
+<p>正文略去的广义优势估计：\(A^{\text{GAE}}_t=\sum_{l\ge0}(\gamma\lambda)^l\delta_{t+l}\)，其中 TD 误差 \(\delta_t = r_t + \gamma V(s_{t+1}) - V(s_t)\)。\(\lambda=0\) 时退化成单步 TD（偏差大、方差小），\(\lambda=1\) 时退化成蒙特卡洛（无偏、方差大），\(\lambda\) 在中间做偏差–方差权衡。LLM 的 RLVR 场景里奖励只在答完才给（稀疏），常直接取 \(\lambda=1\) 的蒙特卡洛形式。</p>
+</div>
+
+<h2 class="deriv">五、自查：三个能独立答对的问题</h2>
+<ol class="steps">
+<li>为什么替代目标用 \(\mathbb{E}[rA]\) 而不是直接 \(\mathbb{E}_{\pi_\theta}[A]\)？<br>
+<span style="color:var(--muted);font-size:.9em">→ 第一节：样本来自 \(\pi_{\text{old}}\)，重要性采样把期望"搬"过去，且在起点处梯度一致。</span></li>
+<li>\(\min\) 为什么是"悲观"的？\(A<0\) 且 \(r<1-\varepsilon\) 时梯度是多少？<br>
+<span style="color:var(--muted);font-size:.9em">→ 第三节：目标被冻在 \((1-\varepsilon)A\)，对 \(r\) 的导数为 0——这一步不再给分。</span></li>
+<li>为什么 KL 估计用 \(r-\log r-1\) 而不用 \(-\log r\)？<br>
+<span style="color:var(--muted);font-size:.9em">→ 第四节：两者都无偏，但 k3 逐样本恒非负、方差小得多。</span></li>
+</ol>
+
+<nav class="deriv-nav">
+<a href="index.html"><span class="dir">返回</span>文章正文</a>
+<a href="math-grpo.html"><span class="dir">下一篇</span>GRPO、Dr. GRPO 与长度偏差</a>
+<a href="math-lcpo.html"><span class="dir">数学详解</span>LCPO、DAPO 的公式推导</a>
+</nav>
+
+</main>
+<script src="app.js"></script>
+<script defer src="assets/katex/katex.min.js"></script>
+<script defer src="assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>
