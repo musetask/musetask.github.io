@@ -91,7 +91,7 @@ D_t = D_{\mathrm{KL}}\big(\pi_\theta(\cdot\mid c_t) \,\big\|\, \pi_{\mathrm{ref}
 
 <div class="key">
 <span class="tag">梯度方向在干什么</span>
-<p>梯度下降的更新是 \(\theta \leftarrow \theta - \eta\,\nabla_\theta\mathcal{L}_{\mathrm{KL}}\)。每一项 \(-\nabla_\theta\log\pi_\theta(y_t\mid c_t)\) 指向<b>降低</b>已采样 token \(y_t\) 概率的方向。注意这个梯度<b>只碰得到被采样出的 token</b>：被压下去的概率质量流向了没被采样的 token，但<b>不是</b> specifically 流向 \(\pi_{\mathrm{ref}}\) 喜欢的 token。</p>
+<p>梯度下降的更新是 \(\theta \leftarrow \theta - \eta\,\nabla_\theta\mathcal{L}_{\mathrm{KL}}\)。每一项 \(-\nabla_\theta\log\pi_\theta(y_t\mid c_t)\) 指向<b>降低</b>已采样 token \(y_t\) 概率的方向。注意这个梯度<b>只碰得到被采样出的 token</b>：被压下去的概率质量流向了没被采样的 token，但<b>不是</b>专门流向 \(\pi_{\mathrm{ref}}\) 喜欢的 token。</p>
 </div>
 
 <div class="warn">
