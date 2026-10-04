@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>第 7 章 · Advantage · barmmath</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../bllm/assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">barmmath · 第 7 章 Advantage</a>
+</header>
+<main id="main">
+<h1>第 7 章 Advantage</h1>
+<p class="lead"><b>本章目标</b>：从大一的均值、方差定义出发，一步不跳地推导出组内归一化 advantage 的两个关键性质——均值为 0、方差为 1，并解释为什么 GRPO 可以直接扔掉 critic。<b>对应原书位置</b>：barm 第 6 章 6.7 节（组内归一化 Advantage / Group Normalized Advantages）。</p>
+
+<h2 class="deriv">一、组内归一化 Advantage 的定义</h2>
+
+<div class="def">
+<span class="tag">定义：rollout、奖励、组内归一化 advantage</span>
+<p><b>rollout</b>：给定一个 prompt \(x\)，让策略模型完整生成一次，得到的一个完整回答序列记为一次 rollout。同一 prompt 下独立采样 \(G\) 次，得到 \(G\) 个 rollout，称为一个<b>组</b>（group）。</p>
+<p>第 \(i\) 个 rollout 的<b>奖励</b>记为 \(r_i\)（由原书第 3 章的验证器给出，例如答对得 1、答错得 0）。该组奖励的<b>均值</b>和<b>总体标准差</b>为</p>
+<p>\[
+\bar r \;=\; \frac{1}{G}\sum_{i=1}^{G} r_i,
+\qquad
+s \;=\; \sqrt{\frac{1}{G}\sum_{i=1}^{G}(r_i-\bar r)^2}.
+\]</p>
+<p>第 \(i\) 个 rollout 的<b>组内归一化 advantage</b>定义为</p>
+<p>\[
+\hat A_i \;=\; \frac{r_i-\bar r}{s}.
+\]</p>
+<p>这就是统计学里的 <b>z-score 标准化</b>：减去均值、除以标准差。注意分母 \(s\) 用的是分母为 \(G\) 的<b>总体</b>标准差，与书中代码实现一致（不是分母为 \(G-1\) 的样本标准差）。若组内所有奖励都相等（\(s=0\)），公式无意义，书中代码会加一个很小的 \(\epsilon\) 防止除零。</p>
+</div>
+
+<h2 class="deriv">二、均值恒为 0 的证明</h2>
+
+<div class="derivation">
+<span class="tag">推导：归一化 advantage 的组内均值</span>
+<p>把定义 \(\hat A_i=\dfrac{r_i-\bar r}{s}\) 代入组内均值：</p>
+<p>\[
+\frac{1}{G}\sum_{i=1}^{G}\hat A_i
+\;=\; \frac{1}{G}\sum_{i=1}^{G}\frac{r_i-\bar r}{s}
+\]</p>
+<p>分母里的 \(s\) 不随 \(i\) 变化，是<b>常数</b>，可以提出求和号外：</p>
+<p>\[
+\;=\; \frac{1}{Gs}\sum_{i=1}^{G}(r_i-\bar r)
+\]</p>
+<p>求和的线性性质（见第 1 章）：和的求和等于求和的和，</p>
+<p>\[
+\sum_{i=1}^{G}(r_i-\bar r)
+\;=\; \sum_{i=1}^{G} r_i \;-\; \sum_{i=1}^{G}\bar r
+\]</p>
+<p>其中第二项是常数 \(\bar r\) 连加 \(G\) 次：</p>
+<p>\[
+\sum_{i=1}^{G}\bar r \;=\; \underbrace{\bar r+\bar r+\cdots+\bar r}_{G\text{ 个}} \;=\; G\bar r.
+\]</p>
+<p>而第一项由均值定义移项可得 \(\displaystyle\sum_{i=1}^{G} r_i = G\bar r\)（把 \(\bar r=\frac{1}{G}\sum r_i\) 两边同乘 \(G\)）。于是</p>
+<p>\[
+\frac{1}{G}\sum_{i=1}^{G}\hat A_i
+\;=\; \frac{1}{Gs}\Big(\sum_{i=1}^{G} r_i - G\bar r\Big)
+\;=\; \frac{1}{Gs}\,(G\bar r - G\bar r)
+\;=\; \frac{1}{Gs}\cdot 0
+\;=\; 0.
+\]</p>
+<p><b>结论</b>：同一组内 \(\hat A_i\) 的均值恒为 0。直觉：减去均值之后，正偏差和负偏差恰好抵消。</p>
+</div>
+
+<h2 class="deriv">三、方差恒为 1 的证明</h2>
+
+<div class="derivation">
+<span class="tag">推导：归一化 advantage 的组内方差</span>
+<p>由于 \(\hat A_i\) 的组内均值已经是 0（上一节已证），它的总体方差就是平方的均值：</p>
+<p>\[
+\frac{1}{G}\sum_{i=1}^{G}\hat A_i^2
+\;=\; \frac{1}{G}\sum_{i=1}^{G}\left(\frac{r_i-\bar r}{s}\right)^2
+\]</p>
+<p>平方展开，\(\dfrac{1}{s^2}\) 不随 \(i\) 变化，是常数，提出求和号外：</p>
+<p>\[
+\;=\; \frac{1}{G}\sum_{i=1}^{G}\frac{(r_i-\bar r)^2}{s^2}
+\;=\; \frac{1}{Gs^2}\sum_{i=1}^{G}(r_i-\bar r)^2
+\]</p>
+<p>由标准差定义 \(s=\sqrt{\dfrac{1}{G}\sum_{i=1}^{G}(r_i-\bar r)^2}\)，两边平方得 \(s^2=\dfrac{1}{G}\sum_{i=1}^{G}(r_i-\bar r)^2\)，再两边同乘 \(G\) 移项：</p>
+<p>\[
+\sum_{i=1}^{G}(r_i-\bar r)^2 \;=\; Gs^2.
+\]</p>
+<p>代回上式，约分：</p>
+<p>\[
+\frac{1}{G}\sum_{i=1}^{G}\hat A_i^2
+\;=\; \frac{1}{Gs^2}\cdot Gs^2
+\;=\; \frac{Gs^2}{Gs^2}
+\;=\; 1.
+\]</p>
+<p><b>结论</b>：同一组内 \(\hat A_i\) 的方差恒为 1。归一化后，advantage 的尺度不再依赖原始奖励的量纲。</p>
+</div>
+
+<div class="warn">
+<span class="tag">陷阱：总体方差 vs 样本方差，分母必须前后一致</span>
+<p>上面两节证明成立的要害，是归一化用的 \(s\)（分母为 \(G\)）和事后求方差的分母 \(G\) 用的是<b>同一个</b>定义。如果混用：归一化时用总体标准差 \(s\)（分母 \(G\)），事后却用样本方差公式（分母 \(G-1\)）计算，会得到</p>
+<p>\[
+\frac{1}{G-1}\sum_{i=1}^{G}\hat A_i^2
+\;=\; \frac{1}{(G-1)s^2}\cdot Gs^2
+\;=\; \frac{G}{G-1}
+\;\ne\; 1.
+\]</p>
+<p>所以<b>定义前后一致是关键</b>：书里用总体标准差归一化，求方差就也用总体方差的定义。两边都用样本方差也能自洽，但和书中代码实现对不上。</p>
+</div>
+
+<h2 class="deriv">四、为什么 GRPO 可以不要 critic</h2>
+
+<div class="prereq">
+<span class="tag">预备知识：PPO 的 advantage 从哪来</span>
+<p>PPO 里的 advantage 是<b>逐 token</b> 的 \(A_t\)，由 critic 网络 \(V_\psi\)（一个预测"从当前状态出发未来能拿多少奖励"的价值网络）经 GAE（广义优势估计：把多步 TD 残差做指数加权平均）估计得到。这意味着除了策略模型，还要额外训练一个 value model。</p>
+</div>
+
+<p>GRPO 的做法是：用<b>同组内其它 rollout 的奖励</b>代替 critic。注意 \(\hat A_i=\dfrac{r_i-\bar r}{s}\) 只依赖组内 \(G\) 个奖励的<b>相对排名</b>——第 \(i\) 个 rollout 好不好，是和它"同组兄弟"比出来的，不需要任何外部模型来打分。</p>
+
+<div class="key">
+<span class="tag">关键结论</span>
+<p>\(\hat A_i\) 里减掉的 \(\bar r\)，正是第 6 章讲的 <b>baseline</b>：从回报里减掉一个常数，不改变策略梯度的期望（见第 6 章 baseline 不偏性证明），但能大幅降低梯度估计的方差。GRPO 只是把这个 baseline 取成了"同组奖励的均值"——于是连专门学 baseline（价值函数）的 critic 网络都可以省掉，省下一整个模型的训练成本。</p>
+</div>
+
+<div class="tw">
+<table class="sym">
+<thead><tr><th></th><th>PPO</th><th>GRPO</th></tr></thead>
+<tbody>
+<tr><td>advantage 来源</td><td>critic 回归估计 + GAE</td><td>同组 rollout 奖励的组内排名</td></tr>
+<tr><td>额外模型</td><td>reference + reward + critic</td><td>只有 reference（常省略）</td></tr>
+<tr><td>advantage 粒度</td><td>逐 token \(A_t\)</td><td>整序列共享的标量 \(\hat A_i\)</td></tr>
+<tr><td>归一化</td><td>GAE 的 \(\lambda\) 折扣</td><td>组内 z-score</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="warn">
+<span class="tag">陷阱：省掉 critic 的代价</span>
+<p>组内 advantage 隐含一个强假设：<b>"同一 prompt 不同 rollout 的差异，就是好坏的差异"</b>。\(\hat A_i\) 是一个整序列共享的标量——序列里的每个 token 拿到完全相同的 advantage，credit 被均匀摊到整段回答上。两个都答对的 rollout，一长一短，学习信号毫无区别；同样答错也一样。它比逐 token 的 critic 更粗糙，这是 GRPO 用训练成本换来的精度代价。</p>
+</div>
+
+<h2>本章小结</h2>
+<p>本章定义了组内归一化 advantage \(\hat A_i=\dfrac{r_i-\bar r}{s}\)（z-score 标准化，分母为 \(G\) 的总体标准差），并一步不跳地证明了它的两个性质：组内<b>均值恒为 0</b>、组内<b>方差恒为 1</b>——归一化让学习信号的尺度稳定，不再依赖原始奖励的量纲。</p>
+<p>在书里的位置：这是原书 6.7 节的核心公式。\(\hat A_i\) 不只是一个统计量——第 8 章的 GRPO 目标函数会把它<b>直接乘</b>进每个 token 的梯度项（\(\text{logprob 差} \times \hat A_i\)），\(\hat A_i\) 的正负决定该 rollout 的所有 token 往哪个方向更新、绝对值决定更新幅度。而 \(\bar r\) 就是第 6 章的 baseline：GRPO 用"组内均值"这个零成本 baseline 代替了需要专门训练的 critic，这就是它能省掉一个模型的原因。</p>
+
+<h2>延伸阅读</h2>
+<ul>
+<li><a href="../barm/page-58-detail.html">6.7 组内归一化 Advantage 详解（原书伴读）</a></li>
+<li><a href="../barm/index.html">原书伴读 barm 目录</a></li>
+</ul>
+<nav class="deriv-nav">
+<a href="06-policy-gradient.html"><span class="dir">上一章</span>第 6 章 策略梯度</a>
+<a href="index.html"><span class="dir">目录</span>全部章节</a>
+<a href="08-ppo-grpo.html"><span class="dir">下一章</span>第 8 章 PPO 与 GRPO</a>
+</nav>
+</main>
+<script defer src="../bllm/assets/katex/katex.min.js"></script>
+<script defer src="../bllm/assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+});
+</script>
+</body>
+</html>

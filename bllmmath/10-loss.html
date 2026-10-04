@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>第 10 章 · 损失函数 · bllmmath</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../bllm/assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">bllmmath · 第 10 章 损失函数</a>
+</header>
+<main id="main">
+
+<h1>第 10 章 · 损失函数：从"猜对"到交叉熵</h1>
+
+<p><b>本章目标。</b>从最朴素的想法——"让模型给正确答案的概率尽量大"——出发，一步步推到负对数似然、交叉熵，并证明交叉熵 = 信息熵 + KL 散度；最后推导困惑度的公式，说明它是"逆概率的几何平均"。</p>
+<p><b>对应原书。</b>第 11 章预训练：损失函数的定义、困惑度指标。</p>
+
+<h2>一、基本定义</h2>
+
+<div class="def">
+<span class="tag">定义：本章的符号</span>
+<p>设词表大小为 \(V\)。对某一个位置，真实分布记为 \(p=(p_{1},\dots,p_{V})\)，满足 \(p_{v}\ge0\) 且 \(\sum_{v=1}^{V}p_{v}=1\)；模型输出的分布记为 \(q=(q_{1},\dots,q_{V})\)，同样每项非负、和为 1。</p>
+<p>信息熵：\(H(p)=-\sum_{v=1}^{V}p_{v}\log p_{v}\)（第 3 章：分布不确定性的度量）。</p>
+<p>交叉熵：\(H(p,q)=-\sum_{v=1}^{V}p_{v}\log q_{v}\)（用 \(q\) 去编码服从 \(p\) 的样本时的平均码长）。</p>
+<p>KL 散度：\(D_{\mathrm{KL}}(p\|q)=\sum_{v=1}^{V}p_{v}\log\frac{p_{v}}{q_{v}}\)（\(q\) 偏离 \(p\) 的程度）。</p>
+</div>
+
+<div class="prereq">
+<span class="tag">预备知识：对数的单调性</span>
+<p>自然对数 \(\log x\) 在 \((0,\infty)\) 上严格单调递增（第 1 章）：\(a&gt;b&gt;0\) 当且仅当 \(\log a&gt;\log b\)。于是"最大化概率"与"最大化对数概率"完全等价，这是下面一切推导的起点。</p>
+</div>
+
+<h2>二、从"猜对"到负对数似然</h2>
+
+<div class="derivation">
+<span class="tag">推导：最大化正确概率 ⇔ 最小化负对数似然</span>
+<p>训练时，每个位置都有一个正确答案 \(y\)，模型给它分配的概率是 \(q_{y}\)。我们的愿望是：\(q_{y}\) 越大越好。</p>
+<p>由对数的单调性，\(q_{y}\) 最大 \(\iff\) \(\log q_{y}\) 最大 \(\iff\) \(-\log q_{y}\) 最小。定义单个样本的<b>负对数似然</b>为 \(-\log q_{y}\)。</p>
+<p>有 \(N\) 个独立样本时，总概率是连乘 \(\prod_{i=1}^{N}q_{y_{i}}\)。取对数把连乘变成连加（\(\log(ab)=\log a+\log b\)，第 1 章）：</p>
+<p>\[
+\log\prod_{i=1}^{N}q_{y_{i}}=\sum_{i=1}^{N}\log q_{y_{i}}
+\]</p>
+<p>最大化它，等价于最小化它的相反数再除以 \(N\)（除以正常数不改变"谁最小"）：</p>
+<p>\[
+\boxed{\mathrm{NLL}=-\frac1N\sum_{i=1}^{N}\log q_{y_{i}}}
+\]</p>
+<p>这就是<b>平均负对数似然</b>，即训练时最小化的损失函数。∎</p>
+</div>
+
+<h2>三、交叉熵 = 信息熵 + KL 散度</h2>
+
+<div class="derivation">
+<span class="tag">推导：\(H(p,q)=H(p)+D_{\mathrm{KL}}(p\|q)\)</span>
+<p>从交叉熵的定义出发，在求和号里"加一项再减一项"——加上 \(\sum_{v}p_{v}\log p_{v}\) 再减去它，值不变：</p>
+<p>\[
+\begin{aligned}
+H(p,q)
+&=-\sum_{v=1}^{V}p_{v}\log q_{v}\\
+&=-\sum_{v=1}^{V}p_{v}\log p_{v}
+   +\sum_{v=1}^{V}p_{v}\log p_{v}
+   -\sum_{v=1}^{V}p_{v}\log q_{v}
+\end{aligned}
+\]</p>
+<p>第一项正是信息熵 \(H(p)\)。后两项合并（\(\log a-\log b=\log\frac{a}{b}\)，第 1 章）：</p>
+<p>\[
+\sum_{v=1}^{V}p_{v}\log p_{v}-\sum_{v=1}^{V}p_{v}\log q_{v}
+=\sum_{v=1}^{V}p_{v}\left(\log p_{v}-\log q_{v}\right)
+=\sum_{v=1}^{V}p_{v}\log\frac{p_{v}}{q_{v}}
+=D_{\mathrm{KL}}(p\|q)
+\]</p>
+<p>于是</p>
+<p>\[
+\boxed{H(p,q)=H(p)+D_{\mathrm{KL}}(p\|q)}
+\]</p>
+<p>证毕。\(H(p)\) 只与真实分布 \(p\) 有关，训练时是常数；所以<b>最小化交叉熵等价于最小化 KL 散度</b>——也就是让模型分布 \(q\) 去逼近真实分布 \(p\)。</p>
+</div>
+
+<div class="key">
+<span class="tag">Gibbs 不等式</span>
+<p>\(D_{\mathrm{KL}}(p\|q)\ge0\)，等号成立当且仅当 \(q=p\)（处处相等）。直觉：用错误的分布 \(q\) 编码，平均码长不可能比用真实分布 \(p\) 更短。完整证明需 Jensen 不等式，见姊妹篇 barmmath 第 2 章。</p>
+</div>
+
+<h2>四、one-hot 特例</h2>
+
+<div class="derivation">
+<span class="tag">推导：one-hot 时交叉熵退化为 \(-\log q_{y}\)</span>
+<p>语言模型训练中，真实分布是 one-hot：正确答案 \(y\) 处 \(p_{y}=1\)，其余 \(p_{v}=0\)。代入交叉熵定义：</p>
+<p>\[
+H(p,q)=-\sum_{v=1}^{V}p_{v}\log q_{v}
+=-\big(1\cdot\log q_{y}+\sum_{v\ne y}0\cdot\log q_{v}\big)
+=-\log q_{y}
+\]</p>
+<p>（约定 \(0\log0=0\)：\(\lim_{t\to0^{+}}t\log t=0\)。）此时 \(H(p)=-1\cdot\log1=0\)（确定的分布没有不确定性），故 \(H(p,q)=D_{\mathrm{KL}}(p\|q)=-\log q_{y}\)——与上一节的负对数似然完全一致。∎</p>
+</div>
+
+<h2>五、困惑度：逆概率的几何平均</h2>
+
+<div class="def">
+<span class="tag">定义：困惑度</span>
+<p>\[
+\mathrm{PPL}=\exp\left(-\frac1N\sum_{i=1}^{N}\log q_{y_{i}}\right)
+\]</p>
+<p>即平均交叉熵（上一节的 NLL）的指数。记 \(\overline{\mathrm{CE}}=-\frac1N\sum_{i}\log q_{y_{i}}\)，则 \(\mathrm{PPL}=e^{\overline{\mathrm{CE}}}\)。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：\(\mathrm{PPL}=\left(\prod_{i=1}^{N}\frac{1}{q_{y_{i}}}\right)^{1/N}\)</span>
+<p>从定义出发，把负号吸收进对数（\(-\log a=\log\frac1a\)），再把 \(\frac1N\) 变成指数：</p>
+<p>\[
+\begin{aligned}
+\mathrm{PPL}
+&=\exp\left(\frac1N\sum_{i=1}^{N}\big(-\log q_{y_{i}}\big)\right)\\
+&=\exp\left(\frac1N\sum_{i=1}^{N}\log\frac{1}{q_{y_{i}}}\right)\\
+&=\left[\exp\left(\sum_{i=1}^{N}\log\frac{1}{q_{y_{i}}}\right)\right]^{1/N}
+\qquad\text{（\(e^{a/N}=(e^{a})^{1/N}\)）}\\
+&=\left[\prod_{i=1}^{N}\frac{1}{q_{y_{i}}}\right]^{1/N}
+\qquad\text{（\(e^{\sum\log a_{i}}=\prod a_{i}\)）}
+\end{aligned}
+\]</p>
+<p>最后一步用了 \(\exp(\log a+\log b)=ab\)。于是</p>
+<p>\[
+\boxed{\mathrm{PPL}=\left(\prod_{i=1}^{N}\frac{1}{q_{y_{i}}}\right)^{1/N}}
+\]</p>
+<p>证毕。右边正是 \(N\) 个"逆概率" \(\frac{1}{q_{y_{i}}}\) 的<b>几何平均</b>。</p>
+</div>
+
+<div class="key">
+<span class="tag">困惑度的直觉</span>
+<p>\(\mathrm{PPL}\) 可以理解为"模型平均在多少个选项之间犹豫"。完美预测时每个 \(q_{y_{i}}=1\)，\(\mathrm{PPL}=1\)；均匀瞎猜时 \(q_{y_{i}}=1/V\)，\(\mathrm{PPL}=V\)。它与交叉熵单调对应（取对数即得），但数字更直观：困惑度 20 约等于"每步在 20 个词里挑"。</p>
+</div>
+
+<h2>六、本章小结</h2>
+
+<p>本章从"让 \(q_{y}\) 尽量大"出发，经对数单调性得到负对数似然；又证明交叉熵 = 信息熵 + KL 散度，说明最小化交叉熵就是让模型分布逼近真实分布；one-hot 下它退化为 \(-\log q_{y}\)；困惑度则是它的指数形式，即逆概率的几何平均。下一章讲模型"掷骰子"的方式：采样。</p>
+
+<h2>延伸阅读</h2>
+<ul>
+<li><a href="../bllm/11-pretraining-on-unlabeled-data-detail.html">原书第 11 章数学详解</a>：预训练损失、困惑度的实测数值</li>
+</ul>
+
+<nav class="deriv-nav">
+<a href="09-activation.html"><span class="dir">上一章</span>第 9 章 激活函数</a>
+<a href="index.html"><span class="dir">目录</span>全部章节</a>
+<a href="11-sampling.html"><span class="dir">下一章</span>第 11 章 采样</a>
+</nav>
+</main>
+<script defer src="../bllm/assets/katex/katex.min.js"></script>
+<script defer src="../bllm/assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+});
+</script>
+</body>
+</html>

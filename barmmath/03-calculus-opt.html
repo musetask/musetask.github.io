@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>第 3 章 · 微积分与优化补充 · barmmath</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../bllm/assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">barmmath · 第 3 章 微积分与优化补充</a>
+</header>
+<main id="main">
+
+<h1>第 3 章 微积分与优化补充</h1>
+
+<div class="plainbox">
+<p><b>本章目标</b>：从偏导数的定义出发，推导梯度的含义和多元链式法则（两层复合完整展开），最后讲 Jensen 不等式在优化中的典型应用场景。学完这一章，第 6 章策略梯度里每一步求导你都能自己验算。</p>
+<p><b>对应原书位置</b>：barm 第 6 章（策略梯度的求导、log-derivative trick 中的链式法则步骤）。</p>
+<p><b>本章依赖</b>：第 1 章（期望）、第 2 章（Jensen 不等式的陈述）。单变量导数的四则运算与链式法则视为大一已学（bllmmath 第 1 章有完整重建）。</p>
+</div>
+
+<h2 class="deriv">一、偏导数：固定其他变量，只看一个</h2>
+
+<div class="def">
+<span class="tag">定义：偏导数</span>
+<p>函数 \(f(x,y)\) 对 \(x\) 的<b>偏导数</b>，是把 \(y\) 当成常数、只让 \(x\) 变化时的导数：</p>
+<p>\[
+\frac{\partial f}{\partial x}
+=\lim_{h\to 0}\frac{f(x+h,y)-f(x,y)}{h}
+\]</p>
+<p>记号 \(\partial\)（读作"偏"）区别于单变量的 \(d\)。求偏导时，把其他变量都看成常数，用单变量求导法则计算即可。</p>
+<p>例：\(f(x,y)=x^2y+3x\)，则 \(\frac{\partial f}{\partial x}=2xy+3\)（\(y\) 当常数），\(\frac{\partial f}{\partial y}=x^2\)（\(3x\) 当常数，导数为 0）。</p>
+</div>
+
+<div class="def">
+<span class="tag">定义：梯度</span>
+<p>函数 \(f(x_1,\dots,x_n)\) 的<b>梯度</b>是所有偏导数组成的向量：</p>
+<p>\[
+\nabla f=\left(\frac{\partial f}{\partial x_1},\frac{\partial f}{\partial x_2},\dots,\frac{\partial f}{\partial x_n}\right)
+\]</p>
+<p>梯度指向函数值<b>增长最快</b>的方向（本章不证，后续章节直接用）。优化中"沿负梯度走一步" \(\theta\leftarrow\theta-\eta\nabla\mathcal{L}\) 就是梯度下降。</p>
+</div>
+
+<h2 class="deriv">二、链式法则：复合函数的求导</h2>
+
+<div class="derivation">
+<span class="tag">推导：单变量两层复合的链式法则（微分形式）</span>
+<p>设 \(z=f(y)\)，\(y=g(x)\)，则 \(z\) 最终是 \(x\) 的函数。记微分 \(dz=f'(y)\,dy\)，\(dy=g'(x)\,dx\)，把第二个代入第一个：</p>
+<p>\[
+dz=f'(y)\cdot g'(x)\,dx
+\]</p>
+<p>两边除以 \(dx\) 得</p>
+<p>\[
+\boxed{\;\frac{dz}{dx}=f'(y)\cdot g'(x)=\frac{dz}{dy}\cdot\frac{dy}{dx}\;}
+\]</p>
+<p>即"外层导数 × 内层导数"。这是大一链式法则的微分写法，下面的多元版本是它的直接推广。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：多元链式法则（两层复合，完整展开）</span>
+<p>设 \(z=f(u,v)\)，其中 \(u=g(x,y)\)，\(v=h(x,y)\)。求 \(\partial z/\partial x\)（固定 \(y\)）。</p>
+<p>先写全微分：\(z\) 的变化来自 \(u\) 和 \(v\) 两个通道，</p>
+<p>\[
+dz=\frac{\partial f}{\partial u}\,du+\frac{\partial f}{\partial v}\,dv
+\]</p>
+<p>固定 \(y\)（即 \(dy=0\)），\(u,v\) 随 \(x\) 的变化率为偏导数：\(du=\frac{\partial u}{\partial x}dx\)，\(dv=\frac{\partial v}{\partial x}dx\)。代入：</p>
+<p>\[
+dz=\frac{\partial f}{\partial u}\cdot\frac{\partial u}{\partial x}\,dx
+   +\frac{\partial f}{\partial v}\cdot\frac{\partial v}{\partial x}\,dx
+\]</p>
+<p>两边除以 \(dx\)（\(y\) 固定），得<b>多元链式法则</b>：</p>
+<p>\[
+\boxed{\;\frac{\partial z}{\partial x}
+=\frac{\partial z}{\partial u}\cdot\frac{\partial u}{\partial x}
++\frac{\partial z}{\partial v}\cdot\frac{\partial v}{\partial x}\;}
+\]</p>
+<p>记忆法则："\(z\) 经由几条路到达 \(x\)，就有几项；每条路都是沿路偏导数连乘。"这里 \(z\to u\to x\) 和 \(z\to v\to x\) 两条路，所以两项相加。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">例：手算验证（两种算法对照）</span>
+<p>取 \(z=(u+v)^2\)，\(u=xy\)，\(v=x+y\)，求 \(\partial z/\partial x\)。</p>
+<p><b>方法一（直接代入）</b>：\(z=(xy+x+y)^2\)，把 \(y\) 当常数直接求导：</p>
+<p>\[
+\frac{\partial z}{\partial x}=2(xy+x+y)\cdot\frac{\partial}{\partial x}(xy+x+y)
+=2(xy+x+y)(y+1)
+\]</p>
+<p><b>方法二（链式法则）</b>：\(\frac{\partial z}{\partial u}=2(u+v)\)，\(\frac{\partial z}{\partial v}=2(u+v)\)，\(\frac{\partial u}{\partial x}=y\)，\(\frac{\partial v}{\partial x}=1\)，于是</p>
+<p>\[
+\frac{\partial z}{\partial x}=2(u+v)\cdot y+2(u+v)\cdot 1=2(u+v)(y+1)
+\]</p>
+<p>把 \(u=xy,\ v=x+y\) 代回，与方法一完全一致 ✓。神经网络的反向传播就是把这个过程自动化：每一层的偏导数沿路连乘。</p>
+</div>
+
+<h2 class="deriv">三、Jensen 不等式的应用场景</h2>
+
+<div class="prereq">
+<span class="tag">回顾：第 2 章的结论</span>
+<p>Jensen 不等式：\(f\) 凸则 \(f(\mathbb{E}[X])\le\mathbb{E}[f(X)]\)。第 2 章已用归纳法完整证明，并用它证明了 Gibbs 不等式 \(D_{\mathrm{KL}}\ge 0\)。</p>
+</div>
+
+<p>除 Gibbs 不等式外，Jensen 在本书后续章节还有两类典型用法：</p>
+
+<p><b>场景一：把"期望的对数"变成"对数的期望"（变分下界）。</b>\(\log\) 是凹函数（\(-\log\) 凸），Jensen 给出反向不等式：\(\log\mathbb{E}[X]\ge\mathbb{E}[\log X]\)。于是 \(\log\) 里套着期望的难算量，可以下界为期望里套 \(\log\) 的好算量——变分推断（ELBO）的核心技巧。本书第 6–7 章的期望目标改写都依赖这种"把期望挪进挪出"的合法性判断。</p>
+
+<p><b>场景二：判断"平均"能不能直接套进非线性函数。</b>凡是看到 \(\mathbb{E}[f(X)]\) 被近似成 \(f(\mathbb{E}[X])\) 的地方，Jensen 告诉你这中间差了一个方向确定的 gap（凸函数时前者更大）。例如用平均奖励代替奖励的平均做估计时，要清楚偏差的方向。</p>
+
+<div class="warn">
+<span class="tag">用 Jensen 前先问凸凹性</span>
+<p>Jensen 的方向完全由凸/凹决定：凸函数 \(f(\mathbb{E}X)\le\mathbb{E}f(X)\)，凹函数反过来。\(\log\) 是凹的，\(-\log\)、\(x^2\)、\(e^x\) 是凸的。用错方向结论全反——这是本章最值得记住的检查项。</p>
+</div>
+
+<div class="key">
+<span class="tag">本章三个工具</span>
+<p>偏导数（固定其他变量求导）→ 梯度（偏导数组成的向量，指向增长最快方向）→ 多元链式法则（几条路就几项，每条路连乘）。第 6 章的 log-derivative trick 里，"\nabla_\theta\log\pi_\theta" 的每一步展开都是链式法则。</p>
+</div>
+
+<h2 class="deriv">四、章末小结：这些在书里是干什么的</h2>
+
+<ul>
+<li><b>偏导数/梯度</b> → 第 6 章：策略梯度 \(\nabla_\theta J(\theta)\) 的"梯度"二字就是本章定义的 \(\nabla\)；"沿梯度上升更新参数"即梯度上升。</li>
+<li><b>多元链式法则</b> → 第 6 章：\(\nabla_\theta\log\pi_\theta(y|x)\) 中，\(\theta\) 经由网络各层影响输出，每一步都是链式法则；第 9 章 KL 梯度的推导同样。</li>
+<li><b>Jensen 应用场景</b> → 判断期望与非线性函数交换顺序的合法性与偏差方向，贯穿第 6–7 章的目标函数变形。</li>
+</ul>
+
+<nav class="deriv-nav">
+<a href="02-information-theory.html"><span class="dir">上一章</span>第 2 章 信息论</a>
+<a href="index.html"><span class="dir">目录</span>全部章节</a>
+<a href="04-sampling.html"><span class="dir">下一章</span>第 4 章 采样</a>
+</nav>
+</main>
+<script defer src="../bllm/assets/katex/katex.min.js"></script>
+<script defer src="../bllm/assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+});
+</script>
+</body>
+</html>

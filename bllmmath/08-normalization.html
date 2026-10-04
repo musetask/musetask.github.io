@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>第 8 章 · 归一化 · bllmmath</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../bllm/assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">bllmmath · 第 8 章 归一化</a>
+</header>
+<main id="main">
+
+<h1>第 8 章 归一化：把分布拉回正轨</h1>
+
+<p><b>本章目标</b>：理解 LayerNorm 的定义，证明它确实把均值变成 0、方差变成 1；理解统计学里"除以 \(d-1\)"（Bessel 修正）的来历；最后对比轻量版的 RMSNorm。</p>
+<p><b>对应原书位置</b>：《Build a Large Language Model》第 4 章"GPT 结构"——每个 Transformer 块里的 LayerNorm。</p>
+
+<h2>一、LayerNorm 的定义</h2>
+
+<div class="def">
+<span class="tag">定义：LayerNorm</span>
+<p>设一层输出 \(d\) 个数 \(x_1,\dots,x_d\)。先算均值和方差：</p>
+<p>\[
+\mu = \frac{1}{d}\sum_{i=1}^{d}x_i,\qquad
+\sigma^2 = \frac{1}{d}\sum_{i=1}^{d}(x_i-\mu)^2
+\]</p>
+<p>然后归一化（\(\epsilon\) 是防止除零的小常数，如 \(10^{-5}\)）：</p>
+<p>\[
+\hat{x}_i = \frac{x_i-\mu}{\sqrt{\sigma^2+\epsilon}},\qquad
+y_i = \gamma\,\hat{x}_i + \beta
+\]</p>
+<p>\(\gamma,\beta\) 是可学习的参数：先把分布标准化，再让网络自己学一个合适的缩放和平移。</p>
+</div>
+
+<h2>二、证明：归一化后均值恰为 0、方差恰为 1</h2>
+
+<div class="derivation">
+<span class="tag">推导：均值为 0</span>
+<p>对 \(\hat{x}_i\) 求均值。关键：分母 \(\sqrt{\sigma^2+\epsilon}\) 与 \(i\) 无关，是常数，可以提出求和号（\(\epsilon\to 0\) 的理想情形下分母就是 \(\sigma\)）：</p>
+<p>\[
+\frac{1}{d}\sum_{i=1}^{d}\hat{x}_i
+= \frac{1}{d}\sum_{i=1}^{d}\frac{x_i-\mu}{\sigma}
+= \frac{1}{d\sigma}\sum_{i=1}^{d}(x_i-\mu)
+= \frac{1}{d\sigma}\left(\sum_{i=1}^{d}x_i - d\mu\right)
+\]</p>
+<p>而 \(\sum_{i=1}^{d}x_i=d\mu\)（均值的定义两边乘 \(d\)），括号里 \(=d\mu-d\mu=0\)。故</p>
+<p>\[
+\boxed{\frac{1}{d}\sum_{i=1}^{d}\hat{x}_i = 0}
+\]</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：方差为 1</span>
+<p>已知均值为 0，方差就是"平方的均值"：</p>
+<p>\[
+\frac{1}{d}\sum_{i=1}^{d}(\hat{x}_i-0)^2
+= \frac{1}{d}\sum_{i=1}^{d}\frac{(x_i-\mu)^2}{\sigma^2}
+= \frac{1}{\sigma^2}\cdot\frac{1}{d}\sum_{i=1}^{d}(x_i-\mu)^2
+= \frac{1}{\sigma^2}\cdot\sigma^2
+= \boxed{1}
+\]</p>
+<p>最后一步用了 \(\sigma^2\) 的定义。证毕：无论输入是什么分布，LayerNorm 输出的均值恒为 0、方差恒为 1。</p>
+</div>
+
+<h2>三、Bessel 修正：为什么统计学里除以 \(d-1\)</h2>
+
+<p>细心的读者会问：方差定义里分母是 \(d\)，但统计学课本里"样本方差"除的是 \(d-1\)。这不是笔误，而是有证明的。</p>
+
+<div class="derivation">
+<span class="tag">推导：\(\mathrm{E}\left[\sum_{i=1}^{d}(a_i-\bar{a})^2\right]=(d-1)\sigma^2\)</span>
+<p>设 \(a_1,\dots,a_d\) 独立同分布，真均值 \(\mu\)，真方差 \(\sigma^2\)；记样本均值 \(\bar{a}=\frac{1}{d}\sum_i a_i\)。</p>
+<p><b>第一步：展开平方和。</b></p>
+<p>\[
+\sum_{i=1}^{d}(a_i-\bar{a})^2
+= \sum_{i=1}^{d}\left(a_i^2-2a_i\bar{a}+\bar{a}^2\right)
+= \sum_{i=1}^{d}a_i^2 - 2\bar{a}\underbrace{\sum_{i=1}^{d}a_i}_{=d\bar{a}} + d\bar{a}^2
+= \sum_{i=1}^{d}a_i^2 - d\bar{a}^2
+\]</p>
+<p><b>第二步：两边取期望。</b>用 \(\mathrm{E}[X^2]=\mathrm{Var}(X)+(\mathrm{E}[X])^2\)（见第 3 章）：</p>
+<p>\[
+\mathrm{E}[a_i^2] = \sigma^2+\mu^2
+\quad\Longrightarrow\quad
+\mathrm{E}\left[\sum_{i=1}^{d}a_i^2\right] = d(\sigma^2+\mu^2)
+\]</p>
+<p>而 \(\bar{a}\) 的期望是 \(\mu\)，方差是 \(\sigma^2/d\)（\(d\) 个独立变量平均，方差除以 \(d\)，见第 3 章），故</p>
+<p>\[
+\mathrm{E}[\bar{a}^2] = \frac{\sigma^2}{d}+\mu^2
+\quad\Longrightarrow\quad
+\mathrm{E}[d\bar{a}^2] = \sigma^2+d\mu^2
+\]</p>
+<p><b>第三步：相减。</b></p>
+<p>\[
+\mathrm{E}\left[\sum_{i=1}^{d}(a_i-\bar{a})^2\right]
+= d(\sigma^2+\mu^2) - (\sigma^2+d\mu^2)
+= \boxed{(d-1)\sigma^2}
+\]</p>
+<p>证毕。所以 \(\frac{1}{d-1}\sum(a_i-\bar{a})^2\) 的期望恰为 \(\sigma^2\)——<b>无偏估计</b>；而除以 \(d\) 会系统性偏小（比值恒为 \(d/(d-1)\)）。这就是 Bessel 修正。</p>
+</div>
+
+<div class="warn">
+<span class="tag">注意：LayerNorm 用的是 \(d\) 不是 \(d-1\)</span>
+<p>LayerNorm 的目标不是"无偏估计真实方差"，而是"把这 \(d\) 个数标准化"。除以 \(d\) 得到的就是这 \(d\) 个数本身的方差（有偏但稳定），配合后面的 \(\gamma,\beta\) 完全够用。Bessel 修正是统计推断的背景知识，理解它能避免把两种分母搞混。</p>
+</div>
+
+<h2>四、RMSNorm：更轻量的版本</h2>
+
+<div class="def">
+<span class="tag">定义：RMSNorm</span>
+<p>\[
+\mathrm{RMS}(\mathbf{x}) = \sqrt{\frac{1}{d}\sum_{i=1}^{d}x_i^2},\qquad
+y_i = \gamma\cdot\frac{x_i}{\mathrm{RMS}(\mathbf{x})}
+\]</p>
+<p>只除以"均方根"，<b>不减均值</b>，也没有 \(\beta\) 平移。Llama 等模型用它代替 LayerNorm。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：\(\mathrm{RMS}^2=\sigma^2+\mu^2\)</span>
+<p>把 \(x_i\) 写成"离均差 + 均值"：\(x_i=(x_i-\mu)+\mu\)，平方展开：</p>
+<p>\[
+\sum_{i=1}^{d}x_i^2
+= \sum_{i=1}^{d}(x_i-\mu)^2 + 2\mu\underbrace{\sum_{i=1}^{d}(x_i-\mu)}_{=0} + d\mu^2
+= d\sigma^2 + d\mu^2
+\]</p>
+<p>（交叉项为 0，因为 \(\sum(x_i-\mu)=d\mu-d\mu=0\)。）两边除以 \(d\)：</p>
+<p>\[
+\boxed{\mathrm{RMS}^2 = \sigma^2+\mu^2}
+\]</p>
+<p>含义：RMS 同时包含了"波动"（\(\sigma^2\)）和"整体偏移"（\(\mu^2\)）。当均值 \(\mu\approx 0\) 时，\(\mathrm{RMS}\approx\sigma\)，RMSNorm 与 LayerNorm 几乎等价——而实践中深层网络的激活均值确实接近 0，这就是 RMSNorm 敢省掉中心化的底气。省掉的是一次求均值和一次减法，计算量更小。</p>
+</div>
+
+<div class="key">
+<span class="tag">关键结论：LayerNorm vs RMSNorm</span>
+<p>LayerNorm = 中心化（减 \(\mu\)）+ 缩放（除 \(\sigma\)）+ 可学习的 \(\gamma,\beta\)；RMSNorm = 只缩放（除 RMS）+ \(\gamma\)。RMSNorm 用 \(\mathrm{RMS}^2=\sigma^2+\mu^2\) 这个恒等式"打包"处理了偏移，代价是输出均值不再保证为 0。实践中两者效果接近，RMSNorm 更快。</p>
+</div>
+
+<h2>五、小结</h2>
+<p>本章证明了 LayerNorm 输出的均值恰为 0、方差恰为 1；用完整推导解释了 Bessel 修正（除以 \(d-1\) 得到无偏方差估计）；并通过 \(\mathrm{RMS}^2=\sigma^2+\mu^2\) 理解了 RMSNorm 为什么可以省掉中心化。这些公式在书里是干什么的：<b>它们是 GPT 每个 Transformer 块的"稳定器"</b>——把每层的激活分布拉回均值 0 方差 1，防止深层网络中数值越跑越偏，让训练稳定收敛。</p>
+
+<h2>延伸阅读</h2>
+<ul>
+<li><a href="../bllm/10-implementing-a-gpt-model-from-scratch-to-generate-text-detail.html">原书第 4 章数学详解 · GPT 结构</a>——LayerNorm 在 Transformer 块中的位置与代码</li>
+</ul>
+
+<nav class="deriv-nav">
+<a href="07-attention.html"><span class="dir">上一章</span>第 7 章 注意力机制</a>
+<a href="index.html"><span class="dir">目录</span>全部章节</a>
+<a href="09-activation.html"><span class="dir">下一章</span>第 9 章 激活函数</a>
+</nav>
+
+</main>
+<script defer src="../bllm/assets/katex/katex.min.js"></script>
+<script defer src="../bllm/assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+});
+</script>
+</body>
+</html>

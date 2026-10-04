@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>第 6 章 · softmax · bllmmath</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../bllm/assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">bllmmath · 第 6 章 softmax</a>
+</header>
+<main id="main">
+
+<h1>第 6 章 softmax：把任意实数变成概率分布</h1>
+
+<p><b>本章目标</b>：从一个实际需求出发——神经网络输出的是一串可正可负的实数（叫 logits），我们要把它变成"概率分布"（每项非负、总和为 1）。softmax 就是干这个的，本章证明它的三条性质、数值稳定的做法，以及温度系数的作用。</p>
+<p><b>对应原书位置</b>：《Build a Large Language Model》第 3 章（attention 权重）、第 4 章（GPT 输出层）。</p>
+
+<h2>一、定义</h2>
+
+<div class="def">
+<span class="tag">定义：softmax</span>
+<p>设 \(z_1,\dots,z_n\) 为任意实数，softmax 把它们变成</p>
+<p>\[
+\alpha_i = \frac{e^{z_i}}{\sum_{j=1}^{n} e^{z_j}},\qquad i=1,\dots,n
+\]</p>
+<p>其中 \(e^{z}\) 是指数函数。分母是所有项的 \(e^{z_j}\) 之和，保证总和为 1。</p>
+</div>
+
+<div class="prereq">
+<span class="tag">预备知识：指数函数的三条性质（见第 1 章）</span>
+<p>① \(e^x>0\) 对一切实数 \(x\) 恒成立；② \(e^{a-b}=e^a/e^b\)；③ \(e^x\) 严格单调递增：\(a>b\Rightarrow e^a>e^b\)。下面三条性质的证明全靠它们。</p>
+</div>
+
+<h2>二、三性质的完整证明</h2>
+
+<div class="derivation">
+<span class="tag">推导：恒正</span>
+<p>分子 \(e^{z_i}>0\)（性质①），分母是 \(n\) 个正数之和，也大于 0。正数除以正数仍为正数，故 \(\alpha_i>0\) 对一切 \(i\) 成立。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：归一（总和为 1）</span>
+<p>把所有 \(\alpha_i\) 相加。关键观察：<b>分母 \(\sum_{j=1}^{n}e^{z_j}\) 与求和指标 \(i\) 无关</b>，可以提到求和号外面：</p>
+<p>\[
+\sum_{i=1}^{n}\alpha_i
+= \sum_{i=1}^{n}\frac{e^{z_i}}{\sum_{j=1}^{n}e^{z_j}}
+= \frac{\displaystyle\sum_{i=1}^{n}e^{z_i}}{\displaystyle\sum_{j=1}^{n}e^{z_j}}
+= 1
+\]</p>
+<p>分子分母是完全相同的求和（只是换了个字母 \(i\leftrightarrow j\)），约成 1。证毕。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：保序（原来大的，出来还大）</span>
+<p>若 \(z_i>z_j\)，由指数单调递增（性质③）得 \(e^{z_i}>e^{z_j}\)。两式分母相同（都是 \(\sum_k e^{z_k}\)），分子大的分数大，故 \(\alpha_i>\alpha_j\)。softmax 不改变大小顺序。</p>
+<p>更有用的是<b>比值公式</b>：两式相除，公共分母约掉——</p>
+<p>\[
+\frac{\alpha_i}{\alpha_j}
+= \frac{e^{z_i}}{e^{z_j}}
+= e^{z_i-z_j}
+\tag{1}
+\]</p>
+<p>（用了性质②。）它说明：两个输出的<b>比值</b>只取决于输入的<b>差</b>。输入差 1，比值就是 \(e\approx 2.718\)。</p>
+</div>
+
+<h2>三、数值稳定：为什么要减 max</h2>
+
+<p>直接算 \(e^{z_i}\) 有个实际危险：\(z_i=1000\) 时 \(e^{1000}\) 超出浮点数范围（上溢），程序直接崩。解决办法是先把所有 \(z_i\) 减去最大值 \(m=\max_j z_j\)。</p>
+
+<div class="derivation">
+<span class="tag">推导：减去常数不改变结果</span>
+<p>对任意常数 \(c\)，考虑 \(\mathrm{softmax}(z_1-c,\dots,z_n-c)\)：</p>
+<p>\[
+\frac{e^{z_i-c}}{\sum_{j=1}^{n}e^{z_j-c}}
+= \frac{e^{z_i}\,e^{-c}}{\sum_{j=1}^{n}e^{z_j}\,e^{-c}}
+= \frac{e^{z_i}\,e^{-c}}{e^{-c}\,\sum_{j=1}^{n}e^{z_j}}
+= \frac{e^{z_i}}{\sum_{j=1}^{n}e^{z_j}}
+\]</p>
+<p>第一步用了 \(e^{z_i-c}=e^{z_i}e^{-c}\)（性质②）；第二步把与 \(j\) 无关的 \(e^{-c}\) 提出求和号；第三步约分。证毕：<b>整体平移输入，softmax 输出完全不变</b>。</p>
+<p>取 \(c=m=\max_j z_j\) 后，最大的指数变成 \(e^{z_{\max}-m}=e^0=1\)，其余指数都是 \(e^{\text{负数}}\le 1\)，不可能上溢。例如 \(z=(1001,1002,1003)\)：直接算 \(e^{1003}\) 会溢出；减 1003 后变成 \((e^{-2},e^{-1},e^0)\)，安然无恙，结果与原来完全相同。</p>
+</div>
+
+<h2>四、温度系数：控制"自信"程度</h2>
+
+<div class="def">
+<span class="tag">定义：带温度的 softmax</span>
+<p>\[
+\alpha_i(T) = \frac{e^{z_i/T}}{\sum_{j=1}^{n}e^{z_j/T}},\qquad T>0
+\]</p>
+<p>\(T\) 叫<b>温度</b>。\(T=1\) 就是普通 softmax。</p>
+</div>
+
+<p>温度的作用：\(T\) 越小，分布越"尖锐"（自信）；\(T\) 越大，分布越"平坦"（随和）。看两个极限就明白了。</p>
+
+<div class="derivation">
+<span class="tag">推导：\(T\to 0^+\) 时变成 one-hot</span>
+<p>设 \(z_1\) 是唯一的最大值（\(z_1>z_j,\ j\ge 2\)）。看 \(\alpha_1\)：</p>
+<p>\[
+\alpha_1(T) = \frac{e^{z_1/T}}{\sum_{j=1}^{n}e^{z_j/T}}
+= \frac{1}{1+\displaystyle\sum_{j=2}^{n}e^{(z_j-z_1)/T}}
+\]</p>
+<p>（分子分母同除以 \(e^{z_1/T}\)。）因为 \(z_j-z_1<0\)，当 \(T\to 0^+\) 时 \((z_j-z_1)/T\to -\infty\)，故 \(e^{(z_j-z_1)/T}\to 0\)。分母 \(\to 1+0=1\)，于是</p>
+<p>\[
+\lim_{T\to 0^+}\alpha_1(T)=1,\qquad
+\lim_{T\to 0^+}\alpha_j(T)=0\ (j\ge 2)
+\]</p>
+<p>（后者因为总和为 1 且各项非负。）极限分布是 \((1,0,\dots,0)\)——<b>one-hot</b>：只选最大值，完全自信。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：\(T\to\infty\) 时变成均匀分布</span>
+<p>当 \(T\to\infty\) 时，对每个固定的 \(z_i\) 都有 \(z_i/T\to 0\)，于是 \(e^{z_i/T}\to e^0=1\)：</p>
+<p>\[
+\lim_{T\to\infty}\alpha_i(T)
+= \frac{1}{\sum_{j=1}^{n}1}
+= \frac{1}{n}
+\]</p>
+<p>每一项都趋向 \(1/n\)——<b>均匀分布</b>：完全不自信，每个选项概率相等。</p>
+</div>
+
+<div class="key">
+<span class="tag">关键结论</span>
+<p>温度 \(T\) 是一个"自信旋钮"：\(T\to 0\) 只认最大值（贪心），\(T\to\infty\) 一视同仁（均匀）。实际用 \(T=1\) 附近的值微调。注意温度<b>不改变大小顺序</b>（\(z_i/T\) 的单调性与 \(z_i\) 一致），只改变分布的陡峭程度。</p>
+</div>
+
+<h2>五、小结</h2>
+<p>本章从"实数 → 概率分布"的需求出发，定义了 softmax，证明了恒正、归一、保序三性质，证明了减 max 的数值稳定技巧不改变结果，并用双极限说明了温度系数的作用。这个公式在书里是干什么的：<b>它是 attention 权重的来源</b>（第 3 章把点积分数变成权重）和 <b>GPT 输出层的标准配置</b>（第 4 章把 logits 变成下一个 token 的概率）。下一章把点积分数和 softmax 组装成完整的注意力机制。</p>
+
+<h2>延伸阅读</h2>
+<ul>
+<li><a href="../bllm/09-coding-attention-mechanisms-detail.html">原书第 3 章数学详解 · 注意力机制</a>——softmax 权重的完整上下文</li>
+<li><a href="../bllm/10-implementing-a-gpt-model-from-scratch-to-generate-text-detail.html">原书第 4 章数学详解 · GPT 结构</a>——输出层的 softmax</li>
+</ul>
+
+<nav class="deriv-nav">
+<a href="05-similarity.html"><span class="dir">上一章</span>第 5 章 相似度</a>
+<a href="index.html"><span class="dir">目录</span>全部章节</a>
+<a href="07-attention.html"><span class="dir">下一章</span>第 7 章 注意力机制</a>
+</nav>
+
+</main>
+<script defer src="../bllm/assets/katex/katex.min.js"></script>
+<script defer src="../bllm/assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>第 5 章 · 相似度 · bllmmath</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../bllm/assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">bllmmath · 第 5 章 相似度</a>
+</header>
+<main id="main">
+
+<h1>第 5 章 相似度：点积为什么能衡量"对齐"</h1>
+
+<p><b>本章目标</b>：从点积的定义出发，一步步证明 \(\mathbf{a}\cdot\mathbf{b}=\lVert\mathbf{a}\rVert\lVert\mathbf{b}\rVert\cos\theta\)，并解释为什么 attention 敢用两个向量的点积来当"分数"。</p>
+<p><b>对应原书位置</b>：《Build a Large Language Model》第 3 章"注意力机制"——计算 query 和 key 的点积分数那一节。</p>
+
+<h2>一、点积的两种长相</h2>
+
+<div class="def">
+<span class="tag">定义：点积（代数定义）</span>
+<p>设 \(\mathbf{a}=(a_1,\dots,a_n)\)，\(\mathbf{b}=(b_1,\dots,b_n)\) 是两个 \(n\) 维向量，它们的<b>点积</b>定义为对应分量相乘再相加：</p>
+<p>\[
+\mathbf{a}\cdot\mathbf{b} = \sum_{i=1}^{n} a_i b_i = a_1b_1 + a_2b_2 + \cdots + a_nb_n
+\]</p>
+<p>向量的<b>模长</b>（长度）定义为 \(\lVert\mathbf{a}\rVert=\sqrt{\sum_{i=1}^{n}a_i^2}\)，于是 \(\lVert\mathbf{a}\rVert^2=\sum_{i=1}^{n}a_i^2\)。（见第 4 章）</p>
+</div>
+
+<p>这个定义很"干"：就是一串乘加。但它还有另一副面孔——几何的：点积等于"模长相乘再乘夹角余弦"。下面证明这两副面孔是同一个人。</p>
+
+<h2>二、证明 \(\mathbf{a}\cdot\mathbf{b}=\lVert\mathbf{a}\rVert\lVert\mathbf{b}\rVert\cos\theta\)</h2>
+
+<div class="prereq">
+<span class="tag">预备知识：余弦定理</span>
+<p>平面上一个三角形，三条边长为 \(A,B,C\)，其中边 \(C\) 所对的角为 \(\theta\)，则</p>
+<p>\[
+C^2 = A^2 + B^2 - 2AB\cos\theta
+\]</p>
+<p>这是勾股定理的推广：当 \(\theta=90^\circ\) 时 \(\cos\theta=0\)，就退化成 \(C^2=A^2+B^2\)。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：点积的几何形式</span>
+<p>把 \(\mathbf{a}\)、\(\mathbf{b}\)、\(\mathbf{a}-\mathbf{b}\) 看成三角形的三条边：\(\mathbf{a}\) 和 \(\mathbf{b}\) 从同一点出发，它们的终点连线正是 \(\mathbf{a}-\mathbf{b}\)。记 \(\theta\) 为 \(\mathbf{a}\) 与 \(\mathbf{b}\) 的夹角，对这个三角形用余弦定理：</p>
+<p>\[
+\lVert\mathbf{a}-\mathbf{b}\rVert^2
+= \lVert\mathbf{a}\rVert^2 + \lVert\mathbf{b}\rVert^2
+  - 2\lVert\mathbf{a}\rVert\lVert\mathbf{b}\rVert\cos\theta
+\tag{1}
+\]</p>
+<p>另一方面，把左边按分量展开（完全平方公式 \((a_i-b_i)^2=a_i^2-2a_ib_i+b_i^2\)）：</p>
+<p>\[
+\begin{aligned}
+\lVert\mathbf{a}-\mathbf{b}\rVert^2
+&= \sum_{i=1}^{n}(a_i-b_i)^2 \\
+&= \sum_{i=1}^{n}\left(a_i^2 - 2a_ib_i + b_i^2\right) \\
+&= \underbrace{\sum_{i=1}^{n}a_i^2}_{\lVert\mathbf{a}\rVert^2}
+   - 2\underbrace{\sum_{i=1}^{n}a_ib_i}_{\mathbf{a}\cdot\mathbf{b}}
+   + \underbrace{\sum_{i=1}^{n}b_i^2}_{\lVert\mathbf{b}\rVert^2}
+\end{aligned}
+\tag{2}
+\]</p>
+<p>式 (1) 和式 (2) 说的是同一个量 \(\lVert\mathbf{a}-\mathbf{b}\rVert^2\)，令它们相等，两边同时消去 \(\lVert\mathbf{a}\rVert^2+\lVert\mathbf{b}\rVert^2\)：</p>
+<p>\[
+-2(\mathbf{a}\cdot\mathbf{b}) = -2\lVert\mathbf{a}\rVert\lVert\mathbf{b}\rVert\cos\theta
+\]</p>
+<p>两边除以 \(-2\)，得到</p>
+<p>\[
+\boxed{\mathbf{a}\cdot\mathbf{b}=\lVert\mathbf{a}\rVert\lVert\mathbf{b}\rVert\cos\theta}
+\]</p>
+<p>证毕。代数定义的点积，恒等于"模长乘积 × 夹角余弦"。</p>
+</div>
+
+<h2>三、余弦相似度：只看方向，不看大小</h2>
+
+<div class="derivation">
+<span class="tag">推导：余弦相似度</span>
+<p>把上面的恒等式变形，两边除以 \(\lVert\mathbf{a}\rVert\lVert\mathbf{b}\rVert\)（假设都不为零向量）：</p>
+<p>\[
+\cos\theta = \frac{\mathbf{a}\cdot\mathbf{b}}{\lVert\mathbf{a}\rVert\lVert\mathbf{b}\rVert}
+\]</p>
+<p>右边这个量叫<b>余弦相似度</b>。因为 \(\cos\theta\) 的取值范围是 \([-1,1]\)，所以：</p>
+<ul>
+<li>\(\theta=0^\circ\)（完全同向）时，\(\cos\theta=1\)，相似度最高；</li>
+<li>\(\theta=90^\circ\)（互相垂直）时，\(\cos\theta=0\)，表示"不相关"；</li>
+<li>\(\theta=180^\circ\)（完全反向）时，\(\cos\theta=-1\)，相似度最低。</li>
+</ul>
+<p>它只关心<b>方向</b>是否一致，把模长的影响除掉了。</p>
+</div>
+
+<h2>四、为什么点积能衡量"对齐程度"</h2>
+
+<p>回到 \(\mathbf{a}\cdot\mathbf{b}=\lVert\mathbf{a}\rVert\lVert\mathbf{b}\rVert\cos\theta\)。如果两个向量的模长固定，点积的大小就<b>完全由夹角决定</b>：夹角越小，\(\cos\theta\) 越大，点积越大。这就是"对齐程度"的数学含义——<b>方向越一致，点积越大</b>。</p>
+
+<p>算一个具体例子。设 \(\mathbf{a}=(3,0)\)，\(\mathbf{b}=(2,2)\)：</p>
+<p>\[
+\mathbf{a}\cdot\mathbf{b} = 3\times 2 + 0\times 2 = 6
+\]</p>
+<p>\[
+\lVert\mathbf{a}\rVert = 3,\quad
+\lVert\mathbf{b}\rVert = \sqrt{2^2+2^2} = \sqrt{8} \approx 2.83
+\]</p>
+<p>\[
+\cos\theta = \frac{6}{3\times 2.83} \approx 0.707 \quad\Longrightarrow\quad \theta \approx 45^\circ
+\]</p>
+<p>确实，\(\mathbf{b}=(2,2)\) 与 x 轴的夹角就是 \(45^\circ\)。</p>
+
+<div class="warn">
+<span class="tag">注意：点积还受模长影响</span>
+<p>点积 = 模长乘积 × 余弦。即使方向完全一致（\(\cos\theta=1\)），模长大的向量点积也大。这解释了原书里的一个现象：token "journey" 和自己的点积分数最高——夹角为 \(0\)（\(\cos 0=1\)），而且自己的模长往往最大。attention 里这是合理的：token 天然最关注自己。</p>
+</div>
+
+<div class="key">
+<span class="tag">关键结论</span>
+<p>attention 的分数 \(\omega_{ij}=\mathbf{q}_i\cdot\mathbf{k}_j\) 本质上在问："query \(i\) 和 key \(j\) 的方向有多对齐？"方向越一致、向量越长，分数越高。下一章的 softmax 会把这些分数变成权重。</p>
+</div>
+
+<h2>五、小结</h2>
+<p>本章从点积的代数定义出发，用余弦定理证明了 \(\mathbf{a}\cdot\mathbf{b}=\lVert\mathbf{a}\rVert\lVert\mathbf{b}\rVert\cos\theta\)。这个公式在书里是干什么的：<b>它是 attention 分数的数学基础</b>——self-attention 中每个 query 对每个 key 打分，用的就是点积；点积大 = 方向对齐 = "相关"，模型据此决定该关注谁。</p>
+
+<h2>延伸阅读</h2>
+<ul>
+<li><a href="../bllm/09-coding-attention-mechanisms-detail.html">原书第 3 章数学详解 · 注意力机制</a>——点积分数、softmax 权重的完整上下文</li>
+</ul>
+
+<nav class="deriv-nav">
+<a href="04-vectors-matrices.html"><span class="dir">上一章</span>第 4 章 向量与矩阵</a>
+<a href="index.html"><span class="dir">目录</span>全部章节</a>
+<a href="06-softmax.html"><span class="dir">下一章</span>第 6 章 softmax</a>
+</nav>
+
+</main>
+<script defer src="../bllm/assets/katex/katex.min.js"></script>
+<script defer src="../bllm/assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+});
+</script>
+</body>
+</html>

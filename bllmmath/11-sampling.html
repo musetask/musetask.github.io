@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>第 11 章 · 采样 · bllmmath</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../bllm/assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">bllmmath · 第 11 章 采样</a>
+</header>
+<main id="main">
+
+<h1>第 11 章 · 采样：温度、top-k/top-p 与 Gumbel-max</h1>
+
+<p><b>本章目标。</b>推导温度缩放的概率比公式及其两个极限（\(T\to0^{+}\) 与 \(T\to\infty\)）；给出 top-k / top-p 的数学描述并证明重归一化后和为 1；完整证明 Gumbel-max trick——每一步都不跳。</p>
+<p><b>对应原书。</b>第 10 章文本生成：各种采样策略的代码实现。</p>
+
+<h2>一、基本定义</h2>
+
+<div class="def">
+<span class="tag">定义：温度 softmax</span>
+<p>\[
+p_{i}=\frac{e^{z_{i}/T}}{\sum_{j=1}^{V}e^{z_{j}/T}},\qquad T&gt;0
+\]</p>
+<p>\(z_{i}\) 是第 \(i\) 个 token 的 logit（未归一化的分数），\(T\) 是温度系数。\(T=1\) 时退化为普通 softmax（第 6 章）。</p>
+</div>
+
+<div class="def">
+<span class="tag">定义：顺序统计量与 Gumbel 分布</span>
+<p>把概率从大到小排列，记为 \(p_{(1)}\ge p_{(2)}\ge\cdots\ge p_{(V)}\)，称为<b>顺序统计量</b>。</p>
+<p>标准 Gumbel 分布 \(\mathrm{Gumbel}(0,1)\) 的累积分布函数和密度函数为</p>
+<p>\[
+F(x)=e^{-e^{-x}},\qquad f(x)=F'(x)=e^{-x-e^{-x}},\qquad x\in\mathbb{R}
+\]</p>
+<p>若 \(u\) 服从 \((0,1)\) 上的均匀分布，则 \(g=-\log(-\log u)\) 服从 \(\mathrm{Gumbel}(0,1)\)（逆变换采样：解 \(F(x)=u\) 得 \(e^{-e^{-x}}=u\)，两边取对数得 \(-e^{-x}=\log u\)，再取对数得 \(x=-\log(-\log u)\)）。</p>
+</div>
+
+<h2>二、温度缩放的概率比</h2>
+
+<div class="derivation">
+<span class="tag">推导：\(\frac{p_{i}}{p_{j}}=e^{(z_{i}-z_{j})/T}\)</span>
+<p>两式相除，公共的分母 \(\sum_{k}e^{z_{k}/T}\) 直接约掉：</p>
+<p>\[
+\frac{p_{i}}{p_{j}}
+=\frac{e^{z_{i}/T}/\sum_{k}e^{z_{k}/T}}{e^{z_{j}/T}/\sum_{k}e^{z_{k}/T}}
+=\frac{e^{z_{i}/T}}{e^{z_{j}/T}}
+=e^{z_{i}/T-z_{j}/T}
+=e^{(z_{i}-z_{j})/T}
+\]</p>
+<p>（用了 \(e^{a}/e^{b}=e^{a-b}\)，第 1 章。）∎</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：\(T\to0^{+}\) 时退化为 one-hot（argmax）</span>
+<p>设 \(z_{1}\) 是严格最大的 logit（\(z_{1}&gt;z_{j}\) 对一切 \(j&gt;1\)）。把 \(p_{1}\) 的分子分母同除以 \(e^{z_{1}/T}\)：</p>
+<p>\[
+p_{1}=\frac{e^{z_{1}/T}}{\sum_{j}e^{z_{j}/T}}
+=\frac{1}{1+\sum_{j&gt;1}e^{(z_{j}-z_{1})/T}}
+\]</p>
+<p>对每个 \(j&gt;1\)，\(z_{j}-z_{1}&lt;0\)。当 \(T\to0^{+}\) 时，\((z_{j}-z_{1})/T\to-\infty\)，故 \(e^{(z_{j}-z_{1})/T}\to0\)。分母趋于 \(1+0=1\)，于是 \(p_{1}\to1\)。</p>
+<p>对 \(j&gt;1\)，\(p_{j}=p_{1}\cdot\frac{p_{j}}{p_{1}}=p_{1}\cdot e^{(z_{j}-z_{1})/T}\to1\cdot0=0\)（用上一推导的比值公式）。故极限分布是 \((1,0,\dots,0)\)——即只取最大 logit 的 <b>argmax</b>。∎</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：\(T\to\infty\) 时退化为均匀分布</span>
+<p>当 \(T\to\infty\) 时，对任意固定的 \(i,j\)，\((z_{i}-z_{j})/T\to0\)，故比值公式给出 \(\frac{p_{i}}{p_{j}}=e^{(z_{i}-z_{j})/T}\to e^{0}=1\)。所有 \(p_{i}\) 彼此相等，又 \(\sum_{i}p_{i}=1\)，故 \(p_{i}=1/V\)——均匀分布。∎</p>
+</div>
+
+<div class="key">
+<span class="tag">温度的直觉</span>
+<p>\(T\to0^{+}\)：完全贪心，只取最可能的词；\(T=1\)：按模型原始分布采样；\(T\to\infty\)：完全随机。温度就是"在多大程度上抹平 logit 的差距"。</p>
+</div>
+
+<h2>三、top-k 与 top-p 的数学描述</h2>
+
+<div class="def">
+<span class="tag">定义：截断集合</span>
+<p><b>top-k</b>：保留概率最大的 \(k\) 个 token，记集合为 \(S\)，\(|S|=k\)。</p>
+<p><b>top-p</b>（nucleus sampling）：用顺序统计量，取</p>
+<p>\[
+S=\min\left\{k:\sum_{i=1}^{k}p_{(i)}\ge p\right\}
+\]</p>
+<p>即"刚好凑够累计概率 \(p\) 的最少 token 数"，保留前 \(S\) 个。\(p\) 是超参数（如 0.9）。</p>
+</div>
+
+<p>截断后必须<b>重归一化</b>，否则剩下的概率加起来小于 1，不再是分布。定义</p>
+<p>\[
+q_{i}=\begin{cases}
+\dfrac{p_{i}}{C}, & i\in S\\[8pt]
+0, & i\notin S
+\end{cases}
+\qquad\text{其中 }C=\sum_{j\in S}p_{j}
+\]</p>
+
+<div class="derivation">
+<span class="tag">推导：重归一化后 \(\sum_{i}q_{i}=1\)，且相对比例不变</span>
+<p><b>和为 1。</b>只有 \(S\) 内的项非零：</p>
+<p>\[
+\sum_{i=1}^{V}q_{i}=\sum_{i\in S}\frac{p_{i}}{C}
+=\frac{1}{C}\sum_{i\in S}p_{i}
+=\frac{C}{C}=1
+\]</p>
+<p>（\(C\) 与求和指标 \(i\) 无关，可提到求和号外；分子正是 \(C\) 的定义。）∎</p>
+<p><b>相对比例不变。</b>对 \(i,j\in S\)：</p>
+<p>\[
+\frac{q_{i}}{q_{j}}=\frac{p_{i}/C}{p_{j}/C}=\frac{p_{i}}{p_{j}}
+\]</p>
+<p>截断只砍掉了尾部，保留下来的 token 之间的相对大小关系原样保持。∎</p>
+</div>
+
+<h2>四、Gumbel-max trick：完整证明</h2>
+
+<div class="def">
+<span class="tag">定理：Gumbel-max trick</span>
+<p>设 \(g_{1},\dots,g_{V}\) 独立同分布于 \(\mathrm{Gumbel}(0,1)\)，记 \(X_{i}=\log p_{i}+g_{i}\)，其中 \((p_{1},\dots,p_{V})\) 是任意概率分布。则</p>
+<p>\[
+\Pr\left(\arg\max_{i}X_{i}=k\right)=p_{k},\qquad k=1,\dots,V
+\]</p>
+<p>即"给每个 \(\log p_{i}\) 加一个 Gumbel 噪声再取最大"，等价于按 \(p\) 采样。这是在计算机上实现采样的优雅方式。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导（第一步）：条件于 \(g_{k}\)，算各 \(g_{i}\) 落在界内</span>
+<p>事件 \(\{\arg\max_{i}X_{i}=k\}\) 意味着 \(X_{k}\ge X_{i}\) 对一切 \(i\ne k\) 成立，即</p>
+<p>\[
+\log p_{k}+g_{k}\ge\log p_{i}+g_{i}
+\iff g_{i}\le g_{k}+\log p_{k}-\log p_{i}
+=g_{k}+\log\frac{p_{k}}{p_{i}}
+\]</p>
+<p>先把 \(g_{k}\) 固定为一个常数 \(g\)（后面再对它积分——这就是"条件期望"的思想，第 3 章）。各 \(g_{i}\,(i\ne k)\) 相互独立，故联合概率等于边缘概率的乘积：</p>
+<p>\[
+\Pr(\arg\max=k\mid g_{k}=g)
+=\prod_{i\ne k}\Pr\left(g_{i}\le g+\log\frac{p_{k}}{p_{i}}\right)
+=\prod_{i\ne k}F\!\left(g+\log\frac{p_{k}}{p_{i}}\right)
+\]</p>
+<p>其中 \(F\) 是 Gumbel 的累积分布函数。现在逐项化简。由 \(F(x)=e^{-e^{-x}}\)：</p>
+<p>\[
+\begin{aligned}
+F\!\left(g+\log\frac{p_{k}}{p_{i}}\right)
+&=\exp\!\left(-e^{-\left(g+\log\frac{p_{k}}{p_{i}}\right)}\right)\\
+&=\exp\!\left(-e^{-g}\cdot e^{-\log\frac{p_{k}}{p_{i}}}\right)
+\qquad\text{（\(e^{a+b}=e^{a}e^{b}\)）}\\
+&=\exp\!\left(-e^{-g}\cdot\frac{p_{i}}{p_{k}}\right)
+\qquad\text{（\(e^{-\log\frac{p_{k}}{p_{i}}}=\frac{p_{i}}{p_{k}}\)）}
+\end{aligned}
+\]</p>
+<p>把 \(V-1\) 项连乘，指数相加（\(e^{a}e^{b}=e^{a+b}\) 反复用）：</p>
+<p>\[
+\prod_{i\ne k}\exp\!\left(-e^{-g}\cdot\frac{p_{i}}{p_{k}}\right)
+=\exp\!\left(-e^{-g}\sum_{i\ne k}\frac{p_{i}}{p_{k}}\right)
+=\exp\!\left(-e^{-g}\cdot\frac{1-p_{k}}{p_{k}}\right)
+\]</p>
+<p>最后一步用了 \(\sum_{i\ne k}p_{i}=1-p_{k}\)（概率和为 1）。记常数 \(c=\frac{1-p_{k}}{p_{k}}\)，得</p>
+<p>\[
+\boxed{\Pr(\arg\max=k\mid g_{k}=g)=\exp\!\left(-c\,e^{-g}\right)}
+\]</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导（第二步）：对 \(g_{k}\) 的密度积分</span>
+<p>\(g_{k}\) 本身是随机的，密度为 \(f(g)=e^{-g-e^{-g}}\)。无条件概率 = 条件概率按密度加权积分（全概率公式的连续版，第 3 章）：</p>
+<p>\[
+\Pr(\arg\max=k)=\int_{-\infty}^{\infty}f(g)\cdot\exp\!\left(-c\,e^{-g}\right)\,dg
+=\int_{-\infty}^{\infty}e^{-g-e^{-g}}\cdot e^{-c\,e^{-g}}\,dg
+\]</p>
+<p>合并指数中 \(e^{-g}\) 的系数：</p>
+<p>\[
+=\int_{-\infty}^{\infty}e^{-g}\,e^{-(1+c)e^{-g}}\,dg
+\]</p>
+<p>换元。令 \(u=(1+c)e^{-g}\)（第 2 章换元法），则</p>
+<p>\[
+du=-(1+c)e^{-g}\,dg\quad\Longrightarrow\quad e^{-g}\,dg=-\frac{du}{1+c}
+\]</p>
+<p>积分限：\(g\to-\infty\) 时 \(e^{-g}\to+\infty\)，故 \(u\to+\infty\)；\(g\to+\infty\) 时 \(u\to0^{+}\)。代入：</p>
+<p>\[
+\int_{-\infty}^{\infty}e^{-g}e^{-(1+c)e^{-g}}dg
+=\int_{+\infty}^{0}e^{-u}\left(-\frac{du}{1+c}\right)
+=\frac{1}{1+c}\int_{0}^{\infty}e^{-u}\,du
+\]</p>
+<p>（交换积分上下限吃掉负号。）\(\int_{0}^{\infty}e^{-u}du=[-e^{-u}]_{0}^{\infty}=1\)，故积分值为 \(\frac{1}{1+c}\)。</p>
+<p>最后代回 \(c=\frac{1-p_{k}}{p_{k}}\)：</p>
+<p>\[
+1+c=1+\frac{1-p_{k}}{p_{k}}=\frac{p_{k}+1-p_{k}}{p_{k}}=\frac{1}{p_{k}}
+\quad\Longrightarrow\quad
+\frac{1}{1+c}=p_{k}
+\]</p>
+<p>于是 \(\boxed{\Pr(\arg\max_{i}(\log p_{i}+g_{i})=k)=p_{k}}\)。证毕。∎</p>
+</div>
+
+<div class="key">
+<span class="tag">四种采样方式的关系</span>
+<p>温度缩放改变分布的"陡峭程度"；top-k / top-p 先截断再重归一化（相对比例不变）；Gumbel-max 则是"按分布采样"的一个精确实现——代码里 <code>torch.multinomial</code> 做的事，数学上就是这个定理。</p>
+</div>
+
+<h2>五、本章小结</h2>
+
+<p>本章推导了温度缩放的比值公式 \(e^{(z_{i}-z_{j})/T}\) 及其两个极限；给出了 top-k/top-p 的截断定义并证明重归一化后仍是合法分布；完整证明了 Gumbel-max trick。下一章回答训练中最根本的问题：为什么沿着负梯度走，损失就会下降。</p>
+
+<h2>延伸阅读</h2>
+<ul>
+<li><a href="../bllm/10-implementing-a-gpt-model-from-scratch-to-generate-text-detail.html">原书第 10 章数学详解</a>：采样策略的代码实现与温度实测</li>
+</ul>
+
+<nav class="deriv-nav">
+<a href="10-loss.html"><span class="dir">上一章</span>第 10 章 损失函数</a>
+<a href="index.html"><span class="dir">目录</span>全部章节</a>
+<a href="12-gradient-descent.html"><span class="dir">下一章</span>第 12 章 梯度下降</a>
+</nav>
+</main>
+<script defer src="../bllm/assets/katex/katex.min.js"></script>
+<script defer src="../bllm/assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+});
+</script>
+</body>
+</html>

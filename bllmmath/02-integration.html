@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>第 2 章 · 积分初步 · bllmmath</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../bllm/assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">bllmmath · 第 2 章 积分初步</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">bllmmath · 第 2 章</span></div>
+
+<h1>第 2 章 · 积分初步</h1>
+
+<div class="lead">
+<b>本章目标</b>：理解定积分是什么（黎曼和的直觉）、掌握牛顿-莱布尼茨公式和换元法，
+最后亲手把高斯分布的累积函数换元成 \(\mathrm{erf}\) 的形式。<br>
+<b>对应原书位置</b>：第 10 章的 GELU 激活函数——它的精确表达式里藏着一个
+\(\mathrm{erf}\)，而 \(\mathrm{erf}\) 就是一个积不出初等函数的积分。
+本章是第 9 章（激活函数）的数学地基。
+</div>
+
+<h2><span class="tag">2.1 定积分：无穷多个小矩形</span></h2>
+
+<div class="def">
+<span class="tag">定义：定积分（黎曼和的直觉）</span>
+<p>函数 \(f\) 在区间 \([a,b]\) 上的<b>定积分</b>记作 \(\int_a^b f(x)\,dx\)。
+构造方法：把 \([a,b]\) 切成 \(n\) 个等宽的小区间，每个宽 \(\Delta x=\frac{b-a}{n}\)；
+在第 \(i\) 个小区间上取一点 \(x_i\)，以 \(f(x_i)\) 为高、\(\Delta x\) 为宽作小矩形；
+把 \(n\) 个小矩形的面积加起来得到<b>黎曼和</b> \(\sum_{i=1}^{n}f(x_i)\Delta x\)；
+让 \(n\to\infty\)（小矩形无限变细），这个和的极限就是定积分。</p>
+<p>几何意义：\(f(x)\ge 0\) 时，\(\int_a^b f(x)\,dx\) 就是曲线 \(y=f(x)\) 与 \(x\) 轴、
+直线 \(x=a\)、\(x=b\) 围成的图形面积。</p>
+</div>
+
+<p>反过来问：如果已知"面积函数"的变化率，能不能反求面积？能——这就是微积分基本定理。</p>
+
+<div class="def">
+<span class="tag">定义：原函数与不定积分</span>
+<p>若 \(F'(x)=f(x)\)，则称 \(F\) 是 \(f\) 的一个<b>原函数</b>，记作
+\(\int f(x)\,dx=F(x)+C\)（\(C\) 为任意常数，称为<b>不定积分</b>）。
+原函数不唯一，任意两个原函数只差一个常数（因为常数的导数是 0）。</p>
+</div>
+
+<h2><span class="tag">2.2 牛顿-莱布尼茨公式</span></h2>
+
+<div class="def">
+<span class="tag">定理：牛顿-莱布尼茨公式</span>
+<p>设 \(f\) 在 \([a,b]\) 上连续，\(F\) 是 \(f\) 的任一原函数（\(F'=f\)），则</p>
+<p>\[
+\int_a^b f(x)\,dx = F(b)-F(a)
+\]</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：公式的直觉（为什么原函数能算面积）</span>
+<p>把 \([a,b]\) 切成很多小段，每段宽 \(\Delta x\)。在第 \(i\) 段上，\(F\) 的增量近似为</p>
+<p>\[
+F(x_{i+1})-F(x_i)\approx F'(x_i)\,\Delta x = f(x_i)\,\Delta x
+\]</p>
+<p>（这是导数定义的变形：\(F'(x_i)=\lim_{\Delta x\to 0}\frac{F(x_{i+1})-F(x_i)}{\Delta x}\)。）
+把所有小段的增量加起来，左边 telescoping（逐项相消）：</p>
+<p>\[
+\sum_{i}\big[F(x_{i+1})-F(x_i)\big]=F(b)-F(a)
+\]</p>
+<p>右边正是黎曼和 \(\sum_i f(x_i)\Delta x\)，取极限得 \(\int_a^b f(x)\,dx\)。
+所以<b>总增量 = 瞬时变化率的累加</b>——微分和积分互为逆运算。严格证明需要中值定理，
+这里的直觉已经抓住了全部思想。</p>
+</div>
+
+<h2><span class="tag">2.3 换元法</span></h2>
+
+<div class="def">
+<span class="tag">定理：换元积分法</span>
+<p>设 \(u=g(x)\) 可导，\(F\) 是 \(f\) 的原函数，则</p>
+<p>\[
+\int f(g(x))\,g'(x)\,dx = F(g(x))+C
+\]</p>
+<p>即：令 \(u=g(x)\)，\(du=g'(x)\,dx\)，把积分换成 \(\int f(u)\,du\) 来算。
+<b>定积分换元时，积分限也要跟着换</b>：\(x:a\to b\) 对应 \(u:g(a)\to g(b)\)。</p>
+</div>
+
+<p>换元法本质是链式法则的逆运算：\([F(g(x))]'=F'(g(x))g'(x)=f(g(x))g'(x)\)，
+两边积分即得公式。下面用它算一个本书真正需要的积分。</p>
+
+<div class="derivation">
+<span class="tag">推导：从高斯累积函数到 \(\mathrm{erf}\)（为 GELU 铺垫）</span>
+<p>标准正态分布的累积分布函数是</p>
+<p>\[
+\Phi(x)=\int_{-\infty}^{x}\frac{1}{\sqrt{2\pi}}e^{-t^2/2}\,dt
+\]</p>
+<p>而误差函数定义为</p>
+<p>\[
+\mathrm{erf}(z)=\frac{2}{\sqrt{\pi}}\int_{0}^{z}e^{-u^2}\,du
+\]</p>
+<p>目标：证明 \(\Phi(x)=\frac{1}{2}\left(1+\mathrm{erf}\left(\frac{x}{\sqrt{2}}\right)\right)\)。
+换元：令 \(u=\frac{t}{\sqrt{2}}\)，则 \(t=\sqrt{2}\,u\)，\(dt=\sqrt{2}\,du\)；
+\(t:-\infty\to x\) 对应 \(u:-\infty\to x/\sqrt{2}\)：</p>
+<p>\[
+\begin{aligned}
+\Phi(x) &= \int_{-\infty}^{x/\sqrt{2}}\frac{1}{\sqrt{2\pi}}\,e^{-u^2}\cdot\sqrt{2}\,du
+\qquad\text{（代入 }t=\sqrt{2}u\text{）}\\
+&= \frac{1}{\sqrt{\pi}}\int_{-\infty}^{x/\sqrt{2}}e^{-u^2}\,du
+\qquad\text{（}\frac{\sqrt{2}}{\sqrt{2\pi}}=\frac{1}{\sqrt{\pi}}\text{）}
+\end{aligned}
+\]</p>
+<p>把积分拆成两段：\(\int_{-\infty}^{a}=\int_{-\infty}^{0}+\int_{0}^{a}\)。
+由偶函数性质及高斯积分 \(\int_{-\infty}^{\infty}e^{-u^2}du=\sqrt{\pi}\)（经典结论，此处直接用），
+\(\int_{-\infty}^{0}e^{-u^2}du=\frac{\sqrt{\pi}}{2}\)：</p>
+<p>\[
+\begin{aligned}
+\Phi(x) &= \frac{1}{\sqrt{\pi}}\left[\frac{\sqrt{\pi}}{2}
+          +\int_{0}^{x/\sqrt{2}}e^{-u^2}\,du\right] \\
+&= \frac{1}{2}+\frac{1}{\sqrt{\pi}}\int_{0}^{x/\sqrt{2}}e^{-u^2}\,du \\
+&= \frac{1}{2}\left[1+\frac{2}{\sqrt{\pi}}\int_{0}^{x/\sqrt{2}}e^{-u^2}\,du\right]
+   \qquad\text{（提公因式 }\frac12\text{）}\\
+&= \frac{1}{2}\left(1+\mathrm{erf}\left(\frac{x}{\sqrt{2}}\right)\right)
+   \qquad\text{（对照 }\mathrm{erf}\text{ 的定义）}
+\end{aligned}
+\]</p>
+<p>证毕。这个恒等式就是第 9 章 GELU 精确表达式里 \(\Phi(x)=\frac12(1+\mathrm{erf}(x/\sqrt{2}))\) 的来源。</p>
+</div>
+
+<div class="key">
+<span class="tag">本章公式小结</span>
+<p>定积分 = 黎曼和的极限（无穷小矩形求和）；牛顿-莱布尼茨公式
+\(\int_a^b f=F(b)-F(a)\)；换元法 \(\int f(g(x))g'(x)dx=\int f(u)du\)（定积分要换限）；
+\(\Phi(x)=\frac12(1+\mathrm{erf}(x/\sqrt{2}))\)。</p>
+</div>
+
+<div class="key">
+<span class="tag">这些公式在书里是干什么的</span>
+<p>GELU 激活函数 \( \mathrm{GELU}(x)=x\Phi(x) \) 描述"以一定概率保留输入"，
+它的精确计算要走 \(\mathrm{erf}\)；而 \(\mathrm{erf}\) 没有初等原函数，
+只能数值计算——理解了这一点，就理解了为什么代码里 GELU 有"精确版"和"tanh 近似版"两种实现。</p>
+</div>
+
+<p><b>延伸阅读</b>：</p>
+<ul>
+<li><a href="../bllm/10-implementing-a-gpt-model-from-scratch-to-generate-text-detail.html">原书第 10 章数学详解</a>——GELU 的 erf 换元推导</li>
+</ul>
+
+<nav class="deriv-nav">
+<a href="01-derivatives.html"><span class="dir">上一章</span>第 1 章 · 导数</a>
+<a href="index.html"><span class="dir">目录</span>全部章节</a>
+<a href="03-probability.html"><span class="dir">下一章</span>第 3 章 · 概率基础</a>
+</nav>
+</main>
+<script defer src="../bllm/assets/katex/katex.min.js"></script>
+<script defer src="../bllm/assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+});
+</script>
+</body>
+</html>

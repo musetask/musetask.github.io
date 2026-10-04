@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>第 12 章 · RMSNorm · barmmath</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../bllm/assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">barmmath · 第 12 章 RMSNorm</a>
+</header>
+<main id="main">
+
+<div class="phead"><span class="cnt">对应原书附录 C.1 · RMSNorm</span></div>
+
+<h1>第 12 章 RMSNorm：只缩放、不中心化的归一化</h1>
+
+<div class="lead">
+本章目标：从 RMS 的定义出发，证明 \(\mathrm{RMS}^2=\sigma^2+\mu^2\)，写出 RMSNorm 公式并算出它的输出均值与方差，与 LayerNorm 逐项对比（少了中心化意味着什么），最后看一眼它的梯度长什么样。
+</div>
+
+<h2>一、RMS 的定义</h2>
+
+<div class="def">
+<span class="tag">定义：均值、方差、RMS</span>
+<p>设 \(\mathbf{x}=(x_1,\dots,x_d)\)，记</p>
+<p>\[
+\mu = \frac{1}{d}\sum_{i=1}^{d}x_i
+\qquad\text{（均值）}
+\]</p>
+<p>\[
+\sigma^2 = \frac{1}{d}\sum_{i=1}^{d}(x_i-\mu)^2
+\qquad\text{（方差：到均值的平均平方距离）}
+\]</p>
+<p>\[
+\mathrm{RMS}(\mathbf{x}) = \sqrt{\frac{1}{d}\sum_{i=1}^{d}x_i^2}
+\qquad\text{（均方根：到原点的平均平方距离再开方）}
+\]</p>
+<p>对比着看：方差量的是"相对均值的离散程度"，RMS 量的是"相对原点的整体大小"。</p>
+</div>
+
+<h2>二、核心恒等式：\(\mathrm{RMS}^2=\sigma^2+\mu^2\)</h2>
+
+<div class="derivation">
+<span class="tag">推导：把 \(x_i\) 写成 \((x_i-\mu)+\mu\) 再平方展开</span>
+<p>\[
+\begin{aligned}
+\mathrm{RMS}^2
+&= \frac{1}{d}\sum_{i=1}^{d}x_i^2 \\
+&= \frac{1}{d}\sum_{i=1}^{d}\big[(x_i-\mu)+\mu\big]^2 \\
+&= \frac{1}{d}\sum_{i=1}^{d}(x_i-\mu)^2
+   + \frac{2\mu}{d}\sum_{i=1}^{d}(x_i-\mu)
+   + \frac{1}{d}\sum_{i=1}^{d}\mu^2
+\end{aligned}
+\]</p>
+<p>逐项看。第一项正是 \(\sigma^2\) 的定义。第二项里，\(\sum_{i=1}^{d}(x_i-\mu)=\sum_{i=1}^{d}x_i-d\mu=d\mu-d\mu=0\)（\(\mu\) 的定义决定的），所以<b>交叉项恒为 0</b>。第三项：\(\frac{1}{d}\cdot d\mu^2=\mu^2\)。于是</p>
+<p>\[
+\boxed{\;\mathrm{RMS}(\mathbf{x})^2 = \sigma^2 + \mu^2\;}
+\qquad\blacksquare
+\]</p>
+<p>几何含义：方差是"相对均值"的平方距离，\(\mu^2\) 是"均值相对原点"的平方距离，两者按勾股定理合成"相对原点"的平方距离。特别地，\(\mu=0\) 时 \(\mathrm{RMS}=\sigma\)。</p>
+</div>
+
+<h2>三、RMSNorm 公式及其输出统计量</h2>
+
+<div class="def">
+<span class="tag">定义：RMSNorm</span>
+<p>\[
+y_i = \gamma_i\cdot\frac{x_i}{\mathrm{RMS}(\mathbf{x})}
+\qquad\text{（默认没有偏置 \(\beta\)）}
+\]</p>
+<p>其中 \(\gamma_i\) 是可学习的缩放参数（初始化为 1）。与 LayerNorm \(\hat{x}_i=(x_i-\mu)/\sigma\) 对比：<b>RMSNorm 不减均值</b>，只做除法缩放。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：输出的均值与方差（取 \(\gamma_i=1\)）</span>
+<p>记 \(r=\mathrm{RMS}(\mathbf{x})\)（相对求和指标 \(i\) 是常数，可以提出求和号）：</p>
+<p><b>均值：</b></p>
+<p>\[
+\mathrm{mean}(\mathbf{y})
+= \frac{1}{d}\sum_{i=1}^{d}\frac{x_i}{r}
+= \frac{1}{r}\cdot\frac{1}{d}\sum_{i=1}^{d}x_i
+= \frac{\mu}{r}
+\]</p>
+<p><b>方差：</b>先算二阶矩 \(\frac{1}{d}\sum y_i^2 = \frac{1}{r^2}\cdot\frac{1}{d}\sum x_i^2 = \frac{r^2}{r^2}=1\)，再用"方差 = 二阶矩 − 均值平方"：</p>
+<p>\[
+\mathrm{var}(\mathbf{y}) = 1 - \left(\frac{\mu}{r}\right)^2
+= \frac{r^2-\mu^2}{r^2}
+\stackrel{\text{恒等式}}{=} \frac{\sigma^2}{r^2}
+\qquad\blacksquare
+\]</p>
+<p>其中最后一步用了 \(\mathrm{RMS}^2=\sigma^2+\mu^2\) 即 \(r^2-\mu^2=\sigma^2\)。</p>
+</div>
+
+<h2>四、与 LayerNorm 的对比：少了中心化意味着什么</h2>
+
+<div class="derivation">
+<span class="tag">推导：LayerNorm 输出恒为均值 0、方差 1</span>
+<p>LayerNorm：\(\hat{x}_i=(x_i-\mu)/\sigma\)。均值：\(\frac{1}{d}\sum\hat{x}_i=\frac{1}{\sigma}\big(\frac{1}{d}\sum x_i-\mu\big)=\frac{\mu-\mu}{\sigma}=0\)。方差：\(\frac{1}{d}\sum\hat{x}_i^2=\frac{1}{\sigma^2}\cdot\frac{1}{d}\sum(x_i-\mu)^2=\sigma^2/\sigma^2=1\)。</p>
+<p>对比表（取 \(\gamma=1\)）：</p>
+<table>
+<thead><tr><th></th><th>LayerNorm</th><th>RMSNorm</th></tr></thead>
+<tbody>
+<tr><td>公式</td><td>\(\dfrac{x_i-\mu}{\sigma}\)</td><td>\(\dfrac{x_i}{\mathrm{RMS}}\)</td></tr>
+<tr><td>输出均值</td><td>\(0\)（恒成立）</td><td>\(\mu/\mathrm{RMS}\)（一般 \(\neq 0\)）</td></tr>
+<tr><td>输出方差</td><td>\(1\)（恒成立）</td><td>\(\sigma^2/\mathrm{RMS}^2\)</td></tr>
+<tr><td>中心化</td><td>有（减 \(\mu\)）</td><td>无</td></tr>
+</tbody>
+</table>
+<p><b>数学含义</b>：LayerNorm 把"位置"（均值）和"尺度"（方差）都标准化掉，输出分布被钉死；RMSNorm 只统一尺度，<b>保留了均值所携带的信息</b>（比如整层激活整体偏正还是偏负）。当输入本来就零均值（\(\mu=0\)）时，\(\mathrm{RMS}=\sigma\)，两者完全一致——实践中 Transformer 的残差流常接近零均值，这就是 RMSNorm 能替换 LayerNorm 而效果不掉的数学原因。附带好处：少算一次均值，前向更快。</p>
+</div>
+
+<h2>五、梯度直觉：反向传播时发生什么</h2>
+
+<div class="derivation">
+<span class="tag">推导：\(\frac{\partial r}{\partial x_j}=\frac{x_j}{d\,r}\)，再看 \(\frac{\partial y_i}{\partial x_j}\)</span>
+<p>记 \(r=\big(\frac{1}{d}\sum_{k}x_k^2\big)^{1/2}\)。用链式法则（外层是 \(u^{1/2}\)，内层是 \(\frac{1}{d}\sum x_k^2\)）：</p>
+<p>\[
+\frac{\partial r}{\partial x_j}
+= \frac{1}{2}\left(\frac{1}{d}\sum_{k}x_k^2\right)^{-1/2}\cdot\frac{2x_j}{d}
+= \frac{x_j}{d\,r}
+\]</p>
+<p>再对 \(y_i = x_i/r\) 用商法则（\(\partial x_i/\partial x_j = \delta_{ij}\)，即 \(i=j\) 时为 1 否则为 0）：</p>
+<p>\[
+\frac{\partial y_i}{\partial x_j}
+= \frac{\delta_{ij}\cdot r - x_i\cdot\frac{x_j}{d\,r}}{r^2}
+= \frac{\delta_{ij}}{r} - \frac{x_i x_j}{d\,r^3}
+\qquad\blacksquare
+\]</p>
+<p><b>直觉</b>：梯度有两项。主项 \(\delta_{ij}/r\) 是单纯的缩放（输入的梯度被除以 \(r\) 传回去）；修正项 \(-x_i x_j/(d\,r^3)\) 沿着 \(\mathbf{x}\) 自身方向——它在"拽"着梯度，防止某个分量 \(x_i\) 过大时输出失控。\(d\) 越大修正项越小（分母有 \(d\)），这也是大模型里 RMSNorm 表现稳定的原因之一。</p>
+</div>
+
+<div class="key">
+<span class="tag">本章小结：RMSNorm 在书里是干什么的</span>
+<p>Qwen3 等模型用 RMSNorm 代替 LayerNorm 做归一化：公式 \(y_i=\gamma_i x_i/\mathrm{RMS}(\mathbf{x})\)，只除以均方根、不减均值。核心恒等式 \(\mathrm{RMS}^2=\sigma^2+\mu^2\) 说明它与 LayerNorm 只差一个"中心化"；零均值输入下两者等价。它的梯度主项是 \(1/r\) 缩放，附带一个沿 \(\mathbf{x}\) 方向的小修正项。更少的计算，几乎相同的效果——这就是它被选中的理由。</p>
+</div>
+
+<div class="further">
+<span class="tag">延伸阅读</span>
+<p><a href="../barm/page-91-detail.html">原书附录 C.1 数学详解：RMSNorm</a>——LayerNorm 零均值/单位方差的逐步验证、手算例子（\(d=6\)）、"漂亮恒等式"的完整链条。</p>
+</div>
+
+<nav class="deriv-nav">
+<a href="11-rope.html"><span class="dir">上一章</span>RoPE</a>
+<a href="index.html"><span class="dir">目录</span>全部章节</a>
+<a href="../barm/index.html"><span class="dir">回原书</span>Build a Reasoning Model</a>
+</nav>
+</main>
+<script defer src="../bllm/assets/katex/katex.min.js"></script>
+<script defer src="../bllm/assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>第 5 章 · 序列概率 · barmmath</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../bllm/assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">barmmath · 第 5 章 序列概率</a>
+</header>
+<main id="main">
+
+<h1>第 5 章 序列概率</h1>
+
+<p class="lead">本章目标：从条件概率的定义出发，一步不跳地推导出<b>序列概率的链式法则</b>；给出<b>序列对数概率（logprob）</b>的定义；证明"连乘变连加"是精确恒等式；用具体数字说明为什么必须用对数而不是直接连乘；最后分析 logprob 的<b>长度敏感性</b>——序列越长 logprob 越小，直接比较不同长度的序列是不公平的。对应原书位置：barm <b>6.8 节"序列 logprob"</b>（sequence logprob）。本章依赖第 1 章的条件概率与期望的线性（关键定义会在本章复述，保证单章可读）；本章是第 6 章策略梯度的直接前置。</p>
+
+<h2 class="deriv">一、条件概率定义：已知一部分信息，概率怎么算</h2>
+
+<div class="def">
+<span class="tag">定义：事件、概率、条件概率</span>
+<p><b>事件</b> \(A\) 是"可能发生的结果的集合"；<b>概率</b> \(P(A)\) 是 0 到 1 之间的一个数，表示 \(A\) 发生的可能性大小（见第 1 章）。</p>
+<p>已知事件 \(B\) 已经发生（要求 \(P(B)>0\)），事件 \(A\) 发生的概率称为<b>条件概率</b>，记为 \(P(A\mid B)\)，定义为</p>
+<p>\[
+P(A\mid B)=\frac{P(A\cap B)}{P(B)}
+\]</p>
+<p>一句话解释：分子 \(P(A\cap B)\) 是"\(A\) 和 \(B\) 同时发生"的概率，分母 \(P(B)\) 是"已知条件"本身的概率——相当于把样本空间从全体结果<b>收缩到 \(B\)</b>，再看 \(A\) 在其中占多大比例。</p>
+</div>
+
+<h2 class="deriv">二、链式法则：整句的概率拆成逐 token 连乘</h2>
+
+<div class="prereq">
+<span class="tag">记号约定</span>
+<p>\(y_t\) 表示序列中第 \(t\) 个 token（token 是模型一次生成的基本单位，一个词或词片段，见第 4 章）。\(P(y_1,\dots,y_T)\) 是"第 1 个 token 是 \(y_1\)、……、第 \(T\) 个 token 是 \(y_T\)"这个<b>联合事件</b>的概率的简写；\(P(y_t\mid y_1,\dots,y_{t-1})\) 是"已知前 \(t-1\) 个 token 后，第 \(t\) 个 token 是 \(y_t\)"的<b>条件概率</b>。记 \(y_{&lt;t}=(y_1,\dots,y_{t-1})\) 为"第 \(t\) 个 token 之前的所有 token"。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：链式法则</span>
+<p>目标：</p>
+<p>\[
+\boxed{P(y_1,\dots,y_T)=\prod_{t=1}^{T}P(y_t\mid y_{&lt;t})}
+\]</p>
+<p><b>第一步：二元情形。</b>由条件概率定义，\(P(B\mid A)=\dfrac{P(A\cap B)}{P(A)}\)（要求 \(P(A)>0\)）。把等式两边同时乘以 \(P(A)\)，得</p>
+<p>\[
+P(A\cap B)=P(A)\,P(B\mid A)
+\]</p>
+<p>（这就是第 1 章的乘法公式；记 \(P(A,B)\) 为 \(P(A\cap B)\) 的简写。）含义："\(A\) 和 \(B\) 同时发生" = "\(A\) 先发生" × "在 \(A\) 发生的条件下 \(B\) 发生"。</p>
+<p><b>第二步：归纳基础。</b>\(T=1\) 时，右边只有一项 \(P(y_1\mid\text{空条件})=P(y_1)\)，等式恒成立；\(T=2\) 时，\(P(y_1,y_2)=P(y_1)\,P(y_2\mid y_1)\)，正是第一步的二元情形。</p>
+<p><b>第三步：归纳假设。</b>设对 \(T-1\)（\(T\ge 2\)）结论成立，即</p>
+<p>\[
+P(y_1,\dots,y_{T-1})=\prod_{t=1}^{T-1}P(y_t\mid y_{&lt;t})
+\]</p>
+<p><b>第四步：归纳步骤。</b>把前 \(T-1\) 个事件打包成一个<b>整体事件</b> \(C=(y_1,\dots,y_{T-1})\)（即 \(y_1\cap\cdots\cap y_{T-1}\)）。于是</p>
+<p>\[
+P(y_1,\dots,y_T)=P(C,y_T)=P(C)\,P(y_T\mid C)
+\]</p>
+<p>其中第二个等号是第一步的二元情形（把 \(A\) 取成 \(C\)、\(B\) 取成"第 \(T\) 个 token 是 \(y_T\)"）。现在 \(P(C)\) 用归纳假设展开，而 \(P(y_T\mid C)=P(y_T\mid y_1,\dots,y_{T-1})\) 恰好是乘积的第 \(T\) 项：</p>
+<p>\[
+P(y_1,\dots,y_T)=\left(\prod_{t=1}^{T-1}P(y_t\mid y_{&lt;t})\right)\cdot P(y_T\mid y_{&lt;T})=\prod_{t=1}^{T}P(y_t\mid y_{&lt;t})
+\]</p>
+<p>归纳完成，证毕。直觉：整句话的概率 = 第一个 token 的概率 × 已知第一个后第二个的条件概率 × ……，层层展开，<b>每一步都只是乘法公式的一次使用</b>。</p>
+</div>
+
+<h2 class="deriv">三、logprob 定义：给序列概率取对数</h2>
+
+<div class="def">
+<span class="tag">定义：序列的对数概率（logprob）</span>
+<p>序列 \(y_1,\dots,y_T\) 的<b>对数概率</b>（log probability，简称 <b>logprob</b>）定义为序列概率的对数。由链式法则，它等于各 token 条件概率的对数之和：</p>
+<p>\[
+\log P(y_1,\dots,y_T)=\sum_{t=1}^{T}\log P(y_t\mid y_{&lt;t})
+\]</p>
+<p>说明：这里的 \(\log\) 取自然对数。只要全书使用同一个底，下面的"连乘变连加"恒等式都成立。</p>
+</div>
+
+<h2 class="deriv">四、连乘变连加：对数的核心恒等式</h2>
+
+<div class="prereq">
+<span class="tag">预备知识：对数与指数的定义</span>
+<p>对 \(a>0\)，<b>对数</b> \(\log a\) 定义为"\(e\) 的几次方等于 \(a\)"：\(x=\log a\) 当且仅当 \(a=e^x\)。这是对数的定义本身，不是需要证明的结论。</p>
+<p><b>指数法则</b>：\(e^{x+y}=e^x\,e^y\)（同底数幂相乘，指数相加）。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：\(\log(ab)=\log a+\log b\)</span>
+<p>设 \(a>0,\;b>0\)，记 \(x=\log a,\;y=\log b\)。由对数定义得 \(a=e^x,\;b=e^y\)。于是</p>
+<p>\[
+ab=e^x\cdot e^y=e^{x+y}
+\]</p>
+<p>（第二步用了指数法则。）现在对等式 \(ab=e^{x+y}\) 两边取对数：按对数定义，"\(e\) 的几次方等于 \(ab\)"，答案正是 \(x+y\)，即 \(\log(ab)=x+y\)。把 \(x,y\) 换回 \(\log a,\log b\)：</p>
+<p>\[
+\boxed{\log(ab)=\log a+\log b}
+\]</p>
+<p><b>推广到 \(n\) 项</b>（数学归纳法）：</p>
+<p>\[
+\boxed{\log(a_1a_2\cdots a_n)=\sum_{i=1}^{n}\log a_i\qquad(a_i>0)}
+\]</p>
+<p>归纳基础 \(n=2\) 就是上面证过的二元情形。设对 \(n-1\) 成立，把前 \(n-1\) 个数的乘积看成<b>一个数</b> \(A=a_1\cdots a_{n-1}\)（\(A>0\)），则</p>
+<p>\[
+\log(a_1\cdots a_n)=\log(A\cdot a_n)=\log A+\log a_n=\sum_{i=1}^{n-1}\log a_i+\log a_n
+\]</p>
+<p>其中第二个等号是二元情形，第三个等号用了归纳假设。证毕。</p>
+<p>把它用在链式法则上：\(\log P(y_1,\dots,y_T)=\log\prod_{t=1}^{T}P(y_t\mid y_{&lt;t})=\sum_{t=1}^{T}\log P(y_t\mid y_{&lt;t})\)——这正是上一节 logprob 定义的由来。</p>
+</div>
+
+<div class="key">
+<span class="tag">关键结论：这是精确恒等式，不是近似</span>
+<p>\(\log(ab)=\log a+\log b\) 是由对数定义直接推出的<b>精确相等</b>，没有任何近似、没有任何"当 \(a,b\) 很大时才成立"的附加条件。因此 logprob 的加法形式与原始连乘形式在数学上<b>完全等价</b>——用加法代替连乘，不会丢失或扭曲任何信息。</p>
+</div>
+
+<h2 class="deriv">五、为什么用 log：连乘会下溢，加法不会</h2>
+
+<div class="prereq">
+<span class="tag">预备知识：单精度浮点数的下限</span>
+<p>单精度浮点数（fp32）能表示的<b>最小正规数</b>约为 \(2^{-126}\approx 1.18\times 10^{-38}\)。比它更小的正数会<b>下溢</b>：变成 0，或变成丧失精度的非正规数。概率连乘是"越乘越小"的过程，很容易撞上这条线。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：用具体数字走一遍</span>
+<p>假设每个 token 的概率都是 \(0.5\)（已经是相当"自信"的概率了），序列长度 \(T=127\)：</p>
+<p>\[
+0.5^{127}=2^{-127}\approx 5.9\times 10^{-39}\;<\;1.18\times 10^{-38}
+\]</p>
+<p>连乘结果 \(5.9\times 10^{-39}\) 小于 fp32 最小正规数 \(1.18\times 10^{-38}\)——<b>下溢了</b>。而真实场景中序列动辄上千个 token，每步概率常远小于 \(0.5\)，下溢来得更快。</p>
+<p>下溢之后会发生什么？如果先连乘、再取对数：\(\log(0)=-\infty\)，整个序列的分数变成负无穷，信息彻底丢失，还会污染后续的梯度计算。</p>
+<p>改用"先取对数、再累加"：</p>
+<p>\[
+127\times\log(0.5)=127\times(-0.6931)\approx -88.0
+\]</p>
+<p>\(-88.0\) 是一个完全健康的浮点数。整个过程只做加法，不存在"越乘越小"的问题——<b>取对数把下溢风险从根上消除了</b>。</p>
+<p>这就是书里处处用 logprob 而不用原始概率的原因：数学上两者等价（上一节已证），数值上只有对数形式能算。</p>
+</div>
+
+<h2 class="deriv">六、长度敏感性分析：序列越长，logprob 越小</h2>
+
+<div class="derivation">
+<span class="tag">推导：每一项都是非正数</span>
+<p>token 的条件概率满足 \(0&lt;P(y_t\mid\cdot)\le 1\)（概率不超过 1，见第 1 章；token 概率为正数是因为 softmax 的输出恒为正，见第 4 章）。对数函数 \(\log\) 是<b>增函数</b>，且 \(\log 1=0\)，于是</p>
+<p>\[
+P\le 1\;\Longrightarrow\;\log P\le\log 1=0
+\]</p>
+<p>即每一项 \(\log P(y_t\mid\cdot)\le 0\)，都是<b>非正数</b>。而 logprob 是 \(T\) 个非正数之和：</p>
+<p>\[
+\log P(y_1,\dots,y_T)=\sum_{t=1}^{T}\underbrace{\log P(y_t\mid y_{&lt;t})}_{\le 0}
+\]</p>
+<p>每多一个 token，就多加一个非正数——<b>序列越长，logprob 越小（越负）</b>，这是结构性的，不是模型好坏造成的。</p>
+<p>举个数字例子：假设每步的平均对数概率都是 \(-0.7\)（每步质量完全相同），10 个 token 的序列 logprob 为 \(-7.0\)，100 个 token 的序列为 \(-70.0\)。直接比较 \(-7.0&gt;-70.0\) 会得出"短序列更好"的结论，但两者每步的预测质量其实一模一样——差的只是项数。</p>
+<p>期望意义下也一样：由期望的线性（见第 1 章），</p>
+<p>\[
+\mathbb{E}[\text{logprob}]=\sum_{t=1}^{T}\mathbb{E}[\log P(y_t\mid y_{&lt;t})]\approx T\cdot\mathbb{E}[\log p]
+\]</p>
+<p>（若每步的平均对数概率近似稳定为 \(\mathbb{E}[\log p]\)。）期望 logprob 随长度 \(T\) <b>线性下降</b>。</p>
+</div>
+
+<div class="warn">
+<span class="tag">陷阱：不要直接比较不同长度序列的 logprob</span>
+<p>长的序列天然更负——这是加了更多非正数项的结果，不是模型表现更差。因此<b>跨长度直接比较 logprob 是不公平的</b>。这正是第 8 章 GRPO 公式里 \(\frac{1}{|o_i|}\) 项要解决的问题：先按序列长度取平均，把"项数"的影响消掉再比较（此处仅呼应，不展开）。</p>
+</div>
+
+<h2>本章小结</h2>
+<p>logprob 在书里是干什么的？三句话：</p>
+<ul>
+<li><b>它是 RL 里给整条 rollout 打分的标量。</b>一次 rollout 就是一次从头到尾的完整生成 \(y_1,\dots,y_T\)；\(\log P(y_1,\dots,y_T)\) 回答"当前策略生成出这一整句的可能性有多大"，是后续所有"按生成质量调策略"的计算起点。</li>
+<li><b>它是第 6 章策略梯度的基本量。</b>策略梯度里反复出现的 \(\nabla\log P(y)\)（对数概率的梯度，即 log-derivative trick）正是对本章 logprob 求导；没有链式法则把整句拆成逐 token 之和，逐 token 的梯度就无从算起。</li>
+<li><b>计算上它待在加法域，数值健康；但它有长度偏差。</b>连乘变连加是精确恒等式且消除了下溢（第 5.4–5.5 节）；代价是 logprob 天然偏爱短序列，跨长度比较必须先归一化——第 8 章的 \(\frac{1}{|o_i|}\) 就是干这个的。</li>
+</ul>
+
+<h2>延伸阅读</h2>
+<ul>
+<li><a href="../barm/page-58-detail.html">6.8 序列 logprob 与 6.9 策略梯度详解（原书伴读）</a></li>
+<li><a href="01-probability-2.html">第 1 章 概率进阶（本站）：条件概率、期望的线性</a></li>
+</ul>
+
+<nav class="deriv-nav">
+<a href="04-sampling.html"><span class="dir">上一章</span>第 4 章 采样</a>
+<a href="index.html"><span class="dir">目录</span>全部章节</a>
+<a href="06-policy-gradient.html"><span class="dir">下一章</span>第 6 章 策略梯度</a>
+</nav>
+</main>
+<script defer src="../bllm/assets/katex/katex.min.js"></script>
+<script defer src="../bllm/assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>第 9 章 · 激活函数 · bllmmath</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../bllm/assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">bllmmath · 第 9 章 激活函数</a>
+</header>
+<main id="main">
+
+<h1>第 9 章 · 激活函数：sigmoid 与 GELU</h1>
+
+<p><b>本章目标。</b>从大一的求导法则出发，推导 sigmoid 函数的导数；从积分换元法出发，完整推导 GELU 公式中正态分布函数与误差函数的关系（含高斯积分）。</p>
+<p><b>对应原书。</b>第 10 章 GPT 实现：前馈网络里用的 GELU 激活；附录中出现的 sigmoid。</p>
+
+<h2>一、sigmoid 函数的定义</h2>
+
+<div class="def">
+<span class="tag">定义：sigmoid 函数</span>
+<p>\[
+\sigma(x)=\frac{1}{1+e^{-x}},\qquad x\in\mathbb{R}
+\]</p>
+<p>它的值域是开区间 \((0,1)\)：分母 \(1+e^{-x}\) 恒大于 1，故 \(\sigma(x)\) 恒小于 1；分子分母皆为正，故恒大于 0。</p>
+</div>
+
+<p>一个马上要用到的对称性质：</p>
+
+<div class="derivation">
+<span class="tag">推导：\(\sigma(-x)=1-\sigma(x)\)</span>
+<p>把 \(-x\) 代入定义，分子分母同乘 \(e^{x}\)：</p>
+<p>\[
+\sigma(-x)=\frac{1}{1+e^{x}}=\frac{e^{-x}}{e^{-x}(1+e^{x})}=\frac{e^{-x}}{1+e^{-x}}
+\]</p>
+<p>另一方面，把 \(1\) 写成 \(\frac{1+e^{-x}}{1+e^{-x}}\) 再减 \(\sigma(x)\)：</p>
+<p>\[
+1-\sigma(x)=\frac{1+e^{-x}}{1+e^{-x}}-\frac{1}{1+e^{-x}}=\frac{e^{-x}}{1+e^{-x}}
+\]</p>
+<p>两边相等，故 \(\sigma(-x)=1-\sigma(x)\)。∎</p>
+</div>
+
+<h2>二、sigmoid 的导数</h2>
+
+<div class="derivation">
+<span class="tag">推导：\(\sigma'(x)=\sigma(x)(1-\sigma(x))\)</span>
+<p>把 \(\sigma(x)\) 写成幂的形式，用第 1 章的链式法则。记 \(u=1+e^{-x}\)，则 \(\sigma=u^{-1}\)：</p>
+<p>\[
+\frac{d\sigma}{dx}=\frac{d\sigma}{du}\cdot\frac{du}{dx}
+=(-1)u^{-2}\cdot(-e^{-x})
+=\frac{e^{-x}}{(1+e^{-x})^{2}}
+\]</p>
+<p>其中 \(\frac{du}{dx}=-e^{-x}\)（\(e^{-x}\) 的导数是 \(-e^{-x}\)，见第 1 章）。</p>
+<p>现在把结果改写成 \(\sigma\) 自身的形式。把分母拆成两个因子：</p>
+<p>\[
+\frac{e^{-x}}{(1+e^{-x})^{2}}
+=\frac{1}{1+e^{-x}}\cdot\frac{e^{-x}}{1+e^{-x}}
+=\sigma(x)\cdot\frac{e^{-x}}{1+e^{-x}}
+\]</p>
+<p>而上一节已证 \(\frac{e^{-x}}{1+e^{-x}}=1-\sigma(x)\)，代入得</p>
+<p>\[
+\boxed{\sigma'(x)=\sigma(x)(1-\sigma(x))}
+\]</p>
+<p>证毕。这个形式在反向传播里极为好用：只要知道 \(\sigma(x)\) 的值，不用重新求导就能得到导数。</p>
+</div>
+
+<h2>三、GELU 的定义</h2>
+
+<div class="def">
+<span class="tag">定义：标准正态分布与 GELU</span>
+<p>标准正态分布的概率密度函数是</p>
+<p>\[
+\varphi(t)=\frac{1}{\sqrt{2\pi}}e^{-t^{2}/2},\qquad t\in\mathbb{R}
+\]</p>
+<p>它的累积分布函数（从 \(-\infty\) 积到 \(x\) 的面积）记为 \(\Phi\)：</p>
+<p>\[
+\Phi(x)=\int_{-\infty}^{x}\varphi(t)\,dt
+\]</p>
+<p>GELU（高斯误差线性单元）定义为</p>
+<p>\[
+\mathrm{GELU}(x)=x\cdot\Phi(x)
+\]</p>
+</div>
+
+<div class="prereq">
+<span class="tag">预备知识：为什么系数是 \(1/\sqrt{2\pi}\)</span>
+<p>概率密度在整条直线上的积分必须等于 1。下面的高斯积分将证明 \(\int_{-\infty}^{\infty}e^{-t^{2}/2}dt=\sqrt{2\pi}\)，所以除以 \(\sqrt{2\pi}\) 后积分恰为 1，\(\varphi\) 才是一个合法的密度函数。</p>
+</div>
+
+<h2>四、高斯积分</h2>
+
+<div class="derivation">
+<span class="tag">推导：\(\int_{-\infty}^{\infty}e^{-x^{2}}dx=\sqrt{\pi}\)</span>
+<p>记 \(I=\int_{-\infty}^{\infty}e^{-x^{2}}dx\)（被积函数恒正，故 \(I>0\)）。直接积不出来，经典技巧是先算 \(I^{2}\)，把它写成平面上的二重积分：</p>
+<p>\[
+I^{2}=\left(\int_{-\infty}^{\infty}e^{-x^{2}}dx\right)
+\left(\int_{-\infty}^{\infty}e^{-y^{2}}dy\right)
+=\iint_{\mathbb{R}^{2}}e^{-(x^{2}+y^{2})}\,dx\,dy
+\]</p>
+<p>换成极坐标 \(x=r\cos\theta\)，\(y=r\sin\theta\)。面积元 \(dx\,dy\) 变成 \(r\,dr\,d\theta\)（多出的 \(r\) 是坐标变换的伸缩因子），\(x^{2}+y^{2}=r^{2}\)：</p>
+<p>\[
+I^{2}=\int_{0}^{2\pi}\!\!\int_{0}^{\infty}e^{-r^{2}}\,r\,dr\,d\theta
+\]</p>
+<p>先算内层对 \(r\) 的积分。换元 \(u=r^{2}\)（第 2 章换元法），则 \(du=2r\,dr\)，即 \(r\,dr=du/2\)；\(r:0\to\infty\) 对应 \(u:0\to\infty\)：</p>
+<p>\[
+\int_{0}^{\infty}e^{-r^{2}}r\,dr
+=\frac12\int_{0}^{\infty}e^{-u}\,du
+=\frac12\big[-e^{-u}\big]_{0}^{\infty}
+=\frac12(0-(-1))=\frac12
+\]</p>
+<p>内层结果是常数 \(\frac12\)，与 \(\theta\) 无关，外层积分就是</p>
+<p>\[
+I^{2}=\int_{0}^{2\pi}\frac12\,d\theta=\frac12\cdot2\pi=\pi
+\]</p>
+<p>\(I>0\)，开方得 \(\boxed{I=\sqrt{\pi}}\)。∎</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：\(\int_{-\infty}^{\infty}e^{-t^{2}/2}dt=\sqrt{2\pi}\)</span>
+<p>换元 \(u=t/\sqrt{2}\)，则 \(dt=\sqrt{2}\,du\)，积分限不变：</p>
+<p>\[
+\int_{-\infty}^{\infty}e^{-t^{2}/2}dt
+=\int_{-\infty}^{\infty}e^{-u^{2}}\sqrt{2}\,du
+=\sqrt{2}\cdot\sqrt{\pi}=\sqrt{2\pi}
+\]</p>
+<p>故 \(\int_{-\infty}^{\infty}\varphi(t)dt=\frac{1}{\sqrt{2\pi}}\cdot\sqrt{2\pi}=1\)，\(\varphi\) 确为概率密度。∎</p>
+</div>
+
+<h2>五、从 \(\Phi\) 到 erf：换元积分</h2>
+
+<div class="def">
+<span class="tag">定义：误差函数 erf</span>
+<p>\[
+\mathrm{erf}(z)=\frac{2}{\sqrt{\pi}}\int_{0}^{z}e^{-u^{2}}\,du
+\]</p>
+<p>它是"从 0 积到 \(z\) 的高斯曲线下面积"再乘一个归一化常数 \(2/\sqrt{\pi}\)。注意 \(\mathrm{erf}\) 是奇函数：\(\mathrm{erf}(-z)=-\mathrm{erf}(z)\)（被积函数为偶函数，积分限反向）。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：\(\Phi(x)=\frac12\big(1+\mathrm{erf}(x/\sqrt{2})\big)\)</span>
+<p>把 \(\Phi(x)\) 的积分区间拆成两段：</p>
+<p>\[
+\Phi(x)=\int_{-\infty}^{x}\varphi(t)\,dt
+=\int_{-\infty}^{0}\varphi(t)\,dt+\int_{0}^{x}\varphi(t)\,dt
+\]</p>
+<p><b>第一段。</b>\(\varphi(t)\) 是偶函数（只含 \(t^{2}\)），图像左右对称，故 \((-\infty,0]\) 上的面积恰为总面积的一半：</p>
+<p>\[
+\int_{-\infty}^{0}\varphi(t)\,dt=\frac12\int_{-\infty}^{\infty}\varphi(t)\,dt=\frac12\cdot1=\frac12
+\]</p>
+<p><b>第二段。</b>代入 \(\varphi\) 的表达式并换元。令 \(u=t/\sqrt{2}\)，则 \(dt=\sqrt{2}\,du\)；\(t:0\to x\) 对应 \(u:0\to x/\sqrt{2}\)：</p>
+<p>\[
+\begin{aligned}
+\int_{0}^{x}\frac{1}{\sqrt{2\pi}}e^{-t^{2}/2}\,dt
+&=\int_{0}^{x/\sqrt{2}}\frac{1}{\sqrt{2\pi}}e^{-u^{2}}\sqrt{2}\,du\\
+&=\frac{\sqrt{2}}{\sqrt{2\pi}}\int_{0}^{x/\sqrt{2}}e^{-u^{2}}\,du\\
+&=\frac{1}{\sqrt{\pi}}\int_{0}^{x/\sqrt{2}}e^{-u^{2}}\,du
+\end{aligned}
+\]</p>
+<p>对照 erf 的定义，\(\frac{2}{\sqrt{\pi}}\int_{0}^{z}e^{-u^{2}}du=\mathrm{erf}(z)\)，上式恰为它的一半（取 \(z=x/\sqrt{2}\)）：</p>
+<p>\[
+\int_{0}^{x}\varphi(t)\,dt=\frac12\,\mathrm{erf}\!\left(\frac{x}{\sqrt{2}}\right)
+\]</p>
+<p>两段相加：</p>
+<p>\[
+\boxed{\Phi(x)=\frac12+\frac12\,\mathrm{erf}\!\left(\frac{x}{\sqrt{2}}\right)
+=\frac12\left(1+\mathrm{erf}\!\left(\frac{x}{\sqrt{2}}\right)\right)}
+\]</p>
+<p>证毕。当 \(x&lt;0\) 时公式同样成立：\(\mathrm{erf}\) 是奇函数，\(\mathrm{erf}(x/\sqrt2)\) 为负，\(\Phi(x)&lt;\frac12\)，与"负半轴面积小于一半"一致。</p>
+</div>
+
+<div class="key">
+<span class="tag">GELU 长什么样</span>
+<p>\(\mathrm{GELU}(x)=x\Phi(x)\)。当 \(x\) 很大时 \(\Phi(x)\approx1\)，故 \(\mathrm{GELU}(x)\approx x\)；当 \(x\) 很负时 \(\Phi(x)\approx0\)，故 \(\mathrm{GELU}(x)\approx0\)；中间是平滑过渡。它像 ReLU 一样"正数通过、负数抑制"，但处处可导、没有折点——这正是 GPT 前馈层选用它的原因。原书代码用的是等价的 \(\tanh\) 近似实现，数学上是同一函数。</p>
+</div>
+
+<h2>六、本章小结</h2>
+
+<p>本章从求导法则推出了 \(\sigma'(x)=\sigma(x)(1-\sigma(x))\)——训练时反向传播要用到它；又从换元积分推出了 \(\Phi(x)=\frac12(1+\mathrm{erf}(x/\sqrt2))\)，从而 GELU 的每一处都有显式公式可算。下一章进入模型的"记分牌"：损失函数。</p>
+
+<h2>延伸阅读</h2>
+<ul>
+<li><a href="../bllm/10-implementing-a-gpt-model-from-scratch-to-generate-text-detail.html">原书第 10 章数学详解</a>：GELU 在 GPT 前馈网络中的位置与 \(\tanh\) 近似</li>
+</ul>
+
+<nav class="deriv-nav">
+<a href="08-normalization.html"><span class="dir">上一章</span>第 8 章 归一化</a>
+<a href="index.html"><span class="dir">目录</span>全部章节</a>
+<a href="10-loss.html"><span class="dir">下一章</span>第 10 章 损失函数</a>
+</nav>
+</main>
+<script defer src="../bllm/assets/katex/katex.min.js"></script>
+<script defer src="../bllm/assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+});
+</script>
+</body>
+</html>

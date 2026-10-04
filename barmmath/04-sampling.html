@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>第 4 章 · 采样 · barmmath</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../bllm/assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">barmmath · 第 4 章 采样</a>
+</header>
+<main id="main">
+<p class="lead"><b>本章目标</b>：把"从模型输出里抽出一个 token"这件事彻底讲清楚——softmax 怎样把任意实数变成合法的概率分布，温度参数怎样连续地调节随机性，top-k / top-p 怎样截断长尾，以及 Gumbel-max trick 为什么能做到"加噪声再取最大值"恰好等价于按概率采样。每个结论都从定义一步步推出来，不跳步。<b>对应原书位置</b>：barm 采样相关章节、page-34（温度缩放与 softmax）。<b>本章依赖</b>：第 1 章的独立性、全期望公式与概率分布的定义。</p>
+
+<h2>4.1 softmax：把实数变成概率</h2>
+
+<p>语言模型每一步输出的是一个实数向量（常记为 \(\mathbf{z}=(z_1,\dots,z_n)\)，称为 <b>logit</b>，直译"对数几率"）。它不能直接用来采样——分量可正可负，和也不是 1。softmax 的任务就是把它变成一个合法的概率分布。</p>
+
+<div class="def">
+<span class="tag">定义：softmax</span>
+<p>设 \(\mathbf{z}=(z_1,\dots,z_n)\in\mathbb{R}^n\)。\(\text{softmax}\) 把它映射为</p>
+<p>\[
+\text{softmax}(\mathbf{z})_i \;=\; \frac{e^{z_i}}{\sum_{j=1}^{n} e^{z_j}}, \qquad i=1,\dots,n
+\]</p>
+<p>记 \(p_i=\text{softmax}(\mathbf{z})_i\)。验证它是概率分布（满足第 1 章的概率分布定义：各项非负且和为 1）：</p>
+<p><b>恒正</b>：指数函数 \(e^{x}\) 对一切实数 \(x\) 都大于 0，所以每个分子 \(e^{z_i}>0\)，分母是 \(n\) 个正数之和也大于 0，故 \(p_i>0\)；</p>
+<p><b>和为 1</b>：分母 \(\sum_{j=1}^n e^{z_j}\) 与下标 \(i\) 无关，可以提出求和号：</p>
+<p>\[
+\sum_{i=1}^{n} p_i \;=\; \sum_{i=1}^{n}\frac{e^{z_i}}{\sum_{j=1}^{n} e^{z_j}}
+\;=\; \frac{\sum_{i=1}^{n} e^{z_i}}{\sum_{j=1}^{n} e^{z_j}}
+\;=\; 1
+\]</p>
+</div>
+
+<div class="prereq">
+<span class="tag">预备知识：求和记号</span>
+<p>\(\sum_{j=1}^{n} e^{z_j}\) 就是 \(e^{z_1}+e^{z_2}+\cdots+e^{z_n}\)。softmax 的分母常记为 \(Z\)（称为<b>配分函数</b>），即 \(Z=\sum_j e^{z_j}\)，于是 \(p_i=e^{z_i}/Z\)。后面推导里反复用到"分母与求和指标无关所以能提出"这一步。</p>
+</div>
+
+<h2>4.2 温度缩放：一个旋钮控制随机性</h2>
+
+<div class="def">
+<span class="tag">定义：带温度的 softmax</span>
+<p>给定温度参数 \(T>0\)，定义</p>
+<p>\[
+p_i(T) \;=\; \frac{e^{z_i/T}}{\sum_{j=1}^{n} e^{z_j/T}}, \qquad i=1,\dots,n
+\]</p>
+<p>当 \(T=1\) 时就是普通的 softmax。\(T\) 越小分布越"尖"，\(T\) 越大分布越"平"。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：\(T\to 0^{+}\) 时趋向 one-hot</span>
+<p>设 \(z_1\) 是<b>唯一的</b>最大值，即对一切 \(j\ge 2\) 有 \(z_j-z_1<0\)。分子分母同时除以 \(e^{z_1/T}\)：</p>
+<p>\[
+p_1(T)=\frac{e^{z_1/T}}{\sum_{j=1}^{n}e^{z_j/T}}
+=\frac{1}{1+\sum_{j=2}^{n}e^{(z_j-z_1)/T}}
+\]</p>
+<p>看分母里的每一项。对 \(j\ge 2\)，\(z_j-z_1\) 是一个<b>固定的负数</b>（记为 \(-c_j\)，\(c_j>0\)），于是</p>
+<p>\[
+\frac{z_j-z_1}{T}=\frac{-c_j}{T}\;\xrightarrow[T\to 0^{+}]{}\;-\infty
+\]</p>
+<p>因为分母 \(T\) 趋向 0 且为正，分子是固定的负数，整个分式趋向 \(-\infty\)。而 \(e^{x}\to 0\;(x\to-\infty)\)，所以每一项 \(e^{(z_j-z_1)/T}\to 0\)。分母 \(\to 1+0=1\)，故</p>
+<p>\[
+\lim_{T\to 0^{+}} p_1(T)=1
+\]</p>
+<p>对 \(i\ge 2\) 同理，分子分母同除 \(e^{z_1/T}\) 后</p>
+<p>\[
+p_i(T)=\frac{e^{(z_i-z_1)/T}}{1+\sum_{j=2}^{n}e^{(z_j-z_1)/T}}
+\;\xrightarrow[T\to 0^{+}]{}\;\frac{0}{1}=0
+\]</p>
+<p>分子趋向 0（同上），分母趋向 1。于是极限分布是 \((1,0,\dots,0)\)——第一个分量为 1、其余为 0。</p>
+<p>恰有一个分量为 1、其余全为 0 的向量称为 <b>one-hot 向量</b>。所以：温度趋向 0 时，采样退化为"永远取最大 logit"，完全确定。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：\(T\to\infty\) 时趋向均匀分布</span>
+<p>\(T\to\infty\) 时，对每个固定的 \(z_i\)，</p>
+<p>\[
+\frac{z_i}{T}\;\xrightarrow[T\to\infty]{}\;0, \qquad
+e^{z_i/T}\;\xrightarrow[T\to\infty]{}\;e^{0}=1
+\]</p>
+<p>这里用了指数函数的连续性：指数 \(\to 0\) 则 \(e^{\text{指数}}\to e^0=1\)。代入 \(p_i(T)\) 的定义：</p>
+<p>\[
+p_i(T)=\frac{e^{z_i/T}}{\sum_{j=1}^{n}e^{z_j/T}}
+\;\xrightarrow[T\to\infty]{}\;\frac{1}{\sum_{j=1}^{n}1}
+=\frac{1}{n}
+\]</p>
+<p>分母是 \(n\) 个 1 相加等于 \(n\)。极限分布是 \((1/n,\dots,1/n)\)——<b>均匀分布</b>：每个 token 概率相等，采样完全随机。</p>
+</div>
+
+<div class="key">
+<span class="tag">关键结论：温度是随机性的旋钮</span>
+<p>\(T\to 0^{+}\) 对应贪心解码（argmax，零随机性），\(T=1\) 是模型原始分布，\(T\to\infty\) 对应均匀随机。实践中 \(T<1\) 让输出更保守、\(T>1\) 让输出更多样——这正是解码时用温度控制"创造力"的数学依据。</p>
+</div>
+
+<h2>4.3 top-k：只在最强的 k 个里面选</h2>
+
+<div class="def">
+<span class="tag">定义：top-k 截断</span>
+<p>设 \(S_k=\{i: z_i\text{ 是 }n\text{ 个 logit 中最大的 }k\text{ 个之一}\}\)。先把 \(S_k\) 之外的 logit 屏蔽掉：</p>
+<p>\[
+\tilde{z}_i=\begin{cases}
+z_i, & i\in S_k,\\
+-\infty, & i\notin S_k,
+\end{cases}
+\qquad\text{采样分布 }q=\text{softmax}(\tilde{\mathbf{z}})
+\]</p>
+<p>这里用到了 \(e^{-\infty}=0\)：被屏蔽的分量经指数后贡献为 0。\(k=1\) 时就是贪心（argmax）。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：top-k 重归一化后和为 1</span>
+<p>直接由 softmax 定义写出 \(q\) 的每个分量。对 \(i\in S_k\)：</p>
+<p>\[
+q_i=\frac{e^{\tilde{z}_i}}{\sum_{j=1}^{n}e^{\tilde{z}_j}}
+=\frac{e^{z_i}}{\sum_{j\in S_k}e^{z_j}+\sum_{j\notin S_k}e^{-\infty}}
+=\frac{e^{z_i}}{\sum_{j\in S_k}e^{z_j}}
+\]</p>
+<p>（\(e^{-\infty}=0\)，所以分母里屏蔽项全消失。）对 \(i\notin S_k\)：</p>
+<p>\[
+q_i=\frac{e^{-\infty}}{\sum_{j\in S_k}e^{z_j}}=\frac{0}{\sum_{j\in S_k}e^{z_j}}=0
+\]</p>
+<p>求和验证：</p>
+<p>\[
+\sum_{i=1}^{n} q_i
+=\sum_{i\in S_k}\frac{e^{z_i}}{\sum_{j\in S_k}e^{z_j}}
+=\frac{\sum_{i\in S_k}e^{z_i}}{\sum_{j\in S_k}e^{z_j}}
+=1
+\]</p>
+<p>分母与 \(i\) 无关可提出——和 4.1 的验证是同一招，只是求和范围从全体变成了 \(S_k\)。top-k 本质上就是"把尾巴砍掉后重新做一次 softmax"。</p>
+</div>
+
+<h2>4.4 top-p（nucleus 采样）：按累积概率截断</h2>
+
+<div class="def">
+<span class="tag">定义：top-p / nucleus 截断</span>
+<p>设已有一个概率分布 \(p_1,\dots,p_n\)（比如温度 softmax 的输出），阈值 \(\rho\in(0,1]\)。把概率<b>降序排列</b></p>
+<p>\[
+p_{(1)}\ge p_{(2)}\ge\cdots\ge p_{(n)}
+\]</p>
+<p>下标 \((i)\) 表示"排序后第 \(i\) 大的分量"对应的原下标。取最小的 \(S\) 使得累积概率达到阈值：</p>
+<p>\[
+S=\min\left\{k:\sum_{i=1}^{k}p_{(i)}\ge \rho\right\}
+\]</p>
+<p>只保留前 \(S\) 个，重新归一化得到采样分布</p>
+<p>\[
+q_i=\begin{cases}
+\dfrac{p_i}{\sum_{j\le S}p_j}, & i\text{ 在前 }S\text{ 个中},\\[6pt]
+0, & \text{否则}.
+\end{cases}
+\]</p>
+<p>\(\rho=1\) 时退化为不截断（\(S=n\)）。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：重归一化和为 1，且相对比例不变</span>
+<p>记归一化常数 \(C=\sum_{j\le S}p_j\)（前 \(S\) 个的概率和）。先验证和为 1：</p>
+<p>\[
+\sum_{i=1}^{n}q_i
+=\sum_{i\le S}\frac{p_i}{C}
+=\frac{\sum_{i\le S}p_i}{C}
+=\frac{C}{C}=1
+\]</p>
+<p>再看保留集内部两个分量 \(i,j\) 的相对比例：</p>
+<p>\[
+\frac{q_i}{q_j}=\frac{p_i/C}{p_j/C}=\frac{p_i}{p_j}
+\]</p>
+<p>同一个常数 \(C\) 在分子分母中约掉。所以截断<b>只改变了被砍掉部分的概率归零、把总质量重新分配</b>，保留部分彼此之间的相对大小关系原封不动。</p>
+</div>
+
+<div class="warn">
+<span class="tag">陷阱：\(\rho\) 是"质量阈值"，不是"个数阈值"</span>
+<p>top-k 固定保留 \(k\) 个；top-p 保留的个数是<b>动态</b>的——模型很确定时（分布尖锐）可能只保留 1–2 个，模型犹豫时（分布平坦）可能保留上百个。调参时 \(\rho=0.9\) 的意思是"砍掉累积起来只占 10% 的长尾"，不是"保留 90% 的词"。</p>
+</div>
+
+<h2>4.5 Gumbel-max trick：加噪声取最大 = 按概率采样</h2>
+
+<p>前面都在说"给定分布怎么采样"。这一节给出一个深刻的等价刻画：往每个 \(\log p_i\) 上加独立的 Gumbel 噪声，再取 argmax，得到的结果<b>恰好</b>服从分布 \(p\)。</p>
+
+<div class="def">
+<span class="tag">定义：Gumbel(0,1) 分布</span>
+<p>标准 Gumbel 分布的累积分布函数（CDF）为</p>
+<p>\[
+F(x)=e^{-e^{-x}},\qquad x\in\mathbb{R}
+\]</p>
+<p>概率密度函数（PDF）由 CDF 求导得到。用链式法则逐层求导：</p>
+<p>\[
+\begin{aligned}
+f(x)&=F'(x)=\frac{d}{dx}\exp\!\big(-\exp(-x)\big)\\
+&=\exp\!\big(-\exp(-x)\big)\cdot\frac{d}{dx}\big[-\exp(-x)\big]\\
+&=\exp\!\big(-\exp(-x)\big)\cdot\big[-\exp(-x)\cdot(-1)\big]\\
+&=e^{-e^{-x}}\cdot e^{-x}
+\end{aligned}
+\]</p>
+<p>即 \(\boxed{f(x)=e^{-x}e^{-e^{-x}}}\)。第二步里：外层 \(\exp\) 的导数还是它自己；内层 \(-\exp(-x)\) 求导得 \(-\exp(-x)\cdot(-1)=e^{-x}\)。</p>
+</div>
+
+<div class="prereq">
+<span class="tag">预备知识：逆变换采样</span>
+<p>若 \(U\sim\text{Uniform}(0,1)\)（0 到 1 之间的均匀随机数），则 \(F^{-1}(U)\) 服从 CDF 为 \(F\) 的分布。解 \(y=e^{-e^{-x}}\) 求反函数：两边取对数得 \(\log y=-e^{-x}\)，变号得 \(-\log y=e^{-x}\)，再取对数得 \(\log(-\log y)=-x\)，于是 \(x=-\log(-\log y)\)。所以</p>
+<p>\[
+g_i=-\log(-\log u_i),\qquad u_i\sim\text{Uniform}(0,1)
+\]</p>
+<p>就服从 Gumbel(0,1)。计算机里"抽 Gumbel 噪声"就是这么做的。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">定理（Gumbel-max trick）与完整证明</span>
+<p><b>目标</b>：设 \(p_1,\dots,p_n\) 是概率分布（\(\sum_i p_i=1\)，\(p_i>0\)），\(g_1,\dots,g_n\) 独立同分布服从 Gumbel(0,1)，记号 \(g_i\overset{iid}{\sim}\text{Gumbel}(0,1)\)。证明</p>
+<p>\[
+\Pr\!\left(\arg\max_{i}\big(\log p_i+g_i\big)=k\right)=p_k
+\]</p>
+<p>即"加噪声后取最大下标"恰好以概率 \(p_k\) 落在 \(k\) 上。</p>
+<p><b>第一步：把 \(g_k\) 固定住。</b>条件在 \(g_k=g\) 上。事件 \(\{\arg\max_i(\log p_i+g_i)=k\}\) 发生当且仅当第 \(k\) 个分量不小于其他所有分量：</p>
+<p>\[
+\forall\,i\ne k:\quad \log p_i+g_i\le \log p_k+g
+\iff g_i\le g+\log\frac{p_k}{p_i}
+\]</p>
+<p>（移项：\(g_i\le g+\log p_k-\log p_i=g+\log(p_k/p_i)\)。）</p>
+<p><b>第二步：用独立性拆成连乘。</b>\(g_i\;(i\ne k)\) 相互独立且与 \(g_k\) 独立（独立事件的概率相乘，见第 1 章），所以</p>
+<p>\[
+\Pr(\arg\max=k\mid g_k=g)=\prod_{i\ne k}\Pr\!\left(g_i\le g+\log\frac{p_k}{p_i}\right)
+=\prod_{i\ne k}F\!\left(g+\log\frac{p_k}{p_i}\right)
+\]</p>
+<p>（\(\Pr(g_i\le x)=F(x)\) 就是 CDF 的定义。）</p>
+<p><b>第三步：逐项化简。</b>计算 \(F(g+\log(p_k/p_i))\)，把指数运算一层层剥开：</p>
+<p>\[
+\begin{aligned}
+F\!\left(g+\log\frac{p_k}{p_i}\right)
+&=\exp\!\left(-\exp\!\left(-\left(g+\log\frac{p_k}{p_i}\right)\right)\right)\\
+-\left(g+\log\frac{p_k}{p_i}\right)&=-g-\log\frac{p_k}{p_i}=-g+\log\frac{p_i}{p_k}\\
+\exp\!\left(-g+\log\frac{p_i}{p_k}\right)&=e^{-g}\cdot e^{\log(p_i/p_k)}=e^{-g}\cdot\frac{p_i}{p_k}
+\end{aligned}
+\]</p>
+<p>这里用了 \(\log(p_k/p_i)=-\log(p_i/p_k)\) 以及 \(e^{a+b}=e^ae^b\)、\(e^{\log x}=x\)。于是</p>
+<p>\[
+\boxed{\,F\!\left(g+\log\frac{p_k}{p_i}\right)=\exp\!\left(-e^{-g}\cdot\frac{p_i}{p_k}\right)\,}
+\]</p>
+<p><b>第四步：连乘合并。</b>把第三步代入第二步的连乘，指数相加：</p>
+<p>\[
+\begin{aligned}
+\prod_{i\ne k}\exp\!\left(-e^{-g}\cdot\frac{p_i}{p_k}\right)
+&=\exp\!\left(-e^{-g}\sum_{i\ne k}\frac{p_i}{p_k}\right)\\
+&=\exp\!\left(-e^{-g}\cdot\frac{1-p_k}{p_k}\right)
+\end{aligned}
+\]</p>
+<p>（\(\prod e^{a_i}=e^{\sum a_i}\)；\(\sum_{i\ne k}p_i=1-p_k\) 因为全部 \(p_i\) 加起来是 1。）记常数 \(c=\dfrac{1-p_k}{p_k}\)，条件概率为 \(e^{-c\,e^{-g}}\)。</p>
+<p><b>第五步：对 \(g\) 用全期望公式积分。</b>\(g_k\) 本身服从 Gumbel(0,1)，密度为 \(f(g)=e^{-g}e^{-e^{-g}}\)。全期望公式（见第 1 章）说：无条件概率 = 条件概率对 \(g\) 的密度加权积分：</p>
+<p>\[
+\begin{aligned}
+\Pr(\arg\max=k)
+&=\int_{-\infty}^{\infty}\underbrace{e^{-c\,e^{-g}}}_{\text{条件概率}}\cdot\underbrace{e^{-g}e^{-e^{-g}}}_{\text{密度 }f(g)}\,dg\\
+&=\int_{-\infty}^{\infty}e^{-g}\,e^{-(1+c)e^{-g}}\,dg
+\end{aligned}
+\]</p>
+<p>（合并指数：\(-c\,e^{-g}-e^{-g}=-(1+c)e^{-g}\)。）</p>
+<p><b>第六步：换元求积分。</b>令 \(u=(1+c)e^{-g}\)，则</p>
+<p>\[
+du=(1+c)\cdot e^{-g}\cdot(-1)\,dg=-(1+c)e^{-g}\,dg
+\quad\Longrightarrow\quad e^{-g}\,dg=-\frac{du}{1+c}
+\]</p>
+<p>积分限跟着变：\(g\to-\infty\) 时 \(e^{-g}\to+\infty\)，故 \(u\to+\infty\)；\(g\to+\infty\) 时 \(e^{-g}\to 0\)，故 \(u\to 0\)。代入：</p>
+<p>\[
+\begin{aligned}
+\int_{-\infty}^{\infty}e^{-g}e^{-(1+c)e^{-g}}dg
+&=\int_{+\infty}^{0}e^{-u}\cdot\left(-\frac{du}{1+c}\right)\\
+&=\frac{1}{1+c}\int_{0}^{\infty}e^{-u}\,du\\
+&=\frac{1}{1+c}\cdot 1
+\end{aligned}
+\]</p>
+<p>（\(\int_0^\infty e^{-u}du=[-e^{-u}]_0^\infty=1\)。）最后算 \(1+c\)：</p>
+<p>\[
+1+c=1+\frac{1-p_k}{p_k}=\frac{p_k+(1-p_k)}{p_k}=\frac{1}{p_k}
+\]</p>
+<p>所以积分值 \(=\dfrac{1}{1/p_k}=p_k\)。证毕：</p>
+<p>\[
+\boxed{\;\Pr\!\left(\arg\max_i(\log p_i+g_i)=k\right)=p_k\;}
+\]</p>
+</div>
+
+<div class="key">
+<span class="tag">关键结论：Gumbel-max 的意义</span>
+<p>它把"按离散分布 \(p\) 采样"这个不可微的操作，改写成了"加噪声 + argmax"的形式。噪声 \(g_i\) 一旦抽定，整个过程关于 \(\log p_i\) 是分段线性的——这正是 Gumbel-softmax（可微松弛）的起点，也是 RL 里"可微采样"想法的数学源头。</p>
+</div>
+
+<h2>本章小结</h2>
+<p>采样在原书里的作用有两条主线。<b>第一，RL 训练需要它</b>：策略 \(\pi(\cdot\mid s)\) 本质上就是一个"给定状态输出动作分布"的模型，rollout（与环境交互采集轨迹）每一步都是从这个分布里采样一个动作；语言模型做 RL 时，每个 token 也是从模型的输出分布里采样出来的——没有采样就没有训练数据。<b>第二，解码时用它控制行为</b>：温度 \(T\) 连续调节随机性（4.2），top-k / top-p 截断不可靠的长尾（4.3、4.4），三者组合决定了生成文本在"确定保守"和"多样发散"之间的位置。Gumbel-max（4.5）则是背后的理论保证：它证明了"加噪声取最大"与"按概率采样"完全等价，并为可微采样打开了大门。</p>
+
+<h2>延伸阅读</h2>
+<ul>
+<li><a href="../barm/page-34-detail.html">温度缩放与 softmax 详解（原书伴读）</a></li>
+</ul>
+<nav class="deriv-nav">
+<a href="03-calculus-opt.html"><span class="dir">上一章</span>第 3 章 微积分与优化补充</a>
+<a href="index.html"><span class="dir">目录</span>全部章节</a>
+<a href="05-sequence-prob.html"><span class="dir">下一章</span>第 5 章 序列概率</a>
+</nav>
+</main>
+<script defer src="../bllm/assets/katex/katex.min.js"></script>
+<script defer src="../bllm/assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+});
+</script>
+</body>
+</html>

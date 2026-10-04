@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>第 4 章 · 向量与矩阵 · bllmmath</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../bllm/assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">bllmmath · 第 4 章 向量与矩阵</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">bllmmath · 第 4 章</span></div>
+
+<h1>第 4 章 · 向量与矩阵</h1>
+
+<div class="lead">
+<b>本章目标</b>：掌握向量（模长、点积、夹角）、矩阵乘法（维度规则）、转置和正交矩阵，
+并完整证明"点积 = 模长 × 模长 × cos夹角"以及"正交矩阵保内积"。<br>
+<b>对应原书位置</b>：第 9 章的 attention 分数就是点积；Q、K、V 全是矩阵乘法；
+多头注意力的维度流转全靠矩阵维度规则。
+</div>
+
+<h2><span class="tag">4.1 向量、模长、点积</span></h2>
+
+<div class="def">
+<span class="tag">定义：向量、模长、点积</span>
+<p><b>向量</b>是 \(d\) 个数排成一列：\(\mathbf{a}=(a_1,a_2,\dots,a_d)\)，
+\(d\) 叫<b>维度</b>。</p>
+<p><b>模长</b>（长度）是它到原点的距离，由勾股定理逐维推广：</p>
+<p>\[
+\lVert\mathbf{a}\rVert=\sqrt{a_1^2+a_2^2+\cdots+a_d^2}
+\qquad\text{即}\qquad
+\lVert\mathbf{a}\rVert^2=\sum_{i=1}^{d}a_i^2
+\]</p>
+<p>两个同维度向量的<b>点积</b>是对应分量相乘再求和：</p>
+<p>\[
+\mathbf{a}\cdot\mathbf{b}=\sum_{i=1}^{d}a_ib_i
+\]</p>
+<p>点积也可以写成矩阵乘法：把 \(\mathbf{a}\) 看成 \(d\times 1\) 矩阵，则
+\(\mathbf{a}\cdot\mathbf{b}=\mathbf{a}^\top\mathbf{b}\)（转置见 4.3 节）。</p>
+</div>
+
+<h2><span class="tag">4.2 夹角：点积公式的完整证明</span></h2>
+
+<div class="derivation">
+<span class="tag">推导：\(\mathbf{a}\cdot\mathbf{b}=\lVert\mathbf{a}\rVert\,\lVert\mathbf{b}\rVert\cos\theta\)</span>
+<p>把 \(\mathbf{a}\)、\(\mathbf{b}\)、\(\mathbf{a}-\mathbf{b}\) 看成三角形的三条边，
+\(\theta\) 是 \(\mathbf{a}\) 与 \(\mathbf{b}\) 的夹角。余弦定理（几何事实）给出：</p>
+<p>\[
+\lVert\mathbf{a}-\mathbf{b}\rVert^2
+=\lVert\mathbf{a}\rVert^2+\lVert\mathbf{b}\rVert^2
+-2\lVert\mathbf{a}\rVert\,\lVert\mathbf{b}\rVert\cos\theta
+\tag{1}
+\]</p>
+<p>另一方面，把左边按分量展开：</p>
+<p>\[
+\begin{aligned}
+\lVert\mathbf{a}-\mathbf{b}\rVert^2
+&= \sum_{i=1}^{d}(a_i-b_i)^2 \\
+&= \sum_{i=1}^{d}\big(a_i^2-2a_ib_i+b_i^2\big)
+   \qquad\text{（完全平方展开）}\\
+&= \underbrace{\sum_{i=1}^{d}a_i^2}_{\lVert\mathbf{a}\rVert^2}
+   -2\underbrace{\sum_{i=1}^{d}a_ib_i}_{\mathbf{a}\cdot\mathbf{b}}
+   +\underbrace{\sum_{i=1}^{d}b_i^2}_{\lVert\mathbf{b}\rVert^2}
+\end{aligned}
+\tag{2}
+\]</p>
+<p>对比 (1) 和 (2)：两边同时消去 \(\lVert\mathbf{a}\rVert^2+\lVert\mathbf{b}\rVert^2\)，得</p>
+<p>\[
+-2(\mathbf{a}\cdot\mathbf{b})=-2\lVert\mathbf{a}\rVert\,\lVert\mathbf{b}\rVert\cos\theta
+\]</p>
+<p>两边除以 \(-2\) 即得 \(\mathbf{a}\cdot\mathbf{b}=\lVert\mathbf{a}\rVert\,\lVert\mathbf{b}\rVert\cos\theta\)。
+证毕。</p>
+</div>
+
+<div class="key">
+<span class="tag">点积公式的含义</span>
+<p>点积由两部分决定：<b>模长</b>和<b>夹角</b>。\(\cos\theta=1\)（同向）时点积最大，
+\(\cos\theta=0\)（垂直）时点积为 0，\(\cos\theta=-1\)（反向）时点积最小。
+第 9 章用点积衡量"query 和 key 有多对齐"，正是用的夹角这一项。</p>
+</div>
+
+<h2><span class="tag">4.3 矩阵乘法：维度规则</span></h2>
+
+<div class="def">
+<span class="tag">定义：矩阵乘法</span>
+<p>设 \(A\) 是 \(m\times n\) 矩阵（\(m\) 行 \(n\) 列），\(B\) 是 \(n\times p\) 矩阵。
+<b>只有当 \(A\) 的列数 = \(B\) 的行数时才能相乘</b>，结果 \(C=AB\) 是 \(m\times p\) 矩阵，
+其元素为</p>
+<p>\[
+C_{ij}=\sum_{k=1}^{n}A_{ik}\,B_{kj}
+\]</p>
+<p>记忆法：<b>\((m\times n)\times(n\times p)\to(m\times p)\)</b>——中间的 \(n\) 对上消掉，
+剩下两头就是结果的维度。\(C\) 的第 \(i\) 行第 \(j\) 列 = \(A\) 的第 \(i\) 行点乘 \(B\) 的第 \(j\) 列。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：手算一个 \(2\times 2\) 的例子</span>
+<p>\[
+\begin{pmatrix}1&2\\3&4\end{pmatrix}
+\begin{pmatrix}5&6\\7&8\end{pmatrix}
+=
+\begin{pmatrix}
+1{\times}5+2{\times}7 & 1{\times}6+2{\times}8 \\
+3{\times}5+4{\times}7 & 3{\times}6+4{\times}8
+\end{pmatrix}
+=
+\begin{pmatrix}19&22\\43&50\end{pmatrix}
+\]</p>
+<p>比如左上角 \(19 = 1\times 5+2\times 7\)：第一行的 \((1,2)\) 点乘第一列的 \((5,7)\)。
+注意矩阵乘法<b>一般不满足交换律</b>：\(AB\neq BA\)（上面的例子反过来乘结果不同，可以验算）。</p>
+</div>
+
+<h2><span class="tag">4.4 转置</span></h2>
+
+<div class="def">
+<span class="tag">定义：转置</span>
+<p>矩阵 \(A\) 的<b>转置</b> \(A^\top\) 是把行列互换：\((A^\top)_{ij}=A_{ji}\)。
+\(m\times n\) 矩阵的转置是 \(n\times m\) 矩阵。向量的转置把列向量变成行向量。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：\((AB)^\top=B^\top A^\top\)（顺序反转！）</span>
+<p>直接按定义算第 \(ij\) 个元素：</p>
+<p>\[
+\begin{aligned}
+\big((AB)^\top\big)_{ij} &= (AB)_{ji}
+   \qquad\text{（转置定义）}\\
+&= \sum_{k}A_{jk}\,B_{ki}
+   \qquad\text{（矩阵乘法定义）}\\
+&= \sum_{k}(B^\top)_{ik}\,(A^\top)_{kj}
+   \qquad\text{（}(B^\top)_{ik}=B_{ki}\text{，}(A^\top)_{kj}=A_{jk}\text{）}\\
+&= (B^\top A^\top)_{ij}
+   \qquad\text{（矩阵乘法定义）}
+\end{aligned}
+\]</p>
+<p>注意顺序反了：\((AB)^\top=B^\top A^\top\)，不是 \(A^\top B^\top\)。
+维度也对得上：\((m\times p)^\top\to p\times m\)，而 \(B^\top A^\top\) 是
+\((p\times n)\times(n\times m)\to p\times m\)。</p>
+</div>
+
+<h2><span class="tag">4.5 正交矩阵：保内积</span></h2>
+
+<div class="def">
+<span class="tag">定义：正交矩阵</span>
+<p>方阵 \(R\) 若满足</p>
+<p>\[
+R^\top R=I
+\]</p>
+<p>（\(I\) 是单位矩阵：对角线为 1、其余为 0），则称 \(R\) 为<b>正交矩阵</b>。
+等价说法：\(R\) 的各列两两正交且模长为 1。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：正交矩阵保持内积（从而保持模长和夹角）</span>
+<p>对任意向量 \(\mathbf{a},\mathbf{b}\)：</p>
+<p>\[
+\begin{aligned}
+(R\mathbf{a})\cdot(R\mathbf{b})
+&= (R\mathbf{a})^\top(R\mathbf{b})
+   \qquad\text{（点积 = 转置相乘）}\\
+&= \mathbf{a}^\top R^\top R\,\mathbf{b}
+   \qquad\text{（用 }(AB)^\top=B^\top A^\top\text{ 两次）}\\
+&= \mathbf{a}^\top I\,\mathbf{b}
+   \qquad\text{（正交定义 }R^\top R=I\text{）}\\
+&= \mathbf{a}^\top\mathbf{b}
+   = \mathbf{a}\cdot\mathbf{b}
+\end{aligned}
+\]</p>
+<p>取 \(\mathbf{b}=\mathbf{a}\) 得 \(\lVert R\mathbf{a}\rVert^2=\lVert\mathbf{a}\rVert^2\)，
+即<b>保模长</b>；结合点积公式，夹角也不变。所以正交矩阵就是"刚体变换"：
+旋转、反射，只改变朝向，不拉伸不变形。</p>
+</div>
+
+<div class="key">
+<span class="tag">例子：二维旋转矩阵</span>
+<p>\[
+R(\theta)=\begin{pmatrix}\cos\theta&-\sin\theta\\\sin\theta&\cos\theta\end{pmatrix}
+\]</p>
+<p>验证 \(R^\top R=I\)：\(R^\top=\begin{pmatrix}\cos\theta&\sin\theta\\-\sin\theta&\cos\theta\end{pmatrix}\)，
+相乘得对角元 \(\cos^2\theta+\sin^2\theta=1\)，非对角元
+\(-\cos\theta\sin\theta+\sin\theta\cos\theta=0\)。所以它是正交矩阵：
+把向量转 \(\theta\) 角，长度不变。这个矩阵在姊妹篇 barmmath 的 RoPE 章节里是主角。</p>
+</div>
+
+<div class="key">
+<span class="tag">本章公式小结</span>
+<p>\(\lVert\mathbf{a}\rVert=\sqrt{\sum a_i^2}\)；
+\(\mathbf{a}\cdot\mathbf{b}=\sum a_ib_i=\lVert\mathbf{a}\rVert\lVert\mathbf{b}\rVert\cos\theta\)；
+\((m\times n)(n\times p)\to(m\times p)\)；
+\((AB)^\top=B^\top A^\top\)；
+\(R^\top R=I\Rightarrow(R\mathbf{a})\cdot(R\mathbf{b})=\mathbf{a}\cdot\mathbf{b}\)。</p>
+</div>
+
+<div class="key">
+<span class="tag">这些公式在书里是干什么的</span>
+<p>第 9 章的 attention 分数 \(\omega_{ij}=\mathbf{q}_i\cdot\mathbf{k}_j\) 就是点积，
+"分数越高越对齐"用的是夹角含义；\(Q=XW_Q\) 这类全是矩阵乘法，
+维度规则决定了每个张量的形状；多头注意力的维度流转（第 7 章）本质是反复用维度规则验算。</p>
+</div>
+
+<p><b>延伸阅读</b>：</p>
+<ul>
+<li><a href="../bllm/09-coding-attention-mechanisms-detail.html">原书第 9 章数学详解</a>——点积恒等式证明、多头注意力的维度流转</li>
+</ul>
+
+<nav class="deriv-nav">
+<a href="03-probability.html"><span class="dir">上一章</span>第 3 章 · 概率基础</a>
+<a href="index.html"><span class="dir">目录</span>全部章节</a>
+<a href="05-similarity.html"><span class="dir">下一章</span>第 5 章 · 相似度</a>
+</nav>
+</main>
+<script defer src="../bllm/assets/katex/katex.min.js"></script>
+<script defer src="../bllm/assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+});
+</script>
+</body>
+</html>

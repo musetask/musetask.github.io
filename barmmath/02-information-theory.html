@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>第 2 章 · 信息论 · barmmath</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../bllm/assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">barmmath · 第 2 章 信息论</a>
+</header>
+<main id="main">
+
+<h1>第 2 章 信息论</h1>
+
+<div class="plainbox">
+<p><b>本章目标</b>：从"信息量应该是什么样"的直觉出发，推导出信息量公式、熵、交叉熵、KL 散度，再经 Jensen 不等式完整证明 Gibbs 不等式（\(D_{\mathrm{KL}}\ge 0\)）——它是全书"KL 散度能当惩罚项用"的数学根基。</p>
+<p><b>对应原书位置</b>：barm 的损失函数（交叉熵）、第 7 章 KL 正则、本伴读第 9 章 KL 正则的梯度。</p>
+<p><b>本章依赖</b>：第 1 章（期望的定义、期望的线性）。</p>
+</div>
+
+<h2 class="deriv">一、信息量：越不可能的事，信息量越大</h2>
+
+<p>一个事件发生了，我们从中获得多少"信息"？两条直觉：</p>
+<ul>
+<li>概率 \(p\) 越小，信息量越大；</li>
+<li><b>可加性</b>：两个独立事件的信息量应该相加。</li>
+</ul>
+<p>设信息量是概率的函数 \(I(p)\)。可加性要求：对独立事件（概率相乘），</p>
+<p>\[
+I(p\cdot q)=I(p)+I(q)
+\]</p>
+
+<div class="derivation">
+<span class="tag">推导：信息量公式 \(I(p)=-\log p\)</span>
+<p>求满足 \(I(pq)=I(p)+I(q)\) 的连续函数。先令 \(p=q=1\)：\(I(1)=I(1)+I(1)\)，得 \(I(1)=0\)（必然事件没有信息量）。</p>
+<p>作换元 \(p=e^{-x}\)（\(x\ge 0\)），定义 \(f(x)=I(e^{-x})\)。则</p>
+<p>\[
+f(x+y)=I(e^{-(x+y)})=I(e^{-x}\cdot e^{-y})=I(e^{-x})+I(e^{-y})=f(x)+f(y)
+\]</p>
+<p>这是 <b>Cauchy 函数方程</b>。在连续条件下解必为线性函数：\(f(0)=I(1)=0\)；归纳得 \(f(nx)=nf(x)\)（\(n\) 为正整数）；又 \(f(x)=n\,f(x/n)\)，故 \(f(x/n)=f(x)/n\)；对有理数 \(q=m/n\) 有 \(f(qx)=qf(x)\)，特别 \(f(q)=q\,f(1)\)；由连续性推广到一切实数得 \(f(x)=f(1)\cdot x\)。</p>
+<p>于是 \(I(p)=f(-\log p)=-f(1)\cdot\log p\)。取常数 \(f(1)=1\)（只是信息单位的选择），得到</p>
+<p>\[
+\boxed{\;I(p)=-\log p\;}
+\]</p>
+<p>验证：\(p\) 越小 \(-\log p\) 越大 ✓；\(I(pq)=-\log(pq)=-\log p-\log q=I(p)+I(q)\) ✓。</p>
+</div>
+
+<h2 class="deriv">二、熵：平均信息量</h2>
+
+<div class="def">
+<span class="tag">定义：熵</span>
+<p>离散随机变量 \(X\) 的<b>熵</b>是它的平均信息量：</p>
+<p>\[
+H(X)\;=\;\mathbb{E}\big[-\log P(X)\big]\;=\;-\sum_{x}P(X=x)\,\log P(X=x)
+\]</p>
+<p>熵衡量"不确定性"：分布越均匀，熵越大。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：熵非负</span>
+<p>对每一项：\(0 \lt P(X=x)\le 1\)，故 \(\log P(X=x)\le 0\)，于是 \(-P(X=x)\log P(X=x)\ge 0\)。每一项非负，求和也非负：</p>
+<p>\[
+\boxed{\;H(X)\ge 0\;}
+\]</p>
+<p>等号在 \(X\) 以概率 1 取定值时成立（完全没有不确定性）。</p>
+</div>
+
+<h2 class="deriv">三、交叉熵与 KL 散度：用错分布的代价</h2>
+
+<div class="def">
+<span class="tag">定义：交叉熵</span>
+<p>真实分布是 \(p\)，但我们用分布 \(q\) 来预测，平均信息量为<b>交叉熵</b>：</p>
+<p>\[
+H(p,q)\;=\;-\sum_{x}p(x)\,\log q(x)\;=\;\mathbb{E}_{x\sim p}\big[-\log q(x)\big]
+\]</p>
+<p>注意期望是对<b>真实分布</b> \(p\) 取的，但 \(\log\) 里面是 \(q\)。</p>
+</div>
+
+<div class="def">
+<span class="tag">定义：KL 散度</span>
+<p>\(p\) 与 \(q\) 的 <b>KL 散度</b>定义为</p>
+<p>\[
+D_{\mathrm{KL}}(p\|q)\;=\;\sum_{x}p(x)\,\log\frac{p(x)}{q(x)}
+\]</p>
+<p>它衡量"用 \(q\) 代替 \(p\)"的差异程度。注意它<b>不对称</b>：\(D_{\mathrm{KL}}(p\|q)\ne D_{\mathrm{KL}}(q\|p)\)，所以叫"散度"而不叫"距离"。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：KL 散度 = 交叉熵 − 熵</span>
+<p>\[
+\begin{aligned}
+D_{\mathrm{KL}}(p\|q)
+&= \sum_{x}p(x)\,\log\frac{p(x)}{q(x)} \\
+&= \sum_{x}p(x)\,\big[\log p(x)-\log q(x)\big]
+   \qquad\text{（}\log\frac{a}{b}=\log a-\log b\text{）} \\
+&= \underbrace{\sum_{x}p(x)\log p(x)}_{=\,-H(p)}
+   \;+\;\underbrace{\sum_{x}p(x)\big[-\log q(x)\big]}_{=\,H(p,q)} \\
+&= H(p,q)-H(p)
+\end{aligned}
+\]</p>
+<p>于是 \(\boxed{D_{\mathrm{KL}}(p\|q)=H(p,q)-H(p)}\)。\(H(p)\) 只与真实分布有关（训练时是常数），所以<b>最小化交叉熵等价于最小化 KL 散度</b>——这就是语言模型用交叉熵当损失函数的数学理由。</p>
+</div>
+
+<h2 class="deriv">四、Jensen 不等式</h2>
+
+<div class="def">
+<span class="tag">定义：凸函数</span>
+<p>函数 \(f\) 是<b>凸函数</b>，指对一切 \(x,y\) 和 \(t\in[0,1]\) 都有</p>
+<p>\[
+f\big(tx+(1-t)y\big)\;\le\;t\,f(x)+(1-t)\,f(y)
+\]</p>
+<p>几何意义：图像上任意两点间的弦始终在图像<b>上方</b>（像碗一样下凹）。常用判据：二阶可导且 \(f''(x)\ge 0\)，则 \(f\) 凸（本章直接用）。</p>
+<p>例子：\(f(t)=-\log t\)，\(f''(t)=1/t^2>0\)，是凸函数——下面证明 Gibbs 不等式就用它。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：Jensen 不等式（离散情形，归纳法）</span>
+<p>若 \(f\) 凸，\(X\) 离散，则 \(\boxed{f(\mathbb{E}[X])\le\mathbb{E}[f(X)]}\)（"期望的函数 ≤ 函数的期望"）。设 \(X\) 取值 \(x_1,\dots,x_n\)，概率 \(\lambda_i\ge 0\)，\(\sum_i\lambda_i=1\)。</p>
+<p><b>基础步</b> \(n=2\)：即凸函数定义本身。</p>
+<p><b>归纳步</b>：设 \(n=k\) 成立，证 \(n=k+1\)。记 \(\Lambda=\sum_{i=1}^{k}\lambda_i\)（则 \(\lambda_{k+1}=1-\Lambda\)），把前 \(k\) 项打包：</p>
+<p>\[
+\sum_{i=1}^{k+1}\lambda_i x_i
+= \Lambda\cdot\underbrace{\left(\sum_{i=1}^{k}\frac{\lambda_i}{\Lambda}x_i\right)}_{:=\,y}
+  \;+\; \lambda_{k+1}x_{k+1}
+\]</p>
+<p>\(\sum_{i=1}^{k}\frac{\lambda_i}{\Lambda}=1\) 且 \(\Lambda+\lambda_{k+1}=1\)，先用 \(n=2\) 的情形：</p>
+<p>\[
+f\left(\sum_{i=1}^{k+1}\lambda_i x_i\right)
+\le \Lambda\,f(y)+\lambda_{k+1}f(x_{k+1})
+\]</p>
+<p>再对 \(f(y)\) 用归纳假设：</p>
+<p>\[
+\Lambda\,f(y)\le\Lambda\sum_{i=1}^{k}\frac{\lambda_i}{\Lambda}f(x_i)=\sum_{i=1}^{k}\lambda_i f(x_i)
+\]</p>
+<p>两部分相加即得 \(\le\sum_{i=1}^{k+1}\lambda_i f(x_i)\)。归纳完成，证毕。</p>
+</div>
+
+<h2 class="deriv">五、Gibbs 不等式：KL 散度恒非负</h2>
+
+<div class="derivation">
+<span class="tag">推导：Gibbs 不等式 \(D_{\mathrm{KL}}(p\|q)\ge 0\)（完整证明）</span>
+<p>把 KL 散度改写成"某个凸函数的期望"：</p>
+<p>\[
+D_{\mathrm{KL}}(p\|q)=\sum_{x}p(x)\log\frac{p(x)}{q(x)}
+=\sum_{x}p(x)\left[-\log\frac{q(x)}{p(x)}\right]
+\]</p>
+<p>记凸函数 \(f(t)=-\log t\)。上式正是 \(\mathbb{E}_{x\sim p}\left[f\left(\frac{q(x)}{p(x)}\right)\right]\)。用 Jensen 不等式：</p>
+<p>\[
+\mathbb{E}_{x\sim p}\left[f\left(\frac{q(x)}{p(x)}\right)\right]
+\;\ge\;
+f\left(\mathbb{E}_{x\sim p}\left[\frac{q(x)}{p(x)}\right]\right)
+\]</p>
+<p>算里面这个期望：</p>
+<p>\[
+\mathbb{E}_{x\sim p}\left[\frac{q(x)}{p(x)}\right]
+=\sum_{x}p(x)\cdot\frac{q(x)}{p(x)}
+=\sum_{x}q(x)=1
+\]</p>
+<p>（\(p(x)\) 约掉了——这正是把 KL 写成这种形式的原因。）于是</p>
+<p>\[
+\boxed{\;D_{\mathrm{KL}}(p\|q)\;\ge\;f(1)=-\log 1=0\;}
+\]</p>
+<p>证毕。等号在 \(q(x)/p(x)\) 为常数（即 \(q=p\)）时成立。</p>
+</div>
+
+<div class="warn">
+<span class="tag">KL 散度的定义域陷阱</span>
+<p>证明中出现了 \(q(x)/p(x)\)，要求凡是 \(p(x)>0\) 的地方必须有 \(q(x)>0\)——否则 \(\log\frac{p(x)}{0}\) 无意义。实际中 \(q\) 是模型的 softmax 输出，恒为正，自然满足。</p>
+</div>
+
+<div class="key">
+<span class="tag">为什么 Gibbs 不等式重要</span>
+<p>\(D_{\mathrm{KL}}\ge 0\) 且仅当 \(p=q\) 时取 0——这正是"KL 散度能当惩罚项"的全部理由：第 7 章的 KL 正则 \(\beta\cdot D_{\mathrm{KL}}(\pi_\theta\|\pi_{\mathrm{ref}})\) 越小，说明当前策略离参考策略越近；把它加进损失，就是在说"别偏离参考策略太远"。</p>
+</div>
+
+<h2 class="deriv">六、章末小结：这些在书里是干什么的</h2>
+
+<ul>
+<li><b>熵</b> → 第 7 章：策略的熵衡量"输出有多随机"，熵崩塌是训练失败的信号之一。</li>
+<li><b>交叉熵</b> → 损失函数：最小化交叉熵 = 让模型分布逼近真实分布（已证等价于最小化 KL）。</li>
+<li><b>KL 散度</b> → 第 7 章 KL 正则项；第 9 章（本伴读）还会求它的梯度。</li>
+<li><b>Jensen 不等式</b> → 不止这里用。第 3 章会讲它在优化中的其他应用场景。</li>
+</ul>
+
+<nav class="deriv-nav">
+<a href="01-probability-2.html"><span class="dir">上一章</span>第 1 章 概率进阶</a>
+<a href="index.html"><span class="dir">目录</span>全部章节</a>
+<a href="03-calculus-opt.html"><span class="dir">下一章</span>第 3 章 微积分与优化补充</a>
+</nav>
+</main>
+<script defer src="../bllm/assets/katex/katex.min.js"></script>
+<script defer src="../bllm/assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+});
+</script>
+</body>
+</html>

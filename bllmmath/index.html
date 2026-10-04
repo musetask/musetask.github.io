@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>bllmmath · 大语言模型的数学</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../bllm/assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <a class="btn" href="../index.html" title="musetask 主页">&#9776;</a>
+  <a class="brand" href="index.html">bllmmath · 大语言模型的数学</a>
+</header>
+<main id="main">
+<div class="book-hero">
+<h1>bllmmath · 大语言模型的数学</h1>
+<p class="lead">《Build a Large Language Model from Scratch》的数学伴读。起点是大一的导数与概率定义，一步不跳地推导出书中出现的全部数学公式：点积、softmax、注意力、归一化、交叉熵、采样、梯度下降。</p>
+<p class="links"><a href="../bllm/index.html">← 回原书 bllm</a> · <a href="../barmmath/index.html">姊妹篇 barmmath →</a></p>
+</div>
+<ol class="toc">
+<li><a href="00-preface.html"><span class="n">0</span>前言<span class="d">这本书是什么、怎么读、符号约定</span></a></li>
+<li><a href="01-derivatives.html"><span class="n">1</span>导数<span class="d">极限定义 → 几何意义 → 四则运算 → 链式法则 → 常用函数求导</span></a></li>
+<li><a href="02-integration.html"><span class="n">2</span>积分初步<span class="d">定积分、牛顿-莱布尼茨公式、换元法（为 erf / GELU 铺垫）</span></a></li>
+<li><a href="03-probability.html"><span class="n">3</span>概率基础<span class="d">样本空间、随机变量、期望、方差、独立性</span></a></li>
+<li><a href="04-vectors-matrices.html"><span class="n">4</span>向量与矩阵<span class="d">向量、模长、点积、夹角、矩阵乘法、转置、正交矩阵</span></a></li>
+<li><a href="05-similarity.html"><span class="n">5</span>相似度<span class="d">从点积定义推余弦相似度：attention 分数的来源</span></a></li>
+<li><a href="06-softmax.html"><span class="n">6</span>softmax<span class="d">定义、三性质证明、数值稳定、温度系数</span></a></li>
+<li><a href="07-attention.html"><span class="n">7</span>注意力机制<span class="d">QKV、点积方差为 d_k、缩放因子、因果掩码、多头维度流转</span></a></li>
+<li><a href="08-normalization.html"><span class="n">8</span>归一化<span class="d">LayerNorm（均值 0 方差 1 证明）、Bessel 修正、RMSNorm</span></a></li>
+<li><a href="09-activation.html"><span class="n">9</span>激活函数<span class="d">sigmoid 导数、GELU（erf 的换元推导）</span></a></li>
+<li><a href="10-loss.html"><span class="n">10</span>损失函数<span class="d">负对数似然、交叉熵 = 信息熵 + KL、困惑度</span></a></li>
+<li><a href="11-sampling.html"><span class="n">11</span>采样<span class="d">温度缩放、top-k、top-p、Gumbel-max trick 完整证明</span></a></li>
+<li><a href="12-gradient-descent.html"><span class="n">12</span>梯度下降<span class="d">泰勒展开、为什么沿负梯度走、学习率、反向传播直觉</span></a></li>
+</ol>
+</main>
+</body>
+</html>

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>第 0 章 · 前言 · bllmmath</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../bllm/assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">bllmmath · 第 0 章 前言</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">bllmmath · 大语言模型的数学</span></div>
+
+<h1>第 0 章 · 前言</h1>
+
+<div class="lead">
+这是一本数学伴读，陪着《Build a Large Language Model from Scratch》一起读。
+原书的代码和直觉都讲得很清楚，唯独数学公式常常一笔带过——"显然"、"可以证明"、"留作练习"。
+这本书把那些被跳过的步骤全部补回来。
+</div>
+
+<h2><span class="tag">这本书是什么</span></h2>
+<p>原书每一章用到的数学公式，在这里都能找到它的完整推导。起点是大一的定义：导数是什么、期望是什么、点积是什么。
+从这些定义出发，一步一步算到书里的公式，<b>中间不跳任何一步</b>。凡是"显然"的地方，这里都会写出来为什么显然。</p>
+
+<h2><span class="tag">怎么读</span></h2>
+<p>建议按顺序读。第 1–4 章是数学基础（导数、积分、概率、向量矩阵），第 5 章之后跟着原书的章节走，
+每一章开头都会写"对应原书第几章"。如果你只想查某个公式，可以直接跳到对应章节——
+每章开头列出了本章依赖的基础定义，忘了就点回去看。</p>
+<p>书里有四种框，扫一眼就知道这段在干什么：</p>
+<ul>
+<li><b>定义</b>（紫色框）：新概念第一次出现时的精确定义，这是推导的起点；</li>
+<li><b>推导</b>（蓝色框）：从定义一步步算到结论，每一步都写出来；</li>
+<li><b>预备知识</b>（橙色框）：本章用到的、前面讲过的知识点的快速回顾；</li>
+<li><b>关键结论 / 注意</b>（绿色 / 红色框）：结论小结，或者容易踩的坑。</li>
+</ul>
+<p>公式用 KaTeX 渲染，手机上太宽的公式可以左右滑动查看。读的时候手边备张纸，
+跟着算一遍，效果最好。</p>
+
+<h2><span class="tag">符号约定</span></h2>
+<p>全书统一用下面这套符号，第一次见可能不习惯，看两章就顺了：</p>
+
+<div class="def">
+<span class="tag">定义：本书符号约定</span>
+<p><b>标量</b>（单个数字）用小写斜体：\(x\)、\(y\)、\(\theta\)。</p>
+<p><b>向量</b>（一列数字）用黑体小写：\(\mathbf{x}=(x_1,x_2,\dots,x_d)\)。特别地，向量的第 \(i\) 个分量记作 \(x_i\)。</p>
+<p><b>矩阵</b>（一张数字表）用大写：\(W\)、\(Q\)、\(K\)。\(W\) 的第 \(i\) 行第 \(j\) 列的元素记作 \(W_{ij}\)。</p>
+<p><b>转置</b>记作 \(A^\top\)（把行列互换）；<b>向量模长</b>（长度）记作 \(\lVert\mathbf{x}\rVert\)；
+<b>点积</b>记作 \(\mathbf{a}\cdot\mathbf{b}\)。</p>
+<p><b>期望</b>记作 \(\mathbb{E}[X]\) 或 \(E[X]\)；<b>方差</b>记作 \(\mathrm{Var}(X)\)；
+<b>概率</b>记作 \(P(\cdot)\)。</p>
+<p><b>求和</b>记作 \(\sum\)，例如 \(\sum_{i=1}^{d}x_i=x_1+x_2+\cdots+x_d\)；
+<b>偏导数</b>记作 \(\partial\)，例如 \(\frac{\partial f}{\partial x}\) 表示 \(f\) 对 \(x\) 求导时把别的变量当常数。</p>
+<p>\(\exp(x)\) 就是 \(e^x\)，\(\log\) 如不特别说明都是自然对数 \(\ln\)（以 \(e\) 为底）。</p>
+</div>
+
+<h2><span class="tag">一个请求</span></h2>
+<p>如果哪一步你觉得还是跳了，或者哪个公式在书里见过但这里没讲，请告诉作者——
+这本书就是为"能读懂"这一个目标服务的。</p>
+
+<div class="key">
+<span class="tag">本章小结</span>
+<p>bllmmath 是《Build a Large Language Model from Scratch》的数学伴读，从大一定义出发补全书中所有数学推导。
+符号约定：标量小写斜体、向量黑体小写、矩阵大写，期望 \(\mathbb{E}\)、方差 \(\mathrm{Var}\)、转置 \(A^\top\)。
+建议按顺序读，跟着手算一遍。</p>
+</div>
+
+<nav class="deriv-nav">
+<a href="index.html"><span class="dir">目录</span>全部章节</a>
+<a href="01-derivatives.html"><span class="dir">下一章</span>第 1 章 · 导数</a>
+</nav>
+</main>
+<script defer src="../bllm/assets/katex/katex.min.js"></script>
+<script defer src="../bllm/assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+});
+</script>
+</body>
+</html>

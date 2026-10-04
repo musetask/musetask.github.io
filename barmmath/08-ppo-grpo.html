@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>第 8 章 · PPO 与 GRPO · barmmath</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../bllm/assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">barmmath · 第 8 章 PPO 与 GRPO</a>
+</header>
+<main id="main">
+<p class="lead"><b>本章目标</b>：把 PPO 的裁剪目标函数彻底算一遍——\(A&gt;0\) 和 \(A&lt;0\) 两种情形下 \(\min\) 到底取哪一边、为什么；再把 GRPO 的完整目标函数逐项拆开，看清每一项在干什么。<b>对应原书位置</b>：barm 第 7 章 7.4 节（裁剪策略比率）、第 6 章 6.2 节（GRPO 目标函数，图 6.9）。<b>本章依赖</b>：第 7 章（advantage 的含义）、第 5 章（长度敏感性）；关键定义在本章复述，保证单章可读。</p>
+
+<h2 class="deriv">8.1 定义：重要性比率与裁剪函数</h2>
+
+<div class="def">
+<span class="tag">定义：重要性比率 \(\rho\)</span>
+<p>设 \(\pi_{\text{old}}\) 是采样时用的旧策略（参数已冻结），\(\pi_\theta\) 是当前正在优化的新策略。对同一个样本（状态 \(s\) 下的动作 \(a\)，或同一个 token 位置），<b>重要性比率</b>定义为新旧策略给出该样本的概率之比：</p>
+<p>\[
+\rho \;=\; \frac{\pi_\theta(a\mid s)}{\pi_{\text{old}}(a\mid s)}
+\]</p>
+<p>直觉：\(\rho&gt;1\) 表示新策略比旧策略更愿意产出这个样本；\(\rho=1\) 表示新旧策略在该样本上完全一致。\(\rho\) 是概率之比，恒为非负数。</p>
+</div>
+
+<div class="def">
+<span class="tag">定义：Advantage \(A\)（本章用到的含义）</span>
+<p><b>Advantage</b> \(A\) 衡量"这个样本比平均水平好多少"：\(A&gt;0\) 表示是好样本（值得让新策略更可能产出它），\(A&lt;0\) 表示是坏样本（希望新策略少产出它）。完整定义与估计方法见第 7 章；本章只用它的<b>符号</b>。</p>
+</div>
+
+<div class="def">
+<span class="tag">定义：裁剪函数 \(\text{clip}\)</span>
+<p>裁剪函数把任意实数 \(x\)"掐头去尾"，强制压进区间 \([1-\epsilon,\,1+\epsilon]\)：</p>
+<p>\[
+\text{clip}(x,\,1-\epsilon,\,1+\epsilon)\;=\;\min\big(\max(x,\,1-\epsilon),\,1+\epsilon\big)
+\]</p>
+<p>\(\epsilon\) 是超参数，典型取 \(\epsilon=0.2\)，即允许 \(\rho\) 在 \([0.8,\,1.2]\) 内自由变化，超出部分一律砍掉。写成三段形式（下面两节反复用，先摆出来）：</p>
+<p>\[
+\text{clip}(\rho)=
+\begin{cases}
+1-\epsilon, & \rho&lt;1-\epsilon,\\[4pt]
+\rho, & 1-\epsilon\le\rho\le 1+\epsilon,\\[4pt]
+1+\epsilon, & \rho&gt;1+\epsilon.
+\end{cases}
+\]</p>
+<p>验证：\(\max(\rho,\,1-\epsilon)\) 先把"头"（低于 \(1-\epsilon\) 的部分）掐掉，再用 \(\min(\cdot,\,1+\epsilon)\) 把"尾"（高于 \(1+\epsilon\) 的部分）掐掉。</p>
+</div>
+
+<h2 class="deriv">8.2 PPO 的裁剪目标函数</h2>
+
+<div class="def">
+<span class="tag">定义：PPO 裁剪目标</span>
+<p>PPO 要<b>最大化</b>的目标函数（surrogate objective）是</p>
+<p>\[
+L^{\text{CLIP}}(\theta)\;=\;\min\Big(\,\rho\,A,\;\;\text{clip}(\rho,\,1-\epsilon,\,1+\epsilon)\,A\,\Big)
+\]</p>
+<p>即：未裁剪项 \(\rho A\) 与裁剪项 \(\text{clip}(\rho)A\) 两者取<b>较小</b>的那个。注意 \(A\) 在一次更新内被视为常数（它由旧策略的采样算出，不随 \(\theta\) 求导——求导只针对 \(\rho\) 里的 \(\pi_\theta\)）。</p>
+</div>
+
+<p>为什么需要裁剪？如果目标直接就是 \(\rho A\)，一次更新里 \(\rho\) 可以变得任意大或任意小（新策略偏离旧策略太远），训练会剧烈震荡。裁剪的思想是：\(\rho\) 在 \([1-\epsilon,\,1+\epsilon]\) 附近时放行，偏离太远时用 \(\min\) 掐住。\(\min\) 到底掐哪一边，取决于 \(A\) 的符号——下面分两种情形，一步一步算。</p>
+
+<h2 class="deriv">8.3 \(A&gt;0\) 情形分析：乘正数，方向不变</h2>
+
+<div class="derivation">
+<span class="tag">推导：\(A&gt;0\) 时 \(\min\) 的取值</span>
+<p>已知 \(A&gt;0\)。关键事实：<b>不等式两边同乘一个正数，方向不变</b>（见第 1 章）。</p>
+<p>按 \(\text{clip}(\rho)\) 的三段逐段计算 \(\min\)：</p>
+<p><b>情形 1：\(\rho&lt;1-\epsilon\)。</b>此时 \(\text{clip}(\rho)=1-\epsilon\)，要比较 \(\rho A\) 与 \((1-\epsilon)A\)。由 \(\rho&lt;1-\epsilon\)，两边同乘正数 \(A\)（方向不变），得</p>
+<p>\[
+\rho A &lt; (1-\epsilon)A
+\]</p>
+<p>故 \(\min\big(\rho A,\,(1-\epsilon)A\big)=\rho A\)——不裁剪，目标取未裁剪项。</p>
+<p><b>情形 2：\(1-\epsilon\le\rho\le 1+\epsilon\)。</b>此时 \(\text{clip}(\rho)=\rho\)，两项相等，\(\min(\rho A,\,\rho A)=\rho A\)——裁剪无影响。</p>
+<p><b>情形 3：\(\rho&gt;1+\epsilon\)。</b>此时 \(\text{clip}(\rho)=1+\epsilon\)，要比较 \(\rho A\) 与 \((1+\epsilon)A\)。由 \(\rho&gt;1+\epsilon\)，两边同乘正数 \(A\)（方向不变），得 \(\rho A&gt;(1+\epsilon)A\)，故</p>
+<p>\[
+\min\big(\rho A,\,(1+\epsilon)A\big)=(1+\epsilon)A
+\]</p>
+<p>——裁剪生效。</p>
+<p>总结成两段：\(A&gt;0\) 时</p>
+<p>\[
+\min=
+\begin{cases}
+\rho A, & \rho\le 1+\epsilon,\\[4pt]
+(1+\epsilon)A, & \rho&gt;1+\epsilon.
+\end{cases}
+\]</p>
+<p>解释：\(A&gt;0\) 说明这个样本是好样本；\(\rho\) 增大（新策略更愿意产出它）是优化想看到的"变好"方向。PPO 不拦这个方向——\(\rho\le 1+\epsilon\) 时目标就是 \(\rho A\)，梯度正常推动；但一旦 \(\rho\) 超过 \(1+\epsilon\)，目标被上限 \((1+\epsilon)A\) 卡死：\(\min\) 不再随 \(\rho\) 增大而增大，梯度被切断，单步更新不允许迈太大。</p>
+</div>
+
+<h2 class="deriv">8.4 \(A&lt;0\) 情形分析：乘负数，不等号翻转</h2>
+
+<div class="derivation">
+<span class="tag">推导：\(A&lt;0\) 时 \(\min\) 的取值（一步不跳）</span>
+<p>已知 \(A&lt;0\)。关键事实：<b>不等式两边同乘一个负数，不等号方向翻转</b>（见第 1 章）。这是本节唯一的"机关"，每一步都标出来。</p>
+<p>先把 \(\text{clip}(\rho)\) 的三段重写一遍（8.1 节的定义）：</p>
+<p>\[
+\text{clip}(\rho)=
+\begin{cases}
+1-\epsilon, & \rho&lt;1-\epsilon,\\[4pt]
+\rho, & 1-\epsilon\le\rho\le 1+\epsilon,\\[4pt]
+1+\epsilon, & \rho&gt;1+\epsilon.
+\end{cases}
+\]</p>
+<p><b>情形 1：\(\rho&lt;1-\epsilon\)。</b>此时 \(\text{clip}(\rho)=1-\epsilon\)，要比较 \(\rho A\) 与 \((1-\epsilon)A\)。已知 \(\rho&lt;1-\epsilon\) 且 \(A&lt;0\)：两边同乘负数 \(A\)，不等号<b>翻转</b>，得</p>
+<p>\[
+\rho A &gt; (1-\epsilon)A
+\]</p>
+<p>（左边 \(\rho A\) 更大。）\(\min\) 取更小的那一边，故</p>
+<p>\[
+\min\big(\rho A,\,(1-\epsilon)A\big)=(1-\epsilon)A
+\]</p>
+<p>——裁剪生效：\(\rho\) 已经小于 \(1-\epsilon\) 时，目标不再跟着 \(\rho A\) 继续往上走（回忆 \(A&lt;0\)，\(\rho\to 0\) 时 \(\rho A\to 0\)，是更大的值），而是被按在 \((1-\epsilon)A\)，不让优化器靠把 \(\rho\) 压得过小来"占便宜"。</p>
+<p><b>情形 2：\(1-\epsilon\le\rho\le 1+\epsilon\)。</b>此时 \(\text{clip}(\rho)=\rho\)，两项相等，\(\min=\rho A\)——裁剪无影响。</p>
+<p><b>情形 3：\(\rho&gt;1+\epsilon\)。</b>此时 \(\text{clip}(\rho)=1+\epsilon\)，要比较 \(\rho A\) 与 \((1+\epsilon)A\)。已知 \(\rho&gt;1+\epsilon\) 且 \(A&lt;0\)：两边同乘负数 \(A\)，不等号<b>翻转</b>，得</p>
+<p>\[
+\rho A &lt; (1+\epsilon)A
+\]</p>
+<p>故 \(\min\) 取更小的 \(\rho A\)：</p>
+<p>\[
+\min\big(\rho A,\,(1+\epsilon)A\big)=\rho A
+\]</p>
+<p>——不裁剪：\(\rho\) 越大（坏样本被新策略产出的概率越高），目标 \(\rho A\) 越小（更负），惩罚照单全收，没有下限兜底。</p>
+<p>总结成两段：\(A&lt;0\) 时</p>
+<p>\[
+\min=
+\begin{cases}
+(1-\epsilon)A, & \rho&lt;1-\epsilon,\\[4pt]
+\rho A, & \rho\ge 1-\epsilon.
+\end{cases}
+\]</p>
+</div>
+
+<div class="key">
+<span class="tag">关键结论：悲观界（pessimistic bound）</span>
+<p>\(\min\) 永远取<b>对优化目标更不利（更小）</b>的那一边：</p>
+<ul>
+<li><b>变好设上限</b>：目标值想往上走的方向，PPO 设上限——\(A&gt;0\) 时 \(\rho\) 增大被卡在 \((1+\epsilon)A\)；\(A&lt;0\) 时 \(\rho\) 减小被按在 \((1-\epsilon)A\)。目标不允许看起来过分乐观。</li>
+<li><b>变坏不设下限</b>：目标值往下掉的方向，没有下限兜底——\(A&lt;0\) 时 \(\rho\) 增大，目标 \(\rho A\) 有多负就多负，惩罚照单全收（\(A&gt;0\) 时 \(\rho\) 减小同理无裁剪）。</li>
+</ul>
+<p>这就是 PPO 的<b>悲观下界</b>思想：好的方向不让你一次走太远（防激进），坏的方向惩罚一分不少（防偷懒）。目标函数恒取悲观值，优化它就等于优化一个"打了折"的下界。</p>
+</div>
+
+<h2 class="deriv">8.5 GRPO：完整目标函数逐项拆解</h2>
+
+<div class="def">
+<span class="tag">定义：GRPO 目标函数</span>
+<p>对一个 prompt 采样 \(G\) 个回答（rollout）\(o_1,\dots,o_G\)，GRPO 要<b>最小化</b>的损失是</p>
+<p>\[
+\mathcal{L}_{\text{GRPO}}
+=
+-\frac{1}{G}\sum_{i=1}^{G}\frac{1}{|o_i|}\sum_{t=1}^{|o_i|}
+\Big[
+\min\big(\rho_{i,t}\,\hat A_i,\;\text{clip}(\rho_{i,t})\,\hat A_i\big)
+\;-\;\beta\,\mathrm{KL}_t
+\Big]
+\]</p>
+<p>其中 \(\text{clip}(\cdot)=\text{clip}(\cdot,\,1-\epsilon,\,1+\epsilon)\) 沿用 8.1 节的定义。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：逐项拆解</span>
+<p><b>第 1 项：\(\frac{1}{G}\sum_{i=1}^{G}\)（组内平均）。</b>对同一 prompt 的 \(G\) 个 rollout 取平均——"Group" 一词的来源。直觉：只采样一个回答，奖励噪声太大；\(G\) 个回答一起看，信号才稳定。</p>
+<p><b>第 2 项：\(\frac{1}{|o_i|}\sum_{t=1}^{|o_i|}\)（token 级平均）。</b>\(|o_i|\) 是第 \(i\) 个回答的 token 数。先对序列内每个 token 位置求和，再除以序列长度——每个 token 权重相等。为什么不能直接求和？第 5 章讲过长度敏感性：直接求和的话，长回答 token 数多，天然在总目标里占更大权重，优化器会偏爱"说得多"而不是"说得对"。注：这一项是有争议的——DAPO 主张去掉逐序列的长度归一化（改用 token 级统一平均），Dr. GRPO 则指出 \(\frac{1}{|o_i|}\) 会引入长度偏差；记住"它存在且有争议"即可。</p>
+<p><b>第 3 项：\(\hat A_i\)（整序列共享的标量 advantage）。</b>注意它<b>没有下标 \(t\)</b>：同一个回答 \(o_i\) 里的所有 token 共用同一个 advantage 值。\(\hat A_i\) 来自组内排名（见第 7 章）：把 \(G\) 个回答的奖励放在一起比较、标准化，好的回答 \(\hat A_i&gt;0\)，差的 \(\hat A_i&lt;0\)。整序列共享意味着它刻画的是"这个回答整体是好是坏"，而不是"某个 token 好坏"。</p>
+<p><b>第 4 项：\(\rho_{i,t}\)（逐 token 重要性比率）。</b>沿用 8.1 节的定义，但下沉到 token 粒度：</p>
+<p>\[
+\rho_{i,t}=\frac{\pi_\theta(o_{i,t}\mid q,\,o_{i,&lt;t})}{\pi_{\text{old}}(o_{i,t}\mid q,\,o_{i,&lt;t})}
+\]</p>
+<p>即在给定 prompt \(q\) 和前文 \(o_{i,&lt;t}\) 的条件下，新旧策略产出第 \(t\) 个 token 的概率之比。注意它和 \(\hat A_i\) 的粒度不同：\(\rho\) 是逐 token 的，\(\hat A\) 是整序列的——\(\min\big(\rho_{i,t}\hat A_i,\,\text{clip}(\rho_{i,t})\hat A_i\big)\) 正是 8.2–8.4 节算过的那一套，只不过把 \(A\) 换成了 \(\hat A_i\)、把 \(\rho\) 换成了 \(\rho_{i,t}\)。</p>
+<p><b>第 5 项：\(-\beta\,\mathrm{KL}_t\)（逐 token KL 惩罚）。</b>\(\mathrm{KL}_t\) 是第 \(t\) 个 token 位置上新策略与参考策略的 KL 散度（详情见第 9 章），\(\beta&gt;0\) 是惩罚系数。作用：防止新策略偏离参考策略太远。注意它在 \(\min\) 的<b>外面</b>：KL 惩罚不参与裁剪，逐 token 直接扣除。</p>
+<p><b>第 6 项：最外面的负号。</b>方括号里是 PPO 风格的"要<b>最大化</b>的目标"（\(\min\) 那套）减去 KL 惩罚。整个式子前面加负号，把它翻成"要<b>最小化</b>的损失"——纯粹是优化器接口习惯（梯度下降默认最小化），数学内容不变：</p>
+<p>\[
+\text{最小化 }\mathcal{L}_{\text{GRPO}} \quad\Longleftrightarrow\quad \text{最大化 }(\text{方括号内的平均})
+\]</p>
+</div>
+
+<h2 class="deriv">8.6 PPO vs GRPO 对比</h2>
+
+<table>
+<thead><tr><th></th><th>PPO</th><th>GRPO</th></tr></thead>
+<tbody>
+<tr><td>advantage 来源</td><td>critic + GAE</td><td>组内排名（见第 7 章）</td></tr>
+<tr><td>额外模型</td><td>value model</td><td>无</td></tr>
+<tr><td>裁剪</td><td>有（本章 8.2–8.4）</td><td>有（同一套 \(\min\)/\(\text{clip}\)）</td></tr>
+<tr><td>长度处理</td><td>—</td><td>\(\frac{1}{|o_i|}\) token 平均</td></tr>
+</tbody>
+</table>
+
+<h2>本章小结</h2>
+<p><b>裁剪</b>（原书 7.4 节）：\(L=\min\big(\rho A,\,\text{clip}(\rho)A\big)\) 用"悲观界"限制单步更新幅度——变好设上限（\(A&gt;0\) 时 \(\rho&gt;1+\epsilon\) 被卡在 \((1+\epsilon)A\)），变坏不设下限（\(A&lt;0\) 时 \(\rho&gt;1+\epsilon\)，惩罚 \(\rho A\) 照单全收）。全部计算的机关只有一条：\(A&gt;0\) 时不等式两边乘正数方向不变，\(A&lt;0\) 时乘负数方向翻转。</p>
+<p><b>GRPO</b>（原书 6.2 节，图 6.9）：把 PPO 的 \(\min\)/\(\text{clip}\) 搬到"组内 \(G\) 个 rollout × 逐 token"的粒度上——advantage 换成组内排名得到的整序列共享标量 \(\hat A_i\)，长度用 \(\frac{1}{|o_i|}\) 归一化，再逐 token 扣掉 \(\beta\,\mathrm{KL}_t\)，最后加负号写成最小化损失。相比 PPO，省掉了 value model 和 GAE。</p>
+<p>注：原书 6.2 节给出的是简化版 GRPO（省去了 KL 惩罚与逐 token 裁剪），把这两项加回来的完整版本要到原书第 7 章才出现。</p>
+
+<h2>延伸阅读</h2>
+<ul>
+<li><a href="../barm/page-67-detail.html">7.4 裁剪策略比率详解（原书伴读）</a></li>
+<li><a href="../barm/page-54-detail.html">6.2 GRPO 目标函数详解（原书伴读）</a></li>
+</ul>
+<nav class="deriv-nav">
+<a href="07-advantage.html"><span class="dir">上一章</span>第 7 章 Advantage</a>
+<a href="index.html"><span class="dir">目录</span>全部章节</a>
+<a href="09-kl-regularization.html"><span class="dir">下一章</span>第 9 章 KL 正则</a>
+</nav>
+</main>
+<script defer src="../bllm/assets/katex/katex.min.js"></script>
+<script defer src="../bllm/assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+});
+</script>
+</body>
+</html>

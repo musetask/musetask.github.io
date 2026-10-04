@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>第 6 章 · 策略梯度 · barmmath</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../bllm/assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">barmmath · 第 6 章 策略梯度</a>
+</header>
+<main id="main">
+<p class="lead"><b>本章目标</b>：从"模型的生成策略是一个参数化的概率分布"出发，一步不跳地推导出<b>策略梯度公式</b> \(\nabla_\theta J(\theta)=\mathbb{E}[R(y)\,\nabla_\theta\log\pi_\theta(y)]\)（即 REINFORCE），并证明"减去一个常数 baseline 不改变期望"（不偏性）。这是全书强化学习部分真正的起点。<b>对应原书位置</b>：barm 第 6 章 6.9 节（策略梯度损失函数）。<b>本章依赖</b>：第 1 章（期望的定义、期望的线性）、第 3 章（多元链式法则、偏导数与梯度的记号）。</p>
+
+<h2 class="deriv">一、优化目标：我们想最大化什么</h2>
+
+<div class="def">
+<span class="tag">定义：策略、奖励函数、优化目标</span>
+<p><b>策略</b> \(\pi_\theta(y\mid x)\)：给定提示 \(x\)，模型以多大的概率生成回答 \(y\)。下标 \(\theta\) 是模型的参数向量（神经网络的权重）；改变 \(\theta\)，就改变了这个概率分布。</p>
+<p>本章只研究对 \(\theta\) 求导，与 \(\theta\) 无关的条件 \(x\) 省略不写，简记为 \(\pi_\theta(y)\)：对每个回答 \(y\)，\(\pi_\theta(y)\) 是 0 到 1 之间的数，且满足归一性 \(\sum_y \pi_\theta(y)=1\)（见第 1 章）。</p>
+<p><b>奖励函数</b> \(R(y)\)：给回答 \(y\) 打分的实数函数（回答越好分数越高），<b>与 \(\theta\) 无关</b>。</p>
+<p><b>优化目标</b>（期望奖励）：</p>
+<p>\[
+J(\theta)\;=\;\mathbb{E}_{y\sim\pi_\theta}\big[R(y)\big]\;=\;\sum_{y}\pi_\theta(y)\,R(y)
+\]</p>
+<p>（离散情形：期望 = "每个回答的概率 × 它的奖励，全部加起来"，见第 1 章期望的定义。）</p>
+<p>我们的任务就是：<b>调整参数 \(\theta\)，让期望奖励 \(J(\theta)\) 尽可能大</b>——即做<b>梯度上升</b> \(\theta \leftarrow \theta + \eta\,\nabla_\theta J(\theta)\)（\(\eta>0\) 是步长，见第 3 章）。所以本章的全部工作，就是把 \(\nabla_\theta J(\theta)\) 算出来。</p>
+</div>
+
+<p>直接算 \(\nabla_\theta J(\theta)\) 有个困难：定义里的 \(\sum_y\) 是对"所有可能的回答"求和，回答空间大到无法枚举。策略梯度公式的全部价值就在于：<b>把这个"枚举求和"变成"采样估计"</b>。</p>
+
+<h2 class="deriv">二、log-derivative trick：把梯度变回期望</h2>
+
+<div class="def">
+<span class="tag">定义：对数导数（log-derivative）</span>
+<p>对取正值的函数 \(f(x)\)，一元链式法则给出（见第 3 章）</p>
+<p>\[
+\frac{d}{dx}\log f(x)=\frac{f'(x)}{f(x)}\qquad\big(f(x)>0\big)
+\]</p>
+<p>多元情形下，对参数向量 \(\theta\) 的每个分量都成立，写成梯度形式（\(\nabla_\theta\) 表示对 \(\theta\) 求梯度，即各偏导数组成的向量，见第 3 章）：</p>
+<p>\[
+\boxed{\;\nabla_\theta\log\pi_\theta(y)=\frac{\nabla_\theta\pi_\theta(y)}{\pi_\theta(y)}\;}
+\]</p>
+<p>等式两边同乘 \(\pi_\theta(y)\)，得到本章最常用的恒等式：</p>
+<p>\[
+\boxed{\;\nabla_\theta\pi_\theta(y)=\pi_\theta(y)\,\nabla_\theta\log\pi_\theta(y)\;}
+\]</p>
+<p>（分母 \(\pi_\theta(y)>0\)：实际计算中它就是采样概率，softmax 的输出恒为正，分母不会为零。）</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：策略梯度公式（离散版，一步不跳）</span>
+<p>从优化目标的定义出发，对 \(\theta\) 求梯度：</p>
+<p>\[
+\nabla_\theta J(\theta)=\nabla_\theta\sum_{y}\pi_\theta(y)\,R(y)
+\]</p>
+<p>这是有限（或收敛级数）求和，\(\nabla_\theta\) 可以逐项穿过求和号：</p>
+<p>\[
+=\sum_{y}\nabla_\theta\big[\pi_\theta(y)\,R(y)\big]
+\]</p>
+<p>\(R(y)\) 与 \(\theta\) 无关，求导时它是常数，可以提到梯度外面：</p>
+<p>\[
+=\sum_{y}\big[\nabla_\theta\pi_\theta(y)\big]\,R(y)
+\]</p>
+<p>代入上面的 log-derivative 恒等式 \(\nabla_\theta\pi_\theta(y)=\pi_\theta(y)\,\nabla_\theta\log\pi_\theta(y)\)：</p>
+<p>\[
+=\sum_{y}\pi_\theta(y)\,\nabla_\theta\log\pi_\theta(y)\,R(y)
+\]</p>
+<p>最后一步：按期望的定义（见第 1 章），"\(\sum_y \pi_\theta(y)\times\)（某个关于 \(y\) 的量）"就是该量在 \(y\sim\pi_\theta\) 下的期望。把 \(\nabla_\theta\log\pi_\theta(y)\,R(y)\) 看成"关于 \(y\) 的量"，得到</p>
+<p>\[
+\boxed{\;\nabla_\theta J(\theta)=\mathbb{E}_{y\sim\pi_\theta}\big[\,R(y)\,\nabla_\theta\log\pi_\theta(y)\,\big]\;}
+\]</p>
+<p>这就是<b>策略梯度公式</b>（也叫 REINFORCE 公式）。证毕。</p>
+</div>
+
+<div class="key">
+<span class="tag">关键结论：梯度变成了"可采样的期望"</span>
+<p>原来的 \(\nabla_\theta J(\theta)\) 里含 \(\sum_y\)——要枚举所有回答，算不了。但现在梯度是一个<b>期望</b> \(\mathbb{E}_{y\sim\pi_\theta}[\,\cdot\,]\)：只需从当前策略 \(\pi_\theta\) 里<b>采样</b>若干个回答，对每个采样到的 \(y\) 求出奖励 \(R(y)\) 和 \(\nabla_\theta\log\pi_\theta(y)\)（后者是普通的反向传播，见第 3 章），取平均即可。奖励函数 \(R(y)\) <b>只在采样到的 \(y\) 上求值</b>——它不需要可微、不需要有解析式，甚至可以是人工打分。</p>
+</div>
+
+<div class="prereq">
+<span class="tag">预备知识：蒙特卡洛估计（REINFORCE 估计量）</span>
+<p>期望可以用样本平均来近似（大数定律，见第 1 章）：从 \(\pi_\theta\) 中独立采样 \(N\) 个回答 \(y^{(1)},\dots,y^{(N)}\sim\pi_\theta\)，则</p>
+<p>\[
+\nabla_\theta J(\theta)\;\approx\;\frac{1}{N}\sum_{n=1}^{N} R\big(y^{(n)}\big)\,\nabla_\theta\log\pi_\theta\big(y^{(n)}\big)
+\]</p>
+<p>采样数 \(N\) 越大，近似越准。这个估计量就叫 <b>REINFORCE</b>。直觉：奖励高的回答 \(y\)，它的 \(\nabla_\theta\log\pi_\theta(y)\) 会把参数推向"让 \(y\) 更可能"的方向；奖励低的则反向推动。</p>
+</div>
+
+<div class="warn">
+<span class="tag">容易踩的坑：\(R(y)\) 必须与 \(\theta\) 无关</span>
+<p>推导中用到了 \(\nabla_\theta[\pi_\theta(y)\,R(y)]=[\nabla_\theta\pi_\theta(y)]\,R(y)\)——这要求 \(R(y)\) 不含 \(\theta\)。如果奖励函数本身也依赖当前策略（比如"奖励 = 与参考模型的 KL 距离"，见第 9 章），求导会多出一项，公式不再成立。原书 6.9 节的设定是奖励函数固定，所以可以直接用。</p>
+</div>
+
+<h2 class="deriv">三、baseline：减去常数不改变期望，还能降低方差</h2>
+
+<div class="def">
+<span class="tag">定义：无偏估计、方差、baseline</span>
+<p>要用一个随机量 \(\hat G\) 去估计真值 \(G\)（这里 \(G=\nabla_\theta J(\theta)\)）。若 \(\mathbb{E}[\hat G]=G\)，称 \(\hat G\) 为 \(G\) 的<b>无偏估计</b>（平均下来不偏不倚）。</p>
+<p>随机量 \(X\) 的<b>方差</b></p>
+<p>\[
+\mathrm{Var}[X]=\mathbb{E}\big[(X-\mathbb{E}[X])^2\big]
+\]</p>
+<p>衡量 \(X\) 围绕其均值的波动大小。无偏只保证"平均是对的"，方差小才保证"每次估计都不太离谱"——REINFORCE 的痛点正是方差太大。</p>
+<p><b>baseline</b>：一个与采样到的 \(y\) 无关的常数 \(b\)（例如一批采样的平均奖励）。把估计量从 \(R(y)\,\nabla_\theta\log\pi_\theta(y)\) 换成 \([R(y)-b]\,\nabla_\theta\log\pi_\theta(y)\)。问题：这样还无偏吗？</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：baseline 项的期望为零（不偏性证明，一步不跳）</span>
+<p>目标：证明 \(\mathbb{E}_{y\sim\pi_\theta}\big[b\,\nabla_\theta\log\pi_\theta(y)\big]=0\)。按期望的定义展开：</p>
+<p>\[
+\mathbb{E}_{y\sim\pi_\theta}\big[b\,\nabla_\theta\log\pi_\theta(y)\big]
+=\sum_{y}\pi_\theta(y)\,b\,\nabla_\theta\log\pi_\theta(y)
+\]</p>
+<p>\(b\) 是与 \(y\) 无关的常数，提到求和号外面（期望的线性，见第 1 章）：</p>
+<p>\[
+=b\sum_{y}\pi_\theta(y)\,\nabla_\theta\log\pi_\theta(y)
+\]</p>
+<p>用 log-derivative 恒等式的反方向，\(\pi_\theta(y)\,\nabla_\theta\log\pi_\theta(y)=\nabla_\theta\pi_\theta(y)\)：</p>
+<p>\[
+=b\sum_{y}\nabla_\theta\pi_\theta(y)
+\]</p>
+<p>逐项求导的逆操作：有限求和与梯度可交换，\(\sum_y\nabla_\theta\pi_\theta(y)=\nabla_\theta\big(\sum_y\pi_\theta(y)\big)\)：</p>
+<p>\[
+=b\,\nabla_\theta\Big(\sum_{y}\pi_\theta(y)\Big)
+\]</p>
+<p>\(\pi_\theta\) 是概率分布，归一性 \(\sum_y\pi_\theta(y)=1\)（见第 1 章）：</p>
+<p>\[
+=b\,\nabla_\theta(1)=b\cdot 0=0
+\]</p>
+<p>（常数 1 对任何参数的梯度都是 0，见第 3 章。）于是</p>
+<p>\[
+\boxed{\;\mathbb{E}\big[(R(y)-b)\,\nabla_\theta\log\pi_\theta(y)\big]
+=\mathbb{E}\big[R(y)\,\nabla_\theta\log\pi_\theta(y)\big]-0
+=\nabla_\theta J(\theta)\;}
+\]</p>
+<p>第一步用了期望的线性（见第 1 章）。证毕：减去 baseline <b>不改变期望</b>，估计量依然无偏。</p>
+</div>
+
+<div class="key">
+<span class="tag">关键结论：无偏，但方差变小——这是第 7 章 Advantage 的动机</span>
+<p>期望不变，凭什么说方差变小？直觉：设奖励全是正数（比如 8、9、10），\(R(y)\,\nabla_\theta\log\pi_\theta(y)\) 的每一项都把参数往"增加采样概率"的方向推，噪声很大；减去 baseline \(b=9\) 后变成 \(-1,0,+1\)：好的回答推、差的回答拉，各项的量级也小了，估计量更稳定。严格的方差分析是第 7 章的内容：那里取 \(b\) 为<b>同组采样的平均奖励</b>（组内归一化），得到 Advantage \(A(y)=R(y)-b\)——正是 GRPO 的核心。</p>
+</div>
+
+<div class="warn">
+<span class="tag">容易踩的坑：baseline 不能依赖于采样到的 \(y\)</span>
+<p>证明的关键一步是把 \(b\) 提到 \(\sum_y\) 外面——这要求 \(b\) 与 \(y\) 无关。若 \(b\) 本身是 \(y\) 的函数（比如直接取 \(b=R(y)\)），它提不出来，\(\mathbb{E}[b(y)\,\nabla_\theta\log\pi_\theta(y)]\) 一般不为零，估计量就有偏了。第 7 章里 baseline 取的是"同组其他样本"的平均奖励：对当前这个样本而言它仍是常数，不偏性照样成立，细节见第 7 章。</p>
+</div>
+
+<h2>本章小结</h2>
+<p>策略梯度公式 \(\nabla_\theta J(\theta)=\mathbb{E}[R(y)\,\nabla_\theta\log\pi_\theta(y)]\) 是原书 6.9 节损失函数的<b>理论来源</b>：书里最小化的那个"负的期望奖励加权 logprob"损失，对它求梯度，得到的正是这个公式的相反数（损失的梯度 = 负的策略梯度，所以最小化损失 = 沿梯度上升 \(J(\theta)\)）。它的两个核心技巧——<b>log-derivative trick</b>（把"对概率求梯度"变成"对 logprob 求梯度"，从而把梯度写成可采样的期望）和 <b>baseline</b>（减常数不偏、降方差）——是后面所有算法的起点：第 7 章的 Advantage 就是"奖励减 baseline"；第 8 章的 PPO / GRPO 都是在策略梯度目标上加约束（裁剪、KL 正则，见第 9 章）得到的变体。</p>
+<h2>延伸阅读</h2>
+<ul>
+<li><a href="../barm/page-58-detail.html">6.8 序列 logprob 与 6.9 策略梯度详解（原书伴读）</a></li>
+</ul>
+<nav class="deriv-nav">
+<a href="05-sequence-prob.html"><span class="dir">上一章</span>第 5 章 序列概率</a>
+<a href="index.html"><span class="dir">目录</span>全部章节</a>
+<a href="07-advantage.html"><span class="dir">下一章</span>第 7 章 Advantage</a>
+</nav>
+</main>
+<script defer src="../bllm/assets/katex/katex.min.js"></script>
+<script defer src="../bllm/assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>第 3 章 · 概率基础 · bllmmath</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../bllm/assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">bllmmath · 第 3 章 概率基础</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">bllmmath · 第 3 章</span></div>
+
+<h1>第 3 章 · 概率基础</h1>
+
+<div class="lead">
+<b>本章目标</b>：从样本空间出发，定义随机变量、期望、方差、独立性，
+并完整证明方差展开公式和"独立则乘积期望可分解"。<br>
+<b>对应原书位置</b>：softmax 输出的就是概率分布；第 11 章的交叉熵和困惑度是期望；
+第 9 章"点积的方差是 \(d_k\)"用的正是本章的方差运算法则。
+</div>
+
+<h2><span class="tag">3.1 样本空间与随机变量</span></h2>
+
+<div class="def">
+<span class="tag">定义：样本空间、事件、概率</span>
+<p><b>样本空间</b> \(\Omega\) 是所有可能结果的集合；<b>事件</b>是 \(\Omega\) 的子集；
+<b>概率</b> \(P\) 为每个事件指定一个 \([0,1]\) 之间的数，满足
+\(P(\Omega)=1\)，且互不相交的事件概率可加。</p>
+<p>例：掷骰子，\(\Omega=\{1,2,3,4,5,6\}\)，\(P(\{3\})=1/6\)。</p>
+</div>
+
+<div class="def">
+<span class="tag">定义：随机变量与期望（离散情形）</span>
+<p><b>随机变量</b> \(X\) 是定义在 \(\Omega\) 上的函数：每个结果 \(\omega\) 对应一个数 \(X(\omega)\)。
+（掷骰子点数本身就是随机变量。）</p>
+<p>\(X\) 的<b>期望</b>（均值）定义为</p>
+<p>\[
+\mathbb{E}[X]=\sum_{\omega\in\Omega}X(\omega)\,P(\omega)
+\]</p>
+<p>直觉：每个取值的"加权平均"，权重就是概率。若 \(X\) 取值 \(x\) 的概率记作 \(P(X=x)\)，
+上式也可写成 \(\mathbb{E}[X]=\sum_x x\cdot P(X=x)\)。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：期望的线性性质</span>
+<p>对任意常数 \(a,b\) 和随机变量 \(X,Y\)：</p>
+<p>\[
+\mathbb{E}[aX+bY]=a\,\mathbb{E}[X]+b\,\mathbb{E}[Y]
+\]</p>
+<p>证明（直接按定义展开，求和符号可以拆）：</p>
+<p>\[
+\begin{aligned}
+\mathbb{E}[aX+bY] &= \sum_{\omega}\big(aX(\omega)+bY(\omega)\big)P(\omega) \\
+&= \sum_{\omega}aX(\omega)P(\omega)+\sum_{\omega}bY(\omega)P(\omega)
+   \qquad\text{（求和拆成两项）}\\
+&= a\sum_{\omega}X(\omega)P(\omega)+b\sum_{\omega}Y(\omega)P(\omega)
+   \qquad\text{（常数提出求和号）}\\
+&= a\,\mathbb{E}[X]+b\,\mathbb{E}[Y]
+\end{aligned}
+\]</p>
+<p>这个性质极其常用：期望与"加法、数乘"可交换顺序，不需要任何额外条件。</p>
+</div>
+
+<h2><span class="tag">3.2 方差：展开公式的完整证明</span></h2>
+
+<div class="def">
+<span class="tag">定义：方差</span>
+<p>随机变量 \(X\) 的<b>方差</b>定义为它到均值的"平均平方距离"：</p>
+<p>\[
+\mathrm{Var}(X)=\mathbb{E}\big[(X-\mathbb{E}[X])^2\big]
+\]</p>
+<p>方差度量"散开程度"：方差大，取值起伏大。标准差 \(\sigma=\sqrt{\mathrm{Var}(X)}\)
+把单位换回和 \(X\) 一致。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：\(\mathrm{Var}(X)=\mathbb{E}[X^2]-(\mathbb{E}[X])^2\)</span>
+<p>记 \(\mu=\mathbb{E}[X]\)（常数）。把平方展开再用期望的线性：</p>
+<p>\[
+\begin{aligned}
+\mathrm{Var}(X) &= \mathbb{E}\big[(X-\mu)^2\big] \\
+&= \mathbb{E}\big[X^2-2\mu X+\mu^2\big]
+   \qquad\text{（完全平方展开）}\\
+&= \mathbb{E}[X^2]-2\mu\,\mathbb{E}[X]+\mu^2
+   \qquad\text{（期望线性：常数 }2\mu\text{ 提出，}\mathbb{E}[\mu^2]=\mu^2\text{）}\\
+&= \mathbb{E}[X^2]-2\mu^2+\mu^2
+   \qquad\text{（}\mathbb{E}[X]=\mu\text{）}\\
+&= \mathbb{E}[X^2]-\mu^2
+\end{aligned}
+\]</p>
+<p>即 \(\mathrm{Var}(X)=\mathbb{E}[X^2]-(\mathbb{E}[X])^2\)。移项也常用：
+\(\mathbb{E}[X^2]=\mathrm{Var}(X)+(\mathbb{E}[X])^2\)。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：\(\mathrm{Var}(aX+b)=a^2\,\mathrm{Var}(X)\)</span>
+<p>先算均值：\(\mathbb{E}[aX+b]=a\mu+b\)（期望线性）。代入方差定义：</p>
+<p>\[
+\begin{aligned}
+\mathrm{Var}(aX+b) &= \mathbb{E}\big[\big((aX+b)-(a\mu+b)\big)^2\big] \\
+&= \mathbb{E}\big[\big(a(X-\mu)\big)^2\big]
+   \qquad\text{（常数 }b\text{ 相消）}\\
+&= \mathbb{E}\big[a^2(X-\mu)^2\big]
+   = a^2\,\mathbb{E}\big[(X-\mu)^2\big] \\
+&= a^2\,\mathrm{Var}(X)
+\end{aligned}
+\]</p>
+<p>注意：常数 \(b\) 对方差毫无影响（整体平移不改变散开程度），而数乘 \(a\) 让方差放大 \(a^2\) 倍。
+第 9 章"除以 \(\sqrt{d_k}\) 把方差拉回 1"用的正是这一条。</p>
+</div>
+
+<h2><span class="tag">3.3 独立性：乘积的期望可以分解</span></h2>
+
+<div class="def">
+<span class="tag">定义：独立性</span>
+<p>随机变量 \(X,Y\) 相互<b>独立</b>，指对一切取值 \(x,y\) 都有</p>
+<p>\[
+P(X=x,\ Y=y)=P(X=x)\cdot P(Y=y)
+\]</p>
+<p>直觉：知道 \(X\) 的取值，不改变 \(Y\) 的概率分布。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：独立则 \(\mathbb{E}[XY]=\mathbb{E}[X]\,\mathbb{E}[Y]\)</span>
+<p>按期望定义，对一切 \((x,y)\) 组合求和：</p>
+<p>\[
+\begin{aligned}
+\mathbb{E}[XY] &= \sum_{x}\sum_{y}xy\cdot P(X=x,Y=y) \\
+&= \sum_{x}\sum_{y}xy\cdot P(X=x)\,P(Y=y)
+   \qquad\text{（独立性代入）}\\
+&= \sum_{x}\left[x\,P(X=x)\sum_{y}y\,P(Y=y)\right]
+   \qquad\text{（内层求和里 }xP(X=x)\text{ 是常数，提出）}\\
+&= \left[\sum_{x}x\,P(X=x)\right]\cdot\left[\sum_{y}y\,P(Y=y)\right]
+   \qquad\text{（中括号内与 }x\text{ 无关，提出外层求和）}\\
+&= \mathbb{E}[X]\,\mathbb{E}[Y]
+\end{aligned}
+\]</p>
+<p>关键是第三步：双重求和里，把只与 \(y\) 有关的部分先加起来，
+剩下的恰好是 \(\mathbb{E}[Y]\)。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：独立和的方差可加</span>
+<p>若 \(X,Y\) 独立，则 \(\mathrm{Var}(X+Y)=\mathrm{Var}(X)+\mathrm{Var}(Y)\)。
+用方差展开公式：</p>
+<p>\[
+\begin{aligned}
+\mathrm{Var}(X+Y) &= \mathbb{E}[(X+Y)^2]-(\mathbb{E}[X+Y])^2 \\
+&= \big(\mathbb{E}[X^2]+2\mathbb{E}[XY]+\mathbb{E}[Y^2]\big)
+   -\big(\mu_X+\mu_Y\big)^2 \\
+&= \big(\mathbb{E}[X^2]-\mu_X^2\big)+\big(\mathbb{E}[Y^2]-\mu_Y^2\big)
+   +2\big(\mathbb{E}[XY]-\mu_X\mu_Y\big)
+\end{aligned}
+\]</p>
+<p>由上一条，\(\mathbb{E}[XY]=\mu_X\mu_Y\)，最后一项为 0，剩下两项正是
+\(\mathrm{Var}(X)+\mathrm{Var}(Y)\)。归纳可得：\(n\) 个独立变量和的方差等于方差之和。
+第 9 章 \(\mathrm{Var}(\omega)=d_k\) 的证明就靠这一条。</p>
+</div>
+
+<div class="warn">
+<span class="tag">注意：不独立时不能这么算</span>
+<p>\(\mathbb{E}[XY]=\mathbb{E}[X]\mathbb{E}[Y]\) 和方差可加都<b>要求独立</b>。
+一般情形 \(\mathrm{Var}(X+Y)=\mathrm{Var}(X)+\mathrm{Var}(Y)+2\,\mathrm{Cov}(X,Y)\)，
+多出一项协方差。本书遇到的求和都是独立项（如 attention 里 \(d_k\) 个独立乘积），
+所以直接用可加性。</p>
+</div>
+
+<div class="key">
+<span class="tag">本章公式小结</span>
+<p>\(\mathbb{E}[X]=\sum_\omega X(\omega)P(\omega)\)；
+\(\mathbb{E}[aX+bY]=a\mathbb{E}[X]+b\mathbb{E}[Y]\)；
+\(\mathrm{Var}(X)=\mathbb{E}[(X-\mathbb{E}[X])^2]=\mathbb{E}[X^2]-(\mathbb{E}[X])^2\)；
+\(\mathrm{Var}(aX+b)=a^2\mathrm{Var}(X)\)；
+独立 \(\Rightarrow\) \(\mathbb{E}[XY]=\mathbb{E}[X]\mathbb{E}[Y]\)，
+\(\mathrm{Var}(X+Y)=\mathrm{Var}(X)+\mathrm{Var}(Y)\)。</p>
+</div>
+
+<div class="key">
+<span class="tag">这些公式在书里是干什么的</span>
+<p>softmax 的输出是一个概率分布（第 6 章）；交叉熵损失本质是"对随机抽到的 token 求期望"（第 10 章）；
+采样就是从分布里按概率抽取值（第 11 章）；而"点积方差 \(=d_k\)"直接用了独立和的方差可加（第 7 章）。
+概率论是全书的通用语言。</p>
+</div>
+
+<p><b>延伸阅读</b>：</p>
+<ul>
+<li><a href="../bllm/09-coding-attention-mechanisms-detail.html">原书第 9 章数学详解</a>——点积方差 \(\mathrm{Var}(\omega)=d_k\) 的逐步展开</li>
+<li><a href="../bllm/11-pretraining-on-unlabeled-data-detail.html">原书第 11 章数学详解</a>——交叉熵与期望</li>
+</ul>
+
+<nav class="deriv-nav">
+<a href="02-integration.html"><span class="dir">上一章</span>第 2 章 · 积分初步</a>
+<a href="index.html"><span class="dir">目录</span>全部章节</a>
+<a href="04-vectors-matrices.html"><span class="dir">下一章</span>第 4 章 · 向量与矩阵</a>
+</nav>
+</main>
+<script defer src="../bllm/assets/katex/katex.min.js"></script>
+<script defer src="../bllm/assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+});
+</script>
+</body>
+</html>

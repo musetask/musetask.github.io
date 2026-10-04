@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>第 1 章 · 导数 · bllmmath</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../bllm/assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">bllmmath · 第 1 章 导数</a>
+</header>
+<main id="main">
+<div class="phead"><span class="cnt">bllmmath · 第 1 章</span></div>
+
+<h1>第 1 章 · 导数</h1>
+
+<div class="lead">
+<b>本章目标</b>：从极限的定义出发，亲手算出导数，证明四则运算法则和链式法则，
+最后得到幂函数、指数、对数函数的求导公式。<br>
+<b>对应原书位置</b>：全书到处都在求导——第 9 章 softmax 的雅可比矩阵、
+附录 A 的 PyTorch 自动微分、第 12 章的梯度下降。没有这一章，后面寸步难行。
+</div>
+
+<h2><span class="tag">1.1 导数的定义：从平均变化率说起</span></h2>
+
+<p>先看一个具体问题：函数 \(f(x)=x^2\)，当 \(x\) 从 2 变到 3 时，函数值从 4 变到 9。
+\(x\) 走了 1，\(f\) 走了 5，<b>平均变化率</b>是 \(5/1=5\)。一般地，\(x\) 从 \(x_0\) 变到
+\(x_0+h\) 时，平均变化率是</p>
+<p>\[
+\frac{f(x_0+h)-f(x_0)}{h}
+\]</p>
+<p>但"平均"很粗糙：它只告诉你这一段路总体多陡，没告诉你在 \(x_0\) 这一点有多陡。
+要得到"这一点"的陡峭程度，就让 \(h\) 越来越小，看平均变化率趋向哪里。这个极限就是导数：</p>
+
+<div class="def">
+<span class="tag">定义：导数</span>
+<p>函数 \(f\) 在点 \(x\) 处的<b>导数</b>定义为</p>
+<p>\[
+f'(x)=\lim_{h\to 0}\frac{f(x+h)-f(x)}{h}
+\]</p>
+<p>如果这个极限存在，就说 \(f\) 在 \(x\) 处<b>可导</b>。导数也记作 \(\frac{df}{dx}\) 或 \(\frac{dy}{dx}\)（\(y=f(x)\) 时）。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：亲手算一个，\(f(x)=x^2\) 的导数</span>
+<p>按定义，把 \(f(x+h)=(x+h)^2\) 代入：</p>
+<p>\[
+\begin{aligned}
+f'(x) &= \lim_{h\to 0}\frac{(x+h)^2-x^2}{h} \\
+&= \lim_{h\to 0}\frac{(x^2+2xh+h^2)-x^2}{h} \qquad\text{（展开平方）}\\
+&= \lim_{h\to 0}\frac{2xh+h^2}{h} \\
+&= \lim_{h\to 0}(2x+h) \qquad\text{（分子分母约掉 }h\text{）}\\
+&= 2x
+\end{aligned}
+\]</p>
+<p>所以 \((x^2)'=2x\)。注意关键一步：约掉 \(h\) 之后再取极限——极限的定义里 \(h\to 0\) 但 \(h\neq 0\)，
+所以约分合法。</p>
+</div>
+
+<h2><span class="tag">1.2 几何意义：导数是切线的斜率</span></h2>
+<p>\(\frac{f(x+h)-f(x)}{h}\) 是过 \((x,f(x))\) 和 \((x+h,f(x+h))\) 两点的<b>割线</b>的斜率。
+当 \(h\to 0\)，第二个点沿着曲线滑向第一个点，割线就转成了<b>切线</b>。
+所以导数 \(f'(x)\) 就是曲线在点 \(x\) 处切线的斜率：\(f'(x)>0\) 表示在上升，\(f'(x)<0\) 表示在下降，
+\(f'(x)=0\) 的点是"平坦点"（极值往往出现在这里——梯度下降正是利用这一点找最小值）。</p>
+
+<h2><span class="tag">1.3 四则运算法则</span></h2>
+
+<div class="def">
+<span class="tag">定理：求导的四则运算法则</span>
+<p>设 \(f,g\) 都可导，则</p>
+<p>\[
+\begin{aligned}
+(f+g)' &= f'+g' &\text{（和的导数 = 导数的和）}\\
+(fg)' &= f'g+fg' &\text{（积法则）}\\
+\left(\frac{f}{g}\right)' &= \frac{f'g-fg'}{g^2}\quad(g\neq 0) &\text{（商法则）}
+\end{aligned}
+\]</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：和法则（最简单，先热身）</span>
+<p>\[
+\begin{aligned}
+(f+g)'(x) &= \lim_{h\to 0}\frac{[f(x+h)+g(x+h)]-[f(x)+g(x)]}{h} \\
+&= \lim_{h\to 0}\left[\frac{f(x+h)-f(x)}{h}+\frac{g(x+h)-g(x)}{h}\right] \\
+&= f'(x)+g'(x)
+\end{aligned}
+\]</p>
+<p>第二步用了极限的运算法则：和的极限 = 极限的和（前提是两个极限都存在，这里成立因为 \(f,g\) 可导）。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：积法则（关键技巧：加一项减一项）</span>
+<p>直接展开 \((f(x+h)g(x+h)-f(x)g(x))/h\) 会卡住。技巧是<b>中间加一项再减一项</b>，
+把差拆成两块，每块只变一个函数：</p>
+<p>\[
+\begin{aligned}
+(fg)'(x) &= \lim_{h\to 0}\frac{f(x+h)g(x+h)-f(x)g(x)}{h} \\
+&= \lim_{h\to 0}\frac{\big[f(x+h)g(x+h)-f(x)g(x+h)\big]+\big[f(x)g(x+h)-f(x)g(x)\big]}{h} \\
+&\qquad\text{（加了 }f(x)g(x+h)\text{ 又减掉它，值不变）}\\
+&= \lim_{h\to 0}\left[\frac{f(x+h)-f(x)}{h}\cdot g(x+h)+f(x)\cdot\frac{g(x+h)-g(x)}{h}\right] \\
+&= f'(x)\cdot g(x)+f(x)\cdot g'(x)
+\end{aligned}
+\]</p>
+<p>最后一步：\(\frac{f(x+h)-f(x)}{h}\to f'(x)\)，而 \(g(x+h)\to g(x)\)——
+为什么？因为<b>可导必连续</b>：\(g\) 可导则当 \(h\to 0\) 时 \(g(x+h)\to g(x)\)。
+（"加一项减一项"是全书反复出现的技巧，记住它。）</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：商法则（用积法则 + 链式法则，不用死记）</span>
+<p>先求 \(\left(\frac{1}{g}\right)'\)。把它看成复合函数：外层 \(u\mapsto \frac{1}{u}\)，
+内层 \(u=g(x)\)。外层导数是 \(-\frac{1}{u^2}\)（这是幂法则 \(u^{-1}\) 的情形，下一节会证），
+由链式法则（1.4 节）：</p>
+<p>\[
+\left(\frac{1}{g}\right)' = -\frac{1}{g^2}\cdot g' = -\frac{g'}{g^2}
+\]</p>
+<p>再把 \(\frac{f}{g}\) 看成 \(f\cdot\frac{1}{g}\)，用积法则：</p>
+<p>\[
+\left(\frac{f}{g}\right)' = f'\cdot\frac{1}{g}+f\cdot\left(-\frac{g'}{g^2}\right)
+= \frac{f'g-fg'}{g^2}
+\]</p>
+<p>通分那一步：\(\frac{f'}{g}-\frac{fg'}{g^2}=\frac{f'g-fg'}{g^2}\)。商法则不需要背，现场推就行。</p>
+</div>
+
+<h2><span class="tag">1.4 链式法则（本章最重要的定理）</span></h2>
+
+<p>神经网络里函数都是一层套一层的：\(y=f(u)\)，\(u=g(x)\)，想求 \(y\) 对 \(x\) 的导数。
+链式法则说：<b>逐层求导再相乘</b>。</p>
+
+<div class="def">
+<span class="tag">定理：链式法则</span>
+<p>若 \(u=g(x)\) 在 \(x_0\) 可导，\(y=f(u)\) 在 \(u_0=g(x_0)\) 可导，则复合函数
+\(y=f(g(x))\) 在 \(x_0\) 可导，且</p>
+<p>\[
+\frac{dy}{dx}=\frac{dy}{du}\cdot\frac{du}{dx}\qquad\text{即}\qquad
+[f(g(x))]'=f'(g(x))\cdot g'(x)
+\]</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：链式法则的完整证明</span>
+<p>记增量：\(\Delta u=g(x_0+\Delta x)-g(x_0)\)，\(\Delta y=f(u_0+\Delta u)-f(u_0)\)，
+其中 \(u_0=g(x_0)\)。当 \(\Delta u\neq 0\) 时，恒等式成立：</p>
+<p>\[
+\frac{\Delta y}{\Delta x}=\frac{\Delta y}{\Delta u}\cdot\frac{\Delta u}{\Delta x}
+\qquad\text{（右边 } \Delta u \text{ 约掉了）}
+\]</p>
+<p>现在让 \(\Delta x\to 0\)。因为 \(g\) 可导则连续，所以 \(\Delta u\to 0\)。
+于是：</p>
+<p>\[
+\lim_{\Delta x\to 0}\frac{\Delta y}{\Delta x}
+= \underbrace{\lim_{\Delta u\to 0}\frac{\Delta y}{\Delta u}}_{=\,f'(u_0)}
+  \cdot \underbrace{\lim_{\Delta x\to 0}\frac{\Delta u}{\Delta x}}_{=\,g'(x_0)}
+= f'(u_0)\,g'(x_0)
+\]</p>
+<p>这就是链式法则。直觉：\(x\) 动一点点，\(u\) 跟着动 \(g'\) 倍，\(y\) 再跟着 \(u\) 动 \(f'\) 倍，
+总共动 \(f'\times g'\) 倍。</p>
+</div>
+
+<div class="warn">
+<span class="tag">注意：\(\Delta u=0\) 的情形</span>
+<p>上面的证明在 \(\Delta u=0\) 时除法不合法。严格的证明要把增量写成
+\(\Delta y=f'(u_0)\Delta u+\varepsilon(\Delta u)\cdot\Delta u\) 的形式（其中 \(\varepsilon\to 0\)），
+这样 \(\Delta u=0\) 时也成立。结论不变，思路完全一样——考试和本书都用上面的版本，够用了。</p>
+</div>
+
+<h2><span class="tag">1.5 常用函数求导</span></h2>
+
+<div class="derivation">
+<span class="tag">推导：幂函数 \((x^n)'=nx^{n-1}\)（\(n\) 为正整数）</span>
+<p>用二项式定理展开 \((x+h)^n\)：</p>
+<p>\[
+(x+h)^n=\sum_{k=0}^{n}\binom{n}{k}x^{\,n-k}h^k
+= x^n + \binom{n}{1}x^{n-1}h + \binom{n}{2}x^{n-2}h^2+\cdots+h^n
+\]</p>
+<p>其中 \(\binom{n}{1}=n\)。代入导数定义：</p>
+<p>\[
+\begin{aligned}
+(x^n)' &= \lim_{h\to 0}\frac{(x+h)^n-x^n}{h} \\
+&= \lim_{h\to 0}\frac{nx^{n-1}h+\binom{n}{2}x^{n-2}h^2+\cdots+h^n}{h} \\
+&= \lim_{h\to 0}\left[nx^{n-1}+h\left(\binom{n}{2}x^{n-2}+\cdots+h^{n-2}\right)\right] \\
+&= nx^{n-1}
+\end{aligned}
+\]</p>
+<p>含 \(h\) 的项在 \(h\to 0\) 时全部消失，只剩第一项。这个公式对一切实数 \(n\) 都成立
+（\(n\) 为负数或分数时的证明需要对数求导，这里直接用结论）。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：\((e^x)'=e^x\)（指数函数求导等于自己）</span>
+<p>\[
+(e^x)'=\lim_{h\to 0}\frac{e^{x+h}-e^x}{h}
+= e^x\cdot\lim_{h\to 0}\frac{e^h-1}{h}
+\]</p>
+<p>关键是算 \(L=\lim_{h\to 0}\frac{e^h-1}{h}\)。换元：令 \(t=e^h-1\)，则 \(h=\ln(1+t)\)，
+当 \(h\to 0\) 时 \(t\to 0\)：</p>
+<p>\[
+L=\lim_{t\to 0}\frac{t}{\ln(1+t)}
+= \lim_{t\to 0}\frac{1}{\frac{1}{t}\ln(1+t)}
+= \lim_{t\to 0}\frac{1}{\ln\big((1+t)^{1/t}\big)}
+\]</p>
+<p>由 \(e\) 的定义 \(\lim_{t\to 0}(1+t)^{1/t}=e\)，且 \(\ln\) 连续，所以分母趋向 \(\ln e=1\)，
+故 \(L=1\)。于是 \((e^x)'=e^x\cdot 1=e^x\)。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：\((\ln x)'=\frac{1}{x}\)（用链式法则反推）</span>
+<p>设 \(y=\ln x\)（\(x>0\)），则 \(x=e^y\)。两边同时对 \(x\) 求导——右边是复合函数，
+用链式法则：</p>
+<p>\[
+1=\frac{d}{dx}e^y = e^y\cdot\frac{dy}{dx}
+\]</p>
+<p>解出 \(\frac{dy}{dx}=\frac{1}{e^y}=\frac{1}{x}\)。即 \((\ln x)'=\frac{1}{x}\)。
+注意这里用到了" \(y\) 是 \(x\) 的函数"这一层关系，这正是链式法则的用武之地。</p>
+</div>
+
+<div class="key">
+<span class="tag">本章公式小结</span>
+<p>\(f'(x)=\lim_{h\to 0}\frac{f(x+h)-f(x)}{h}\)；\((fg)'=f'g+fg'\)；
+\(\left(\frac{f}{g}\right)'=\frac{f'g-fg'}{g^2}\)；
+链式法则 \([f(g(x))]'=f'(g(x))g'(x)\)；
+\((x^n)'=nx^{n-1}\)；\((e^x)'=e^x\)；\((\ln x)'=1/x\)。
+这七个就是全书求导的全部家当——softmax 求导、sigmoid 求导、梯度下降，
+拆开看全是它们的组合。</p>
+</div>
+
+<div class="key">
+<span class="tag">这些公式在书里是干什么的</span>
+<p>第 9 章算"分数变一点点、权重变多少"用的是商法则（softmax 的雅可比）；
+附录 A 里 PyTorch 的自动微分，本质就是把链式法则写成代码，让计算机替你逐层相乘；
+第 12 章的梯度下降，\(f'(x)\) 告诉你"往哪个方向走函数值会变小"。
+先记住公式，第 5 章起会一个一个看到它们上场。</p>
+</div>
+
+<p><b>延伸阅读</b>：</p>
+<ul>
+<li><a href="../bllm/14-appendix-a-introduction-to-pytorch-detail.html">原书附录 A 数学详解</a>——PyTorch 自动微分与求导法则的应用</li>
+<li><a href="../bllm/09-coding-attention-mechanisms-detail.html">原书第 9 章数学详解</a>——softmax 求导（雅可比矩阵对角元）</li>
+</ul>
+
+<nav class="deriv-nav">
+<a href="00-preface.html"><span class="dir">上一章</span>第 0 章 · 前言</a>
+<a href="index.html"><span class="dir">目录</span>全部章节</a>
+<a href="02-integration.html"><span class="dir">下一章</span>第 2 章 · 积分初步</a>
+</nav>
+</main>
+<script defer src="../bllm/assets/katex/katex.min.js"></script>
+<script defer src="../bllm/assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+});
+</script>
+</body>
+</html>

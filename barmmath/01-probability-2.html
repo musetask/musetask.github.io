@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>第 1 章 · 概率进阶 · barmmath</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../bllm/assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">barmmath · 第 1 章 概率进阶</a>
+</header>
+<main id="main">
+
+<h1>第 1 章 概率进阶</h1>
+
+<div class="plainbox">
+<p><b>本章目标</b>：从"概率是什么"出发，推导出条件概率、贝叶斯公式、期望的线性、全期望公式、独立性这五个工具。它们是全书的地基——第 5 章的序列概率、第 6 章的策略梯度期望、第 4 章的采样，每一步都在用它们。</p>
+<p><b>对应原书位置</b>：barm 第 5 章（序列概率与 logprob）、第 6 章（期望奖励与策略梯度）。</p>
+<p><b>本章依赖</b>：无。从零开始。</p>
+</div>
+
+<h2 class="deriv">一、条件概率：已知一部分信息，概率怎么变</h2>
+
+<div class="def">
+<span class="tag">定义：样本空间、事件、概率</span>
+<p><b>样本空间</b> \(\Omega\) 是所有可能结果的集合；<b>事件</b> \(A\) 是 \(\Omega\) 的子集；<b>概率</b> \(P(A)\) 是 0 到 1 之间的数，满足 \(P(\Omega)=1\)，且互不相交的事件概率可加。</p>
+<p><b>条件概率</b>：已知事件 \(B\) 已经发生（\(P(B)>0\)），事件 \(A\) 发生的概率记为 \(P(A|B)\)，定义为</p>
+<p>\[
+P(A|B) \;=\; \frac{P(A\cap B)}{P(B)}
+\]</p>
+<p>直觉：样本空间从 \(\Omega\) 缩小到了 \(B\)，所以分母变成 \(P(B)\)；分子是"\(A\) 和 \(B\) 同时发生"的部分。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：乘法公式</span>
+<p>把条件概率定义的等式两边同时乘以 \(P(B)\)：</p>
+<p>\[
+P(A\cap B) \;=\; P(A|B)\,P(B)
+\]</p>
+<p>这就是<b>乘法公式</b>："\(A\) 和 \(B\) 同时发生" = "\(B\) 先发生" × "在 \(B\) 发生的条件下 \(A\) 发生"。第 5 章的序列概率链式法则就是它反复使用的结果。</p>
+</div>
+
+<h2 class="deriv">二、贝叶斯公式：反过来算概率</h2>
+
+<p>条件概率 \(P(A|B)\) 和 \(P(B|A)\) 是两回事：前者是"已知 \(B\) 求 \(A\)"，后者是"已知 \(A\) 求 \(B\)"。贝叶斯公式把它们连起来。</p>
+
+<div class="derivation">
+<span class="tag">推导：贝叶斯公式</span>
+<p>从条件概率定义出发，写出两个方向：</p>
+<p>\[
+P(A|B)=\frac{P(A\cap B)}{P(B)}, \qquad
+P(B|A)=\frac{P(A\cap B)}{P(A)}
+\]</p>
+<p>第二个等式两边乘以 \(P(A)\)，得 \(P(A\cap B)=P(B|A)P(A)\)。把它代入第一个等式的分子：</p>
+<p>\[
+\boxed{\;P(A|B)=\frac{P(B|A)\,P(A)}{P(B)}\;}
+\]</p>
+<p>这就是<b>贝叶斯公式</b>。分母 \(P(B)\) 还可以用<b>全概率公式</b>展开：若 \(A_1,\dots,A_n\) 互不相交且并起来是全集，则</p>
+<p>\[
+P(B)=\sum_{i=1}^{n}P(B\cap A_i)=\sum_{i=1}^{n}P(B|A_i)\,P(A_i)
+\]</p>
+<p>（第一步用了"互不相交事件的并的概率等于概率之和"，第二步用了乘法公式。）于是贝叶斯公式的完整形式是</p>
+<p>\[
+P(A_j|B)=\frac{P(B|A_j)\,P(A_j)}{\sum_{i=1}^{n}P(B|A_i)\,P(A_i)}
+\]</p>
+</div>
+
+<h2 class="deriv">三、期望：随机变量的"平均值"</h2>
+
+<div class="def">
+<span class="tag">定义：离散随机变量、联合分布、边缘分布、期望</span>
+<p><b>离散随机变量</b> \(X\) 是取值可数的变量，记 \(P(X=x)\) 为 \(X\) 取值 \(x\) 的概率。</p>
+<p>两个随机变量 \(X,Y\) 的<b>联合分布</b>记为 \(P(X=x,Y=y)\)（同时取值的概率）。把联合分布对 \(y\) 求和，得到 \(X\) 的<b>边缘分布</b>：</p>
+<p>\[
+P(X=x)=\sum_{y}P(X=x,Y=y)
+\]</p>
+<p>（对一切可能的 \(y\) 求和，"\(Y\) 取什么值"被加掉了，只剩 \(X\)。）</p>
+<p>\(X\) 的<b>期望</b>（均值）定义为</p>
+<p>\[
+\mathbb{E}[X]\;=\;\sum_{x} x\cdot P(X=x)
+\]</p>
+<p>即"每个取值 × 它的概率，再全部加起来"。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：期望的线性（最重要的性质）</span>
+<p>对任意常数 \(a,b\) 和任意随机变量 \(X,Y\)（<b>不需要独立</b>），有</p>
+<p>\[
+\boxed{\;\mathbb{E}[aX+bY]=a\,\mathbb{E}[X]+b\,\mathbb{E}[Y]\;}
+\]</p>
+<p>证明（离散求和，一步不跳）。先按期望定义展开：</p>
+<p>\[
+\mathbb{E}[aX+bY]=\sum_{x}\sum_{y}(ax+by)\,P(X=x,Y=y)
+\]</p>
+<p>把括号拆开，求和也拆成两项：</p>
+<p>\[
+=\sum_{x}\sum_{y}ax\cdot P(X=x,Y=y)\;+\;\sum_{x}\sum_{y}by\cdot P(X=x,Y=y)
+\]</p>
+<p>看第一项：\(ax\) 与 \(y\) 无关，可以提到对 \(y\) 的求和外面：</p>
+<p>\[
+\sum_{x}\sum_{y}ax\cdot P(X=x,Y=y)
+=\sum_{x}ax\underbrace{\left(\sum_{y}P(X=x,Y=y)\right)}_{=\,P(X=x)\text{（边缘分布）}}
+=\sum_{x}ax\cdot P(X=x)=a\,\mathbb{E}[X]
+\]</p>
+<p>同理第二项：\(by\) 与 \(x\) 无关，先对 \(x\) 求和得到 \(Y\) 的边缘分布：</p>
+<p>\[
+\sum_{x}\sum_{y}by\cdot P(X=x,Y=y)
+=\sum_{y}by\underbrace{\left(\sum_{x}P(X=x,Y=y)\right)}_{=\,P(Y=y)}
+=b\,\mathbb{E}[Y]
+\]</p>
+<p>两项相加即得 \(\mathbb{E}[aX+bY]=a\mathbb{E}[X]+b\mathbb{E}[Y]\)。证毕。</p>
+<p>关键点：证明中只用了"求和可以拆项、常数可以提出、边缘分布定义"，<b>全程没有用到独立性</b>。</p>
+</div>
+
+<div class="warn">
+<span class="tag">最容易记混的点</span>
+<p><b>期望的线性不需要独立性</b>——\(X\) 和 \(Y\) 哪怕高度相关，\(\mathbb{E}[X+Y]=\mathbb{E}[X]+\mathbb{E}[Y]\) 照样成立。独立性是下面"乘积期望分解"才需要的条件，两者不要混淆。</p>
+</div>
+
+<h2 class="deriv">四、全期望公式：分情况算期望</h2>
+
+<div class="def">
+<span class="tag">定义：条件期望</span>
+<p>已知 \(Y=y\) 的条件下，\(X\) 的期望记为 \(\mathbb{E}[X|Y=y]\)：</p>
+<p>\[
+\mathbb{E}[X|Y=y]\;=\;\sum_{x}x\cdot P(X=x|Y=y)
+\]</p>
+<p>注意：当 \(y\) 变化时，\(\mathbb{E}[X|Y=y]\) 是 \(y\) 的函数；把它看成随机变量 \(Y\) 的函数，记为 \(\mathbb{E}[X|Y]\)。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：全期望公式</span>
+<p>\[
+\boxed{\;\mathbb{E}[X]=\mathbb{E}\big[\,\mathbb{E}[X|Y]\,\big]=\sum_{y}\mathbb{E}[X|Y=y]\cdot P(Y=y)\;}
+\]</p>
+<p>即"先按 \(Y\) 的每种情况算条件期望，再按 \(Y\) 的分布加权平均"。证明：</p>
+<p>\[
+\begin{aligned}
+\sum_{y}\mathbb{E}[X|Y=y]\cdot P(Y=y)
+&= \sum_{y}\left(\sum_{x}x\cdot P(X=x|Y=y)\right)P(Y=y) \\
+&= \sum_{y}\sum_{x}x\cdot\underbrace{P(X=x|Y=y)\,P(Y=y)}_{=\,P(X=x,Y=y)\text{（乘法公式）}} \\
+&= \sum_{x}\sum_{y}x\cdot P(X=x,Y=y) \\
+&= \sum_{x}x\underbrace{\left(\sum_{y}P(X=x,Y=y)\right)}_{=\,P(X=x)\text{（边缘分布）}}
+= \mathbb{E}[X]
+\end{aligned}
+\]</p>
+<p>证毕。直觉：把人群按 \(Y\) 分组，每组算平均再按组大小加权，等于总体平均。</p>
+</div>
+
+<h2 class="deriv">五、独立性：什么时候乘积可以拆开</h2>
+
+<div class="def">
+<span class="tag">定义：独立性</span>
+<p>事件 \(A,B\) <b>独立</b>，指 \(P(A\cap B)=P(A)\,P(B)\)。</p>
+<p>随机变量 \(X,Y\) <b>独立</b>，指对一切 \(x,y\) 都有</p>
+<p>\[
+P(X=x,Y=y)=P(X=x)\,P(Y=y)
+\]</p>
+<p>即联合分布等于边缘分布的乘积。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：独立则乘积的期望可分解</span>
+<p>若 \(X,Y\) 独立，则</p>
+<p>\[
+\boxed{\;\mathbb{E}[XY]=\mathbb{E}[X]\,\mathbb{E}[Y]\;}
+\]</p>
+<p>证明：</p>
+<p>\[
+\begin{aligned}
+\mathbb{E}[XY]
+&= \sum_{x}\sum_{y}xy\cdot P(X=x,Y=y) \\
+&= \sum_{x}\sum_{y}xy\cdot\underbrace{P(X=x)\,P(Y=y)}_{\text{独立性定义}} \\
+&= \sum_{x}\sum_{y}\big[x\,P(X=x)\big]\cdot\big[y\,P(Y=y)\big]
+\end{aligned}
+\]</p>
+<p>最后一步是关键：双重求和里，被加项已经拆成"只含 \(x\) 的部分"乘以"只含 \(y\) 的部分"，于是双重求和可以拆成两个独立求和的乘积：</p>
+<p>\[
+\sum_{x}\sum_{y}A_x B_y
+= \sum_{x}\left(A_x\sum_{y}B_y\right)
+= \left(\sum_{x}A_x\right)\left(\sum_{y}B_y\right)
+\]</p>
+<p>（内层 \(\sum_y B_y\) 与 \(x\) 无关，可整体提出。）代入 \(A_x=xP(X=x)\)，\(B_y=yP(Y=y)\)：</p>
+<p>\[
+\mathbb{E}[XY]=\left(\sum_{x}xP(X=x)\right)\left(\sum_{y}yP(Y=y)\right)=\mathbb{E}[X]\,\mathbb{E}[Y]
+\]</p>
+<p>证毕。注意这一步<b>必须用独立性</b>，和期望的线性形成对比。</p>
+</div>
+
+<div class="key">
+<span class="tag">本章五个工具</span>
+<p>条件概率（定义）→ 乘法公式、贝叶斯公式；期望（定义）→ 期望的线性（无需独立）、全期望公式；独立性（定义）→ 乘积期望分解（需要独立）。后面章节只会引用这五个结论，不会再证明。</p>
+</div>
+
+<h2 class="deriv">六、章末小结：这些在书里是干什么的</h2>
+
+<ul>
+<li><b>乘法公式</b> → 第 5 章：序列概率 \(P(w_1,\dots,w_T)\) 层层展开成条件概率连乘，即 logprob 的链式法则。</li>
+<li><b>期望的线性</b> → 第 6 章：期望奖励可以拆成每个 token 贡献之和，这是策略梯度能逐 token 计算的根基。</li>
+<li><b>全期望公式</b> → 按 prompt 分组算期望再平均（GRPO 的组内平均就是这个思想）。</li>
+<li><b>独立性</b> → 第 4 章：Gumbel 噪声相互独立，采样时各位置独立同分布。</li>
+</ul>
+
+<nav class="deriv-nav">
+<a href="00-preface.html"><span class="dir">上一章</span>前言</a>
+<a href="index.html"><span class="dir">目录</span>全部章节</a>
+<a href="02-information-theory.html"><span class="dir">下一章</span>第 2 章 信息论</a>
+</nav>
+</main>
+<script defer src="../bllm/assets/katex/katex.min.js"></script>
+<script defer src="../bllm/assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+});
+</script>
+</body>
+</html>

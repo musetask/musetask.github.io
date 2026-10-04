@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>第 10 章 · Bradley-Terry 与 Elo · barmmath</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../bllm/assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">barmmath · 第 10 章 Bradley-Terry 与 Elo</a>
+</header>
+<main id="main">
+
+<div class="phead"><span class="cnt">对应原书第 6 章 · Bradley-Terry 公式详解与自查题</span></div>
+
+<h1>第 10 章 Bradley-Terry 与 Elo：从胜负数据学出实力分</h1>
+
+<div class="lead">
+本章目标：从 sigmoid 的定义出发，推导出 Bradley-Terry 模型 \(P(i\text{ 胜 }j)=\sigma(r_i-r_j)\)，证明它的训练损失就是二分类交叉熵，再推导 Elo 评分的换底公式 \(10^{x/400}=e^{x/A}\)（\(A=400/\ln 10\)），最后证明 Elo 更新公式的对称性（两人分数变化互为相反数）。
+</div>
+
+<h2>一、sigmoid：把任意实数压进 (0, 1)</h2>
+
+<div class="def">
+<span class="tag">定义：sigmoid 函数</span>
+<p>\[
+\sigma(x) = \frac{1}{1+e^{-x}}
+\]</p>
+<p>定义域是全体实数，值域是开区间 \((0,1)\)——正好可以表示一个概率。记 \(d\) 为任意实数，本章反复用它的三条性质：</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：sigmoid 的三条性质</span>
+<p><b>① \(\sigma(0)=\tfrac12\)。</b>直接代入：\(\sigma(0)=1/(1+e^0)=1/(1+1)=1/2\)。</p>
+<p><b>② 对称性 \(\sigma(-x)=1-\sigma(x)\)。</b></p>
+<p>\[
+\sigma(-x)=\frac{1}{1+e^{x}}
+=\frac{e^{-x}}{e^{-x}(1+e^{x})}
+=\frac{e^{-x}}{1+e^{-x}}
+\]</p>
+<p>第二步是分子分母同乘 \(e^{-x}\)。而 \(1-\sigma(x)=1-\frac{1}{1+e^{-x}}=\frac{e^{-x}}{1+e^{-x}}\)，两边相等。证毕。</p>
+<p><b>③ 单调递增，\(\lim_{x\to+\infty}\sigma(x)=1\)，\(\lim_{x\to-\infty}\sigma(x)=0\)。</b>\(x\) 增大时 \(e^{-x}\) 减小，分母减小，分数增大；\(x\to+\infty\) 时 \(e^{-x}\to 0\)，\(\sigma\to 1/(1+0)=1\)；\(x\to-\infty\) 时 \(e^{-x}\to+\infty\)，\(\sigma\to 0\)。</p>
+</div>
+
+<h2>二、Bradley-Terry 模型：实力差决定胜率</h2>
+
+<div class="def">
+<span class="tag">定义：BT 模型的建模假设</span>
+<p>每个选手 \(i\) 有一个实数实力分 \(r_i\)（latent strength）。模型假设：\(i\) 战胜 \(j\) 的概率<b>只与实力差</b> \(d=r_i-r_j\) 有关，且满足 \(P(i\text{ 胜 }j)=\sigma(d)\)。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：从"对数几率 = 实力差"解出 sigmoid</span>
+<p>BT 模型的出发点是一个朴素假设：<b>胜负的对数几率（log-odds）等于实力差</b>。记 \(P=P(i\text{ 胜 }j)\)，则 \(1-P=P(j\text{ 胜 }i)\)（假设没有平局），对数几率是</p>
+<p>\[
+\log\frac{P}{1-P} = r_i - r_j = d
+\]</p>
+<p>现在把 \(P\) 解出来。两边取指数：</p>
+<p>\[
+\frac{P}{1-P} = e^{d}
+\quad\Longrightarrow\quad
+P = e^{d}(1-P)
+\quad\Longrightarrow\quad
+P + P\,e^{d} = e^{d}
+\]</p>
+<p>提出 \(P\)：\(P(1+e^{d})=e^{d}\)，得</p>
+<p>\[
+P = \frac{e^{d}}{1+e^{d}}
+\]</p>
+<p>分子分母同除以 \(e^{d}\)（\(e^{d} > 0\)，安全）：</p>
+<p>\[
+\boxed{\;P(i\text{ 胜 }j) = \frac{1}{1+e^{-d}} = \sigma(r_i-r_j)\;}
+\qquad\blacksquare
+\]</p>
+<p>合理性检查：\(r_i=r_j\) 时 \(d=0\)，\(P=\sigma(0)=1/2\)（五五开）；\(r_i\gg r_j\) 时 \(P\to 1\)（碾压）；交换 \(i,j\) 时 \(d\) 变号，由性质 ② 得 \(P(j\text{ 胜 }i)=1-P(i\text{ 胜 }j)\)（概率守恒）。</p>
+</div>
+
+<h2>三、BT 损失就是二分类交叉熵</h2>
+
+<div class="derivation">
+<span class="tag">推导：极大似然 → 负对数似然 → 交叉熵</span>
+<p>观测到 \(N\) 场对局，第 \(k\) 场是 \(i_k\) 战胜 \(j_k\)。假设各场独立，似然函数是连乘：</p>
+<p>\[
+L = \prod_{k=1}^{N} \sigma(r_{i_k}-r_{j_k})
+\]</p>
+<p>取对数变连加（\(\log\prod=\sum\log\)），极大化对数似然等价于极小化<b>负对数似然</b>：</p>
+<p>\[
+\mathcal{L}_{\mathrm{BT}} = -\sum_{k=1}^{N}\log\sigma(r_{i_k}-r_{j_k})
+\]</p>
+<p>看单场：记 \(p=\sigma(r_i-r_j)\) 为"\(i\) 胜"的预测概率。把胜记为标签 \(y=1\)，二分类交叉熵是</p>
+<p>\[
+\mathrm{BCE} = -\big[y\log p + (1-y)\log(1-p)\big]
+\]</p>
+<p>代入 \(y=1\)：\(\mathrm{BCE}=-\log p=-\log\sigma(r_i-r_j)\)，与 BT 损失的单场项<b>完全一致</b>。从 \(j\) 的视角看（标签 \(y=0\)）：\(\mathrm{BCE}=-\log(1-p)\)，而由性质 ②，\(1-\sigma(r_i-r_j)=\sigma(r_j-r_i)\)，即 \(-\log\sigma(r_j-r_i)\)——形式统一。证毕。</p>
+<p>一句话：<b>BT 模型就是"用 sigmoid 建模胜率、用交叉熵训练"的二分类器</b>，输入特征是实力差。</p>
+</div>
+
+<h2>四、Elo：换个底的 BT 模型</h2>
+
+<div class="def">
+<span class="tag">定义：Elo 预期得分</span>
+<p>国际象棋 Elo 系统中，选手 \(i\) 对 \(j\) 的预期得分是</p>
+<p>\[
+E_{ij} = \frac{1}{1+10^{-(R_i-R_j)/400}}
+\]</p>
+<p>其中 \(R_i\) 是 Elo 分，\(400\) 是人为选定的尺度常数。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：换底公式 \(10^{x/400}=e^{x/A}\)，\(A=400/\ln 10\)</span>
+<p>关键恒等式：\(10^{t}=e^{t\ln 10}\)（因为 \(e^{\ln 10}=10\)，两边取 \(t\) 次方）。取 \(t=-d/400\)，其中 \(d=R_i-R_j\)：</p>
+<p>\[
+10^{-d/400} = e^{(-d/400)\cdot\ln 10} = e^{-d/(\frac{400}{\ln 10})}
+\]</p>
+<p>记</p>
+<p>\[
+\boxed{\;A = \frac{400}{\ln 10} \approx 173.72\;}
+\]</p>
+<p>则 \(10^{-d/400}=e^{-d/A}\)，代回 Elo 公式：</p>
+<p>\[
+E_{ij} = \frac{1}{1+e^{-d/A}} = \sigma\!\left(\frac{d}{A}\right)
+\]</p>
+<p>即：<b>Elo 就是把实力差先除以 \(A\approx 173.72\) 再套 sigmoid 的 BT 模型</b>。\(A\) 在这里扮演"温度"的角色：\(A\) 越大，同样的分差对应的胜率越接近 \(1/2\)（越"温和"）。</p>
+<p>数值验算：\(d=200\) 时，\(10^{-200/400}=10^{-0.5}\approx 0.3162\)，\(E=1/(1+0.3162)\approx 0.7597\)；换底一边：\(d/A=200/173.72\approx 1.1513\)，\(\sigma(1.1513)=1/(1+e^{-1.1513})\approx 1/(1+0.3162)\approx 0.7597\)。一致。</p>
+</div>
+
+<h2>五、Elo 更新公式的对称性：零和博弈</h2>
+
+<div class="def">
+<span class="tag">定义：Elo 更新规则</span>
+<p>一局结束后（\(S_i=1\) 表示 \(i\) 胜，\(S_i=0\) 表示 \(i\) 负），\(k\) 为更新步长：</p>
+<p>\[
+R_i' = R_i + k\,(S_i - E_{ij}), \qquad
+R_j' = R_j + k\,(S_j - E_{ji})
+\]</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：两人分数变化互为相反数</span>
+<p>先证预期得分的对称性。记 \(d=R_i-R_j\)，则</p>
+<p>\[
+E_{ji} = \sigma\!\left(\frac{-d}{A}\right) \stackrel{\text{性质 2}}{=} 1-\sigma\!\left(\frac{d}{A}\right) = 1-E_{ij}
+\]</p>
+<p>实际得分显然满足 \(S_j = 1-S_i\)（一胜一负）。于是 \(j\) 的更新量：</p>
+<p>\[
+\begin{aligned}
+\Delta R_j &= k\,(S_j - E_{ji}) \\
+&= k\,\big[(1-S_i) - (1-E_{ij})\big] \\
+&= k\,(1-S_i-1+E_{ij}) \\
+&= -k\,(S_i-E_{ij}) = -\Delta R_i
+\qquad\blacksquare
+\end{aligned}
+\]</p>
+<p>即 \(\Delta R_i + \Delta R_j = 0\)：<b>Elo 是零和的</b>，赢家拿的分 exactly 等于输家丢的分，系统总分守恒。这也是"预期得分"设计的初衷——赛前被看好的人（\(E_{ij}\) 大）赢了涨分少（\(S_i-E_{ij}\) 小），爆冷赢了涨分多。</p>
+</div>
+
+<div class="key">
+<span class="tag">本章小结：BT/Elo 在书里是干什么的</span>
+<p>第 6 章用 Bradley-Terry 模型从人类偏好数据里学出奖励函数：把"回答 A 比回答 B 好"看成一场"A 战胜 B"的比赛，用交叉熵拟合实力分 \(r\)，这个 \(r\) 就是奖励模型要输出的分数。Elo 则是同一数学在竞技评分里的化身——换底公式说明它本质上就是带温度 \(A\) 的 sigmoid。两者的对称性（\(P(j\text{ 胜 }i)=1-P(i\text{ 胜 }j)\)、更新零和）都来自 sigmoid 的性质 ②。</p>
+</div>
+
+<div class="further">
+<span class="tag">延伸阅读</span>
+<p><a href="../barm/ch06-bt-and-selfcheck.html">原书第 6 章数学详解：Bradley-Terry 公式与自查题</a>——BT 公式的逐项拆解、Elo 同构、三道自查题的完整解答。</p>
+</div>
+
+<nav class="deriv-nav">
+<a href="09-kl-regularization.html"><span class="dir">上一章</span>KL 正则</a>
+<a href="index.html"><span class="dir">目录</span>全部章节</a>
+<a href="11-rope.html"><span class="dir">下一章</span>RoPE</a>
+</nav>
+</main>
+<script defer src="../bllm/assets/katex/katex.min.js"></script>
+<script defer src="../bllm/assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+});
+</script>
+</body>
+</html>

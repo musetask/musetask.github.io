@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>第 11 章 · RoPE · barmmath</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../bllm/assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">barmmath · 第 11 章 RoPE</a>
+</header>
+<main id="main">
+
+<div class="phead"><span class="cnt">对应原书附录 C.3 · 旋转位置编码（RoPE）</span></div>
+
+<h1>第 11 章 RoPE：用旋转编码相对位置</h1>
+
+<div class="lead">
+本章目标：从二维旋转矩阵的定义出发，验证旋转保长度，推广到 \(d\) 维分块旋转，完整证明<b>相对位置定理</b> \((R(m)\mathbf{q})^\top(R(n)\mathbf{k})=\mathbf{q}^\top R(n-m)\mathbf{k}\)，解释频率 \(\omega_i\) 的设计，最后给出两种实现布局（split-halves / interleaved）等价性的<b>跨位置 \((m,n)\) 完整证明</b>。
+</div>
+
+<h2>一、二维旋转矩阵：从极坐标推出</h2>
+
+<div class="def">
+<span class="tag">定义：二维旋转矩阵</span>
+<p>\[
+R(\theta) = \begin{pmatrix} \cos\theta & -\sin\theta \\ \sin\theta & \cos\theta \end{pmatrix}
+\]</p>
+<p>它把平面向量逆时针旋转 \(\theta\) 角。下面从极坐标把它推出来，而不是直接记住。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：极坐标 + 和角公式 ⇒ 旋转矩阵</span>
+<p>设向量为 \((x,y)\)，记 \(r=\sqrt{x^2+y^2}\)（模长），\(\varphi\) 为它与 \(x\) 轴的夹角，则</p>
+<p>\[
+x = r\cos\varphi, \qquad y = r\sin\varphi
+\]</p>
+<p>逆时针转 \(\theta\) 角后，模长不变，角度变为 \(\varphi+\theta\)：</p>
+<p>\[
+x' = r\cos(\varphi+\theta), \qquad y' = r\sin(\varphi+\theta)
+\]</p>
+<p>用和角公式 \(\cos(A+B)=\cos A\cos B-\sin A\sin B\)、\(\sin(A+B)=\sin A\cos B+\cos A\sin B\) 展开：</p>
+<p>\[
+\begin{aligned}
+x' &= r\big(\cos\varphi\cos\theta - \sin\varphi\sin\theta\big)
+    = \underbrace{(r\cos\varphi)}_{x}\cos\theta - \underbrace{(r\sin\varphi)}_{y}\sin\theta \\
+y' &= r\big(\sin\varphi\cos\theta + \cos\varphi\sin\theta\big)
+    = \underbrace{(r\sin\varphi)}_{y}\cos\theta + \underbrace{(r\cos\varphi)}_{x}\sin\theta
+\end{aligned}
+\]</p>
+<p>写成矩阵形式 \(\binom{x'}{y'} = R(\theta)\binom{x}{y}\)，对比系数即得 \(R(\theta)\) 的定义。证毕。</p>
+</div>
+
+<h2>二、验证：旋转保长度（\(R^\top R = I\)）</h2>
+
+<div class="derivation">
+<span class="tag">推导：逐元验证 \(R(\theta)^\top R(\theta) = I\)</span>
+<p>\[
+R(\theta)^\top R(\theta)
+= \begin{pmatrix} \cos\theta & \sin\theta \\ -\sin\theta & \cos\theta \end{pmatrix}
+  \begin{pmatrix} \cos\theta & -\sin\theta \\ \sin\theta & \cos\theta \end{pmatrix}
+\]</p>
+<p>按矩阵乘法逐元计算（行乘列再相加）：</p>
+<p>\[
+\begin{aligned}
+(1,1)&:\quad \cos\theta\cdot\cos\theta + \sin\theta\cdot\sin\theta = \cos^2\theta+\sin^2\theta = 1 \\
+(1,2)&:\quad \cos\theta\cdot(-\sin\theta) + \sin\theta\cdot\cos\theta = 0 \\
+(2,1)&:\quad (-\sin\theta)\cdot\cos\theta + \cos\theta\cdot\sin\theta = 0 \\
+(2,2)&:\quad (-\sin\theta)(-\sin\theta) + \cos\theta\cdot\cos\theta = \sin^2\theta+\cos^2\theta = 1
+\end{aligned}
+\]</p>
+<p>于是 \(R(\theta)^\top R(\theta)=\begin{pmatrix}1&0\\0&1\end{pmatrix}=I\)。\(\blacksquare\)</p>
+<p>直接推论——<b>旋转不改变向量长度</b>：\(\|R\mathbf{x}\|^2=(R\mathbf{x})^\top(R\mathbf{x})=\mathbf{x}^\top R^\top R\,\mathbf{x}=\mathbf{x}^\top\mathbf{x}=\|\mathbf{x}\|^2\)。同理<b>不改变内积</b>：\((R\mathbf{x})^\top(R\mathbf{y})=\mathbf{x}^\top\mathbf{y}\)。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：转置与乘法的两条运算法则（后面要用）</span>
+<p><b>① \(R(\theta)^\top = R(-\theta)\)。</b>因为 \(\cos\) 是偶函数（\(\cos(-\theta)=\cos\theta\)）、\(\sin\) 是奇函数（\(\sin(-\theta)=-\sin\theta\)）：</p>
+<p>\[
+R(-\theta)=\begin{pmatrix}\cos\theta & \sin\theta \\ -\sin\theta & \cos\theta\end{pmatrix}
+= R(\theta)^\top
+\]</p>
+<p><b>② \(R(\alpha)R(\beta)=R(\alpha+\beta)\)</b>（旋转角度相加）。仍逐元验证，只写 \((1,1)\) 元和 \((1,2)\) 元：</p>
+<p>\[
+\begin{aligned}
+(1,1)&:\ \cos\alpha\cos\beta+(-\sin\alpha)(\sin\beta)=\cos\alpha\cos\beta-\sin\alpha\sin\beta=\cos(\alpha+\beta)\\
+(1,2)&:\ \cos\alpha(-\sin\beta)+(-\sin\alpha)(\cos\beta)=-(\cos\alpha\sin\beta+\sin\alpha\cos\beta)=-\sin(\alpha+\beta)
+\end{aligned}
+\]</p>
+<p>另两元同理可得 \(\sin(\alpha+\beta)\) 与 \(\cos(\alpha+\beta)\)，合起来正是 \(R(\alpha+\beta)\)。证毕。</p>
+</div>
+
+<h2>三、\(d\) 维分块旋转</h2>
+
+<div class="def">
+<span class="tag">定义：位置 \(m\) 的 RoPE 矩阵</span>
+<p>把 \(d\) 维向量拆成 \(d/2\) 个二元组，第 \(i\) 个二元组用自己的角度 \(\theta_i(m)=m\,\omega_i\) 旋转：</p>
+<p>\[
+R(m) = \operatorname{diag}\big(R(\theta_0(m)),\, R(\theta_1(m)),\, \dots,\, R(\theta_{d/2-1}(m))\big)
+\]</p>
+<p>\(\operatorname{diag}\) 表示分块对角矩阵：对角线上是 \(d/2\) 个 \(2\times 2\) 旋转块，其余位置全 0。RoPE 做的事就一句话：\(\mathbf{q}_m = R(m)\mathbf{q}\)，\(\mathbf{k}_n = R(n)\mathbf{k}\)。</p>
+</div>
+
+<div class="prereq">
+<span class="tag">预备知识：分块对角矩阵的转置与乘法也是分块进行的</span>
+<p>若 \(A=\operatorname{diag}(A_0,\dots,A_{k})\)、\(B=\operatorname{diag}(B_0,\dots,B_{k})\)，则 \(A^\top=\operatorname{diag}(A_0^\top,\dots,A_k^\top)\)，\(AB=\operatorname{diag}(A_0B_0,\dots,A_kB_k)\)。直观理解：非对角块全 0，乘法时"串"不到别的块上，转置时块内转置、块的位置不动（对角块转置后仍在对角线上）。</p>
+</div>
+
+<h2>四、相对位置定理：完整证明</h2>
+
+<div class="derivation">
+<span class="tag">定理：attention 分数只依赖相对位置 \(n-m\)</span>
+<p>\[
+\boxed{\;(R(m)\mathbf{q})^\top(R(n)\mathbf{k}) \;=\; \mathbf{q}^\top\, R(n-m)\,\mathbf{k}\;}
+\]</p>
+<p><b>证明.</b> 先把左边展开成 \(\mathbf{q}^\top R(m)^\top R(n)\,\mathbf{k}\)。关键是算出 \(R(m)^\top R(n)\)。按分块逐个处理第 \(i\) 个块：</p>
+<p>\[
+\begin{aligned}
+\big[R(m)^\top\big]_{\text{块 }i}
+&= R(\theta_i(m))^\top
+   \stackrel{\text{法则 1}}{=} R(-\theta_i(m))
+   = R(-m\,\omega_i) \\
+\big[R(m)^\top R(n)\big]_{\text{块 }i}
+&= R(-m\,\omega_i)\,R(n\,\omega_i)
+   \stackrel{\text{法则 2}}{=} R\big((n-m)\,\omega_i\big)
+\end{aligned}
+\]</p>
+<p>每个块都化成了 \(R((n-m)\omega_i)\)，拼回分块对角矩阵就是 \(R(n-m)\)。于是</p>
+<p>\[
+(R(m)\mathbf{q})^\top(R(n)\mathbf{k})
+= \mathbf{q}^\top\,\underbrace{R(m)^\top R(n)}_{=\,R(n-m)}\,\mathbf{k}
+= \mathbf{q}^\top R(n-m)\,\mathbf{k}
+\qquad\blacksquare
+\]</p>
+<p>右边<b>完全没有 \(m\)、\(n\) 的绝对值</b>，只差 \(n-m\)——这就是"RoPE 编码的是相对位置"的严格含义：把整个序列平移若干位，所有 attention 分数不变。</p>
+</div>
+
+<h2>五、频率设计：\(\omega_i\) 与波长</h2>
+
+<div class="def">
+<span class="tag">定义：频率表</span>
+<p>\[
+\omega_i = \theta_{\mathrm{base}}^{-2i/d} = 10000^{-2i/d},
+\qquad i = 0,1,\dots,\tfrac{d}{2}-1
+\]</p>
+<p>第 \(i\) 个二维块的旋转角是 \(m\,\omega_i\)：位置每走 1 个 token，该块转过 \(\omega_i\) 弧度。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">推导：波长 \(\lambda_i = 2\pi/\omega_i\) 与多尺度</span>
+<p>角度转过 \(2\pi\)（一整圈）所需的 token 数称为<b>波长</b>：由 \(m\,\omega_i = 2\pi\) 解得 \(\lambda_i = 2\pi/\omega_i\)。取 \(d=64\)（如 Qwen3：1024 ÷ 16 头 = 64）：\(\omega_i = 10000^{-2i/64} = 10^{-i/8}\)。</p>
+<table>
+<thead><tr><th>\(i\)</th><th>\(\omega_i\)</th><th>波长 \(\lambda_i\)（token）</th><th>含义</th></tr></thead>
+<tbody>
+<tr><td>0</td><td>\(1\)</td><td>\(6.3\)</td><td>转得飞快：分辨相邻 token</td></tr>
+<tr><td>8</td><td>\(0.1\)</td><td>\(62.8\)</td><td>中等尺度</td></tr>
+<tr><td>16</td><td>\(0.01\)</td><td>\(628.3\)</td><td>较慢</td></tr>
+<tr><td>31</td><td>\(\approx 1.33\times 10^{-4}\)</td><td>\(\approx 47124\)</td><td>几乎不动：分辨几万 token 的远距离</td></tr>
+</tbody>
+</table>
+<p>验算 \(i=31\)：\(\omega_{31}=10^{-31/8}=10^{-3.875}\approx 1.334\times 10^{-4}\)，\(\lambda_{31}=2\pi/1.334\times 10^{-4}\approx 47100\)。\(i\) 越小频率越高、波长越短——<b>高频维度管局部顺序，低频维度管全局顺序</b>，\(d/2\) 个块就是 \(d/2\) 个不同尺度的"相对位置标尺"。</p>
+</div>
+
+<h2>六、两种布局等价：跨位置 \((m,n)\) 的完整证明</h2>
+
+<div class="def">
+<span class="tag">定义：两种维度配对方式</span>
+<p>同一张频率表 \([\omega_0,\omega_1,\dots]\)，两种实现把它挂到维度上的方式不同：<b>interleaved</b>（原论文 / Llama）把相邻维度 \((2i,2i+1)\) 配成一对；<b>split-halves</b>（本书 / HF）把前半段第 \(i\) 个和后半段第 \(i\) 个 \((i,i+d/2)\) 配成一对。</p>
+<p>存在一个<b>与位置 \(m\) 无关</b>的固定置换矩阵 \(P\)（只重排维度顺序），使得</p>
+<p>\[
+R_s(m) = P\,R_i(m)\,P^\top, \qquad P^\top = P,\quad P^\top P = I
+\]</p>
+<p>其中 \(R_s\)、\(R_i\) 分别是两种布局的旋转矩阵。\(P^\top=P\) 是因为这个置换是"对合"（做两次换回来，如 \(d=4\) 时 \([x_0,x_1,x_2,x_3]\mapsto[x_0,x_2,x_1,x_3]\)）。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">定理：两种布局给出相同的 attention 分数（差一个固定重排）</span>
+<p>\[
+\boxed{\;(R_s(m)\mathbf{q})^\top(R_s(n)\mathbf{k})
+= (R_i(m)\tilde{\mathbf{q}})^\top(R_i(n)\tilde{\mathbf{k}}),\quad
+\tilde{\mathbf{q}}=P^\top\mathbf{q},\ \tilde{\mathbf{k}}=P^\top\mathbf{k}\;}
+\]</p>
+<p><b>证明.</b> 注意这是<b>两个不同位置</b> \(m\neq n\) 的内积，直接展开：</p>
+<p>\[
+\begin{aligned}
+(R_s(m)\mathbf{q})^\top(R_s(n)\mathbf{k})
+&= \mathbf{q}^\top\big(PR_i(m)P^\top\big)^\top\big(PR_i(n)P^\top\big)\mathbf{k} \\
+&= \mathbf{q}^\top P\,R_i(m)^\top\underbrace{P^\top P}_{=\,I}\,R_i(n)\,P^\top\mathbf{k}
+   \qquad\text{（用 \((XYZ)^\top=Z^\top Y^\top X^\top\)，且 \(P^\top=P\)）}\\
+&= \underbrace{(P^\top\mathbf{q})}_{\tilde{\mathbf{q}}}{}^\top
+   R_i(m)^\top R_i(n)\,\underbrace{(P^\top\mathbf{k})}_{\tilde{\mathbf{k}}} \\
+&= \big(R_i(m)\tilde{\mathbf{q}}\big)^\top\big(R_i(n)\tilde{\mathbf{k}}\big)
+\qquad\blacksquare
+\end{aligned}
+\]</p>
+<p>即：split 布局下 \((\mathbf{q},\mathbf{k})\) 的分数 = interleaved 布局下<b>重排后</b>向量 \((\tilde{\mathbf{q}},\tilde{\mathbf{k}})\) 的分数。实践含义：如果换实现时把 \(W_q\)、\(W_k\) 的输出行按 \(P\) 一起重排，两种布局逐元素给出相同的 logits。</p>
+</div>
+
+<div class="warn">
+<span class="tag">不要用"同一位置正交性"论证等价性</span>
+<p>一个常见的错误论证："\((R\mathbf{q})^\top(R\mathbf{k})=\mathbf{q}^\top\mathbf{k}\) 对任何正交矩阵成立，所以两种布局等价"。这句话的前半是对的（第二章已证），但它只讲<b>同一位置</b>（同一个 \(R\) 作用在 \(\mathbf{q}\)、\(\mathbf{k}\) 上）的情形——而 attention 分数是<b>两个不同位置</b> \(m\neq n\) 的内积 \((R(m)\mathbf{q})^\top(R(n)\mathbf{k})\)，同一位置的恒等式根本用不上。真正的证明必须像上面那样，把 \(m\) 和 \(n\) 都写出来，让 \(P^\top P=I\) 在中间消掉。</p>
+</div>
+
+<div class="key">
+<span class="tag">本章小结：RoPE 在书里是干什么的</span>
+<p>RoPE 是 Qwen3 等模型用的位置编码：不把位置"加"进输入，而是让 query/key 按各自的绝对位置旋转。相对位置定理保证最终 attention 分数只依赖 \(n-m\)——相对位置信息就这样被编码进来，且天然兼容 KV cache（每个 token 入库时按自己的位置转一次即可）。频率表 \(\omega_i\) 提供从几个 token 到几万 token 的多尺度标尺。两种代码布局（split-halves / interleaved）只是维度配对不同，数学上等价（差一个固定重排），换实现时记得连权重一起重排。</p>
+</div>
+
+<div class="further">
+<span class="tag">延伸阅读</span>
+<p><a href="../barm/page-92-detail.html">原书附录 C.3 数学详解：旋转位置编码</a>——两种写法的严格证明、手算验证（\(d=4\)）、与 GQA / KV cache 的连接。</p>
+</div>
+
+<nav class="deriv-nav">
+<a href="10-bradley-terry-elo.html"><span class="dir">上一章</span>Bradley-Terry 与 Elo</a>
+<a href="index.html"><span class="dir">目录</span>全部章节</a>
+<a href="12-rmsnorm.html"><span class="dir">下一章</span>RMSNorm</a>
+</nav>
+</main>
+<script defer src="../bllm/assets/katex/katex.min.js"></script>
+<script defer src="../bllm/assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+});
+</script>
+</body>
+</html>

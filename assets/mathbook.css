@@ -1,0 +1,48 @@
+/* bllmmath / barmmath 两本数学书共用样式（在 bllm 的 style.css / detail.css 之后加载） */
+
+/* 定义框：紫色，与 key(绿)/warn(红)/derivation(蓝)/prereq(橙) 区分 */
+.def{
+  background:#f6f0ff;
+  border:1px solid #d9c8f5;
+  border-left:3px solid #6b3fc4;
+  border-radius:0 6px 6px 0;
+  padding:.7rem .85rem;
+  margin:0 0 1.1rem;
+}
+.def .tag{
+  font:700 .7rem/1 system-ui,-apple-system,"Segoe UI",sans-serif;
+  letter-spacing:.1em; text-transform:uppercase; color:#6b3fc4;
+  display:block; margin-bottom:.3rem;
+}
+.def p:last-child{margin-bottom:0}
+html[data-theme="dark"] .def{background:#1e1830;border-color:#3a2d5c}
+
+/* 书籍目录页 */
+.book-hero{padding:1.6rem 0 .6rem}
+.book-hero h1{font-size:1.75rem;margin:0 0 .6rem}
+.book-hero p.lead{color:var(--ink-soft);font-size:1.02rem}
+.book-hero p.links{margin-top:.8rem;font-size:.95rem}
+.toc{list-style:none;padding:0;margin:1.1rem 0 2rem}
+.toc li{margin:.55rem 0}
+.toc a{
+  display:block;padding:.7rem .95rem;text-decoration:none;color:inherit;
+  border:1px solid var(--rule);border-radius:10px;background:var(--panel);
+}
+.toc a:hover{border-color:var(--accent)}
+.toc .n{font-weight:700;margin-right:.55em;color:var(--accent)}
+.toc .d{display:block;margin-top:.2rem;font-size:.9em;color:var(--muted)}
+
+/* 延伸阅读：虚线框，与 key(绿)/warn(红)/derivation(蓝)/prereq(橙)/def(紫) 区分 */
+.further{
+  border:1px dashed var(--rule);
+  border-radius:10px;
+  padding:.7rem .95rem;
+  margin:1.4rem 0 1.1rem;
+  font-size:.95rem;
+}
+.further .tag{
+  font:700 .7rem/1 system-ui,-apple-system,"Segoe UI",sans-serif;
+  letter-spacing:.1em; text-transform:uppercase; color:var(--muted);
+  display:block; margin-bottom:.3rem;
+}
+.further p:last-child{margin-bottom:0}

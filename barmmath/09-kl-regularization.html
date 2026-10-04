@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>第 9 章 · KL 正则 · barmmath</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../bllm/assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">barmmath · 第 9 章 KL 正则</a>
+</header>
+<main id="main">
+
+<div class="phead"><span class="cnt">对应原书第 7 章 7.5 节 · KL 正则项</span></div>
+
+<h1>第 9 章 KL 正则：给策略拴上绳子</h1>
+
+<div class="lead">
+本章目标：从 KL 散度的定义出发，一步步推出强化学习里 KL 正则项的逐 token 求和形式，算出它的梯度，分析梯度方向到底在把策略往哪推，并解释"求和内 vs 求和外"两种写法为什么会带来不同的长度偏好。
+</div>
+
+<h2>一、KL 散度定义回顾</h2>
+
+<div class="def">
+<span class="tag">定义：KL 散度</span>
+<p>设 \(P\)、\(Q\) 是同一个离散分布族上的两个概率分布（在语言模型里：\(P\) 是当前策略 \(\pi_\theta\) 在某个位置的 next-token 分布，\(Q\) 是参考模型 \(\pi_{\mathrm{ref}}\) 的分布），则 \(P\) 相对 \(Q\) 的 KL 散度定义为</p>
+<p>\[
+D_{\mathrm{KL}}(P \,\|\, Q) = \sum_{v} P(v)\,\log\frac{P(v)}{Q(v)}
+= \mathbb{E}_{v \sim P}\big[\log P(v) - \log Q(v)\big]
+\]</p>
+<p>其中求和取遍词表所有 token \(v\)。第二种写法是把求和写成"按 \(P\) 采样求期望"的形式：\(\mathbb{E}_{v\sim P}[f(v)]\) 就是 \(\sum_v P(v)\,f(v)\)。</p>
+</div>
+
+<div class="prereq">
+<span class="tag">预备知识：KL 散度的两条基本性质（第 2 章已证，这里回顾）</span>
+<p>① <b>非负</b>：\(D_{\mathrm{KL}}(P\|Q) \ge 0\)（Gibbs 不等式，经 Jensen 不等式证明）；② <b>等号条件</b>：\(D_{\mathrm{KL}}(P\|Q)=0\) 当且仅当 \(P=Q\) 处处相等。这两条是 KL 能当"距离"用的全部理由：它恒非负，且只在两个分布完全相同时取零。</p>
+</div>
+
+<h2>二、KL 的逐 token 求和形式</h2>
+
+<div class="derivation">
+<span class="tag">推导：从"分布的 KL"到"逐 token 求和"</span>
+<p>在第 \(t\) 个 token 位置，给定上文 \(c_t\)，当前策略和参考模型的 next-token 分布分别是 \(\pi_\theta(\cdot \mid c_t)\) 和 \(\pi_{\mathrm{ref}}(\cdot \mid c_t)\)。该位置的 KL 按定义是</p>
+<p>\[
+D_t = D_{\mathrm{KL}}\big(\pi_\theta(\cdot\mid c_t) \,\big\|\, \pi_{\mathrm{ref}}(\cdot\mid c_t)\big)
+= \mathbb{E}_{v \sim \pi_\theta(\cdot\mid c_t)}\left[\log\frac{\pi_\theta(v\mid c_t)}{\pi_{\mathrm{ref}}(v\mid c_t)}\right]
+\]</p>
+<p>这个期望是对<b>整个词表</b>求和，算不起。实际采样时我们只观测到一个真正被采样出的 token \(y_t\)，于是用<b>单样本蒙特卡洛</b>估计它：</p>
+<p>\[
+\hat{D}_t = \log\pi_\theta(y_t\mid c_t) - \log\pi_{\mathrm{ref}}(y_t\mid c_t)
+\]</p>
+<p>验证它是无偏的——对 \(y_t \sim \pi_\theta(\cdot\mid c_t)\) 求期望：</p>
+<p>\[
+\begin{aligned}
+\mathbb{E}_{y_t\sim\pi_\theta}[\hat{D}_t]
+&= \sum_{v}\pi_\theta(v\mid c_t)\,\big[\log\pi_\theta(v\mid c_t)-\log\pi_{\mathrm{ref}}(v\mid c_t)\big] \\
+&= \sum_{v}\pi_\theta(v\mid c_t)\,\log\frac{\pi_\theta(v\mid c_t)}{\pi_{\mathrm{ref}}(v\mid c_t)}
+= D_t \qquad\blacksquare
+\end{aligned}
+\]</p>
+<p>整条序列的 KL 正则损失就是各位置估计值的平均（\(\beta\) 是强度系数）：</p>
+<p>\[
+\boxed{\;
+\mathcal{L}_{\mathrm{KL}} = \beta\cdot\frac{1}{T}\sum_{t=1}^{T}
+\big[\log\pi_\theta(y_t\mid c_t) - \log\pi_{\mathrm{ref}}(y_t\mid c_t)\big]
+\;}
+\]</p>
+</div>
+
+<h2>三、KL 项的梯度：方向分析</h2>
+
+<div class="derivation">
+<span class="tag">推导：对 \(\theta\) 求导，\(\pi_{\mathrm{ref}}\) 项脱落</span>
+<p>对上面的 \(\mathcal{L}_{\mathrm{KL}}\) 求梯度。求和与常数 \(\beta/T\) 都可以提到梯度外面；关键是括号里的第二项 \(\log\pi_{\mathrm{ref}}(y_t\mid c_t)\) ——参考模型的参数是冻结的，<b>不依赖 \(\theta\)</b>，求导得 0：</p>
+<p>\[
+\begin{aligned}
+\nabla_\theta\,\mathcal{L}_{\mathrm{KL}}
+&= \frac{\beta}{T}\sum_{t=1}^{T}
+   \nabla_\theta\big[\log\pi_\theta(y_t\mid c_t) - \log\pi_{\mathrm{ref}}(y_t\mid c_t)\big] \\
+&= \frac{\beta}{T}\sum_{t=1}^{T}\nabla_\theta\log\pi_\theta(y_t\mid c_t)
+   \qquad\blacksquare
+\end{aligned}
+\]</p>
+</div>
+
+<div class="key">
+<span class="tag">梯度方向在干什么</span>
+<p>梯度下降的更新是 \(\theta \leftarrow \theta - \eta\,\nabla_\theta\mathcal{L}_{\mathrm{KL}}\)。每一项 \(-\nabla_\theta\log\pi_\theta(y_t\mid c_t)\) 指向<b>降低</b>已采样 token \(y_t\) 概率的方向。注意这个梯度<b>只碰得到被采样出的 token</b>：被压下去的概率质量流向了没被采样的 token，但<b>不是</b> specifically 流向 \(\pi_{\mathrm{ref}}\) 喜欢的 token。</p>
+</div>
+
+<div class="warn">
+<span class="tag">近似带来的代价：这正是书中 7.5 节"失效模式"的数学来源</span>
+<p>上面是<b>实现里实际用的</b>梯度（把采样出的 \(y_t\) 当常数，只对 \(\log\pi_\theta\) 求导）。而 KL 的<b>完整</b>梯度还应包含采样分布本身随 \(\theta\) 变化的一项（第 6 章 log-derivative trick：\(\nabla_\theta\mathbb{E}_{\pi_\theta}[f]=\mathbb{E}[f\nabla\log\pi_\theta]+\mathbb{E}[\nabla f]\)，实现里丢掉了第一项）。后果：这个 KL 惩罚更像"把已采样 token 的概率压平"，会推高熵、让输出随机化，而不是真正把分布拉回 \(\pi_{\mathrm{ref}}\)。原书 7.5 节花整整一节讲它的失效模式，结论之一是：数学任务上常常直接关掉 KL（\(\beta=0\)）效果更好。</p>
+</div>
+
+<h2>四、为什么需要 KL 正则：约束策略不跑偏</h2>
+
+<div class="derivation">
+<span class="tag">推导：纯奖励最大化的危险</span>
+<p>RL 的目标是最大化期望奖励 \(\mathbb{E}[R]\)。奖励函数（规则验证器或奖励模型）只是人类偏好的<b>代理</b>，必然有漏洞。纯粹最大化它，策略会钻漏洞（reward hacking）：比如输出超长废话刷长度奖励、复读关键词刷匹配分——<b>奖励上去了，模型本身的语言能力却被破坏了</b>。</p>
+<p>KL 正则的解决思路：给目标函数加一项 \(-\beta\,D_{\mathrm{KL}}(\pi_\theta\|\pi_{\mathrm{ref}})\)（或等价地在损失里加 \(+\beta\) 的 KL 项），其中 \(\pi_{\mathrm{ref}}\) 是 RL 之前的模型（SFT 后的 checkpoint，参数冻结）。由 KL 的两条性质：</p>
+<p>\[
+D_{\mathrm{KL}}(\pi_\theta\|\pi_{\mathrm{ref}}) \ge 0,\quad
+\text{等号成立} \iff \pi_\theta = \pi_{\mathrm{ref}}
+\]</p>
+<p>最小化它就是把 \(\pi_\theta\) 往 \(\pi_{\mathrm{ref}}\) 身上拽——相当于给策略拴了一根绳子：<b>允许为了奖励而偏离，但偏离要交"税"（\(\beta\) 是税率）</b>。\(\beta\) 越大绳子越短，策略越保守；\(\beta=0\) 就是放开绳子。</p>
+</div>
+
+<h2>五、放在求和内 vs 求和外：长度偏好的区别</h2>
+
+<div class="derivation">
+<span class="tag">推导：两种写法的数学差异</span>
+<p>逐位置 KL 估计 \(\hat{D}_t\) 有两种聚合方式。设序列长度为 \(|o|\)：</p>
+<p><b>写法 A（求和内，逐 token 累加）</b>：</p>
+<p>\[
+\sum_{t=1}^{|o|}\hat{D}_t \;\approx\; |o|\times \overline{D}_{\text{token}}
+\]</p>
+<p>其中 \(\overline{D}_{\text{token}}\) 是平均每 token 的 KL。长序列的惩罚天然多乘了 \(|o|\) 倍。</p>
+<p><b>写法 B（求和外，先平均）</b>：</p>
+<p>\[
+\frac{1}{|o|}\sum_{t=1}^{|o|}\hat{D}_t \;\approx\; \overline{D}_{\text{token}}
+\]</p>
+<p>除以长度后，长短序列的惩罚只取决于<b>平均每 token 偏离多少</b>，与长度无关。</p>
+<p>这不是形式上的小差别。写法 A 下，输出越长交的"偏离税"越多——模型会被隐式地推向<b>短回答</b>；写法 B 则是长度中性的。选哪种，直接改变了模型对长度的隐式偏好。这与第 5 章讲的 logprob 长度敏感性是同一个根源：<b>凡是"逐 token 求和"的量，天然带 \(|o|\) 倍的尺度</b>。</p>
+</div>
+
+<div class="key">
+<span class="tag">本章小结：KL 正则在书里是干什么的</span>
+<p>GRPO/PPO 目标函数里的 \(-\beta\,\mathrm{KL}(\pi_\theta\|\pi_{\mathrm{ref}})\) 是一根安全绳：防止策略为刷奖励而偏离 SFT 模型太远。实现上是逐 token 的 logprob 之差求和（单样本蒙特卡洛估计），梯度里 \(\pi_{\mathrm{ref}}\) 项脱落。但要注意它的两处"坑"：① 实现用的梯度是近似（丢了采样分布随 \(\theta\) 变化的一项），只压已采样 token，可能推高熵而非真正拉回 \(\pi_{\mathrm{ref}}\)；② 求和 vs 平均两种写法带来不同的长度偏好。原书 7.5 节的失效模式分析，讲的正是这两件事。</p>
+</div>
+
+<div class="further">
+<span class="tag">延伸阅读</span>
+<p><a href="../barm/page-70-detail.html">原书 7.5 节数学详解：KL 正则项与它的失效模式</a>——KL 估计量的完整推导、失效模式的实验现象。</p>
+</div>
+
+<nav class="deriv-nav">
+<a href="08-ppo-grpo.html"><span class="dir">上一章</span>PPO 与 GRPO</a>
+<a href="index.html"><span class="dir">目录</span>全部章节</a>
+<a href="10-bradley-terry-elo.html"><span class="dir">下一章</span>Bradley-Terry 与 Elo</a>
+</nav>
+</main>
+<script defer src="../bllm/assets/katex/katex.min.js"></script>
+<script defer src="../bllm/assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+});
+</script>
+</body>
+</html>

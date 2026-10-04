@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>第 7 章 · 注意力机制 · bllmmath</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../bllm/assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">bllmmath · 第 7 章 注意力机制</a>
+</header>
+<main id="main">
+
+<h1>第 7 章 注意力机制：从点积到加权平均</h1>
+
+<p><b>本章目标</b>：把第 5 章的点积和第 6 章的 softmax 组装成完整的注意力机制，并推导三个关键细节：为什么点积方差是 \(d_k\)（从而要除以 \(\sqrt{d_k}\)）、softmax 的梯度长什么样、因果掩码为什么work。</p>
+<p><b>对应原书位置</b>：《Build a Large Language Model》第 3 章"注意力机制"。</p>
+
+<h2>一、QKV 设定：三个角色</h2>
+
+<div class="def">
+<span class="tag">定义：Query、Key、Value</span>
+<p>设输入有 \(T\) 个 token，每个表示成 \(d\) 维向量，排成矩阵 \(X\)（\(T\times d\)）。用三个可学习的权重矩阵做线性变换：</p>
+<p>\[
+Q = XW_Q,\qquad K = XW_K,\qquad V = XW_V
+\]</p>
+<p>得到 <b>Query</b>（查询，我在找什么）、<b>Key</b>（键，我提供什么）、<b>Value</b>（值，找到后拿什么）。注意力分三步：</p>
+<p>\[
+\text{分数}\ \ \omega_{ij} = \mathbf{q}_i\cdot\mathbf{k}_j
+\quad\Longrightarrow\quad
+\text{权重}\ \ \alpha_{ij} = \mathrm{softmax}_j\!\left(\frac{\omega_{ij}}{\sqrt{d_k}}\right)
+\quad\Longrightarrow\quad
+\text{输出}\ \ \mathbf{o}_i = \sum_{j=1}^{T}\alpha_{ij}\mathbf{v}_j
+\]</p>
+<p>即：打分 → 归一化成权重 → 按权重对 value 加权平均。</p>
+</div>
+
+<h2>二、点积的方差为什么是 \(d_k\)</h2>
+
+<p>这是缩放因子 \(\frac{1}{\sqrt{d_k}}\) 的全部理由。设 query 和 key 的每个分量都满足：均值为 0、方差为 1、相互独立（这是权重初始化时的典型情形）。</p>
+
+<div class="derivation">
+<span class="tag">推导：\(\mathrm{Var}(\mathbf{q}\cdot\mathbf{k})=d_k\)</span>
+<p>记 \(\omega=\mathbf{q}\cdot\mathbf{k}=\sum_{i=1}^{d_k}q_ik_i\)。先看单独一项 \(X_i=q_ik_i\)。</p>
+<p><b>第一步：算 \(\mathrm{E}[X_i]\)。</b>由独立性（见第 3 章），乘积的期望等于期望的乘积：</p>
+<p>\[
+\mathrm{E}[q_ik_i] = \mathrm{E}[q_i]\,\mathrm{E}[k_i] = 0\times 0 = 0
+\]</p>
+<p><b>第二步：算 \(\mathrm{E}[X_i^2]\)。</b>\(\mathrm{E}[X_i^2]=\mathrm{E}[q_i^2k_i^2]\)，同样由独立性分解：</p>
+<p>\[
+\mathrm{E}[q_i^2k_i^2] = \mathrm{E}[q_i^2]\,\mathrm{E}[k_i^2]
+\]</p>
+<p>用方差定义 \(\mathrm{Var}(X)=\mathrm{E}[X^2]-(\mathrm{E}[X])^2\) 移项得 \(\mathrm{E}[X^2]=\mathrm{Var}(X)+(\mathrm{E}[X])^2\)，于是</p>
+<p>\[
+\mathrm{E}[q_i^2] = \underbrace{\mathrm{Var}(q_i)}_{=1} + \underbrace{(\mathrm{E}[q_i])^2}_{=0} = 1,
+\qquad\text{同理 }\mathrm{E}[k_i^2]=1
+\]</p>
+<p>故 \(\mathrm{E}[X_i^2]=1\times 1=1\)。</p>
+<p><b>第三步：算 \(\mathrm{Var}(X_i)\)。</b></p>
+<p>\[
+\mathrm{Var}(q_ik_i) = \mathrm{E}[X_i^2]-(\mathrm{E}[X_i])^2 = 1-0^2 = 1
+\]</p>
+<p><b>第四步：\(d_k\) 项求和。</b>\(\omega\) 是 \(d_k\) 个相互独立的 \(X_i\) 之和，独立和的方差等于方差之和（见第 3 章）：</p>
+<p>\[
+\boxed{\mathrm{Var}(\omega) = \sum_{i=1}^{d_k}\mathrm{Var}(X_i) = d_k\cdot 1 = d_k}
+\]</p>
+<p>标准差为 \(\sqrt{d_k}\)。证毕。</p>
+</div>
+
+<div class="key">
+<span class="tag">关键结论：为什么除以 \(\sqrt{d_k}\)</span>
+<p>维度 \(d_k\) 越大，点积分数的波动越大（标准差 \(\sqrt{d_k}\)）。\(d_k=64\) 时分数能差出几十，softmax 会被推到饱和区（某个权重 \(\approx 1\)，其余 \(\approx 0\)），梯度几乎消失（见下一节）。<b>除以 \(\sqrt{d_k}\) 恰好把方差拉回 1</b>，让分数的分布与维度无关，softmax 工作在"舒适区"。</p>
+</div>
+
+<h2>三、softmax 的梯度：\(\alpha_i(1-\alpha_i)\)</h2>
+
+<p>训练时要对 softmax 求导。先看对角元（输出 \(\alpha_i\) 对输入 \(z_i\) 的导数）。</p>
+
+<div class="derivation">
+<span class="tag">推导：\(\dfrac{\partial\alpha_i}{\partial z_i}=\alpha_i(1-\alpha_i)\)</span>
+<p>记 \(\alpha_i=e^{z_i}/S\)，其中 \(S=\sum_k e^{z_k}\)。注意 \(S\) 里也含有 \(z_i\)，且 \(\partial S/\partial z_i=e^{z_i}\)。用商法则 \(\left(\frac{u}{v}\right)'=\frac{u'v-uv'}{v^2}\)（见第 1 章）：</p>
+<p>\[
+\frac{\partial\alpha_i}{\partial z_i}
+= \frac{e^{z_i}\cdot S - e^{z_i}\cdot e^{z_i}}{S^2}
+= \frac{e^{z_i}}{S} - \left(\frac{e^{z_i}}{S}\right)^2
+= \boxed{\alpha_i(1-\alpha_i)}
+\]</p>
+<p>再看这个值什么时候最大。令 \(g(x)=x(1-x)=x-x^2\)，求导得 \(g'(x)=1-2x\)，令其为 0 得 \(x=\frac{1}{2}\)，此时 \(g\left(\frac{1}{2}\right)=\frac{1}{4}=0.25\)。当 \(\alpha_i\to 0\) 或 \(\alpha_i\to 1\) 时 \(g\to 0\)。</p>
+<p>含义：<b>分布越"陡"（某个权重接近 1），梯度越小</b>。这正是上一节说的饱和问题——不做 \(\sqrt{d_k}\) 缩放，softmax 动不动就饱和，网络学不动。</p>
+</div>
+
+<h2>四、因果掩码：\(e^{-\infty}=0\)</h2>
+
+<p>生成文本时，第 \(i\) 个 token 不能"偷看"第 \(i+1\) 个及之后的内容。做法：在 softmax 之前，把"未来"位置的分数设为 \(-\infty\)。</p>
+
+<div class="derivation">
+<span class="tag">推导：被掩的位置权重为 0</span>
+<p>\(e^x=\frac{1}{e^{-x}}\)。当 \(x\to -\infty\) 时，分母 \(e^{-x}\to +\infty\)，故</p>
+<p>\[
+\boxed{\lim_{x\to-\infty}e^x = 0}
+\]</p>
+<p>（见第 2 章极限。）于是被掩位置的分子 \(e^{-\infty}=0\)，权重 \(\alpha=0/S=0\)。同时分母 \(S\) 只累加了可见位置——<b>一次 softmax 就得到正确的掩码后分布</b>，不用事后修正。</p>
+</div>
+
+<h2>五、多头：维度的流转</h2>
+
+<p>单头注意力的表达能力有限。把 \(d\) 维切成 \(h\) 个头，每个头独立做注意力，最后拼回去。以 GPT-2 为例：\(d=768\)，\(h=12\) 头，每头维度 \(d_k=768/12=64\)。</p>
+
+<div class="derivation">
+<span class="tag">推导：维度流转（\(T\) 为序列长度）</span>
+<p>矩阵乘法维度规则（见第 4 章）：\((m\times n)\) 乘 \((n\times p)\) 得 \((m\times p)\)。</p>
+<ol>
+<li><b>切分</b>：\(Q\)（\(T\times 768\)）切成 12 个 \(T\times 64\)，记第 \(i\) 头为 \(Q_i\)；\(K_i,V_i\) 同理。</li>
+<li><b>分数</b>：\(Q_iK_i^\top\)，即 \((T\times 64)\times(64\times T)=(T\times T)\)。\(T\times T\) 的每个元素是"query \(i\) 对 key \(j\) 的分数"。</li>
+<li><b>加权</b>：\(\mathrm{softmax}\) 后得权重（\(T\times T\)），乘 \(V_i\)：\((T\times T)\times(T\times 64)=(T\times 64)\)。</li>
+<li><b>拼接</b>：12 个头的 \(T\times 64\) 拼成 \(T\times 768\)，再经输出矩阵 \(W_O\)（\(768\times 768\)）混合。</li>
+</ol>
+<p>维度检查：\(12\times 64=768\)，拼回去恰好还原。每头在 64 维子空间里独立关注不同方面的关系（如语法、指代），这就是"多头"的含义。</p>
+</div>
+
+<h2>六、小结</h2>
+<p>本章把点积（第 5 章）和 softmax（第 6 章）组装成了注意力机制，并推导了三个关键细节：点积方差为 \(d_k\)（故除以 \(\sqrt{d_k}\) 缩放）、softmax 对角梯度 \(\alpha_i(1-\alpha_i)\)（解释饱和）、因果掩码 \(e^{-\infty}=0\)，最后走了一遍多头的维度流转。这些公式在书里是干什么的：<b>它们就是 Transformer 的核心计算</b>——每个 token 用"自己有多像 query"去加权平均所有 token 的 value，12 个头并行做 12 次。</p>
+
+<h2>延伸阅读</h2>
+<ul>
+<li><a href="../bllm/09-coding-attention-mechanisms-detail.html">原书第 3 章数学详解 · 注意力机制</a>——本章公式在书中的完整上下文</li>
+</ul>
+
+<nav class="deriv-nav">
+<a href="06-softmax.html"><span class="dir">上一章</span>第 6 章 softmax</a>
+<a href="index.html"><span class="dir">目录</span>全部章节</a>
+<a href="08-normalization.html"><span class="dir">下一章</span>第 8 章 归一化</a>
+</nav>
+
+</main>
+<script defer src="../bllm/assets/katex/katex.min.js"></script>
+<script defer src="../bllm/assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+});
+</script>
+</body>
+</html>

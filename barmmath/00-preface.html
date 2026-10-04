@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>前言 · barmmath</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../bllm/assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">barmmath · 前言</a>
+</header>
+<main id="main">
+
+<h1>前言</h1>
+
+<div class="plainbox">
+<p>这本书是《Build a Reasoning Model from Scratch》（简称 barm）的<b>数学伴读</b>。barm 讲的是"从零构建一个推理模型"：采样、策略梯度、GRPO、KL 正则、RoPE——每一步背后都是一串数学公式。</p>
+<p>这本书的目标只有一个：<b>把书里出现的每一个数学公式，从大一的导数和概率定义出发，一步不跳地推导出来</b>，让你能真正读懂，而不是"大概感觉对了"。</p>
+</div>
+
+<h2 class="deriv">一、这本书是什么</h2>
+
+<p>barm 原书是代码驱动的：公式常常只出现在图里或一笔带过（比如 GRPO 的目标函数只放在图 6.9 里，正文一句推导都没有）。这本书把那些被跳过的数学补回来。</p>
+
+<p>全书分两部分：</p>
+<ul>
+<li><b>第 0–3 章：数学基础。</b>概率进阶、信息论、微积分与优化补充。这是地基，全部从大一定义开始：条件概率是什么、期望是什么、偏导数是什么。</li>
+<li><b>第 4–12 章：跟着原书走。</b>采样、序列概率、策略梯度、Advantage、PPO/GRPO、KL 正则、Bradley-Terry 与 Elo、RoPE、RMSNorm——每个主题一章，从基础定义推到书中的公式。</li>
+</ul>
+
+<p>每一章内部结构固定：<b>开篇</b>（本章目标＋对应原书位置）→ <b>定义框</b>（紫色：本章用到的每个概念先给定义）→ <b>推导</b>（蓝色：一步步展开）→ <b>章末小结</b>（这个公式在书里是干什么的）。</p>
+
+<h2 class="deriv">二、怎么读</h2>
+
+<p>建议按顺序读：第 0–3 章是后面所有章节的地基，跳过它们直接看第 6 章会很吃力。如果你某块已经熟悉（比如链式法则），直接跳到下一章即可，每章开头都列出了依赖。</p>
+
+<p>版式说明：</p>
+<ul>
+<li><span class="tag">紫色框（定义）</span>——每个概念第一次出现时的严格定义，这是全书的"公理"，推导只能从这里出发。</li>
+<li><span class="tag">蓝色框（推导）</span>——核心内容。每一步代数都写出来，不跳步。</li>
+<li><span class="tag">橙色框（预备知识）</span>——推导中用到的、前面章节讲过的知识点的快速回顾。</li>
+<li><span class="tag">绿色框（关键结论）</span>——推导完后值得记住的一句话。</li>
+<li><span class="tag">红色框（陷阱）</span>——初学者最容易搞错的地方。</li>
+</ul>
+
+<p>公式用 KaTeX 渲染。如果某个独立公式在手机上太宽，可以<b>左右滑动</b>查看完整内容。</p>
+
+<h2 class="deriv">三、符号约定</h2>
+
+<div class="def">
+<span class="tag">全书符号约定</span>
+<p>\(P(A)\) 表示事件 \(A\) 的概率；\(\Pr\) 与 \(P\) 同义，混用时含义相同。</p>
+<p>\(\mathbb{E}[X]\) 表示随机变量 \(X\) 的期望（均值）；\(\mathrm{Var}(X)\) 表示方差；\(\mathrm{std}(X)\) 表示标准差。</p>
+<p>\(\log\) 默认指<b>自然对数</b>（以 \(e\) 为底），除非特别说明。机器学习里这几乎是统一约定。</p>
+<p>随机变量用大写字母（如 \(X\)），它取的具体值用小写（如 \(x\)）。\(\theta\) 通常表示模型参数。</p>
+<p>\(D_{\mathrm{KL}}(p\|q)\) 表示分布 \(p\) 与 \(q\) 的 KL 散度；\(H(X)\) 表示熵，\(H(p,q)\) 表示交叉熵。</p>
+<p>\(\nabla\) 表示梯度，\(\partial f/\partial x\) 表示偏导数。</p>
+</div>
+
+<h2 class="deriv">四、对应原书位置</h2>
+
+<p>本书紧贴 barm 原书：第 4 章对应原书第 4–5 章（采样与序列概率），第 5–9 章对应原书第 6–7 章（强化学习核心），第 10–12 章对应原书附录与第 6 章数学细节。每章开篇都会注明具体的原书章节号，方便来回对照。</p>
+
+<div class="key">
+<span class="tag">读这本书需要什么</span>
+<p>只需要大一的微积分和概率论定义——而这正是第 0–3 章要重建的。如果大一的内容也忘了，从第 1 章开始读即可，不需要任何前置知识。</p>
+</div>
+
+<nav class="deriv-nav">
+<a href="index.html"><span class="dir">上一章</span>目录</a>
+<a href="index.html"><span class="dir">目录</span>全部章节</a>
+<a href="01-probability-2.html"><span class="dir">下一章</span>第 1 章 概率进阶</a>
+</nav>
+</main>
+<script defer src="../bllm/assets/katex/katex.min.js"></script>
+<script defer src="../bllm/assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>barmmath · 推理模型的数学</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../bllm/assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<header class="topbar">
+  <a class="btn" href="../index.html" title="musetask 主页">&#9776;</a>
+  <a class="brand" href="index.html">barmmath · 推理模型的数学</a>
+</header>
+<main id="main">
+<div class="book-hero">
+<h1>barmmath · 推理模型的数学</h1>
+<p class="lead">《Build a Reasoning Model from Scratch》的数学伴读。起点是大一的导数与概率定义，一步不跳地推导出书中出现的全部数学公式：采样、策略梯度、GRPO/PPO、KL 正则、Bradley-Terry、RoPE、RMSNorm。</p>
+<p class="links"><a href="../barm/index.html">← 回原书 barm</a> · <a href="../bllmmath/index.html">姊妹篇 bllmmath →</a></p>
+</div>
+<ol class="toc">
+<li><a href="00-preface.html"><span class="n">0</span>前言<span class="d">这本书是什么、怎么读、符号约定</span></a></li>
+<li><a href="01-probability-2.html"><span class="n">1</span>概率进阶<span class="d">条件概率、期望的线性、全期望公式、独立性</span></a></li>
+<li><a href="02-information-theory.html"><span class="n">2</span>信息论<span class="d">熵、交叉熵、KL 散度、Gibbs 不等式（经 Jensen 不等式证明）</span></a></li>
+<li><a href="03-calculus-opt.html"><span class="n">3</span>微积分与优化补充<span class="d">偏导、多元链式法则、Jensen 不等式</span></a></li>
+<li><a href="04-sampling.html"><span class="n">4</span>采样<span class="d">温度、top-k / top-p、Gumbel-max trick 完整证明</span></a></li>
+<li><a href="05-sequence-prob.html"><span class="n">5</span>序列概率<span class="d">链式法则、logprob、连乘变连加、长度问题</span></a></li>
+<li><a href="06-policy-gradient.html"><span class="n">6</span>策略梯度<span class="d">期望目标、log-derivative trick、baseline 不偏性证明</span></a></li>
+<li><a href="07-advantage.html"><span class="n">7</span>Advantage<span class="d">组内归一化、z-score 均值 0 方差 1 证明</span></a></li>
+<li><a href="08-ppo-grpo.html"><span class="n">8</span>PPO 与 GRPO<span class="d">裁剪目标、min 的悲观界、GRPO 公式逐项拆解</span></a></li>
+<li><a href="09-kl-regularization.html"><span class="n">9</span>KL 正则<span class="d">KL 定义、KL 的梯度、为什么需要正则</span></a></li>
+<li><a href="10-bradley-terry-elo.html"><span class="n">10</span>Bradley-Terry 与 Elo<span class="d">sigmoid、BT 模型推导、Elo 换底公式</span></a></li>
+<li><a href="11-rope.html"><span class="n">11</span>RoPE<span class="d">旋转矩阵、相对位置定理、两种布局等价证明</span></a></li>
+<li><a href="12-rmsnorm.html"><span class="n">12</span>RMSNorm<span class="d">RMS 定义、与 LayerNorm 的对比推导</span></a></li>
+</ol>
+</main>
+</body>
+</html>
