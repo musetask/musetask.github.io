@@ -1,0 +1,24 @@
+# 本仓库是纯静态站：所有 HTML 都是构建产物，仓库里没有任何 Jekyll 模板、
+# 插件或 Gemfile 依赖。Jekyll 在这里纯属 GitHub Pages 的默认行为。
+#
+# 没有这个文件时，GitHub Pages 会用 Jekyll 构建，而 jekyll-optional-front-matter
+# 插件会给无 front matter 的文件补上 front matter，然后对每个 .md 源文件跑 Liquid
+# 渲染。LaTeX 里的 {{ 会被当成 Liquid 变量，例如：
+#
+#   eslmath/src/03c-dimreduction-shrinkage.md
+#   \hat Y_{{\rm ridge},c+w}
+#
+# 直接导致构建失败（exit 1，站点无法部署）：
+#
+#   Liquid Exception: Liquid syntax error (line 402):
+#   Variable '{{\rm ridge}' was not properly terminated with regexp: /\}\}/
+
+# 源文件与文档：既不该被发布，也不该参与 Liquid 渲染。
+# 注意 Jekyll 的 exclude 用 File.fnmatch?（未开 FNM_PATHNAME），
+# 所以 "*.md" 能匹配任意层级的 .md，不只是根目录。
+exclude:
+  - "*.md" # 全部 Markdown：各子项目的 src/*.md 源文件与 README
+  - eslmath/src # 章节源文件（build_site.py 的输入）
+  - islmath/src # 章节源文件 + 公式清单 manifest_*.json
+  - thellmmath/_src # 章节源文件（_ 前缀本来就会被 Jekyll 忽略）
+  - node_modules # 构建期依赖

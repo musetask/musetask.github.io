@@ -319,7 +319,7 @@ spam 5.3% 33.4%</pre></details></figure>
 <h2 id="s-9-4" class="anchored"><span class="num">9.4</span> MARS: Multivariate Adaptive Regression Splines</h2>
 <p>MARS is an adaptive procedure for regression, and is well suited for highdimensional problems (i.e., a large number of inputs). It can be viewed as a generalization of stepwise linear regression or a modification of the CART method to improve the latter’s performance in the regression setting. We introduce MARS from the first point of view, and later make the connection to CART.</p>
 <p>MARS uses expansions in piecewise linear basis functions of the form (<i class="mi">x</i><span class="sym"> −</span> <i class="mi">t</i>)<sub>+</sub> and (<i class="mi">t</i><span class="sym"> −</span> <i class="mi">x</i>)<sub>+</sub>. The “+” means positive part, so</p>
-<div class="eq"><div class="escroll"><img loading="lazy" src="assets/eq-0791.png" alt="{{"></div></div>
+<div class="eq"><div class="escroll"><img loading="lazy" src="assets/eq-0791.png" alt="&#123;&#123;"></div></div>
 <p><i class="mi">x</i><span class="sym"> −</span> <i class="mi">t,</i> if <i class="mi">x &gt; t</i>, <i class="mi">t</i><span class="sym"> −</span> <i class="mi">x,</i> if <i class="mi">x &lt; t</i>,</p>
 <p>(<i class="mi">x</i><span class="sym">−</span><i class="mi">t</i>)<sub>+</sub> = and (<i class="mi">t</i><span class="sym">−</span><i class="mi">x</i>)<sub>+</sub> =</p>
 <p>0<i class="mi">,</i> otherwise, 0<i class="mi">,</i> otherwise<i class="mi">.</i></p>

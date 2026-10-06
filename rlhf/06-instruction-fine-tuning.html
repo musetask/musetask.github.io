@@ -31,41 +31,41 @@
 <p>Then, the model would generate tokens until it runs out of its context window, or it generates the end-of-sequence token.</p>
 <p>All post-training stages, from instruction tuning to RLHF and other methods, rely on this formatting to train the model. The tool that handles the structure of the interaction with the user is called the <strong>chat template</strong>.</p>
 <p>An example which we will break down is below:</p>
-<div class="codeblock"><div class="bar2"><span class="lang">python</span><button class="copy" type="button">复制</button></div><pre><code>{% <span class="c-kw">if</span> messages[<span class="c-num">0</span>][<span class="c-str">'role'</span>] == <span class="c-str">'system'</span> %}
+<div class="codeblock"><div class="bar2"><span class="lang">python</span><button class="copy" type="button">复制</button></div><pre><code>&#123;% <span class="c-kw">if</span> messages[<span class="c-num">0</span>][<span class="c-str">'role'</span>] == <span class="c-str">'system'</span> %}
     {<span class="c-com"># If the conversation begins with a system message, treat it as a special</span>
 first turn.
        We set an offset so the user/assistant alternation check lines up
 correctly. <span class="c-com">#}</span>
-    {% set offset = <span class="c-num">1</span> %}
-{% <span class="c-kw">else</span> %}
+    &#123;% set offset = <span class="c-num">1</span> %}
+&#123;% <span class="c-kw">else</span> %}
     {<span class="c-com"># No system message: user should be the first non-empty turn. #}</span>
-    {% set offset = <span class="c-num">0</span> %}
-{% endif %}
+    &#123;% set offset = <span class="c-num">0</span> %}
+&#123;% endif %}
 {<span class="c-com"># Emit the beginning-of-sequence token (model-specific). #}</span>
-{{ bos_token }}
+&#123;&#123; bos_token }}
 {<span class="c-com"># Serialize each message into the model's chat-markup tokens. #}</span>
-{% <span class="c-kw">for</span> message <span class="c-kw">in</span> messages %}
+&#123;% <span class="c-kw">for</span> message <span class="c-kw">in</span> messages %}
     {<span class="c-com"># Enforce role alternation: (system), user, assistant, user, assistant, ...</span>
        The boolean expression compares <span class="c-str">"is this a user message?"</span> against whether
 the
        current index (plus offset) <span class="c-kw">is</span> expected to be user <span class="c-kw">or</span> assistant. <span class="c-com">#}</span>
-    {% <span class="c-kw">if</span> (message[<span class="c-str">'role'</span>] == <span class="c-str">'user'</span>) != (loop.index0 % <span class="c-num">2</span> == offset) %}
-        {{ raise_exception('Conversation roles must alternate
+    &#123;% <span class="c-kw">if</span> (message[<span class="c-str">'role'</span>] == <span class="c-str">'user'</span>) != (loop.index0 % <span class="c-num">2</span> == offset) %}
+        &#123;&#123; raise_exception('Conversation roles must alternate
 user/assistant/user/assistant/...') }}
-    {% endif %}
+    &#123;% endif %}
     {<span class="c-com"># Wrap each message with special tokens:</span>
        - &lt;|im_start|&gt;&lt;role&gt;\n
        - message content (trimmed)
        - &lt;|im_end|&gt;\n
        This produces a single flat token sequence the LM can train on. <span class="c-com">#}</span>
-    {{ <span class="c-str">'&lt;|im_start|&gt;'</span> + message[<span class="c-str">'role'</span>] + <span class="c-str">'\n'</span> + message[<span class="c-str">'content'</span>] | trim +
+    &#123;&#123; <span class="c-str">'&lt;|im_start|&gt;'</span> + message[<span class="c-str">'role'</span>] + <span class="c-str">'\n'</span> + message[<span class="c-str">'content'</span>] | trim +
 <span class="c-str">'&lt;|im_end|&gt;\n'</span> }}
-{% endfor %}
+&#123;% endfor %}
 {<span class="c-com"># Optionally append an "assistant" start tag with no content.</span>
    This cues generation to <span class="c-kw">continue</span> <span class="c-kw">from</span> the assistant role. <span class="c-com">#}</span>
-{% <span class="c-kw">if</span> add_generation_prompt %}
-    {{ <span class="c-str">'&lt;|im_start|&gt;assistant\n'</span> }}
-{% endif %}</code></pre></div>
+&#123;% <span class="c-kw">if</span> add_generation_prompt %}
+    &#123;&#123; <span class="c-str">'&lt;|im_start|&gt;assistant\n'</span> }}
+&#123;% endif %}</code></pre></div>
 <p>This is the raw code for transforming a list of dictionaries in Python containing messages and roles into tokens that a language model can predict from.</p>
 <p>All information passed into models is assigned a role. The traditional three roles are <code>system</code>, <code>user</code>, and <code>assistant</code>.</p>
 <p>The <code>system</code> tag is only used for the first message of the conversation; it holds instructions for the agent in text that will not be received from or exposed to the user. These <strong>system prompts</strong> are used to provide additional context to the models, such as the date and time, or to patch behaviors. As a fun example, models can be told things such as “You are a friendly chatbot who always responds in the style of a pirate.”</p>

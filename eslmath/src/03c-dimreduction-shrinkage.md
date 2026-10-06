@@ -399,7 +399,7 @@ $$
 $$
 
 $$
-\hat Y_{{\rm ridge},c+w}=A_\lambda\,Y_{S_{c+w}},\qquad A_\lambda=\big(I-\Pi_\lambda\big)^\top\ \text{的一般形式 } (X^\top X+\lambda I)^{-1}X^\top X\ \eqno{3.75}
+\hat Y_{ {\rm ridge},c+w}=A_\lambda\,Y_{S_{c+w}},\qquad A_\lambda=\big(I-\Pi_\lambda\big)^\top\ \text{的一般形式 } (X^\top X+\lambda I)^{-1}X^\top X\ \eqno{3.75}
 $$
 
 > **推导** · 三个因子的分工
