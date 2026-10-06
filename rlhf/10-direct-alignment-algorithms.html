@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="author" content="Nathan Lambert">
+<meta name="generator" content="pdf2html">
+<title>Direct Alignment Algorithms · The RLHF Book</title>
+<link rel="icon" href="assets/icon.svg">
+<link rel="stylesheet" href="assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('rlhf-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light')}catch(e){}}());</script>
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="bar">
+<a class="ib" href="index.html" aria-label="目录">&#9776;</a>
+<span class="title">Direct Alignment Algorithms</span>
+<button class="ib" id="theme" type="button" aria-label="切换深色模式">&#9681;</button>
+</header>
+<main id="main">
+<h1 class="chapter"><span class="chno">8</span>Direct Alignment Algorithms</h1>
+<div class="callout"><div class="lab">This chapter covers</div><ul><li>The derivation of the first DAA, Direct Preference Optimization (DPO), from first</li><li>principles</li><li>Intuitions for DPO and other related algorithms</li><li>What to consider when using DAAs yourself</li></ul></div>
+<p>Direct Alignment Algorithms (DAAs) allow one to update models to solve the same RLHF objective, shown again in eq. 8.1, without ever training an intermediate reward model or using reinforcement learning optimizers. It solves the same preference learning problem we’ve been studying (with literally the same data!), in order to make language models more aligned, smarter, and easier to use. The lack of a reward model and online optimization makes DAAs far simpler to implement, reducing compute spent during training and making experimentation easier. This chapter details the complex mathematics that were done to derive these algorithms, and then shows that the sometimes tedious derivations result in simple implementations.</p>
+<p>The most prominent DAA and one that catalyzed an entire academic movement of aligning language models is Direct Preference Optimization (DPO) [1]. At its core, DPO is using gradient ascent to solve the same constrained RLHF objective (see Chapter 3):</p>
+<figure class="eq"><div class="eqno">Equation 8.1</div><a class="zoom" href="assets/0074.png"><img src="assets/0074.png" alt="公式 8.1" loading="lazy"></a></figure>
+<p>Since its release in May of 2023, after a brief delay where the community figured out the right data and hyperparameters to use DPO with (specifically, surprisingly low learning rates), many popular models have used DPO or its variants, from Zephyr-β kickstarting it in October of 2023 [2], Llama 3 Instruct [3], Tülu 2 [4] and 3 [5], Nemotron 4 340B [6], and others. Technically, Sequence Likelihood Calibration (SLiC-HF) was the first, modern direct alignment algorithm released [7], but it did not catch on due to a combination of factors (unwinding the adoption of research methods is always a tricky task).</p>
+<p>The most impactful part of DPO and DAAs is lowering the barrier of entry to experimenting with language model post-training – it uses less compute, is easier to implement from scratch, and is easier to get working on both toy and production examples.</p>
+<p><em>Throughout this chapter, we use </em>x<em> to denote prompts and </em>y<em> to denote completions. This</em> <em>notation is common in the language model literature, where methods operate on full</em> <em>prompt-completion pairs rather than individual tokens.</em></p>
+<h2 id="8-1-direct-preference-optimization-dpo"><a class="anchor" href="#8-1-direct-preference-optimization-dpo">#</a>8.1 Direct Preference Optimization (DPO)</h2>
+<p>Here we explain intuitions for how DPO works and re-derive the core equations fully.</p>
+<h3 id="8-1-1-how-dpo-works"><a class="anchor" href="#8-1-1-how-dpo-works">#</a>8.1.1 How DPO Works</h3>
+<p>DPO at a surface level is directly optimizing a policy to solve the RLHF objective. The loss function for this, which we will revisit below in the derivations, is a pairwise relationship of log-probabilities. The loss function derived from a Bradley-Terry reward model follows:</p>
+<figure class="eq"><div class="eqno">Equation 8.2</div><a class="zoom" href="assets/0075.png"><img src="assets/0075.png" alt="公式 8.2" loading="lazy"></a></figure>
+<p>Throughout, β is a hyperparameter balancing the reward optimization to the KL distance between the final model and the initial reference (i.e. balancing over-optimization, as a crucial hyperparameter to using DPO correction). This relies on the implicit reward for DPO training that replaces using an external reward model, which is a log-ratio of probabilities:</p>
+<figure class="eq"><div class="eqno">Equation 8.3</div><a class="zoom" href="assets/0076.png"><img src="assets/0076.png" alt="公式 8.3" loading="lazy"></a></figure>
+<p>where π<sub>r</sub>(y ∣x) is the exact, optimal reward policy that we are solving for. This comes from deriving the Bradley-Terry reward with respect to an optimal policy (shown in eq. 8.17), as shown in the Bradley-Terry model section of Chapter 5. Essentially, the implicit reward model shows “the probability of human preference data in terms of the optimal policy rather than the reward model.”</p>
+<p>Let us consider the loss shown in eq. 8.2 that the optimizer must decrease. Here, the loss will be lower when the log-ratio of the chosen response is bigger than the log-ratio of the rejected response (normalized by the reference model). In practice, this is a sum of log-probabilities of the model across the sequence of tokens in the data presented. Hence, DPO is increasing the delta in probabilities between the chosen and rejected responses.</p>
+<p>With the reward in eq. 8.3, we can write the gradient of the loss to further interpret what is going on:</p>
+<figure class="eq"><div class="eqno">Equation 8.4</div><a class="zoom" href="assets/0077.png"><img src="assets/0077.png" alt="公式 8.4" loading="lazy"></a></figure>
+<p>Here, the gradient solves the above objective by doing the following:</p>
+<ul class="lst"><li>The first term within the sigmoid function, σ(⋅), creates a weight of the parameter update from 0 to 1 that is higher when the reward estimate is incorrect. When the rejected sample is preferred over the chosen, the <a href="https://livebook.manning.com/book/the-rlhf-book/chapter-8?potentialInternalRefId=23---book-markup-container">weight update should be larger! </a></li><li>Second, the terms in the inner brackets [⋅] increase the likelihood of the <a href="https://livebook.manning.com/book/the-rlhf-book/chapter-8?potentialInternalRefId=24---book-markup-container">chosen response y<sub>c</sub> and decrease the likelihood of the rejected y<sub>r</sub>. </a></li><li>These terms are weighted by β, which controls how the update balances <a href="https://livebook.manning.com/book/the-rlhf-book/chapter-8?potentialInternalRefId=25---book-markup-container">ordering the completions correctly relative to the KL distance. </a></li></ul>
+<p>The core intuition is that DPO is fitting an implicit reward model whose corresponding optimal policy can be extracted in a closed form (thanks to gradient descent and our ML tools). The closed form of the equation means that it is straightforward to implement the exact gradient, rather than needing to reach it by proxy of training a reward model and sampling completions to score. What is often misunderstood is that DPO is learning a reward model at its core, hence the subtitle of the paper <em>Your Language Model is Secretly a</em> <em>Reward Model.</em> It is easy to confuse this with the DPO objective training a policy directly, hence studying the derivations below is good for a complete understanding.</p>
+<p>With the implicit reward model learning, DPO is generating an optimal solution to the RLHF objective given the data in the dataset and the specific KL constraint in the objective β. Here, DPO solves for the exact policy given a specific KL distance because the generations are not online as in policy gradient algorithms – a core difference from the RL methods for preference tuning. In many ways, this makes the β value easier to tune with DPO relative to online RL methods, but crucially and intuitively the optimal value depends on the model being trained and the data training it.</p>
+<p>At each batch of preference data, composed of many pairs of completions y<sub>c</sub><sub>h</sub><sub>o</sub><sub>s</sub><sub>e</sub><sub>n</sub> ≻y<sub>r</sub><sub>e</sub><sub>j</sub><sub>e</sub><sub>c</sub><sub>t</sub><sub>e</sub><sub>d</sub>, DPO takes gradient steps directly towards the optimal solution. It is far simpler than policy gradient methods.</p>
+<figure class="fig"><a class="zoom" href="assets/0078.png"><img src="assets/0078.png" alt="插图" loading="lazy"></a></figure>
+<figcaption><span class="lbl">Figure 8.1</span> When DPO first released it sparked a fierce debate in the research community about how to best</figcaption>
+<h3 id="8-1-2-dpo-derivation"><a class="anchor" href="#8-1-2-dpo-derivation">#</a>8.1.2 DPO Derivation</h3>
+<p>The DPO derivation takes two primary parts. First, the authors show the form of the policy that optimally solved the RLHF objective used throughout this book. Next, they show how to arrive at that solution from pairwise preference data (i.e. a Bradley Terry model).</p>
+<h3 id="1-deriving-the-optimal-rlhf-solution"><a class="anchor" href="#1-deriving-the-optimal-rlhf-solution">#</a>1. DERIVING THE OPTIMAL RLHF SOLUTION</h3>
+<p>To start, we should consider the RLHF optimization objective once again, here indicating we wish to maximize this quantity:</p>
+<figure class="eq"><div class="eqno">Equation 8.5</div><a class="zoom" href="assets/0079.png"><img src="assets/0079.png" alt="公式 8.5" loading="lazy"></a></figure>
+<p>Here, the dual expectation only applies to the sampling to compute the expected reward, as the KL term is still an analytical expression. First, let us expand the definition of KL-divergence. Recall that D<sub>K</sub><sub>L</sub>(π∥π<sub>r</sub><sub>e</sub><sub>f</sub>) = E<sub>y</sub><sub>∼</sub><sub>π</sub> [log<span class="frac"><span class="nu"><sub>π</sub><sub>(</sub><sub>y</sub><sub>|</sub><sub>x</sub><sub>)</sub></span><span class="de"><sub>π</sub><sub>r</sub><sub>e</sub><sub>f</sub><sub>(</sub><sub>y</sub><sub>|</sub><sub>x</sub><sub>)</sub></span></span> ], where the π(y|x) weighting in the sum becomes the sampling distribution. Since both terms now share the same expectation over y ∼π(y|x), we can combine them:</p>
+<figure class="eq"><div class="eqno">Equation 8.6</div><a class="zoom" href="assets/0080.png"><img src="assets/0080.png" alt="公式 8.6" loading="lazy"></a></figure>
+<p>Next, pull the negative sign out of the difference in brackets. To do this, split it into two terms:</p>
+<figure class="eq"><div class="eqno">Equation 8.7</div><a class="zoom" href="assets/0081.png"><img src="assets/0081.png" alt="公式 8.7" loading="lazy"></a></figure>
+<p>Then, remove the factor of −1 and β,</p>
+<figure class="eq"><div class="eqno">Equation 8.8</div><a class="zoom" href="assets/0082.png"><img src="assets/0082.png" alt="公式 8.8" loading="lazy"></a></figure>
+<p>Divide by β and recombine:</p>
+<figure class="eq"><div class="eqno">Equation 8.9</div><a class="zoom" href="assets/0083.png"><img src="assets/0083.png" alt="公式 8.9" loading="lazy"></a></figure>
+<p>Next, we must introduce a partition function, Z(x):</p>
+<figure class="eq"><div class="eqno">Equation 8.10</div><a class="zoom" href="assets/0084.png"><img src="assets/0084.png" alt="公式 8.10" loading="lazy"></a></figure>
+<p>The partition function acts as a normalization factor over the reference policy, summing over all possible responses y to a prompt x. With this substituted in, we obtain our intermediate transformation:</p>
+<figure class="eq"><div class="eqno">Equation 8.11</div><a class="zoom" href="assets/0085.png"><img src="assets/0085.png" alt="公式 8.11" loading="lazy"></a></figure>
+<p>To see how this is obtained, consider the internal part of the optimization in brackets of eq. 8.9:</p>
+<figure class="eq"><div class="eqno">Equation 8.12</div><a class="zoom" href="assets/0086.png"><img src="assets/0086.png" alt="公式 8.12" loading="lazy"></a></figure>
+<p>Then, add log Z(x) −log Z(x) to both sides:</p>
+<figure class="eq"><div class="eqno">Equation 8.13</div><a class="zoom" href="assets/0087.png"><img src="assets/0087.png" alt="公式 8.13" loading="lazy"></a></figure>
+<p>Then, we group the terms:</p>
+<figure class="eq"><div class="eqno">Equation 8.14</div><a class="zoom" href="assets/0088.png"><img src="assets/0088.png" alt="公式 8.14" loading="lazy"></a></figure>
+<p>With log(x) + log(y) = log(x ⋅y) (and moving Z to the denominator), we get:</p>
+<figure class="eq"><div class="eqno">Equation 8.15</div><a class="zoom" href="assets/0089.png"><img src="assets/0089.png" alt="公式 8.15" loading="lazy"></a></figure>
+<p>Next, we expand <span class="frac"><span class="nu"><sub>1</sub></span><span class="de"><sub>β</sub></span></span> r(x, y) to log exp(<span class="frac"><span class="nu"><sub>1</sub></span><span class="de"><sub>β</sub></span></span> r(x, y) and do the same operation to get eq. 8.11. With this optimization form, we need to actually solve for the optimal policy π<sub>∗</sub>. To do so, let us consider the above optimization as a KL distance:</p>
+<figure class="eq"><div class="eqno">Equation 8.16</div><a class="zoom" href="assets/0090.png"><img src="assets/0090.png" alt="公式 8.16" loading="lazy"></a></figure>
+<p>Since the partition function Z(x) does not depend on the final answer, we can ignore it. This leaves us with just the KL distance between our policy we are learning and a form relating the partition, β, reward, and reference policy. The Gibb’s inequality tells this is minimized at a distance of 0, only when the two quantities are equal! Hence, we get an optimal policy:</p>
+<figure class="eq"><div class="eqno">Equation 8.17</div><a class="zoom" href="assets/0091.png"><img src="assets/0091.png" alt="公式 8.17" loading="lazy"></a></figure>
+<h3 id="2-deriving-dpo-objective-for-bradley-terry-models"><a class="anchor" href="#2-deriving-dpo-objective-for-bradley-terry-models">#</a>2. DERIVING DPO OBJECTIVE FOR BRADLEY TERRY MODELS</h3>
+<p>To start, recall from Chapter 5 on Reward Modeling and Chapter 11 on Preference Data that a Bradley-Terry model of human preferences is formed as:</p>
+<figure class="eq"><div class="eqno">Equation 8.18</div><a class="zoom" href="assets/0092.png"><img src="assets/0092.png" alt="公式 8.18" loading="lazy"></a></figure>
+<p>By manipulating eq. 8.17, we can solve for the optimal reward. First, take the logarithm of both sides:</p>
+<figure class="eq"><div class="eqno">Equation 8.19</div><a class="zoom" href="assets/0093.png"><img src="assets/0093.png" alt="公式 8.19" loading="lazy"></a></figure>
+<p>Expanding the right-hand side using log(abc) = log a + log b + log c:</p>
+<figure class="eq"><div class="eqno">Equation 8.20</div><a class="zoom" href="assets/0094.png"><img src="assets/0094.png" alt="公式 8.20" loading="lazy"></a></figure>
+<p>Rearranging to solve for r<sub>∗</sub>(x, y):</p>
+<figure class="eq"><div class="eqno">Equation 8.21</div><a class="zoom" href="assets/0095.png"><img src="assets/0095.png" alt="公式 8.21" loading="lazy"></a></figure>
+<p>Multiplying both sides by β:</p>
+<figure class="eq"><div class="eqno">Equation 8.22</div><a class="zoom" href="assets/0096.png"><img src="assets/0096.png" alt="公式 8.22" loading="lazy"></a></figure>
+<p>We then can substitute the reward into the Bradley-Terry equation shown in eq. 8.18 to obtain:</p>
+<figure class="eq"><div class="eqno">Equation 8.23</div><a class="zoom" href="assets/0097.png"><img src="assets/0097.png" alt="公式 8.23" loading="lazy"></a></figure>
+<p>By decomposing the exponential expressions from e to ee and then cancelling out the terms e<sub>l</sub><sub>o</sub><sub>g</sub><sub>(</sub><sub>Z</sub><sub>(</sub><sub>x</sub><sub>)</sub><sub>)</sub>, this simplifies to:</p>
+<figure class="eq"><div class="eqno">Equation 8.24</div><a class="zoom" href="assets/0098.png"><img src="assets/0098.png" alt="公式 8.24" loading="lazy"></a></figure>
+<p>Then, multiply the numerator and denominator by exp (−β log(<span class="frac"><span class="nu"><sub>π</sub><sub>∗</sub><sub>(</sub><sub>y</sub><sub>1</sub><sub>∣</sub><sub>x</sub><sub>)</sub></span><span class="de"><sub>π</sub><sub>r</sub><sub>e</sub><sub>f</sub><sub>(</sub><sub>y</sub><sub>1</sub><sub>∣</sub><sub>x</sub><sub>)</sub></span></span> ) to obtain:</p>
+<figure class="eq"><div class="eqno">Equation 8.25</div><a class="zoom" href="assets/0099.png"><img src="assets/0099.png" alt="公式 8.25" loading="lazy"></a></figure>
+<p>Finally, with the definition of a sigmoid function as σ(x) =<span class="frac"><span class="nu"><sub>1</sub></span><span class="de"><sub>1</sub><sub>+</sub><sub>e</sub><sub>−</sub><sub>x</sub></span></span>, we obtain:</p>
+<figure class="eq"><div class="eqno">Equation 8.26</div><a class="zoom" href="assets/0100.png"><img src="assets/0100.png" alt="公式 8.26" loading="lazy"></a></figure>
+<p>This is the loss function for DPO, as shown in eq. 8.2. The DPO paper has an additional derivation for the objective under a Plackett-Luce Model, which is far less used in practice <a href="10-direct-alignment-algorithms.html">[1].</a></p>
+<h3 id="3-deriving-the-bradley-terry-dpo-gradient"><a class="anchor" href="#3-deriving-the-bradley-terry-dpo-gradient">#</a>3. DERIVING THE BRADLEY TERRY DPO GRADIENT</h3>
+<p>We used the DPO gradient shown in eq. 8.4 to explain intuitions for how the model learns. To derive this, we must take the gradient of eq. 8.26 with respect to the model parameters.</p>
+<figure class="eq"><div class="eqno">Equation 8.27</div><a class="zoom" href="assets/0101.png"><img src="assets/0101.png" alt="公式 8.27" loading="lazy"></a></figure>
+<p>To start, this can be rewritten. We know that the derivative of a sigmoid function <span class="frac"><span class="nu"><sub>d</sub></span><span class="de"><sub>d</sub><sub>x</sub></span></span> σ(x) = σ(x)(1 −σ(x)), the derivative of logarithm <span class="frac"><span class="nu"><sub>d</sub></span><span class="de"><sub>d</sub><sub>x</sub></span></span> log x =<sub> </sub><span class="frac"><span class="nu"><sub>1</sub></span><span class="de"><sub>x</sub></span></span>, and properties of sigmoid σ(−x) = 1 −σ(x), so we can reformat the above equation.</p>
+<p>First, let u = β log<span class="frac"><span class="nu"><sub>π</sub><sub>θ</sub><sub>(</sub><sub>y</sub><sub>c</sub><sub>|</sub><sub>x</sub><sub>)</sub></span><span class="de"><sub>π</sub><sub>r</sub><sub>e</sub><sub>f</sub><sub>(</sub><sub>y</sub><sub>c</sub><sub>|</sub><sub>x</sub><sub>)</sub></span></span> −β log<span class="frac"><span class="nu"><sub>π</sub><sub>θ</sub><sub>(</sub><sub>y</sub><sub>r</sub><sub>|</sub><sub>x</sub><sub>)</sub></span><span class="de"><sub>π</sub><sub>r</sub><sub>e</sub><sub>f</sub><sub>(</sub><sub>y</sub><sub>r</sub><sub>|</sub><sub>x</sub><sub>)</sub></span></span> (the expression inside the sigmoid). Then, we have</p>
+<figure class="eq"><div class="eqno">Equation 8.28</div><a class="zoom" href="assets/0102.png"><img src="assets/0102.png" alt="公式 8.28" loading="lazy"></a></figure>
+<p>Expanding this and using the above expressions for sigmoid and logarithms results in the gradient introduced earlier:</p>
+<figure class="eq"><div class="eqno">Equation 8.29</div><a class="zoom" href="assets/0103.png"><img src="assets/0103.png" alt="公式 8.29" loading="lazy"></a></figure>
+<h2 id="8-2-numerical-concerns-weaknesses-and-alternatives"><a class="anchor" href="#8-2-numerical-concerns-weaknesses-and-alternatives">#</a>8.2 Numerical Concerns, Weaknesses, and Alternatives</h2>
+<p>Many variants of the DPO algorithm have been proposed to address weaknesses of DPO. For example, without rollouts where a reward model can rate generations, DPO treats every pair of preference data with equal weight. In reality, as seen in Chapter 11 on Preference Data, there are many ways of capturing preference data with a richer label than binary. Multiple algorithms have been proposed to re-balance the optimization away from treating each pair equally.</p>
+<ul class="lst"><li><strong>REgression to RElative REward Based RL (REBEL)</strong> adds signal from a reward model, as a margin between chosen and rejected responses, rather than solely the pairwise preference data to more accurately solve <a href="https://livebook.manning.com/book/the-rlhf-book/chapter-8?potentialInternalRefId=89---source-gao2024rebel">the RLHF problem [8]. </a></li><li><strong>Conservative DPO (cDPO) and Identity Preference Optimization</strong> <strong>(IPO)</strong> address the overfitting by assuming noise in the preference data. cDPO assumes N percent of the data is incorrectly labelled [1] and IPO changes the optimization to soften probability of preference rather than optimize directly from a label [9]. Practically, IPO changes the preference probability to a nonlinear function, moving away from the Bradley-Terry <a href="https://livebook.manning.com/book/the-rlhf-book/chapter-8?potentialInternalRefId=90---source-rafailov2024direct-3">assumption, with Ψ(q) = log (<span class="frac"><span class="nu"><sub>q</sub></span><span class="de"><sub>1</sub><sub>−</sub><sub>q</sub></span></span> ). </a></li><li><strong>DPO with an offset (ODPO)</strong> “requires the difference between the likelihood of the preferred and dispreferred response to be greater than an offset value” [10] – do not treat every data pair equally, but this can <a href="https://livebook.manning.com/book/the-rlhf-book/chapter-8?potentialInternalRefId=91---source-amini2024direct">come at the cost of a more difficult labeling environment. </a></li></ul>
+<p>Some variants to DPO attempt to either improve the learning signal by making small changes to the loss or make the application more efficient by reducing memory usage.</p>
+<ul class="lst"><li><strong>Odds Ratio Policy Optimization (ORPO)</strong> directly updates the policy model with a pull towards the chosen response, similar to the instruction fine-tuning loss, with a small penalty on the chosen response [11]. This change of loss function removes the need for a reference model, simplifying the setup. The best way to view ORPO is DPO inspired, rather <a href="https://livebook.manning.com/book/the-rlhf-book/chapter-8?potentialInternalRefId=93---source-hong2024reference">than a DPO derivative. </a></li><li><strong>Simple Preference Optimization SimPO</strong> makes a minor change to the DPO optimization, by averaging the log-probabilities rather than summing them (SimPO) or adding length normalization, to improve performance <a href="https://livebook.manning.com/book/the-rlhf-book/chapter-8?potentialInternalRefId=94---source-meng2025simpo">[12]. </a></li></ul>
+<figure class="fig"><a class="zoom" href="assets/0104.png"><img src="assets/0104.png" alt="插图" loading="lazy"></a></figure>
+<figcaption><span class="lbl">Figure 8.2</span> Sketch of preference displacement in DPO.</figcaption>
+<p>One of the core issues <em>apparent</em> in DPO is that the optimization drives only to increase the margin between the probability of the chosen and rejected responses. Numerically, the model reduces the probability of both the chosen and rejected responses, but the <em>rejected</em> <em>response is reduced by a greater extent</em> as shown in fig. 8.2. Intuitively, it is not clear how this generalizes, but work has posited that it increases the probability of unaddressed for behaviors – i.e. tokens that language model could generate, but are not in the distribution of the post-training datasets [13] [14]. Simple methods—such as Cal-DPO [15], which adjusts the optimization process, and AlphaPO [16], which modifies the reward shape— mitigate this <strong>preference displacement</strong>. In practice, the exact impact of this is not well known, but points to a potential reason why online methods can outperform vanilla DPO.</p>
+<p>The largest other reason that is posited for DPO-like methods to have a lower ceiling on performance than online (RL based) RLHF methods is that the training signal comes from completions from previous or other models. Online variants of DPO alleviate these limitations by generating new completions and incorporating a preference signal at training time. <strong>Online DPO</strong> [17] samples generations from the current model, while <strong>Discriminator-</strong> <strong>Guided DPO</strong> (D2PO) [18] uses reward model relabelling to create new preference data on the fly, and many more variants exist.</p>
+<p><a href="10-direct-alignment-algorithms.html">There is a long list of other DAA variants, such as Direct Nash Optimization (DNO) [19]</a> or Binary Classifier Optimization (BCO) [20], but the choice of algorithm is far less <a href="10-direct-alignment-algorithms.html">important than the initial model and the data used [5] [21] [22].</a></p>
+<h2 id="8-3-implementation-considerations"><a class="anchor" href="#8-3-implementation-considerations">#</a>8.3 Implementation Considerations</h2>
+<p>DAAs such as DPO are implemented very differently than policy gradient optimizers. The DPO loss, taken from the original implementation, largely can be summarized as follows [1]:</p>
+<div class="codeblock"><div class="bar2"><span class="lang">python</span><button class="copy" type="button">复制</button></div><pre><code>pi_logratios = policy_chosen_logps - policy_rejected_logps
+ref_logratios = reference_chosen_logps - reference_rejected_logps
+logits = pi_logratios - ref_logratios  <span class="c-com"># also known as h_{pi_theta}^{y_w,y_l}</span>
+losses = -F.logsigmoid(beta * logits)
+chosen_rewards = beta * (policy_chosen_logps - reference_chosen_logps).detach()
+rejected_rewards = beta * (policy_rejected_logps -
+reference_rejected_logps).detach()</code></pre></div>
+<p>This can be used in standard language model training stacks as this information is already collated during the forward pass of a model (with the addition of a reference model).</p>
+<p>In most ways, this is simpler and a quality of life improvement, but also they offer a different set of considerations.</p>
+<ol class="lst"><li><strong>KL distance is static</strong>: In DPO and other algorithms, the KL distance is set explicitly by the β parameter that balances the distance penalty to the optimization. This is due to the fact that DPO takes gradient steps towards the <em>optimal</em> solution to the RLHF objective given the data – it steps exactly to the solution set by the β term. On the other hand, RL <a href="https://livebook.manning.com/book/the-rlhf-book/chapter-8?potentialInternalRefId=104---book-markup-container">based optimizers take steps based on the batch and recent data. </a></li><li><strong>Caching log-probabilities</strong>: Simple implementations of DPO do the forward passes for the policy model and reference models at the same time for conveniences with respect to the loss function. Though, this doubles the memory used and results in increased GPU usage. To avoid this, one can compute the log-probabilities of the reference model over the training dataset first, then reference it when computing the loss and updating the parameters per batch, reducing the peak memory usage by <a href="https://livebook.manning.com/book/the-rlhf-book/chapter-8?potentialInternalRefId=105---book-markup-container">50%. </a></li></ol>
+<h2 id="8-4-daas-with-synthetic-preference-data"><a class="anchor" href="#8-4-daas-with-synthetic-preference-data">#</a>8.4 DAAs with Synthetic Preference Data</h2>
+<p>Most of the popular datasets for performing preference fine-tuning with DAAs these days are synthetic preferences where a frontier model rates outputs from other models as the winner or the loser. Prominent examples include UltraFeedback (the first of this category) [23], Tülu 3 (built with an expanded UltraFeedback methodology) [5], SmolLM 3’s data [24], or the Dolci Pref dataset released with Olmo 3 [25].</p>
+<p>The best-practices for constructing these datasets is still evolving. Tülu 3 and datasets around its release in November of 2024 demonstrated that synthetic, pairwise preference data needs to be “on-policy” in a sense that some completions are generated from the model you’re fine-tuning (while being mixed in a bigger model pool). This on-policy nature of the data ensured that the DAA would optimize the correct token space the model generates in – as the loss functions are contrastive and less direct than instruction fine-tuning. Later, with the release of Olmo 3 and SmolLM 3 in 2025, other works supported a different theory called Delta Learning, which argues that the difference between the chosen and rejected completions is more important to learning than exactly which models are used for the completions [26]. For example, in both of these two referenced models, the chosen responses are from Qwen 3 32B and the rejected responses are from Qwen 3 0.6B – both authors developed this pairing concurrently and independently.</p>
+<p>Overall, training models on synthetic preference data with DAAs is the place most practitioners should start with given the simplicity of implementation and strong performance relative to preference fine-tuning with reinforcement learning based methods. Other minor issues exist when using extensive, synthetic preference data, such as biases of the model judging between completions. Given that frontier models such as GPT-4 are <a href="10-direct-alignment-algorithms.html">known to have length bias [27] and a preference for outputs that match themselves [28]</a> (see Chapter 12 for more information), it is slightly more likely for a piece of text in the “chosen” section of the dataset to be either from an OpenAI model or another strong model that is stylistically similar to it.</p>
+<p>To conclude this section, we’ll cover an intuition for how these methods change the generations of the model being trained. At a high level, most DAAs optimize to increase the margin between the probability of “chosen” and “rejected” completions (some less popular algorithms are designed to slightly change these dynamics, but the core remains). As discussed earlier in this chapter (see fig. 8.2), this often means both probabilities decrease, but the rejected response decreases by a greater extent. Each token in a sequence receives a different gradient (magnitude and direction) based on how much it contributed to the overall preference margin, allowing the optimizer to identify which tokens matter most to the outcome.</p>
+<h2 id="8-5-daas-vs-rl-online-vs-offline-data"><a class="anchor" href="#8-5-daas-vs-rl-online-vs-offline-data">#</a>8.5 DAAs vs. RL: Online vs. Offline Data</h2>
+<p>Broadly, the argument boils down to one question: Do we need the inner workings of reinforcement learning, with value functions, policy gradients, and all, to align language models with RLHF? This, like most questions phrased this way, is overly simplistic. Of course, both methods are well-established, but it is important to illustrate where the fundamental differences and performance manifolds lie.</p>
+<p>Multiple reports have concluded that policy-gradient based and RL methods outperform DPO and its variants. The arguments take different forms, from training models with different algorithms but controlled data[29] [30] or studying the role of on-policy data within the RL optimization loop [31]. In all of these cases, DPO algorithms are a hair behind.</p>
+<p>Even with this performance delta, DAA are still used extensively in leading models due to its simplicity. DAAs provide a controlled environment where iterations on training data and other configurations can be made rapidly, and given that data is often far more important than algorithms, using DPO can be fine.</p>
+<p>With the emergence of reasoning models that are primarily trained with RL, further investment will return to using RL for preference-tuning, which in the long-term will improve the robustness of RL infrastructure and cement this margin between DAAs and RL for optimizing from human feedback.</p>
+<p><a href="10-direct-alignment-algorithms.html">[1]432</a></p>
+<p>R. Rafailov, A. Sharma, E. Mitchell, C. D. Manning, S. Ermon, and C. Finn,</p>
+<p>“Direct preference optimization: Your language model is secretly a reward model,” <em>Advances in Neural Information Processing Systems</em>, vol. 36, 2024.</p>
+<p>[2]L. Tunstall <em>et al.</em>, “Zephyr: Direct distillation of LM alignment,” in <em>First conference on</em> <a href="https://openreview.net/forum?id=aKkAwZB6JV"><em>language modeling</em>, 2024. Available: https://openreview. net/forum? id=aKkAwZB6JV</a></p>
+<p>[3]A. Dubey <em>et al.</em>, “The llama 3 herd of models,” <em>arXiv preprint arXiv:2407.21783</em>,</p>
+<p>2024.</p>
+<p>[4]H. Ivison <em>et al.</em>, “Camels in a changing climate: Enhancing lm adaptation with tulu 2,” <em>arXiv preprint arXiv:2311.10702</em>, 2023.</p>
+<p><a href="10-direct-alignment-algorithms.html">[5]32</a></p>
+<p>N. Lambert <em>et al.</em>, “Tulu 3: Pushing frontiers in open language model post-</p>
+<p>training,” <em>arXiv preprint arXiv:2411.15124</em>, 2024.</p>
+<p>[6]B. Adler <em>et al.</em>, “Nemotron-4 340B technical report,” <em>arXiv preprint</em></p>
+<p><em>arXiv:2406.11704</em>, 2024.</p>
+<p>[7]Y. Zhao, R. Joshi, T. Liu, M. Khalman, M. Saleh, and P. J. Liu, “Slic-hf: Sequence</p>
+<p>likelihood calibration with human feedback,” <em>arXiv preprint arXiv:2305.10425</em>, 2023.</p>
+<p>[8]Z. Gao <em>et al.</em>, “Rebel: Reinforcement learning via regressing relative rewards,” in</p>
+<p><em>Advances in neural information processing systems (NeurIPS)</em>, 2024.</p>
+<p>[9]M. G. Azar <em>et al.</em>, “A general theoretical paradigm to understand learning from</p>
+<p>human preferences,” in <em>International conference on artificial intelligence and</em></p>
+<p><em>statistics</em>, PMLR, 2024, pp. 4447–4455.</p>
+<p>[10]A. Amini, T. Vieira, and R. Cotterell, “Direct preference optimization with an offset,” in <em>Annual meeting of the association for computational linguistics (ACL)</em>, 2024.</p>
+<p>[11]J. Hong, N. Lee, and J. Thorne, “Reference-free monolithic preference optimization with odds ratio,” <em>arXiv e-prints</em>, pp. arXiv–2403, 2024.</p>
+<p>[12]Y. Meng, M. Xia, and D. Chen, “Simpo: Simple preference optimization with a</p>
+<p>reference-free reward,” <em>Advances in Neural Information Processing Systems</em>, vol.</p>
+<p>37, pp. 124198–124235, 2025.</p>
+<p>[13]N. Razin, S. Malladi, A. Bhaskar, D. Chen, S. Arora, and B. Hanin, “Unintentional</p>
+<p>unalignment: Likelihood displacement in direct preference optimization,” in</p>
+<p><em>International conference on learning representations (ICLR)</em>, 2025.</p>
+<p>[14]Y. Ren and D. J. Sutherland, “Learning dynamics of llm finetuning,” in <em>International</em> <em>conference on learning representations (ICLR)</em>, 2025.</p>
+<p>[15]T. Xiao, Y. Yuan, H. Zhu, M. Li, and V. G. Honavar, “Cal-dpo: Calibrated direct</p>
+<p>preference optimization for language model alignment,” in <em>Advances in neural</em></p>
+<p><em>information processing systems (NeurIPS)</em>, 2024.</p>
+<p>[16]A. Gupta <em>et al.</em>, “AlphaPO–reward shape matters for LLM alignment,” in <em>International</em> <em>conference on machine learning (ICML)</em>, 2025.</p>
+<p>[17]S. Guo <em>et al.</em>, “Direct language model alignment from online ai feedback,” <em>arXiv</em></p>
+<p><em>preprint arXiv:2402.04792</em>, 2024.</p>
+<p>[18]P. Singhal, N. Lambert, S. Niekum, T. Goyal, and G. Durrett, “D2po: Discriminator-guided dpo with response evaluation models,” <em>arXiv preprint arXiv:2405.01511</em>,</p>
+<p>2024.</p>
+<p>[19]C. Rosset, C.-A. Cheng, A. Mitra, M. Santacroce, A. Awadallah, and T. Xie, “Direct</p>
+<p>nash optimization: Teaching language models to self-improve with general</p>
+<p>preferences,” <em>arXiv preprint arXiv:2404.03715</em>, 2024.</p>
+<p>[20]S. Jung, G. Han, D. W. Nam, and K.-W. On, “Binary classifier optimization for large language model alignment,” in <em>Annual meeting of the association for computational</em> <em>linguistics (ACL)</em>, 2025.</p>
+<p>[21]H. Zhao <em>et al.</em>, “Rainbowpo: A unified framework for combining improvements in</p>
+<p>preference optimization,” in <em>International conference on learning representations</em></p>
+<p><em>(ICLR)</em>, 2025.</p>
+<p>[22]A. Gorbatovski, B. Shaposhnikov, V. Sinii, A. Malakhov, and D. Gavrilov, “The</p>
+<p>differences between direct alignment algorithms are a blur,” <em>arXiv preprint</em></p>
+<p><em>arXiv:2502.01237</em>, 2025.</p>
+<p>[23]G. Cui <em>et al.</em>, “Ultrafeedback: Boosting language models with high-quality feedback,” 2023.</p>
+<p>[24]E. Bakouch <em>et al.</em>, “SmolLM3: smol, multilingual, long-context reasoner.”</p>
+<p>https://huggingface. co/blog/smollm3, 2025.</p>
+<p><a href="https://arxiv.org/abs/2512.13961">[25]T. Olmo <em>et al.</em>, “Olmo 3.” 2025. Available: https://arxiv. org/abs/2512. 13961</a></p>
+<p>[26]S. Geng <em>et al.</em>, “The delta learning hypothesis: Preference tuning on weak data can yield strong gains,” in <em>Second conference on language modeling</em>, 2025. Available:</p>
+<p><a href="https://openreview.net/forum?id=9rwtezthwo">https://openreview. net/forum? id=9rwtezthwo</a></p>
+<p>[27]Y. Dubois, B. Galambosi, P. Liang, and T. B. Hashimoto, “Length-controlled</p>
+<p>alpacaeval: A simple way to debias automatic evaluators,” <em>arXiv preprint</em></p>
+<p><em>arXiv:2404.04475</em>, 2024.</p>
+<p>[28]A. Panickssery, S. Bowman, and S. Feng, “Llm evaluators recognize and favor their own generations,” <em>Advances in Neural Information Processing Systems</em>, 2024.</p>
+<p>[29]H. Ivison <em>et al.</em>, “Unpacking DPO and PPO: Disentangling best practices for learning from preference feedback,” in <em>Advances in neural information processing systems</em></p>
+<p><em>(NeurIPS)</em>, 2024.</p>
+<p>[30]S. Xu <em>et al.</em>, “Is dpo superior to ppo for llm alignment? A comprehensive study,” in <em>International conference on machine learning (ICML)</em>, 2024.</p>
+<p>[31]F. Tajwar <em>et al.</em>, “Preference fine-tuning of llms should leverage suboptimal, on-</p>
+<p>policy data,” in <em>International conference on machine learning (ICML)</em>, 2024.</p>
+</main>
+<nav class="pager" aria-label="翻页">
+<a class="pv" href="09-reasoning-inference-time-scaling.html"><span class="dir">上一章</span><span class="t">Reasoning &amp; Inference-Time Scaling</span></a>
+<a class="nx" href="11-rejection-sampling.html"><span class="dir">下一章</span><span class="t">Rejection Sampling</span></a>
+</nav>
+<div class="lightbox" id="lb" hidden><img alt="放大查看"><button class="x" type="button" aria-label="关闭">&#10005;</button></div>
+<script src="assets/app.js"></script>
+</body>
+</html>

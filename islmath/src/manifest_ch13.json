@@ -1,0 +1,211 @@
+{
+ "chapter": "13",
+ "cn": "多重检验",
+ "en": "Multiple Testing",
+ "book": "14-multiple-testing.html",
+ "count": 20,
+ "equations": [
+  {
+   "id": "eq-13-1",
+   "num": "(13.1)",
+   "page": 566,
+   "img": "eq-p566-286y325-141x380.png",
+   "section": "13.1 A Quick Review of Hypothesis Testing › 13.1.1 Testing a Hypothesis",
+   "link": "../isl/14-multiple-testing.html#eq-13-1",
+   "before": "It is important to note that the treatment of H0 and Ha is asymmetric. H0 is treated as the default state of the world, and we focus on using data to reject H0. If we reject H0, then this provides evidence in favor of Ha. We can think of rejecting H0 as making a discovery about our data: namely, we are discovering that H0 does not hold! By contrast, if we fail to reject H0, then our findings are more nebulous: we will not know whether we failed to reject H0 because our sample size was too small …",
+   "after": "where µ̂t =i=1 xti, µ̂c =i=1 xci, and (13.2) is an estimator of the pooled standard deviation of the two samples.6 Here, s2 t and s2c are unbiased estimators of the variance of the blood pressure in the treatment and control groups, respectively. A large (absolute) value of T provides evidence against H0 : µt = µc, and hence evidence in support of Ha : µt̸ = µc. Step 3: Compute the p-Value In the previous section, we noted that a large (absolute) value of a twosample t-statistic provides evidence against H0. This begs the question: how large is large? In other words, how much evidence against H0 is provided by a given value of the test statistic? The notion of a p-value provides us with a wa…"
+  },
+  {
+   "id": "eq-13-2",
+   "num": "(13.2)",
+   "page": 566,
+   "img": "eq-p566-345y387-139x380.png",
+   "section": "13.1 A Quick Review of Hypothesis Testing › 13.1.1 Testing a Hypothesis",
+   "link": "../isl/14-multiple-testing.html#eq-13-2",
+   "before": "注4 H0 is pronounced “H naught” or “H zero”. FIGURE 13.1 The density function for the N(0, 1) distribution, with the ver- tical line indicating a value of 2.33. 1% of the area under the curve falls to the right of the vertical line, so there is only a 2% chance of observing a N(0, 1) value that is greater than 2.33 or less than −2.33. Therefore, if a test statistic has a (13.1) where µ̂t =i=1 xti, µ̂c =i=1 xci, and",
+   "after": "is an estimator of the pooled standard deviation of the two samples.6 Here, s2 t and s2c are unbiased estimators of the variance of the blood pressure in the treatment and control groups, respectively. A large (absolute) value of T provides evidence against H0 : µt = µc, and hence evidence in support of Ha : µt̸ = µc. Step 3: Compute the p-Value In the previous section, we noted that a large (absolute) value of a twosample t-statistic provides evidence against H0. This begs the question: how large is large? In other words, how much evidence against H0 is provided by a given value of the test statistic? The notion of a p-value provides us with a way to formalize as well as answer this questio…"
+  },
+  {
+   "id": "eq-13-4",
+   "num": "(13.4)",
+   "page": 571,
+   "img": "eq-p571-541y549-161x380.png",
+   "section": "13.3 The Family-Wise Error Rate › 13.3.1 What is the Family-Wise Error Rate?",
+   "link": "../isl/14-multiple-testing.html#eq-13-4",
+   "before": "FWER(α)=1 −Pr(V = 0) =1 −Pr(do not falsely reject any null hypotheses) j=1 {do not falsely reject H0j} Recall from basic probability that if two events A and B are independent, then Pr(A∩B) = Pr(A) Pr(B). Therefore, if we make the additional rather strong assumptions that the m tests are independent and that all m null hypotheses are true, then 0.05. For example, in order to control the FWER at 0.05 when testing m = 50 null hypotheses, we must control the Type I error for each null hypothesis at…",
+   "after": "(13.5) FIGURE 13.2 The family-wise error rate, as a function of the number of hypotheses tested (displayed on the log scale), for three values of α: α = 0.05 (orange), α = 0.01 (blue), and α = 0.001 (purple). The dashed line indicates Hence, if we test only one null hypothesis, then FWER(α) = 1−(1−α)1 = α, so the Type I error rate and the FWER are equal. However, if we perform m = 100 independent tests, then FWER(α) = 1 −(1 −α)100. For instance, taking α = 0.05 leads to a FWER of 1 −(1 −0.05)100 = 0.994. In other words, we are virtually guaranteed to make at least one Type I error! Figure 13.2 displays (13.5) for various values of m, the number of hypotheses, and α, the Type I error. We see …"
+  },
+  {
+   "id": "eq-13-5",
+   "num": "(13.5)",
+   "page": 571,
+   "img": "eq-p571-617y657-151x380.png",
+   "section": "13.3 The Family-Wise Error Rate › 13.3.1 What is the Family-Wise Error Rate?",
+   "link": "../isl/14-multiple-testing.html#eq-13-5",
+   "before": "13.3.1What is the Family-Wise Error Rate?# Recall that the Type I error rate is the probability of rejecting H0 if H0 is true. The family-wise error rate (FWER) generalizes this notion to the setting of m null hypotheses, H01,⋯, H0m, and is defined as the probability of making at least one Type I error. To state this idea more formally, consider Table 13.2, which summarizes the possible outcomes when performing m hypothesis tests. Here, V represents the number of Type I errors (also known as fal…",
+   "after": "FIGURE 13.2 The family-wise error rate, as a function of the number of hypotheses tested (displayed on the log scale), for three values of α: α = 0.05 (orange), α = 0.01 (blue), and α = 0.001 (purple). The dashed line indicates Hence, if we test only one null hypothesis, then FWER(α) = 1−(1−α)1 = α, so the Type I error rate and the FWER are equal. However, if we perform m = 100 independent tests, then FWER(α) = 1 −(1 −α)100. For instance, taking α = 0.05 leads to a FWER of 1 −(1 −0.05)100 = 0.994. In other words, we are virtually guaranteed to make at least one Type I error! Figure 13.2 displays (13.5) for various values of m, the number of hypotheses, and α, the Type I error. We see that se…"
+  },
+  {
+   "id": "eq-13-6",
+   "num": "(13.6)",
+   "page": 573,
+   "img": "eq-p573-462y514-161x380.png",
+   "section": "13.3 The Family-Wise Error Rate › 13.3.1 What is the Family-Wise Error Rate? › 13.3.2 Approaches to Control the Family-Wise Error Rate",
+   "link": "../isl/14-multiple-testing.html#eq-13-6",
+   "before": "In this section, we briefly survey some approaches to control the FWER. We will illustrate these approaches on the Fund dataset, which records the monthly percentage excess returns for 2,000 fund managers over n = 50 months.13 Table 13.3 provides relevant summary statistics for the first five managers. We first present the Bonferroni method and Holm’s step-down procedure, which are very general-purpose approaches for controlling the FWER that can be applied whenever m p-values have been computed…",
+   "after": "In (13.6), the inequality results from the fact that for any two events A and B, Pr(A ∪B) ≤Pr(A) + Pr(B), regardless of whether A and B are independent. The Bonferroni method, or Bonferroni correction, sets the threshold for rejecting each hypothesis test to α/m, so that Pr(Aj) ≤α/m. Equation 13.6 implies that 注13 Excess returns correspond to the additional return the fund manager achieves beyond the market’s overall return. So if the market increases by 5% during a given period and the fund manager achieves a 7% return, their excess return would be 7% − 5% = 2%. Holm’s Step-Down Procedure Holm’s method, also known as Holm’s step-down procedure or the Holm– Bonferroni method, is an alternati…"
+  },
+  {
+   "id": "eq-13-7",
+   "num": "(13.7)",
+   "page": 575,
+   "img": "eq-p575-189y197-188x380.png",
+   "section": "13.3 The Family-Wise Error Rate › 13.3.1 What is the Family-Wise Error Rate? › 13.3.2 Approaches to Control the Family-Wise Error Rate",
+   "link": "../isl/14-multiple-testing.html#eq-13-7",
+   "before": "2. Compute p-values, p1,⋯, pm, for the m null hypotheses H01,⋯, H0m. 3. Order the m p-values so that p(1) ≤p(2) ≤⋯ ≤p(m). 4. DefineKZ 5. Reject all null hypotheses H0j for which pj < p(L).",
+   "after": "Two Special Cases: Tukey’s Method and Scheffé’s Method Bonferroni’s method and Holm’s method can be used in virtually any setting in which we wish to control the FWER for m null hypotheses: they p-values for tests of m = 10 null hypotheses. The p-values corresponding to the m0 = 2 true null hypotheses are displayed in black, and the rest are in red. When controlling the FWER at level 0.05, the Bonferroni procedure rejects all null hypotheses that fall below the black line, and the Holm procedure rejects all null hypotheses that fall below the blue line. The region between the blue and black lines indicates null hypotheses that are rejected using the Holm procedure but not using the Bonferron…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 575,
+   "img": "eq-p575-326y334-86x419.png",
+   "section": "13.3 The Family-Wise Error Rate › 13.3.1 What is the Family-Wise Error Rate? › 13.3.2 Approaches to Control the Family-Wise Error Rate",
+   "link": "../isl/14-multiple-testing.html",
+   "before": "(13.7) Two Special Cases: Tukey’s Method and Scheffé’s Method Bonferroni’s method and Holm’s method can be used in virtually any setting in which we wish to control the FWER for m null hypotheses: they p-values for tests of m = 10 null hypotheses. The p-values corresponding to the m0 = 2 true null hypotheses are displayed in black, and the rest are in red. When controlling the FWER at level 0.05, the Bonferroni procedure rejects all null hypotheses that fall below the black line, and the Holm pr…",
+   "after": "Figure 13.3 provides an illustration of the Bonferroni and Holm methods on three simulated data sets in a setting involving m = 10 hypothesis tests, of which m0 = 2 of the null hypotheses are true. Each panel displays the ten corresponding p-values, ordered from smallest to largest, and plotted on a log scale. The eight red points represent the false null hypotheses, and the two black points represent the true null hypotheses. We wish to control the FWER at level 0.05. The Bonferroni procedure requires us to reject all null hypotheses for which the p-value is below 0.005; this is represented by the black horizontal line. The Holm procedure requires us to reject all null hypotheses that fall …"
+  },
+  {
+   "id": "eq-13-8",
+   "num": "(13.8)",
+   "page": 577,
+   "img": "eq-p577-521y551-167x380.png",
+   "section": "13.3 The Family-Wise Error Rate › 13.3.1 What is the Family-Wise Error Rate? › 13.3.2 Approaches to Control the Family-Wise Error Rate",
+   "link": "../isl/14-multiple-testing.html#eq-13-8",
+   "before": "FIGURE 13.4 Each panel displays, for a separate simulation, the sorted less conservative. This is exactly the idea behind Tukey’s method: when performing m = G(G −1)/2 pairwise comparisons of G means, it allows us to control the FWER at level α while rejecting all null hypotheses for which the p-value falls below αT, for some αT > α/m. Figure 13.4 illustrates Tukey’s method on three simulated data sets in a setting with G = 6 means, with µ1 = µ2 = µ3 = µ4 = µ5̸ = µ6. Therefore, of the m = G(G −1…",
+   "after": "Scheffé’s method is designed for exactly this setting. It allows us to compute a value αS such that rejecting the null hypothesis H0 in (13.8) if the p-value is below αS will control the Type I error at level α. It turns out that for the Fund example, in order to control the Type I error at level α = 0.05, we must set αS = 0.002. Therefore, we are unable to reject H0 in (13.8), despite the apparently very small p-value of 0.004. An important advantage of Scheffé’s method is that we can use this same threshold of αS = 0.002 in order to perform a pairwise comparison of any split of the managers into two groups: for instance, we could also test H0 : 31 (µ1 + µ2 + µ3) = 12 (µ4 + µ5) and H0 : 14 …"
+  },
+  {
+   "id": "eq-13-10",
+   "num": "(13.10)",
+   "page": 581,
+   "img": "eq-p581-319y335-202x375.png",
+   "section": "13.4 The False Discovery Rate › 13.4.1 Intuition for the False Discovery Rate › 13.4.2 The Benjamini–Hochberg Procedure",
+   "link": "../isl/14-multiple-testing.html#eq-13-10",
+   "before": "1. Specify q, the level at which to control the FDR. 2. Compute p-values, p1,⋯, pm, for the m null hypotheses H01,⋯, H0m. 3. Order the m p-values so that p(1) ≤p(2) ≤⋯ ≤p(m). 4. Define",
+   "after": "5. Reject all null hypotheses H0j for which pj ≤p(L). Algorithm 13.2 is known as the Benjamini–Hochberg procedure. The crux of this procedure lies in (13.10). For example, consider again the first five managers in the Fund dataset, presented in Table 13.3. (In this example, m = 5, although typically we control the FDR in settings involving a much greater number of null hypotheses.) We see that p(1) = 0.006 < 0.05 × 1/5, 0.05 × 4/5, and p(5) = 0.918 > 0.05 × 5/5. Therefore, to control the FDR at 5%, we reject the null hypotheses that the first and third fund managers perform no better than chance. As long as the m p-values are independent or only mildly dependent, then the Benjamini–Hochberg …"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 581,
+   "img": "eq-p581-445y453-86x419.png",
+   "section": "13.4 The False Discovery Rate › 13.4.1 Intuition for the False Discovery Rate › 13.4.2 The Benjamini–Hochberg Procedure",
+   "link": "../isl/14-multiple-testing.html",
+   "before": "4. Define (13.10) 5. Reject all null hypotheses H0j for which pj ≤p(L). Algorithm 13.2 is known as the Benjamini–Hochberg procedure. The crux of this procedure lies in (13.10). For example, consider again the first five managers in the Fund dataset, presented in Table 13.3. (In this example, m = 5, although typically we control the FDR in settings involving a much greater number of null hypotheses.) We see that p(1) = 0.006 < 0.05 × 1/5, 0.05 × 4/5, and p(5) = 0.918 > 0.05 × 5/5. Therefore, to c…",
+   "after": "As long as the m p-values are independent or only mildly dependent, then the Benjamini–Hochberg procedure guarantees16 that FDR ≤q. In other words, this procedure ensures that, on average, no more than a fraction q of the rejected null hypotheses are false positives. Remarkably, this holds regardless of how many null hypotheses are true, and regardless of the distribution of the p-values for the null hypotheses that are false. Therefore, the Benjamini–Hochberg procedure gives us a very easy way to determine, given a set of m p-values, which null hypotheses to reject in order to control the FDR at any pre-specified level q. 注16 However, the proof is well beyond the scope of this book."
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 582,
+   "img": "eq-p582-53y71-133x389.png",
+   "section": "13.4 The False Discovery Rate › 13.4.1 Intuition for the False Discovery Rate › 13.4.2 The Benjamini–Hochberg Procedure",
+   "link": "../isl/14-multiple-testing.html",
+   "before": "As long as the m p-values are independent or only mildly dependent, then the Benjamini–Hochberg procedure guarantees16 that FDR ≤q. In other words, this procedure ensures that, on average, no more than a fraction q of the rejected null hypotheses are false positives. Remarkably, this holds regardless of how many null hypotheses are true, and regardless of the distribution of the p-values for the null hypotheses that are false. Therefore, the Benjamini–Hochberg procedure gives us a very easy way …",
+   "after": "Figure 13.6 displays the results of applying the Bonferroni and Benjamini– Hochberg procedures on the Fund data set, using the full set of m = 2,000 fund managers, of which the first five were displayed in Table 13.3. When the FWER is controlled at level 0.3 using Bonferroni, only one null hypothesis is rejected; that is, we can conclude only that a single fund manager is beating the market. This is despite the fact that a substantial portion of the m = 2,000 fund managers appear to have beaten the market without performing correction for multiple testing — for instance, 13 of them have p-values below 0.001. By contrast, when the FDR is controlled at level 0.3, we can conclude that 279 fund …"
+  },
+  {
+   "id": "eq-13-11",
+   "num": "(13.11)",
+   "page": 584,
+   "img": "eq-p584-142y189-152x375.png",
+   "section": "13.5 A Re-Sampling Approach to p-Values and False Discovery Rates › 13.5.1 A Re-Sampling Approach to the p-Value",
+   "link": "../isl/14-multiple-testing.html#eq-13-11",
+   "before": "The discussion in this section is more challenging than the preceding sections in this chapter, and can be safely skipped by a reader who is content to use the theoretical null distribution to compute p-values for his or her test statistics. 13.5.1A Re-Sampling Approach to the p-Value# 17If we assume that X and Y are normally distributed, then T in (13.11) follows a Algorithm 13.3 Re-Sampling p-Value for a Two-Sample t-Test We return to the example of Section 13.1.1, in which we wish to test whe…",
+   "after": "where µ̂X =i=1 xi, µ̂Y =i=1 yi, s =, and s2 X and s2Y are unbiased estimators of the variances in the two groups. A large (absolute) value of T provides evidence against H0. If nX and nY are large, then T in (13.11) approximately follows a N(0, 1) distribution. But if nX and nY are small, then in the absence of a strong assumption about the distribution of X and Y, we do not know the theoretical null distribution of T.17 In this case, it turns out that we can approximate the null distribution of T using a re-sampling approach, or more specifically, a permutation approach. To do this, we conduct a thought experiment. If H0 holds, so that E(X) = E(Y), and we make the stronger assumption that t…"
+  },
+  {
+   "id": "eq-13-12",
+   "num": "(13.12)",
+   "page": 584,
+   "img": "eq-p584-496y534-186x375.png",
+   "section": "13.5 A Re-Sampling Approach to p-Values and False Discovery Rates › 13.5.1 A Re-Sampling Approach to the p-Value",
+   "link": "../isl/14-multiple-testing.html#eq-13-12",
+   "before": "X and s2Y are unbiased estimators of the variances in the two groups. A large (absolute) value of T provides evidence against H0. If nX and nY are large, then T in (13.11) approximately follows a N(0, 1) distribution. But if nX and nY are small, then in the absence of a strong assumption about the distribution of X and Y, we do not know the theoretical null distribution of T.17 In this case, it turns out that we can approximate the null distribution of T using a re-sampling approach, or more spe…",
+   "after": "the fraction of permuted datasets for which the value of the test statistic is at least as extreme as the value observed on the original data. This procedure is summarized in Algorithm 13.3. 注t-distribution with nX + nY − 2 degrees of freedom under H0. However, in practice, the distribution of random variables is rarely known, and so it can be preferable to perform a re-sampling approach instead of making strong and unjustified assumptions. If the results of the re-sampling approach disagree with the results of assuming a theoretical null distribution, then the results of the re-sampling approach are more trustworthy. 1. Compute T, defined in (13.11), on the original data x1,⋯, xnX and y1,⋯,…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 585,
+   "img": "eq-p585-182y190-133x394.png",
+   "section": "13.5 A Re-Sampling Approach to p-Values and False Discovery Rates › 13.5.1 A Re-Sampling Approach to the p-Value",
+   "link": "../isl/14-multiple-testing.html",
+   "before": "1. Compute T, defined in (13.11), on the original data x1,⋯, xnX and y1,⋯, ynY. 2. For b = 1,⋯, B, where B is a large number (e.g. B = 10,000): (a) Permute the nX + nY observations at random. Call the first nX permuted observations x∗ 1,⋯, x∗nX, and call the remaining nY",
+   "after": "Now, suppose that we wish to control the FDR for m null hypotheses, H01,⋯, H0m, in a setting in which either no theoretical null distribution is available, or else we simply prefer to avoid the use of a theoretical null T = −2.09. Its theoretical and re-sampling null distributions are almost identical. The theoretical p-value equals 0.041 and the re-sampling p-value equals 0.042. We try out this procedure on the Khan dataset, which consists of expression measurements for 2,308 genes in four sub-types of small round blood cell tumors, a type of cancer typically seen in children. This dataset is part of the ISLR2 package. We restrict our attention to the two sub-types for which the most observ…"
+  },
+  {
+   "id": "eq-13-13",
+   "num": "(13.13)",
+   "page": 586,
+   "img": "eq-p586-568y611-192x375.png",
+   "section": "13.5 A Re-Sampling Approach to p-Values and False Discovery Rates › 13.5.1 A Re-Sampling Approach to the p-Value › 13.5.2 A Re-Sampling Approach to the False Discovery Rate",
+   "link": "../isl/14-multiple-testing.html#eq-13-13",
+   "before": "FIGURE 13.8 The 877th gene in the Khan dataset has a test statistic of T = −0.57. Its theoretical and re-sampling null distributions are quite different. The theoretical p-value equals 0.571, and the re-sampling p-value equals 0.673. distribution. As in Section 13.5.1, we make use of a two-sample t-statistic for each hypothesis, leading to the test statistics T1,⋯, Tm. We could simply compute a p-value for each of the m null hypotheses, as in Section 13.5.1, and then apply the Benjamini–Hochberg…",
+   "after": "Now suppose we reject any null hypothesis for which the test statistic exceeds c in absolute value. Then computing R in the denominator on the right-hand side of (13.13) is straightforward: R = )m j=1 1(|Tj|≥c). In Sections 13.5.1 and 13.5.2, we considered testing null hypotheses of the form H0 : E(X) = E(Y) using a two-sample t-statistic (13.11), for which we Algorithm 13.4 Plug-In FDR for a Two-Sample T-Test However, the numerator E(V) on the right-hand side of (13.13) is more challenging. This is the expected number of false positives associated with rejecting any null hypothesis for which the test statistic exceeds c in absolute value. At the risk of stating the obvious, estimating V is …"
+  },
+  {
+   "id": "eq-13-14",
+   "num": "(13.14)",
+   "page": 587,
+   "img": "eq-p587-457y490-183x375.png",
+   "section": "13.5 A Re-Sampling Approach to p-Values and False Discovery Rates › 13.5.1 A Re-Sampling Approach to the p-Value › 13.5.2 A Re-Sampling Approach to the False Discovery Rate",
+   "link": "../isl/14-multiple-testing.html#eq-13-14",
+   "before": "1 ,⋯, x(njX) and y1(j ),⋯, yn(jY) denote the data associated with the jth null hypothesis, j = 1,⋯, m. We permute these nX + nY observations at random, and then compute the t-statistic on the permuted data. For this permuted data, we know that all of the null hypotheses H01,⋯, H0m hold; therefore, the number of permuted t-statistics that exceed the threshold c in absolute value provides an estimate for E(V). This estimate can be further improved by repeating the permutation process B times, for …",
+   "after": "for j = 1,⋯, m, instead of as in (13.12), then applying the Benjamini– Hochberg procedure to these re-sampled p-values is exactly equivalent to Algorithm 13.4. Note that (13.14) is an alternative to (13.12) that pools the information across all m hypothesis tests in approximating the null distribution. 13.5.3When Are Re-Sampling Approaches Useful?# 注18 To implement Algorithm 13.4 efficiently, the same set of permutations in Step 2(b)i. should be used for all m null hypotheses. 1. Select a threshold c, where c > 0."
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 588,
+   "img": "eq-p588-292y300-177x279.png",
+   "section": "13.5 A Re-Sampling Approach to p-Values and False Discovery Rates › 13.5.1 A Re-Sampling Approach to the p-Value › 13.5.2 A Re-Sampling Approach to the False Discovery Rate › 13.5.3 When Are Re-Sampling Approaches Useful?",
+   "link": "../isl/14-multiple-testing.html",
+   "before": "ii. Compute (13.11) on the permuted data x∗(j),⋯, x∗(j) 3. Compute R = )m",
+   "after": "approximated the null distribution via a re-sampling approach. We saw that using the re-sampling approach gave us substantially different results from using the theoretical p-value approach in Figure 13.8, but not in Figure 13.7. In general, there are two settings in which a re-sampling approach is particularly useful: 1. Perhaps no theoretical null distribution is available. This may be the case if you are testing an unusual null hypothesis H0, or using an unsual test statistic T."
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 600,
+   "img": "eq-p600-245y367-191x314.png",
+   "section": "13.7 Exercises › Conceptual",
+   "link": "../isl/14-multiple-testing.html",
+   "before": "13.7Exercises# Conceptual# Suppose we test m null hypotheses, all of which are true. We control the Type I error for each null hypothesis at level α. For each subproblem, justify your answer.In total, how many Type I errors do we expect to make?Suppose that the m tests that we perform are independent. What is the family-wise error rate associated with these m tests? Hint: If two events A and B are independent, then Pr(A ∩B) = Pr(A) Pr(B).Suppose that m = 2, and that the p-values for the two test…",
+   "after": "TABLE 13.4 p-values for Exercise 4. Suppose we test m = 10 hypotheses, and obtain the p-values shown in Table 13.4.Suppose that we wish to control the Type I error for each null hypothesis at level α = 0.05. Which null hypotheses will we reject?Now suppose that we wish to control the FWER at level α = 0.05. Which null hypotheses will we reject? Justify your answer.Now suppose that we wish to control the FDR at level q = 0.05. Which null hypotheses will we reject? Justify your answer.Now suppose that we wish to control the FDR at level q = 0.2. Which null hypotheses will we reject? Justify your answer.Of the null hypotheses rejected at FDR level q = 0.2, approximately how many are false posit…"
+  },
+  {
+   "id": "eq-13-3",
+   "num": "(13.3)",
+   "page": 570,
+   "img": null,
+   "section": "（原书有编号，网页版解析器未切图）",
+   "link": "../isl/14-multiple-testing.html#eq-13-3",
+   "before": "",
+   "after": "",
+   "fromPdf": true
+  },
+  {
+   "id": "eq-13-9",
+   "num": "(13.9)",
+   "page": 579,
+   "img": null,
+   "section": "（原书有编号，网页版解析器未切图）",
+   "link": "../isl/14-multiple-testing.html#eq-13-9",
+   "before": "",
+   "after": "",
+   "fromPdf": true
+  }
+ ]
+}

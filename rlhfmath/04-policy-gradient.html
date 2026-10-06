@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Ch 6 策略梯度 · RLHF 数学推导手册</title>
+<link rel="icon" href="assets/icon.svg">
+<link rel="stylesheet" href="assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('rlhf-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light')}catch(e){}}());</script>
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="bar">
+<a class="ib" href="index.html" aria-label="目录">&#9776;</a>
+<span class="title">Ch 6 策略梯度</span>
+<button class="ib" id="theme" type="button" aria-label="切换深色模式">&#9681;</button>
+</header>
+<main id="main">
+<h1 class="chapter"><span class="chno">Ch 6</span>策略梯度全家桶</h1>
+<div class="callout"><div class="lab">This chapter covers</div><ul><li>Eq 6.1–6.8 回报、值函数、目标的积分形式</li><li>Eq 6.9–6.14 log trick 与 Ψ<sub>t</sub> 六种形态、baseline 原理</li><li>Eq 6.15–6.21 REINFORCE / RLOO（含 6.21 代数变形）</li><li>Eq 6.22–6.31 PPO / GRPO / Dr.GRPO＝RLOO 缩放</li><li>Eq 6.32–6.37 重要性采样 / GSPO / CISPO</li><li>Eq 6.38 单步简化、Eq 6.39–6.41 GAE，外加 loss 聚合三种除法</li></ul></div>
+
+<h2 id="g1"><a class="anchor" href="#g1">#</a>Eq 6.1–6.4 回报与值：G<sub>t</sub>、V、J</h2>
+<div class="math"><span class="eqtag">Eq 6.1</span><br>G<sub>t</sub> ＝ R<sub>t+1</sub>＋γR<sub>t+2</sub>＋… ＝ Σ<sub>k＝0</sub><sup>∞</sup> γ<sup>k</sup>R<sub>t+k+1</sub><br><span class="eqtag">Eq 6.2 递推</span><br>G<sub>t</sub> ＝ R<sub>t+1</sub>＋γG<sub>t+1</sub><br><span class="eqtag">Eq 6.3–6.4</span><br>V(s)＝E[G<sub>t</sub>|S<sub>t</sub>＝s]，J(θ)＝Σ<sub>s</sub> d<sub>π</sub>(s)V<sup>π</sup>(s)</div>
+<ol class="steps">
+<li><b>6.1→6.2：</b>把 6.1 第二项起提 γ：γ(R<sub>t+2</sub>＋γR<sub>t+3</sub>＋…)＝γG<sub>t+1</sub>，剩首项 R<sub>t+1</sub>。这是后面 TD、GAE 递推的源头。</li>
+<li><b>6.3：</b>V 是“从 s 出发的平均未来折扣和”。Q(s,a) 是“先强制做 a 再按 π 走”；A＝Q−V（好多少）。</li>
+<li><b>6.4：</b>J 按访问频率 d<sub>π</sub>(s) 加权平均各状态值。实践中不枚举 s，改采样 B 条 (x,y) 取平均：Ĵ＝(1/B)ΣR(x<sub>i</sub>,y<sub>i</sub>)（bandit 版）或按步求和版——§0 蒙特卡洛。</li>
+</ol>
+
+<h2 id="g5678"><a class="anchor" href="#g5678">#</a>Eq 6.5–6.8 目标的三种写法</h2>
+<div class="math"><span class="eqtag">Eq 6.5 / 6.6 / 6.7 / 6.8</span><br>θ←θ＋α∇J；J＝E<sub>τ∼π</sub>[R(τ)]＝∫p<sub>θ</sub>(τ)R(τ)dτ；p<sub>θ</sub>(τ)＝p(s<sub>0</sub>)∏π(a<sub>t</sub>|s<sub>t</sub>)p(s<sub>t+1</sub>|s<sub>t</sub>,a<sub>t</sub>)</div>
+<p>6.5 是梯度上升（α 学习率）；6.6 把 6.4 改写成“轨迹期望”；6.7 把期望写成积分（连续版的 ΣP·f）；6.8 即 Ch 3 的 Eq 3.1。注意 R(τ)＝Σr<sub>t</sub>（可折扣）。</p>
+
+<h2 id="g91011"><a class="anchor" href="#g91011">#</a>Eq 6.9–6.11 log-derivative trick（全章最重要 5 行）</h2>
+<div class="math"><span class="eqtag">Eq 6.9–6.11</span><br>∇J＝∫∇p<sub>θ</sub>(τ)R dτ；∇log p＝∇p/p ⇒ ∇p＝p∇log p；∴ ∇J＝E[∇log p<sub>θ</sub>(τ)·R(τ)]</div>
+<div class="recall"><div class="lab">前置 · 为什么能把 ∇ 塞进 E</div>∇J＝∇∫pR＝∫∇pR（R 与 θ 无关，∇ 只打 p）。再把 ∇p 换成 p∇log p，p 正好和积分凑成期望。这一步把“对分布求导”变成“对 log 概率求导再按分布平均”——采样就能算。</div>
+<ol class="steps">
+<li><b>展开 log p(τ)：</b>log p＝log p(s<sub>0</sub>)＋Σlog π＋Σlog p(s′|s,a)。前两项与 θ 无关（∇＝0），只剩 Σ∇log π(a<sub>t</sub>|s<sub>t</sub>)。</li>
+<li><b>代回：</b>∇J＝E[ (Σ<sub>t</sub>∇log π(a<sub>t</sub>|s<sub>t</sub>))·R(τ) ]。直觉：整条轨迹分高（R 大），就把沿途每个动作的 log prob 都往上推；分低就往下推。</li>
+<li><b>方差警告：</b>用整条 R(τ) 给每一步记功，噪声极大——于是引入 baseline/优势（下一节）。</li>
+</ol>
+
+<h2 id="g12"><a class="anchor" href="#g12">#</a>Eq 6.12–6.13 Ψ<sub>t</sub> 六兄弟＋语言模型版优势</h2>
+<div class="math"><span class="eqtag">Eq 6.12 通式</span><br>g＝E[ Σ<sub>t</sub> ∇log π(a<sub>t</sub>|s<sub>t</sub>)·Ψ<sub>t</sub> ]，Ψ<sub>t</sub> 可取：①R(τ) ②Σ<sub>t′≥t</sub>r<sub>t′</sub>(＝G<sub>t</sub>) ③G<sub>t</sub>−b(s<sub>t</sub>) ④Q ⑤A ⑥r＋V(s′)−V(s)(TD 残差)<br><span class="eqtag">Eq 6.13 LM 版</span><br>A(s,a)＝Q(s,a)−V(s)＝V(s+a)−V(s)＝r＋γV(s+a)−V(s)</div>
+<p>② 比 ① 好：t 时刻前的奖励与当前动作无关，去掉降方差（因果性）。③–⑤ 再减 baseline（见下）。⑥ 是单步 TD 版。语言模型里 Q(s,a)＝V(s+a)（把“prompt＋continuation”看成新状态），故优势＝整句值减 prompt 值。</p>
+
+<h2 id="g1516"><a class="anchor" href="#g1516">#</a>Eq 6.14–6.18 baseline：为什么减个均值梯度不变</h2>
+<div class="math"><span class="eqtag">Eq 6.14 / 6.15 / 6.17 / 6.18</span><br>∇J＝E[Σ∇log π·R<sub>t</sub>]；→ E[Σ∇log π·A]；REINFORCE: E[Σ∇log π·(G<sub>t</sub>−b)]<br><span class="eqtag">Eq 6.16 REINFORCE 三件套</span><br>Δθ＝α(r−b)e（步长×中心化奖励×eligibility＝log prob 梯度）</div>
+<div class="recall"><div class="lab">前置 · baseline 无偏性</div>E<sub>a∼π</sub>[∇log π(a|s)·b(s)]＝b(s)·Σ∇π＝b(s)·∇Σπ＝b(s)·∇1＝0。所以减任何只与 s 有关的 b(s)，期望梯度不变，但方差大降。记住：<b>与 a 无关才能减</b>。</div>
+<p>最简 b＝batch 均值；更好 b＝V(s)（学出来的）。(G−b) 即优势 A 的蒙特卡洛版。Eq 6.16 的 e 在现代实现里就是 ∇log π。</p>
+
+<h2 id="g1921"><a class="anchor" href="#g1921">#</a>Eq 6.19–6.21 RLOO：leave-one-out 基线</h2>
+<div class="math"><span class="eqtag">Eq 6.19 / 6.20 / 6.21</span><br>b(s,a<sub>k</sub>)＝1/(K−1)·Σ<sub>i≠k</sub>R(s,a<sub>i</sub>)；A＝R<sub>k</sub>−b；＝K/(K−1)·(R<sub>k</sub>−(1/K)Σ<sub>i</sub>R<sub>i</sub>)</div>
+<ol class="steps">
+<li><b>做法：</b>同一 prompt 采 K 个回答，给第 k 个的基线＝<b>其他 K−1 个的均值</b>（不用自己，避免 bias）。</li>
+<li><b>6.21 推导：</b>记均值 m̄＝(1/K)ΣR<sub>i</sub>。b＝(K·m̄−R<sub>k</sub>)/(K−1)。A＝R<sub>k</sub>−b＝R<sub>k</sub>−(K·m̄−R<sub>k</sub>)/(K−1)＝[R<sub>k</sub>(K−1)−K·m̄＋R<sub>k</sub>]/(K−1)＝K(R<sub>k</sub>−m̄)/(K−1)。证毕。</li>
+<li><b>例子：</b>K＝4，R＝[3,1,1,1]，m̄＝1.5。对 k＝1：b＝(1+1+1)/3＝1，A＝2；用 6.21：4/3×(3−1.5)＝2。一致。</li>
+<li><b>实现：</b>同一 advantage 广播到该回答的<b>所有 token</b>（bandit 风格）；KL 是把每 token KL 求和后折进序列 reward 再算 A（与 PPO 的 per-token 扣减不同）。</li>
+</ol>
+
+<h2 id="g2225"><a class="anchor" href="#g2225">#</a>Eq 6.22–6.25 PPO：ratio＋clip＋min</h2>
+<div class="math"><span class="eqtag">Eq 6.22 / 6.23 / 6.25</span><br>J＝min( r·A, clip(r,1−ε,1＋ε)·A )，r＝π<sub>θ</sub>/π<sub>old</sub><br><span class="eqtag">Eq 6.24 per-token LM 版</span><br>J＝(1/|a|)Σ<sub>t</sub> min( r<sub>t</sub>A<sub>t</sub>, clip(r<sub>t</sub>)A<sub>t</sub> )（1/|a| 是实现习惯，非原始推导）</div>
+<div class="recall"><div class="lab">前置 · 重要性采样一句话</div>想用旧策略采的数据估计新策略的期望，乘权重 r＝π<sub>new</sub>/π<sub>old</sub> 纠偏。r＝1.2 表示新策略更喜欢这个样本，梯度放大 1.2 倍。</div>
+<ol class="steps">
+<li><b>r 从哪来：</b>多步梯度时 π<sub>θ</sub> 已漂离采样时的 π<sub>old</sub>，期望须纠偏。首步 r＝1（还没动）。</li>
+<li><b>正优势 A＞0（好动作，想加概率）：</b>r＜1−ε→用 rA（正常推）；1−ε≤r≤1＋ε→用 rA；r＞1＋ε→用 (1＋ε)A（常数，梯度 0，<b>不再推</b>）。总结：只在 π<sub>new</sub>≤(1＋ε)π<sub>old</sub> 时更新。</li>
+<li><b>负优势 A＜0（坏动作，想降概率）：</b>r＜1−ε→常数（梯度 0，<b>不再踩</b>）；中间→用 rA；r＞1＋ε→用 rA（继续降）。总结：只在 π<sub>new</sub>≥(1−ε)π<sub>old</sub> 时更新。两表合起来＝“trust region 内＝普通 PG，之外梯度置零”。</li>
+<li><b>loss 符号：</b>代码写 pg1＝−A·r，pg2＝−A·clip(r)，取 max（＝−min），再平均。value 另有一个 MSE loss（critic），见原书 6.2.4。</li>
+</ol>
+
+<h2 id="g2628"><a class="anchor" href="#g2628">#</a>Eq 6.26–6.28 GRPO：组内标准化＋loss 里加 KL</h2>
+<div class="math"><span class="eqtag">Eq 6.26 / 6.27 / 6.28</span><br>J＝(1/G)Σ<sub>i</sub>[ min(r<sub>i</sub>A<sub>i</sub>,clip(r<sub>i</sub>)A<sub>i</sub>) −βD<sub>KL</sub>(π‖π<sub>ref</sub>) ]；A<sub>i</sub>＝(r<sub>i</sub>−mean)/std（per-token 版再除 |a<sub>i</sub>|）</div>
+<ol class="steps">
+<li><b>与 PPO 两处不同：</b>① 无 value 网络（省一份模型内存；value 难训）；② KL 不折进 reward，直接加在 loss 后（β·KL）。RLOO 把 KL 折进 reward 再算 A，GRPO 把 KL 单列——数值等价类不同，实现习惯不同。</li>
+<li><b>优势：</b>同 prompt 的 G 个回答算 mean/std，A<sub>i</sub> 是“比组内平均好几个标准差”。std 小（全对/全错）时 A 被放大——这是 bias（简单题权重虚高），Dr.GRPO 要删 std（下节）。</li>
+<li><b>例子：</b>r＝[3,1,1,1]，mean＝1.5，std≈1.0，则 A≈[1.5,−0.5,−0.5,−0.5]。</li>
+</ol>
+
+<h2 id="g2931"><a class="anchor" href="#g2931">#</a>Eq 6.29–6.31 Dr.GRPO＝RLOO 的缩放版</h2>
+<div class="math"><span class="eqtag">Eq 6.29 / 6.30 / 6.31</span><br>Ã<sub>i</sub>＝r<sub>i</sub>−(1/G)Σr<sub>j</sub>（去 std）；A<sup>RLOO</sup><sub>i</sub>＝r<sub>i</sub>−1/(G−1)Σ<sub>j≠i</sub>r<sub>j</sub>；G/(G−1)·Ã<sub>i</sub>＝A<sup>RLOO</sup><sub>i</sub></div>
+<ol class="steps">
+<li><b>证：</b>G/(G−1)·(r<sub>i</sub>−m̄)＝[G·r<sub>i</sub>−Σr<sub>j</sub>]/(G−1)＝[ (G−1)r<sub>i</sub>−Σ<sub>j≠i</sub>r<sub>j</sub> ]/(G−1)＝r<sub>i</sub>−Σ<sub>j≠i</sub>r<sub>j</sub>/(G−1)＝RLOO。证毕。</li>
+<li><b>含义：</b>常数缩放 G/(G−1) 可被学习率吸收，故两者等价（差个 lr）。去 std 后难样本（1 对多错）不再被 std 放大/缩小，学得更稳，但简单题信号变弱——tradeoff。</li>
+</ol>
+
+<h2 id="g3237"><a class="anchor" href="#g3237">#</a>Eq 6.32–6.37 重要性采样 → GSPO / CISPO</h2>
+<div class="math"><span class="eqtag">Eq 6.32 恒等式</span><br>E<sub>p</sub>[f]＝E<sub>q</sub>[ f·p/q ]，p＝π<sub>θ</sub>（想优化的），q＝π<sub>old</sub>（采样的）<br><span class="eqtag">Eq 6.33–6.35 GSPO</span><br>π(a|s)＝∏<sub>t</sub>π(a<sub>t</sub>|s,a<sub>&lt;t</sub>)；ρ<sub>i</sub>＝(π(a<sub>i</sub>|s)/π<sub>old</sub>(a<sub>i</sub>|s))<sup>1/|a<sub>i</sub>|</sup>＝exp((1/|a<sub>i</sub>|)Σlog(π/π<sub>old</sub>))；J＝(1/G)Σmin(ρ<sub>i</sub>A<sub>i</sub>,clip(ρ<sub>i</sub>)A<sub>i</sub>)<br><span class="eqtag">Eq 6.36–6.37 CISPO</span><br>J＝(1/Σ|a<sub>i</sub>|)ΣΣ sg(ρ̂<sub>i,t</sub>)A<sub>i,t</sub>logπ(a<sub>i,t</sub>|·)，ρ̂＝clip(π/π<sub>old</sub>,1−ε<sub>low</sub>,1＋ε<sub>high</sub>)</div>
+<ol class="steps">
+<li><b>6.32 证（离散）：</b>E<sub>p</sub>[f]＝Σp·f＝Σq·(p/q)·f＝E<sub>q</sub>[f·p/q]。异步训练（vLLM 采样 vs FSDP 训练权重不同步）与多步梯度都靠它纠偏。</li>
+<li><b>GSPO 动机：</b>per-token ratio 长链连乘数值炸（MoE 更甚），且 reward 本是序列级，纠偏也该序列级。几何平均开 1/|a| 次方＝“平均每 token 的 ratio”，不同长度可比；实现时把同一 ρ<sub>i</sub> 广播到该回答所有 token。</li>
+<li><b>CISPO 动机：</b>PPO 的 clip 一旦越界梯度＝0（token dropping：稀有但关键的推理 token 学不出来）。CISPO 改 clip <b>权重本身</b>（sg＝stop-gradient，只取值不求导），再乘回 REINFORCE 式的 A·logπ：越界也还有梯度，只是被限幅。非对称 ε<sub>low</sub>≠ε<sub>high</sub>（clip-higher）允许往上走大步鼓励探索。</li>
+</ol>
+
+<h2 id="g38"><a class="anchor" href="#g38">#</a>Eq 6.38 单梯度步：r＝1，clip 消失</h2>
+<div class="math"><span class="eqtag">Eq 6.38</span><br>一步时 π<sub>θ</sub>＝π<sub>old</sub>，J＝(1/G)Σ( π/［π］<sub>∇</sub>·A −βKL )，［·］<sub>∇</sub>＝stop-gradient</div>
+<p>r 恒 1，min/clip 无意义，PPO 退化成普通 PG＋KL。很多 LM 的 PPO/GRPO 只跑 1 步／batch，书里提醒此时“PPO 原生正则从未生效，起作用的全是 KL”——看 clip_frac 全 0 别慌。</p>
+
+<h2 id="g3941"><a class="anchor" href="#g3941">#</a>Eq 6.39–6.41 GAE：λ 加权的 telescoping</h2>
+<div class="math"><span class="eqtag">Eq 6.39 n 步 / 6.40 TD / 6.41 GAE</span><br>Â<sup>(n)</sup><sub>t</sub>：n＝1: r＋γV′−V；n＝2: r＋γr′＋γ²V″−V；… n＝∞: 全回报−V<br>δ<sub>t</sub>＝r<sub>t</sub>＋γV<sub>t+1</sub>−V<sub>t</sub>；Â<sup>GAE</sup>＝Σ<sub>l＝0</sub><sup>∞</sup>(γλ)<sup>l</sup>δ<sub>t+l</sub>，λ＝0→TD，λ＝1→蒙特卡洛</div>
+<ol class="steps">
+<li><b>6.41 推导梗概：</b>Â<sup>GAE</sup>＝(1−λ)(Â<sup>(1)</sup>＋λÂ<sup>(2)</sup>＋λ²Â<sup>(3)</sup>＋…)。把 Â<sup>(n)</sup> 写成 δ 之和（Â<sup>(2)</sup>＝δ<sub>t</sub>＋γδ<sub>t+1</sub>，以此类推），合并 δ<sub>t</sub> 系数：(1−λ)(1＋λ＋λ²＋…)＝1；δ<sub>t+1</sub> 系数：(1−λ)γ(λ＋λ²＋…)＝γλ；一般项 (γλ)<sup>l</sup>。证毕（几何级数 1/(1−λ)）。</li>
+<li><b>λ：</b>0＝只信 value（bias 大方差小），1＝全信采样回报（反之），0.95 常用。LM 的 RLHF 常 γ＝1（短序列不折扣）。</li>
+<li><b>代码：</b>倒序循环 gae＝δ＋γλ·not_done·gae；terminal 处 not_done＝0 截断（可 pack 多序列）。targets＝adv＋values 训 value；adv.detach() 训 policy。</li>
+</ol>
+
+<h2 id="agg"><a class="anchor" href="#agg">#</a>无编号但必考：三种 loss 聚合除法</h2>
+<div class="math">① per-sequence: (1/B)Σ<sub>i</sub>(1/|a<sub>i</sub>|)Σ<sub>t</sub>ℓ<sub>i,t</sub>（GRPO/部分 PPO，每句等权）<br>② per-token: ΣΣℓ/Σ|a<sub>i</sub>|（DAPO，每 token 等权）<br>③ fixed-length: (1/B)Σ(1/L<sub>max</sub>)Σℓ（Dr.GRPO，每 token 等梯度但长句总梯度大）</div>
+<p>例子 seq1＝[1,1,1,1,10]（5 token 均值 2.8），seq2＝10 token 均值 1.9：① batch＝(2.8+1.9)/2＝2.35（短句每 token 梯度 0.25＞长句 0.14）；②＝(14+19)/15＝2.2（每 token 0.0909 拉平）；③ 除 L<sub>max</sub>＝10 得 1.4/1.9（梯度 0.1429 拉平但长句总量大）。MDP（token 级 advantage＋GAE）vs bandit（序列 advantage 广播）即聚合视角的两种建模，见原书 6.2.2 相关框。</p>
+<div class="warnbox"><div class="lab">本章一句话</div>REINFORCE 搭 baseline→RLOO/GRPO 换组内基线→PPO 加 ratio clip→GSPO/CISPO 换纠偏粒度→GAE 换 advantage 算法。KL 放 reward 里还是 loss 里、value 要不要、除法用哪种——六张表（原书 Table 6.1）全是这几刀切出来的。</div>
+</main>
+<nav class="pager" aria-label="翻页">
+<a class="pv" href="03-reward-modeling.html"><span class="dir">上一章</span><span class="t">奖励模型 Eq 5</span></a>
+<a class="nx" href="05-dpo.html"><span class="dir">下一章</span><span class="t">DPO Eq 8</span></a>
+</nav>
+<script src="assets/app.js"></script>
+</body>
+</html>

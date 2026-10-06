@@ -1,0 +1,219 @@
+{
+ "chapter": "12",
+ "cn": "无监督学习",
+ "en": "Unsupervised Learning",
+ "book": "13-unsupervised-learning.html",
+ "count": 21,
+ "equations": [
+  {
+   "id": "eq-12-1",
+   "num": "(12.1)",
+   "page": 511,
+   "img": "eq-p511-467y482-170x380.png",
+   "section": "12.2 Principal Components Analysis › 12.2.1 What Are Principal Components?",
+   "link": "../isl/13-unsupervised-learning.html#eq-12-1",
+   "before": "Suppose that we wish to visualize n observations with measurements on a set of p features, X1, X2,⋯, Xp, as part of an exploratory data analysis. We could do this by examining two-dimensional scatterplots of the data, each of which contains the n observations’ measurements on two of the ( 'p features. However, there are= p(p−1)/2 such scatterplots; for example, with p = 10 there are 45 plots! If p is large, then it will certainly not be possible to look at all of them; moreover, most likely none…",
+   "after": "that has the largest variance. By normalized, we mean that )p j=1 φ2j1 = 1. We refer to the elements φ11,⋯, φp1 as the loadings of the first principal component; together, the loadings make up the principal component loading vector, φ1 = (φ11 φ21 ⋯ φp1)T . We constrain the loadings so that their sum of squares is equal to one, since otherwise setting these elements to be arbitrarily large in absolute value could result in an arbitrarily large variance. (12.2) j=1 φ2j1=1. In other words, the first principal component loading vector solves the optimization problem"
+  },
+  {
+   "id": "eq-12-2",
+   "num": "(12.2)",
+   "page": 511,
+   "img": "eq-p511-634y657-170x380.png",
+   "section": "12.2 Principal Components Analysis › 12.2.1 What Are Principal Components?",
+   "link": "../isl/13-unsupervised-learning.html#eq-12-2",
+   "before": "The first principal component of a set of features X1, X2,⋯, Xp is the normalized linear combination of the features (12.1) that has the largest variance. By normalized, we mean that )p j=1 φ2j1 = 1. We refer to the elements φ11,⋯, φp1 as the loadings of the first principal component; together, the loadings make up the principal component loading vector, φ1 = (φ11 φ21 ⋯ φp1)T . We constrain the loadings so that their sum of squares is equal to one, since otherwise setting these elements to be ar…",
+   "after": "j=1 φ2j1=1. In other words, the first principal component loading vector solves the optimization problem (12.3) From (12.2) we can write the objective in (12.3) as the objective that we are maximizing in (12.3) is just the sample variance of the n values of zi1. We refer to z11,⋯, zn1 as the scores of the first principal component. Problem (12.3) can be solved via an eigen decomposition, a standard technique in linear algebra, but the details are outside of the scope of this book.1"
+  },
+  {
+   "id": "eq-12-3",
+   "num": "(12.3)",
+   "page": 512,
+   "img": "eq-p512-96y148-108x380.png",
+   "section": "12.2 Principal Components Analysis › 12.2.1 What Are Principal Components?",
+   "link": "../isl/13-unsupervised-learning.html#eq-12-3",
+   "before": "that has the largest variance. By normalized, we mean that )p j=1 φ2j1 = 1. We refer to the elements φ11,⋯, φp1 as the loadings of the first principal component; together, the loadings make up the principal component loading vector, φ1 = (φ11 φ21 ⋯ φp1)T . We constrain the loadings so that their sum of squares is equal to one, since otherwise setting these elements to be arbitrarily large in absolute value could result in an arbitrarily large variance. (12.2) j=1 φ2j1=1. In other words, the firs…",
+   "after": "From (12.2) we can write the objective in (12.3) as the objective that we are maximizing in (12.3) is just the sample variance of the n values of zi1. We refer to z11,⋯, zn1 as the scores of the first principal component. Problem (12.3) can be solved via an eigen decomposition, a standard technique in linear algebra, but the details are outside of the scope of this book.1 There is a nice geometric interpretation of the first principal component. The loading vector φ1 with elements φ11, φ21,⋯, φp1 defines a direction in feature space along which the data vary the most. If we project the n data points x1,⋯, xn onto this direction, the projected values are the principal component scores z11,⋯, …"
+  },
+  {
+   "id": "eq-12-4",
+   "num": "(12.4)",
+   "page": 512,
+   "img": "eq-p512-418y438-168x380.png",
+   "section": "12.2 Principal Components Analysis › 12.2.1 What Are Principal Components?",
+   "link": "../isl/13-unsupervised-learning.html#eq-12-4",
+   "before": "From (12.2) we can write the objective in (12.3) as the objective that we are maximizing in (12.3) is just the sample variance of the n values of zi1. We refer to z11,⋯, zn1 as the scores of the first principal component. Problem (12.3) can be solved via an eigen decomposition, a standard technique in linear algebra, but the details are outside of the scope of this book.1 There is a nice geometric interpretation of the first principal component. The loading vector φ1 with elements φ11, φ21,⋯, φp…",
+   "after": "where φ2 is the second principal component loading vector, with elements φ12, φ22,⋯, φp2. It turns out that constraining Z2 to be uncorrelated with Z1 is equivalent to constraining the direction φ2 to be orthogonal (perpendicular) to the direction φ1. In the example in Figure 6.14, the observations lie in two-dimensional space (since p = 2), and so once we have found φ1, there is only one possibility for φ2, which is shown as a blue dashed line. (From Section 6.3.1, we know that φ12 = 0.544 and φ22 = −0.839.) But in a larger data set with p > 2 variables, there are multiple distinct principal components, and they are defined in a similar manner. To find φ2, we solve a problem similar to (12.…"
+  },
+  {
+   "id": "eq-12-5",
+   "num": "(12.5)",
+   "page": 516,
+   "img": "eq-p516-74y109-207x380.png",
+   "section": "12.2 Principal Components Analysis › 12.2.1 What Are Principal Components? › 12.2.2 Another Interpretation of Principal Components",
+   "link": "../isl/13-unsupervised-learning.html#eq-12-5",
+   "before": "The first principal component loading vector has a very special property: it is the line in p-dimensional space that is closest to the n observations (using average squared Euclidean distance as a measure of closeness). This interpretation can be seen in the left-hand panel of Figure 6.15; the dashed lines indicate the distance between each observation and the line defined by the first principal component loading vector. The appeal of this interpretation is clear: we seek a single dimension of t…",
+   "after": "We can state this more formally by writing down an optimization problem. Suppose the data matrix X is column-centered. Out of all approximations of the form xij ≈)Mm=1 aimbjm, we could ask for the one with the smallest residual sum of squares: (12.6) Here, A is an n × M matrix whose (i, m) element is aim, and B is a p × M element whose (j, m) element is bjm. It can be shown that for any value of M, the columns of the matrices Â and B̂ that solve (12.6) are in fact the first M principal components score and loading vectors. In other words, if Â and B̂ solve (12.6), then âim = zim and ̂bjm = φjm.4 This means that the smallest possible value of the objective in (12.6) is"
+  },
+  {
+   "id": "eq-12-6",
+   "num": "(12.6)",
+   "page": 516,
+   "img": "eq-p516-162y203-125x380.png",
+   "section": "12.2 Principal Components Analysis › 12.2.1 What Are Principal Components? › 12.2.2 Another Interpretation of Principal Components",
+   "link": "../isl/13-unsupervised-learning.html#eq-12-6",
+   "before": "注3 In this section, we continue to assume that each column of the data matrix X has been centered to have mean zero—that is, the column mean has been subtracted from each column. We can now ask a natural question: how much of the information in a given data set is lost by projecting the observations onto the first few principal components? That is, how much of the variance in the data is not contained in the first few principal components? More generally, we are interested in knowing the proport…",
+   "after": "Here, A is an n × M matrix whose (i, m) element is aim, and B is a p × M element whose (j, m) element is bjm. It can be shown that for any value of M, the columns of the matrices Â and B̂ that solve (12.6) are in fact the first M principal components score and loading vectors. In other words, if Â and B̂ solve (12.6), then âim = zim and ̂bjm = φjm.4 This means that the smallest possible value of the objective in (12.6) is (12.7) In summary, together the M principal component score vectors and M principal component loading vectors can give a good approximation to the data when M is sufficiently large. When M = min(n −1, p), then the representation is exact: xij = )Mm=1 zimφjm."
+  },
+  {
+   "id": "eq-12-7",
+   "num": "(12.7)",
+   "page": 516,
+   "img": "eq-p516-293y333-182x380.png",
+   "section": "12.2 Principal Components Analysis › 12.2.1 What Are Principal Components? › 12.2.2 Another Interpretation of Principal Components",
+   "link": "../isl/13-unsupervised-learning.html#eq-12-7",
+   "before": "We can state this more formally by writing down an optimization problem. Suppose the data matrix X is column-centered. Out of all approximations of the form xij ≈)Mm=1 aimbjm, we could ask for the one with the smallest residual sum of squares: (12.6) Here, A is an n × M matrix whose (i, m) element is aim, and B is a p × M element whose (j, m) element is bjm. It can be shown that for any value of M, the columns of the matrices Â and B̂ that solve (12.6) are in fact the first M principal componen…",
+   "after": "In summary, together the M principal component score vectors and M principal component loading vectors can give a good approximation to the data when M is sufficiently large. When M = min(n −1, p), then the representation is exact: xij = )Mm=1 zimφjm. 12.2.3The Proportion of Variance Explained# In Figure 12.2, we performed PCA on a three-dimensional data set (lefthand panel) and projected the data onto the first two principal component loading vectors in order to obtain a two-dimensional view of the data (i.e. the principal component score vectors; right-hand panel). We see that this two-dimensional representation of the three-dimensional data does successfully capture the major pattern in t…"
+  },
+  {
+   "id": "eq-12-8",
+   "num": "(12.8)",
+   "page": 517,
+   "img": "eq-p517-88y130-187x380.png",
+   "section": "12.2 Principal Components Analysis › 12.2.1 What Are Principal Components? › 12.2.2 Another Interpretation of Principal Components › 12.2.3 The Proportion of Variance Explained",
+   "link": "../isl/13-unsupervised-learning.html#eq-12-8",
+   "before": "In summary, together the M principal component score vectors and M principal component loading vectors can give a good approximation to the data when M is sufficiently large. When M = min(n −1, p), then the representation is exact: xij = )Mm=1 zimφjm. 12.2.3The Proportion of Variance Explained# In Figure 12.2, we performed PCA on a three-dimensional data set (lefthand panel) and projected the data onto the first two principal component loading vectors in order to obtain a two-dimensional view of…",
+   "after": "and the variance explained by the mth principal component is (12.9) Therefore, the PVE of the mth principal component is given by (12.10)"
+  },
+  {
+   "id": "eq-12-9",
+   "num": "(12.9)",
+   "page": 517,
+   "img": "eq-p517-147y198-172x380.png",
+   "section": "12.2 Principal Components Analysis › 12.2.1 What Are Principal Components? › 12.2.2 Another Interpretation of Principal Components › 12.2.3 The Proportion of Variance Explained",
+   "link": "../isl/13-unsupervised-learning.html#eq-12-9",
+   "before": "In Figure 12.2, we performed PCA on a three-dimensional data set (lefthand panel) and projected the data onto the first two principal component loading vectors in order to obtain a two-dimensional view of the data (i.e. the principal component score vectors; right-hand panel). We see that this two-dimensional representation of the three-dimensional data does successfully capture the major pattern in the data: the orange, green, and cyan observations that are near each other in three-dimensional …",
+   "after": "Therefore, the PVE of the mth principal component is given by (12.10) The PVE of each principal component is a positive quantity. In order to compute the cumulative PVE of the first M principal components, we can simply sum (12.10) over each of the first M PVEs. In total, there are min(n −1, p) principal components, and their PVEs sum to one. In Section 12.2.2, we showed that the first M principal component loading and score vectors can be interpreted as the best M-dimensional approximation to the data, in terms of residual sum of squares. It turns out that the variance of the data can be decomposed into the variance of the first M principal components plus the mean squared error of this M-d…"
+  },
+  {
+   "id": "eq-12-10",
+   "num": "(12.10)",
+   "page": 517,
+   "img": "eq-p517-215y264-157x375.png",
+   "section": "12.2 Principal Components Analysis › 12.2.1 What Are Principal Components? › 12.2.2 Another Interpretation of Principal Components › 12.2.3 The Proportion of Variance Explained",
+   "link": "../isl/13-unsupervised-learning.html#eq-12-10",
+   "before": "(12.8) and the variance explained by the mth principal component is (12.9) Therefore, the PVE of the mth principal component is given by",
+   "after": "The PVE of each principal component is a positive quantity. In order to compute the cumulative PVE of the first M principal components, we can simply sum (12.10) over each of the first M PVEs. In total, there are min(n −1, p) principal components, and their PVEs sum to one. In Section 12.2.2, we showed that the first M principal component loading and score vectors can be interpreted as the best M-dimensional approximation to the data, in terms of residual sum of squares. It turns out that the variance of the data can be decomposed into the variance of the first M principal components plus the mean squared error of this M-dimensional approximation, as follows: (12.11) Var. of dataVar. of firs…"
+  },
+  {
+   "id": "eq-12-11",
+   "num": "(12.11)",
+   "page": 517,
+   "img": "eq-p517-383y424-102x378.png",
+   "section": "12.2 Principal Components Analysis › 12.2.1 What Are Principal Components? › 12.2.2 Another Interpretation of Principal Components › 12.2.3 The Proportion of Variance Explained",
+   "link": "../isl/13-unsupervised-learning.html#eq-12-11",
+   "before": "Therefore, the PVE of the mth principal component is given by (12.10) The PVE of each principal component is a positive quantity. In order to compute the cumulative PVE of the first M principal components, we can simply sum (12.10) over each of the first M PVEs. In total, there are min(n −1, p) principal components, and their PVEs sum to one. In Section 12.2.2, we showed that the first M principal component loading and score vectors can be interpreted as the best M-dimensional approximation to t…",
+   "after": "Var. of dataVar. of first M PCsMSE of M-dimensional approximation The three terms in this decomposition are discussed in (12.8), (12.9), and (12.7), respectively. Since the first term is fixed, we see that by maximizing the variance of the first M principal components, we minimize the mean squared error of the M-dimensional approximation, and vice versa. This explains why principal components can be equivalently viewed as minimizing the approximation error (as in Section 12.2.2) or maximizing the variance (as in Section 12.2.1). Moreover, we can use (12.11) to see that the PVE defined in (12.10)"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 517,
+   "img": "eq-p517-552y560-151x316.png",
+   "section": "12.2 Principal Components Analysis › 12.2.1 What Are Principal Components? › 12.2.2 Another Interpretation of Principal Components › 12.2.3 The Proportion of Variance Explained",
+   "link": "../isl/13-unsupervised-learning.html",
+   "before": "(12.11) Var. of dataVar. of first M PCsMSE of M-dimensional approximation The three terms in this decomposition are discussed in (12.8), (12.9), and (12.7), respectively. Since the first term is fixed, we see that by maximizing the variance of the first M principal components, we minimize the mean squared error of the M-dimensional approximation, and vice versa. This explains why principal components can be equivalently viewed as minimizing the approximation error (as in Section 12.2.2) or maxim…",
+   "after": "where TSS represents the total sum of squared elements of X, and RSS represents the residual sum of squares of the M-dimensional approximation given by the principal components. Recalling the definition of R2 from (3.17), this means that we can interpret the PVE as the R2 of the approximation for X given by the first M principal components. FIGURE 12.3 Left: a scree plot depicting the proportion of variance explained by each of the four principal components in the USArrests data. Right: the cu- mulative proportion of variance explained by the four principal components in the USArrests data. In the USArrests data, the first principal component explains 62.0% of the variance in the data, and t…"
+  },
+  {
+   "id": "eq-12-12",
+   "num": "(12.12)",
+   "page": 522,
+   "img": "eq-p522-271y323-124x375.png",
+   "section": "12.3 Missing Values and Matrix Completion",
+   "link": "../isl/13-unsupervised-learning.html#eq-12-12",
+   "before": "In this section we show how principal components can be used to impute the missing values, through a process known as matrix completion. The completed matrix can then be used in a statistical learning method, such as linear regression or LDA. We illustrate Algorithm 12.1 on the USArrests data. There are p = 4 variables and n = 50 observations (states). We first standardized the data so each variable has mean zero and standard deviation one. We then randomly selected 20 of the 50 states, and then…",
+   "after": "where O is the set of all observed pairs of indices (i, j), a subset of the possible n × p pairs. Once we solve this problem: we can estimate a missing observation xij using x̂ij = )Mm=1 âim̂bjm, where âim and ̂bjm are the (i, m) and (j, m) elements, respectively, of the matrices Â and B̂ that solve (12.12); and we can (approximately) recover the M principal component scores and loadings, as we did when the data were complete."
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 523,
+   "img": "eq-p523-104y142-198x325.png",
+   "section": "12.3 Missing Values and Matrix Completion",
+   "link": "../isl/13-unsupervised-learning.html",
+   "before": "we can (approximately) recover the M principal component scores and loadings, as we did when the data were complete. It turns out that solving (12.12) exactly is difficult, unlike in the case of complete data: the eigen decomposition no longer applies. But the simple iterative approach in Algorithm 12.1, which is demonstrated in Section 12.5.2, typically provides a good solution.56 注5 This algorithm is referred to as “Hard-Impute” in Mazumder, Hastie, and Tibshi- rani (2010) “Spectral regulariza…",
+   "after": "where x̄j is the average of the observed values for the jth variable in the incomplete data matrix X. Here, O indexes the observations that are observed in X. 2. Repeat steps (a)–(c) until the objective (12.14) fails to decrease: (a) Solve (12.13)"
+  },
+  {
+   "id": "eq-12-13",
+   "num": "(12.13)",
+   "page": 523,
+   "img": "eq-p523-223y275-148x375.png",
+   "section": "12.3 Missing Values and Matrix Completion",
+   "link": "../isl/13-unsupervised-learning.html#eq-12-13",
+   "before": "where x̄j is the average of the observed values for the jth variable in the incomplete data matrix X. Here, O indexes the observations that are observed in X. 2. Repeat steps (a)–(c) until the objective (12.14) fails to decrease: (a) Solve",
+   "after": "by computing the principal components of X̃. (b) For each element (i, j) ∈O/, set x̃ij ←)Mm=1 âim̂bjm. (c) Compute the objective (12.14)"
+  },
+  {
+   "id": "eq-12-14",
+   "num": "(12.14)",
+   "page": 523,
+   "img": "eq-p523-325y376-207x375.png",
+   "section": "12.3 Missing Values and Matrix Completion",
+   "link": "../isl/13-unsupervised-learning.html#eq-12-14",
+   "before": "(12.13) by computing the principal components of X̃. (b) For each element (i, j) ∈O/, set x̃ij ←)Mm=1 âim̂bjm. (c) Compute the objective",
+   "after": "3. Return the estimated missing entries x̃ij, (i, j) ∈O/. is pretty accurate. Over 100 random runs of this experiment, the average correlation between the true and imputed values of the missing elements is 0.63, with a standard deviation of 0.11. Is this good performance? To answer this question, we can compare this correlation to what we would have gotten if we had estimated these 20 values using the complete data — that is, if we had simply computed x̂ij = zi1φj1, where zi1 and φj1 are elements of the first principal component score and loading vectors of the complete data.7 Using the complete data in this way results in an average correlation of 0.79 between the true and estimated values …"
+  },
+  {
+   "id": "eq-12-15",
+   "num": "(12.15)",
+   "page": 528,
+   "img": "eq-p528-392y444-194x375.png",
+   "section": "12.4 Clustering Methods › 12.4.1 K-Means Clustering",
+   "link": "../isl/13-unsupervised-learning.html#eq-12-15",
+   "before": "2. Ck ∩Ck′ = ∅for all k̸ = k′. In other words, the clusters are nonoverlapping: no observation belongs to more than one cluster. where |Ck| denotes the number of observations in the kth cluster. In other words, the within-cluster variation for the kth cluster is the sum of all of the pairwise squared Euclidean distances between the observations in the kth cluster, divided by the total number of observations in the kth cluster. Combining (12.15) and (12.16) gives the optimization problem that def…",
+   "after": "In words, this formula says that we want to partition the observations into K clusters such that the total within-cluster variation, summed over all K clusters, is as small as possible. Solving (12.15) seems like a reasonable idea, but in order to make it actionable we need to define the within-cluster variation. There are many possible ways to define this concept, but by far the most common choice involves squared Euclidean distance. That is, we define (12.16) (12.17)"
+  },
+  {
+   "id": "eq-12-16",
+   "num": "(12.16)",
+   "page": 528,
+   "img": "eq-p528-540y587-166x375.png",
+   "section": "12.4 Clustering Methods › 12.4.1 K-Means Clustering",
+   "link": "../isl/13-unsupervised-learning.html#eq-12-16",
+   "before": "For instance, if the ith observation is in the kth cluster, then i ∈Ck. The idea behind K-means clustering is that a good clustering is one for which the within-cluster variation is as small as possible. The within-cluster variation for cluster Ck is a measure W(Ck) of the amount by which the observations within a cluster differ from each other. Hence we want to solve the problem (12.15) In words, this formula says that we want to partition the observations into K clusters such that the total wi…",
+   "after": "(12.17) Now, we would like to find an algorithm to solve (12.17)—that is, a method to partition the observations into K clusters such that the objective of (12.17) is minimized. This is in fact a very difficult problem to solve precisely, since there are almost Kn ways to partition n observations into K clusters. This is a huge number unless K and n are tiny! Fortunately, a very simple algorithm can be shown to provide a local optimum—a pretty good solution—to the K-means optimization problem (12.17). This approach is laid out in Algorithm 12.2. Algorithm 12.2 K-Means Clustering 1. Randomly assign a number, from 1 to K, to each of the observations. These serve as initial cluster assignments …"
+  },
+  {
+   "id": "eq-12-17",
+   "num": "(12.17)",
+   "page": 529,
+   "img": "eq-p529-72y123-150x375.png",
+   "section": "12.4 Clustering Methods › 12.4.1 K-Means Clustering",
+   "link": "../isl/13-unsupervised-learning.html#eq-12-17",
+   "before": "(12.15) In words, this formula says that we want to partition the observations into K clusters such that the total within-cluster variation, summed over all K clusters, is as small as possible. Solving (12.15) seems like a reasonable idea, but in order to make it actionable we need to define the within-cluster variation. There are many possible ways to define this concept, but by far the most common choice involves squared Euclidean distance. That is, we define (12.16)",
+   "after": "Now, we would like to find an algorithm to solve (12.17)—that is, a method to partition the observations into K clusters such that the objective of (12.17) is minimized. This is in fact a very difficult problem to solve precisely, since there are almost Kn ways to partition n observations into K clusters. This is a huge number unless K and n are tiny! Fortunately, a very simple algorithm can be shown to provide a local optimum—a pretty good solution—to the K-means optimization problem (12.17). This approach is laid out in Algorithm 12.2. Algorithm 12.2 K-Means Clustering 1. Randomly assign a number, from 1 to K, to each of the observations. These serve as initial cluster assignments for the …"
+  },
+  {
+   "id": "eq-12-18",
+   "num": "(12.18)",
+   "page": 529,
+   "img": "eq-p529-423y466-121x375.png",
+   "section": "12.4 Clustering Methods › 12.4.1 K-Means Clustering",
+   "link": "../isl/13-unsupervised-learning.html#eq-12-18",
+   "before": "2. Iterate until the cluster assignments stop changing: (a) For each of the K clusters, compute the cluster centroid. The kth cluster centroid is the vector of the p feature means for the observations in the kth cluster. (b) Assign each observation to the cluster whose centroid is closest (where closest is defined using Euclidean distance). Algorithm 12.2 is guaranteed to decrease the value of the objective (12.17) at each step. To understand why, the following identity is illuminating:",
+   "after": "where x̄kj = |Ck|i∈Ck xij is the mean for feature j in cluster Ck. In Step 2(a) the cluster means for each feature are the constants that minimize the sum-of-squared deviations, and in Step 2(b), reallocating the observations can only improve (12.18). This means that as the algorithm is run, the clustering obtained will continually improve until the result no longer changes; the objective of (12.17) will never increase. When the result no longer changes, a local optimum has been reached. Figure 12.8 shows the progression of the algorithm on the toy example from Figure 12.7. K-means clustering derives its name from the fact that in Step 2(a), the cluster centroids are computed as the mean of …"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 558,
+   "img": "eq-p558-412y473-201x329.png",
+   "section": "12.6 Exercises › Conceptual",
+   "link": "../isl/13-unsupervised-learning.html",
+   "before": "pd.crosstab(nci_labs['label'], pca_labels) 12.6Exercises# Conceptual# This problem involves the K-means clustering algorithm.Prove (12.18).On the basis of this identity, argue that the K-means clustering algorithm (Algorithm 12.2) decreases the objective (12.17) at each iteration.Suppose that we have four observations, for which we compute a dissimilarity matrix, given by",
+   "after": "For instance, the dissimilarity between the first and second observations is 0.3, and the dissimilarity between the second and fourth observations is 0.8. On the basis of this dissimilarity matrix, sketch the dendrogram that results from hierarchically clustering these four observations using complete linkage. Be sure to indicate on the plot the height at which each fusion occurs, as well as the observations corresponding to each leaf in the dendrogram.Repeat (a), this time using single linkage clustering.Suppose that we cut the dendrogram obtained in (a) such that two clusters result. Which observations are in each cluster?Suppose that we cut the dendrogram obtained in (b) such that two clu…"
+  }
+ ]
+}

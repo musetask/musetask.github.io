@@ -1,0 +1,463 @@
+<h1><span class="chno">Chapter 6 · 1/2</span>第 6 章 · 预训练（1/2）</h1>
+<p class="lead">这一页覆盖原书第 6 章的 8 条编号公式（6.1–6.8），它们其实是两组东西：<strong>前四条（6.1–6.4）是"用什么任务训练"</strong>——自回归语言模型、前缀语言模型、填空（FIM）、去噪自编码，本质都是同一条链式法则分解，只是"哪些位置的 token 计入损失、条件里能看见什么"不同；<strong>后四条（6.5–6.8）是"要花多少算力"</strong>——参数量清点与浮点运算次数（FLOPs）估算。另外补上三节数学细节（原书只给了图、没有给公式）：学习率的 warmup + 余弦退火、Adam/AdamW 的更新规则与权重衰减的等价性、梯度裁剪与混合精度的 loss scaling。</p>
+<p class="where"><b>原书位置</b>第 6 章 6.1 节 Pre-training Tasks / 6.4 节 Parameter Calculation and Efficiency Analysis　<a href="../thellm/12-6-model-pre-training.html#6-1-1-language-modeling">对照原文</a></p>
+
+<h2 id="toc-a">本页公式一览</h2>
+<table class="sym">
+<tr><th>编号</th><th>一句话</th><th>核心数学工具</th></tr>
+<tr><td><a href="#eq-6-1">6.1</a></td><td>自回归语言模型的训练损失（对数似然）</td><td>全概率公式 + 链式法则 + 对数单调性</td></tr>
+<tr><td><a href="#eq-6-2">6.2</a></td><td>前缀语言模型：只对 suffix 计损失</td><td>链式法则在子序列上的限制</td></tr>
+<tr><td><a href="#eq-6-3">6.3</a></td><td>填空 LM（FIM）：prefix / suffix / middle 三段分解</td><td>重排后序列上的链式法则</td></tr>
+<tr><td><a href="#eq-6-4">6.4</a></td><td>去噪自编码（DAE）：从加噪文本恢复原文</td><td>条件概率的对数分解</td></tr>
+<tr><td><a href="#eq-6-5">6.5</a></td><td>LLaMA 参数量清点</td><td>按模块求和（计数）</td></tr>
+<tr><td><a href="#eq-6-6">6.6</a></td><td>多头注意力的训练 FLOPs</td><td>矩阵乘 FLOPs 计数 + 反向 = 2× 前向</td></tr>
+<tr><td><a href="#eq-6-7">6.7</a></td><td>所有线性变换的 FLOPs = 6C×参数量</td><td>前向 2CΦ + 反向 4CΦ</td></tr>
+<tr><td><a href="#eq-6-8">6.8</a></td><td>开启激活重计算后的 FLOPs = 8C×参数量</td><td>多加一次前向</td></tr>
+<tr><td><a href="#eq-6-s1">补充 A</a></td><td>线性 warmup + 余弦退火的学习率</td><td>线性插值 + 余弦函数</td></tr>
+<tr><td><a href="#eq-6-s2">补充 B</a></td><td>Adam / AdamW 更新规则与权重衰减</td><td>指数加权平均 + 偏差修正 + 局部二阶近似</td></tr>
+<tr><td><a href="#eq-6-s3">补充 C</a></td><td>梯度裁剪与混合精度 loss scaling</td><td>球面投影（KKT）+ 浮点动态范围分析</td></tr>
+</table>
+
+<h2 id="sym-a">本页符号约定</h2>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\mathbf{u}=(u_1,\dots,u_T)\)</td><td>一条 token 序列（样本）</td><td>长度 \(T\)，\(u_t\) 是词表中的整数 id</td></tr>
+<tr><td>\(u_{&lt;t}\)</td><td>前缀 \((u_1,\dots,u_{t-1})\)；\(u_{&gt;t}\) 同理</td><td>序列</td></tr>
+<tr><td>\(P_\theta(\cdot)\)</td><td>参数为 \(\theta\) 的模型给出的条件分布</td><td>\(V\) 维概率向量，\(\sum_v P=v1\)</td></tr>
+<tr><td>\(\mathcal{L}(\mathbf{u})\)</td><td>损失（这里是<strong>对数似然</strong>，不是负的）</td><td>标量，单位 nat，<strong>越大约束越强</strong></td></tr>
+<tr><td>\(\mathcal{L}_{\mathrm{avg}}\)</td><td>取负号并按 token 平均后的损失</td><td>标量，\(\approx 1.5\sim3.0\)</td></tr>
+<tr><td>\(V\)</td><td>词表大小</td><td>标量，\(10^4\sim10^5\)</td></tr>
+<tr><td>\(L\)</td><td>Transformer 层数</td><td>标量，\(12\sim80\)</td></tr>
+<tr><td>\(H,\ H'\)</td><td>隐藏维 / FFN 中间维</td><td>标量，\(H'=4H\)（LLaMA 取 \(2.7H\)）</td></tr>
+<tr><td>\(N,\ D\)</td><td>注意力头数 / 每头维度，\(D=H/N\)</td><td>标量</td></tr>
+<tr><td>\(B,\ T\)</td><td>批大小 / 序列长度</td><td>标量</td></tr>
+<tr><td>\(C=BT\)</td><td>一个 batch 的 token 总数</td><td>标量（注意与损失 \(\mathcal{L}\) 无关）</td></tr>
+<tr><td>\(P\)</td><td>模型参数量</td><td>标量，\(10^9\sim10^{11}\)</td></tr>
+<tr><td>\(\eta,\ \beta_1,\ \beta_2,\ \epsilon\)</td><td>学习率、Adam 的一阶/二阶矩衰减、超小量</td><td>无量纲；LLM 常用 \(0.9,0.95,10^{-8}\)</td></tr>
+</table>
+<div class="warn"><b>符号陷阱</b>原书用 \(\mathcal{L}\) 表示损失（<em>并且是取对数后的似然，越大越好</em>），而深度学习代码里 `loss` 是它的相反数（越小越好）。另外原书用 \(C\) 表示 token 数、用 \(\mathcal{L}\) 表示层数的地方也很常见——下面每个公式的符号表里都会重新声明一遍，请以符号表为准。</div>
+
+<!-- ============================== 公式 6.1 ============================== -->
+<section class="fml" id="eq-6-1">
+<h2><span class="num">(6.1)</span>自回归语言模型的训练损失<a class="anchor" href="#eq-6-1">#</a></h2>
+<p class="where"><b>出处</b>第 6 章 6.1.1 节 Language Modeling　<a href="../thellm/12-6-model-pre-training.html#6-1-1-language-modeling">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0123.png" alt="原书公式 6.1"><span class="cap">原书公式 6.1</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \mathcal{L}_{\mathrm{LM}}(\mathbf{u})=\sum_{t=1}^{T}\log P\bigl(u_t \mid u_{&lt;t}\bigr) \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\mathbf{u}=\{u_1,\dots,u_T\}\)</td><td>一条 token 序列</td><td>长度 \(T\)；\(u_t\in\{1,\dots,V\}\)</td></tr>
+<tr><td>\(u_{&lt;t}\)</td><td>位置 \(t\) 之前的所有 token</td><td>长度 \(t-1\) 的序列</td></tr>
+<tr><td>\(P(u_t\mid u_{&lt;t})\)</td><td>模型在给定前缀后分给真实 token 的概率</td><td>标量，\(0&lt;P\le1\)</td></tr>
+<tr><td>\(\mathcal{L}_{\mathrm{LM}}\)</td><td>整条序列的<strong>对数似然</strong></td><td>标量（nat），一般 \(-10^3\sim-10^5\)，<strong>越大越好</strong></td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<p>先回顾要用到的两个工具。<strong>全概率公式（边缘化）</strong>：若 \(\{B_i\}\) 是样本空间的一个划分，则 \(P(A)=\sum_iP(A\cap B_i)=\sum_iP(A\mid B_i)P(B_i)\)。<strong>链式法则</strong>：\(P(X,Y)=P(X)P(Y\mid X)\)，一般地 \(P(x_1,\dots,x_T)=P(x_1)\prod_{t=2}^{T}P(x_t\mid x_1,\dots,x_{t-1})\)。二者其实是同一条恒等式的两面——链式法则是"乘法形式的联合分布"，全概率公式是"求和边缘化"。</p>
+<ol class="steps">
+<li><strong>从两项开始展开。</strong>设序列只有两个 token：\(P(u_1,u_2)=P(u_2\mid u_1)P(u_1)\)。分母布局下把 \(u_1\) 当条件（视作已知）就得到条件概率。三个 token 再展开一次：\(P(u_1,u_2,u_3)=P(u_3\mid u_2,u_1)P(u_2\mid u_1)P(u_1)\)。</li>
+<li><strong>一般情形。</strong>归纳可得 \(P(\mathbf{u})=P(u_T\mid u_{&lt;T})\cdots P(u_2\mid u_1)P(u_1)=\prod_{t=1}^{T}P(u_t\mid u_{&lt;t})\)，其中 \(u_{&lt;1}\) 视为"空条件"，概率恒为 1。</li>
+<li><strong>关键一步：模型只能表达"前缀条件"。</strong>解码器每层带因果掩码（causal mask），位置 \(t\) 的注意力看不到 \(t\) 之后的 token，因此网络输出的分布<em>定义上</em>就是 \(P_\theta(u_t\mid u_{&lt;t})\)，而不可能是 \(P(u_t\mid \mathbf{u})\)。第 2 步的乘积里每一项恰好都是这种形式，所以<strong>联合分布被分解成一串"前缀条件分布"的乘积</strong>——这就是"自回归"的全部含义。</li>
+<li><strong>取对数，乘积变求和。</strong>用恒等式 \(\ln\prod_t a_t=\sum_t\ln a_t\)（由 \(\ln(ab)=\ln a+\ln b\) 反复应用）：
+\[\mathcal{L}_{\mathrm{LM}}(\mathbf{u})=\log P(\mathbf{u})=\log\prod_{t=1}^{T}P(u_t\mid u_{&lt;t})=\sum_{t=1}^{T}\log P(u_t\mid u_{&lt;t}).\]
+这一步的意义不只是"好看"：原始目标里每个因子都 \(\le1\)，长序列的乘积会指数下溢到 0（FP64 只能撑 \(T\approx1500\)），取对数后变成可以累加的实数。</li>
+<li><strong>为什么最大化似然 = 最小化交叉熵。</strong>\(\ln\) 在 \((0,\infty)\) 上<em>严格单调递增</em>，所以 \(\arg\max_x\ln f(x)=\arg\max_x f(x)\)，两者的 argmax 集合完全相同：
+\[\operatorname*{arg\,max}_\theta \prod_t P_\theta(u_t\mid u_{&lt;t})=\operatorname*{arg\,max}_\theta \sum_t\log P_\theta(u_t\mid u_{&lt;t}).\]
+再加上"训练时最小化损失"的约定，取负号：\(\mathcal{L}_{\mathrm{avg}}=-\frac1T\sum_t\log P_\theta(u_t\mid u_{&lt;t})\)。这个负对数似然（negative log-likelihood, NLL）正好等于交叉熵 \(H(p,q)\)：把数据的经验分布 \(p\) 看作"真实分布"、\(q=P_\theta\) 看作模型分布，而 \(-\sum_v p(v)\ln q(v)=-\frac1T\sum_t\ln q(u_t)\)。所以"最大化似然""最小化交叉熵""最小化 KL 散度"（因为 \(H(p,q)=H(p)+\mathrm{KL}(p\|q)\)，\(H(p)\) 是常数）三者是同一件事。</li>
+<li><strong>困惑度 PPL 与损失的关系。</strong>设 \(p_t=P_\theta(u_t\mid u_{&lt;t})\)，平均损失 \(\mathcal{L}_{\mathrm{avg}}=-\frac1T\sum_t\ln p_t\)。定义 <em>几何平均</em> \(G=\bigl(\prod_{t=1}^{T}p_t\bigr)^{1/T}\)（每个预测概率都取几何平均，而不是算术平均）。由对数性质：\(\ln G=\frac1T\sum_t\ln p_t=-\mathcal{L}_{\mathrm{avg}}\)，故 \(G=\exp(-\mathcal{L}_{\mathrm{avg}})\)。困惑度就是这个几何平均的倒数：
+\[\mathrm{PPL}\equiv\frac1G=\exp\Big(\frac1T\sum_t\log\frac1{p_t}\Big)=\exp(\mathcal{L}_{\mathrm{avg}}).\]
+直觉上的解释：\(\mathrm{PPL}\) 相当于"模型在每一步平均在多少个等可能的候选里犹豫"。若某序列上模型对每个 token 都给真实 token 概率 \(1/20\)，则 \(\mathcal{L}_{\mathrm{avg}}=\ln 20\)，PPL \(=20\)。</li>
+<li><strong>几何平均 \(\le\) 算术平均（顺带解释 PPL 的"下界感"）。</strong>由 Jensen 不等式（\(\ln\) 是凹函数，\(\ln\bar{x}\ge\frac1T\sum\ln x_t\)），\(G\le\frac1T\sum_t p_t\)。也就是说 PPL 不超过模型平均分配的候选数，模型自信时 PPL 会远小于词表大小 \(V\)。</li>
+<li><strong>梯度。</strong>目标是对 \(\theta\) 最大化 \(\mathcal{L}_{\mathrm{LM}}\)，所以下降方向要用它的负梯度。若定义要最小化的损失 \(\mathcal{L}_{\mathrm{avg}}\)，链式法则给出（\(\theta\) 出现在每个 \(t\) 的条件分布里，求和的每一项都要算梯度）：
+\[\nabla_\theta\mathcal{L}_{\mathrm{avg}}=-\sum_{t=1}^{T}\nabla_\theta\log P_\theta(u_t\mid u_{&lt;t}).\]
+注意 \(\nabla_\theta\sum_t(\cdot)=\sum_t\nabla_\theta(\cdot)\)，因为 \(\theta\) 是所有项共享的同一个参数向量。</li>
+<li><strong>把梯度落到 logits 上：\(\partial\mathcal{L}/\partial z=p-y\)。</strong>设某一步的 logits 为 \(z\in\mathbb{R}^V\)，标签为 one-hot 向量 \(y\in\mathbb{R}^V\)，\(p=\operatorname{softmax}(z)\)，即 \(p_i=\frac{e^{z_i}}{\sum_j e^{z_j}}\)。损失 \(-\sum_i y_i\ln p_i\)。先求 softmax 的 Jacobian：
+\[\frac{\partial p_j}{\partial z_i}=\frac{\partial}{\partial z_i}\frac{e^{z_j}}{\sum_ke^{z_k}}=\frac{e^{z_j}\delta_{ij}}{\sum_ke^{z_k}}-\frac{e^{z_j}}{\bigl(\sum_ke^{z_k}\bigr)^2}e^{z_i}=\frac{e^{z_j}\delta_{ij}}{S}-\frac{e^{z_i}e^{z_j}}{S^2}=p_j(\delta_{ij}-p_i).\]
+</li>
+<li><strong>与交叉熵相乘（链式法则）。</strong>分母布局下，\(\frac{\partial\mathcal{L}}{\partial z_k}=\sum_i\frac{\partial\mathcal{L}}{\partial p_i}\frac{\partial p_i}{\partial z_k}\)，而 \(\frac{\partial\mathcal{L}}{\partial p_i}=-\frac{y_i}{p_i}\)（\(y\) 是常数），代入上一步：
+\[\frac{\partial\mathcal{L}}{\partial z_k}=-\sum_i\frac{y_i}{p_i}\,p_i\,(\delta_{ik}-p_k)=-\sum_i y_i(\delta_{ik}-p_k)=-\sum_i y_i\delta_{ik}+p_k\sum_iy_i=p_k-y_k.\]
+（末步用了 \(\sum_i y_i=1\)、\(\sum_i y_i\delta_{ik}=y_k\)。）矩阵形式就是 <strong>\(\partial\mathcal{L}/\partial Z=\operatorname{softmax}(Z)-Y\)</strong>：梯度就是"预测概率减去 one-hot 标签"，正确类概率越大、梯度越小（预测越自信、惩罚越轻）。</li>
+</ol>
+<div class="note"><b>直觉</b>公式 6.1 就是"把一整句话的概率拆成一个个词的概率相乘，再取对数"。每个 \(\log P(u_t|u_{&lt;t})\) 是一项打分：模型对这个词的信心贡献了多少对数概率。训练就是把每个位置的信心都往上推。总和形式还有一个巨大的工程好处：<strong>所有位置可以并行算</strong>——把标签整体左移一位，一次交叉熵就同时得到 \(T\) 个位置的损失（这就是原书代码片段里 `shift_logits` / `shift_labels` 干的事）。</div>
+<div class="warn"><b>易错点 1：argmax 与训练目标不等价</b>因为 \(\ln\) 单调，<em>最大化整句似然</em>与<em>最大化对数和</em>一致；但推理时逐位置取 \(\arg\max_t\max_v P_\theta(v|u_{&lt;t})\) 得到的是 <strong>序列的贪心解码</strong>，它<strong>不</strong>等于 \(\arg\max_{\mathbf{u}}\prod_t P(u_t|u_{&lt;t})\)。原因很简单：\(\arg\max\) 不能分配到求和上——每一步都选局部最大，终局的联合概率未必最大（典型反例：序列里出现两次的词，贪心会重复它）。所以训练目标（求和，可分解）与精确解码（求积，不可贪心分解）之间存在结构性 gap，束搜索（beam search）是对这个 gap 的近似。</div>
+<div class="warn"><b>易错点 2：PPL 的三点细节</b>(a) 只有"按 token 平均再取指数"才对，写成 \(\exp(\sum_t\cdot)\) 是错的；(b) 不同 tokenizer、不同的 T 切分方式下 PPL 不可直接比较，跨模型比 PPL 必须同分词器；(c) 训练日志里的 `loss` 通常是 \(\mathcal{L}_{\mathrm{avg}}\)，所以 `exp(loss)` 才是 PPL，且累加梯度的微批（gradient accumulation）时 loss 要再除以累积步数，否则 PPL 会被放大。</div>
+<div class="relnav">相关：<a href="#eq-6-2">(6.2) 只对 suffix 计损失</a>　<a href="#eq-6-4">(6.4) 去噪自编码</a>　<a href="#eq-6-s2">(补充 B) Adam 如何消费这个梯度</a></div>
+</section>
+
+<!-- ============================== 公式 6.2 ============================== -->
+<section class="fml" id="eq-6-2">
+<h2><span class="num">(6.2)</span>前缀语言模型的训练目标<a class="anchor" href="#eq-6-2">#</a></h2>
+<p class="where"><b>出处</b>第 6 章 6.1.1 节 Language Modeling（前缀 LM 变体，对应 5.3.3 节的前缀解码器架构）　<a href="../thellm/12-6-model-pre-training.html#6-1-1-language-modeling">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0125.png" alt="原书公式 6.2"><span class="cap">原书公式 6.2</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \mathcal{L}_{\mathrm{Prefix}}(\mathbf{u})=\log P\bigl(\mathbf{u}_{\mathrm{suffix}}\mid \mathbf{u}_{\mathrm{prefix}}\bigr)=\sum_{t=k+1}^{T}\log P\bigl(u_t\mid u_{&lt;t}\bigr) \]
+</div>
+<p>序列被切成 \(\mathbf{u}_{\mathrm{prefix}}=\{u_1,\dots,u_k\}\)（prompt / 输入）与 \(\mathbf{u}_{\mathrm{suffix}}=\{u_{k+1},\dots,u_T\}\)（要预测的输出），\(k\) 是随机选出的切分位置。</p>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(k\)</td><td>前缀长度，随机采样得到，\(1\le k\le T\)</td><td>标量</td></tr>
+<tr><td>\(\mathbf{u}_{\mathrm{prefix}}\)</td><td>输入部分，<strong>不计入损失</strong></td><td>长度 \(k\)</td></tr>
+<tr><td>\(\mathbf{u}_{\mathrm{suffix}}\)</td><td>待预测部分，逐 token 计损失</td><td>长度 \(T-k\)</td></tr>
+<tr><td>\(\mathcal{L}_{\mathrm{Prefix}}\)</td><td>suffix 的对数条件似然</td><td>标量（nat），越大越好</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>第一步：把边缘化范围缩小到 suffix。</strong>在 6.1 第 2 步的链式法则分解里，前 \(k\) 项是 \(P(u_t\mid u_{&lt;t})\)（\(t\le k\)）。现在前缀是<em>已知输入</em>而非待预测目标，于是对应的边缘化项被整体提出来，条件概率只对 suffix 展开：
+\[\log P(\mathbf{u}_{\mathrm{suffix}}\mid\mathbf{u}_{\mathrm{prefix}})=\log\prod_{t=k+1}^{T}P(u_t\mid \mathbf{u}_{\mathrm{prefix}},u_{k+1},\dots,u_{t-1}).\]</li>
+<li><strong>第二步：利用因果性把两个条件合并。</strong>前缀解码器（prefix decoder / Uni-Predictor）的注意力也是因果的：位置 \(t\) 看不到 \(t\) 之后的东西，因此
+\(P(u_t\mid \mathbf{u}_{\mathrm{prefix}},u_{k+1..t-1})=P(u_t\mid u_{&lt;t})\)——这正是 6.1 里那个条件分布。于是求和的上下限变成 \(t=k+1\) 到 \(T\)。这一步是<strong>严格相等</strong>而不是近似，因为两种写法描述的是同一个网络输出。</li>
+<li><strong>第三步：与标准 LM 的关系。</strong>两条目标只差前 \(k\) 项：
+\[\mathcal{L}_{\mathrm{Prefix}}(\mathbf{u})=\mathcal{L}_{\mathrm{LM}}(\mathbf{u})-\sum_{t=1}^{k}\log P(u_t\mid u_{&lt;t}).\]
+在代码里的实现方式是对前 \(k\) 个位置的标签置 \(-100\)（PyTorch `CrossEntropyLoss` 的 `ignore_index`），让它们的损失为 0。求和范围缩短还有一个附带好处：<strong>梯度更"干净"</strong>，模型不会把容量浪费在"猜用户给的 prompt"上。</li>
+<li><strong>第四步：为什么等价于 seq2seq 的输入–输出预测。</strong>联合分布也可以写成 \(P(\mathbf{u})=P(\mathbf{u}_{\mathrm{prefix}})P(\mathbf{u}_{\mathrm{suffix}}\mid\mathbf{u}_{\mathrm{prefix}})\)。前缀项与 \(\theta\) 无关（它只是给定的输入，不参与优化），所以最大化 \(\log P(\mathbf{u})\) 等价于最大化前缀 LM 目标。这就是"训练一个 decoder-only 模型也能做输入输出任务"的原因。</li>
+</ol>
+<div class="note"><b>直觉</b>给定一段提示词，让模型只对"回答"部分负责考试。相当于阅卷时只判答案分，不判题干分。数学上就是从求和里砍掉前面一段。</div>
+<div class="warn"><b>易错点</b>原书指出：同数据量下前缀 LM 的效果<em>略逊于</em>标准 LM——因为每个样本实际参与训练的 token 少了（期望上少一半），有效训练信号被稀释。想要同样的效果就得准备约两倍的数据。这也解释了为什么 T5/PaLM 这类模型愿意付这个代价：它们要的是"条件生成"能力，而不只是续写能力。</div>
+<div class="relnav">相关：<a href="#eq-6-1">(6.1) 标准自回归 LM</a>　<a href="#eq-6-3">(6.3) 填空 LM</a></div>
+</section>
+
+<!-- ============================== 公式 6.3 ============================== -->
+<section class="fml" id="eq-6-3">
+<h2><span class="num">(6.3)</span>填空语言模型（FIM）的训练目标<a class="anchor" href="#eq-6-3">#</a></h2>
+<p class="where"><b>出处</b>第 6 章 6.1.1 节 Language Modeling（Fill-in-the-Middle 任务）　<a href="../thellm/12-6-model-pre-training.html#6-1-1-language-modeling">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0126.png" alt="原书公式 6.3"><span class="cap">原书公式 6.3</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \mathcal{L}_{\mathrm{FIM}}(\mathbf{u})=\log P\bigl(\mathbf{u}_{\mathrm{prefix}}\bigr)+\log P\bigl(\mathbf{u}_{\mathrm{suffix}}\mid \mathbf{u}_{\mathrm{prefix}}\bigr)+\log P\bigl(\mathbf{u}_{\mathrm{middle}}\mid \mathbf{u}_{\mathrm{prefix}},\mathbf{u}_{\mathrm{suffix}}\bigr) \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\mathbf{u}_{\mathrm{prefix}}\)</td><td>前段</td><td>序列</td></tr>
+<tr><td>\(\mathbf{u}_{\mathrm{suffix}}\)</td><td>后段（拼到 prefix 之后，作为"已知的右侧上下文"）</td><td>序列</td></tr>
+<tr><td>\(\mathbf{u}_{\mathrm{middle}}\)</td><td>被挖掉的中段，是唯一的预测目标</td><td>序列</td></tr>
+<tr><td>\(\oplus\)</td><td>序列拼接：\(\mathbf{u}_{\mathrm{prefix}}\oplus\mathbf{u}_{\mathrm{suffix}}\)</td><td>长度 \(|\mathrm{prefix}|+|\mathrm{suffix}|\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>第一步：构造重排后的序列。</strong>FIM 的核心技巧是<em>改输入的顺序</em>，让因果掩码也能用上"右侧信息"。把原序列重排成 \(\mathbf{v}=\bigl(\mathbf{u}_{\mathrm{prefix}}\oplus\mathbf{u}_{\mathrm{suffix}}\oplus\mathbf{u}_{\mathrm{middle}}\bigr)\)，即"prefix 在前、suffix 紧跟其后、middle 放到最后"。</li>
+<li><strong>第二步：在 \(\mathbf{v}\) 上用 6.1 的链式法则。</strong>无条件对数似然按块分解：
+\[\log P(\mathbf{v})=\log P(\mathbf{u}_{\mathrm{prefix}})+\log P(\mathbf{u}_{\mathrm{suffix}}\mid\mathbf{u}_{\mathrm{prefix}})+\log P(\mathbf{u}_{\mathrm{middle}}\mid\mathbf{u}_{\mathrm{prefix}},\mathbf{u}_{\mathrm{suffix}}).\]
+第一块是无条件概率；第二块的条件只有 prefix（因为 suffix 紧跟在 prefix 后面，它前面只有 prefix）；第三块的条件包含 prefix 和 suffix，正是我们要的"左右都能看"。</li>
+<li><strong>第三步：只保留第三块。</strong>前两块是无监督的"免费"信号（可以复用海量语料），middle 块才是需要预测的目标，于是
+\[\mathcal{L}_{\mathrm{FIM}}(\mathbf{u})=\log P(\mathbf{u}_{\mathrm{middle}}\mid \mathbf{u}_{\mathrm{prefix}},\mathbf{u}_{\mathrm{suffix}}).\]
+注意式中右边第三项之所以条件里有 suffix，靠的是"重排后 suffix 位于 middle 之前"这一构造，而不是模型能看未来。</li>
+<li><strong>第四步：训练时怎么用。</strong>实际采样时按比例选三种切法（prefix 切、中间切、后缀切），分别生成 PSM / SPM / MPS 三种任务序列（用特殊 token 标记），推理时按同样格式拼接 prompt，让模型续写 sentinel token 之间的内容。这样一个模型就能同时做"前缀生成""中间填充""后缀生成"。</li>
+</ol>
+<div class="note"><b>直觉</b>普通 LM 只能"往后写"，看不到后面写了什么，所以代码补全（用户已经写了后半段）它做不好。FIM 把后半段<b>搬到前半段</b>，于是在保持因果结构（训练效率不变）的同时让模型间接"看到"了后文。这是架构层面的免费午餐。</div>
+<div class="warn"><b>易错点</b>公式里第三项写成 \(P(\mathbf{u}_{\mathrm{middle}}\mid\mathbf{u}_{\mathrm{prefix}},\mathbf{u}_{\mathrm{suffix}})\)，容易被误读成"模型能双向看"。在标准的因果 decoder 上，只有当 suffix 被<em>物理地移到前面</em>（并配合相应的位置编码 / 注意力掩码变体，如交错位置编码）时才成立；直接把原文顺序喂进去、指望因果掩码给出这个条件分布，是错的。</div>
+<div class="relnav">相关：<a href="#eq-6-2">(6.2) 前缀 LM</a>　<a href="#eq-6-1">(6.1) 标准自回归 LM</a></div>
+</section>
+
+<!-- ============================== 公式 6.4 ============================== -->
+<section class="fml" id="eq-6-4">
+<h2><span class="num">(6.4)</span>去噪自编码（DAE）的训练目标<a class="anchor" href="#eq-6-4">#</a></h2>
+<p class="where"><b>出处</b>第 6 章 6.1.2 节 Denoising Autoencoding（6.1.3 节 Mixture-of-Denoisers 是它的混合版本）　<a href="../thellm/12-6-model-pre-training.html#6-1-2-denoising-autoencoding">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0127.png" alt="原书公式 6.4"><span class="cap">原书公式 6.4</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \mathcal{L}_{\mathrm{DAE}}(\mathbf{u})=\log P\bigl(\mathbf{u}\mid\tilde{\mathbf{u}}\bigr) \]
+</div>
+<p>\(\tilde{\mathbf{u}}\) 是对 \(\mathbf{u}\) 做随机替换 / 删除 / 掩码得到的"带噪文本"，\(\mathbf{u}\mid\tilde{\mathbf{u}}\) 表示"已知带噪版本、恢复原文"这一条件。</p>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\tilde{\mathbf{u}}\)</td><td>加噪（corrupted）文本：随机遮蔽、删除或替换部分 token</td><td>长度通常 \(\le T\)，与 \(\mathbf{u}\) 词表相同</td></tr>
+<tr><td>\(P(\mathbf{u}\mid\tilde{\mathbf{u}})\)</td><td>去噪条件概率：给定带噪文本，原文是它的概率</td><td>标量，\(0&lt;P\le1\)</td></tr>
+<tr><td>\(\mathcal{L}_{\mathrm{DAE}}\)</td><td>去噪对数似然</td><td>标量（nat），越大越好</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>第一步：写出联合分布并做边缘化。</strong>\(P(\mathbf{u},\tilde{\mathbf{u}})=P(\tilde{\mathbf{u}})P(\mathbf{u}\mid\tilde{\mathbf{u}})\)。这里 \(\tilde{\mathbf{u}}\) 是<em>我们主动构造</em>的（噪声过程已知且与 \(\mathbf{u}\) 无关），\(P(\tilde{\mathbf{u}})\) 这一项不含 \(\theta\)，最大化联合似然就退化为最大化 \(P(\mathbf{u}\mid\tilde{\mathbf{u}})\)。这就是 DAE 的"自监督"含义：不需要人工标签，标签就是原文自己。</li>
+<li><strong>第二步：按链式法则展开条件概率。</strong>
+\[\log P(\mathbf{u}\mid\tilde{\mathbf{u}})=\sum_{t=1}^{T}\log P\bigl(u_t\mid\tilde{\mathbf{u}},u_{&lt;t}\bigr).\]
+与 6.1 相比有两处不同：条件里多了 \(\tilde{\mathbf{u}}\)，且在 <strong>encoder-only（BERT）</strong>架构下注意力<strong>没有因果掩码</strong>，所以条件里的 \(u_{&lt;t}\) 可以换成 \(\mathbf{u}_{\setminus t}\)（除自己以外的全部原文）。</li>
+<li><strong>第三步：损失掩码（为什么式子里只有一项 \(\log\)）。</strong>BERT 的实现只对被选中的 15% 位置算交叉熵，其余位置标签置 \(-100\)。严格来说被优化的目标是 \(\log P(\mathbf{u}_{S}\mid\tilde{\mathbf{u}})\)，其中 \(S\) 是被扰动位置的集合；但如果每一步都独立重采样 \(S\)，对这些"随机子集似然"取期望，正好得到上式按位置求和的形式（省略求和的常数因子）。</li>
+<li><strong>第四步：与 6.1 的对比。</strong>6.1 是"单向预测未来"，损失 \(\log P(u_t|u_{&lt;t})\)；6.4 是"双向重建"，损失 \(\log P(u_t|\tilde{\mathbf{u}},u_{\setminus t})\)。噪声比例 \(\rho\) 是关键超参：\(\rho\) 太小则任务太易、信号稀疏；\(\rho\) 太大则信息损失过多（T5 的 <em>span corruption</em> 用到约 50%）。原书 6.1.3 节的 MoD 就是把不同 \(\rho\) 与不同片段长度的去噪器混在一起训练（UL2、PaLM-2）。</li>
+</ol>
+<div class="note"><b>直觉</b>完形填空题：卷子上的空是 \(\tilde{\mathbf{u}}\)，答案是原文 \(\mathbf{u}\)。CE 掩码版 BERT、T5 的 span corruption 都是这一形式。优点是条件里有完整上下文，学到的表示对理解类任务（分类、抽取）更友好；缺点是生成时没有天然的左到右分解，只能靠解码算法。</div>
+<div class="warn"><b>易错点</b>不要把 DAE 的条件概率写成 \(P(\mathbf{u}\mid\tilde{\mathbf{u}})\) 就以为"双向"是免费得到的：它依赖 encoder-only 架构或专门的掩码设计，在纯 decoder 上直接用 6.4 会退化成 6.1。另外噪声是训练时注入的，推理时不存在——所以 DAE 训练的模型不能直接当生成模型用。</div>
+<div class="relnav">相关：<a href="#eq-6-1">(6.1) 自回归 LM</a>　<a href="#eq-6-3">(6.3) FIM</a></div>
+</section>
+
+<!-- ============================== 公式 6.5 ============================== -->
+<section class="fml" id="eq-6-5">
+<h2><span class="num">(6.5)</span>LLaMA 的参数量清点<a class="anchor" href="#eq-6-5">#</a></h2>
+<p class="where"><b>出处</b>第 6 章 6.4.1 节 Parameter Calculation　<a href="../thellm/12-6-model-pre-training.html#6-4-1-parameter-calculation">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0136.png" alt="原书公式 6.5"><span class="cap">原书公式 6.5</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \text{Number of Parameters}=2VH+H+L\cdot\bigl(4H^{2}+3HH'+2H\bigr) \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(V\)</td><td>词表大小</td><td>标量，LLaMA-7B 为 \(32000\)</td></tr>
+<tr><td>\(H\)</td><td>隐藏状态维度</td><td>标量，\(4096\)</td></tr>
+<tr><td>\(H'\)</td><td>FFN 中间层维度</td><td>标量，\(11008\)（SwiGLU）</td></tr>
+<tr><td>\(L\)</td><td>decoder 层数</td><td>标量，\(32\)</td></tr>
+<tr><td>\(\Phi\)</td><td>某个权重矩阵的元素个数（= 参数量）</td><td>如 \(W_Q\in\mathbb{R}^{H\times H}\) 有 \(H^2\) 个</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<p>推理：矩阵乘的参数个数 = 行 × 列。逐模块清点再求和。</p>
+<ol class="steps">
+<li><strong>输入嵌入层：</strong>\(W_E\in\mathbb{R}^{V\times H}\)，共 \(VH\) 个参数。</li>
+<li><strong>输出层：</strong>\(W_L\in\mathbb{R}^{H\times V}\)（把隐藏状态映射回 \(V\) 维 logits），共 \(VH\) 个。输入嵌入与输出层合起来是 \(2VH\)——这是公式里第一项的来源。</li>
+<li><strong>最终归一化：</strong>最后的 RMSNorm 只需 \(H\) 个缩放参数（不含偏置），即公式里的孤立项 \(+H\)。</li>
+<li><strong>每层的注意力：</strong>\(W_Q,W_K,W_V,W_O\) 各为 \(H\times H\)，共 \(4H^2\) 个参数。</li>
+<li><strong>每层的前馈网络：</strong>SwiGLU 的 FFN 是 \(\mathrm{SwiGLU}(XW_{\mathrm{down}},\,XW_{\mathrm{gate}}\otimes(XW_{\mathrm{up}}))\)。其中 \(W_{\mathrm{down}}\in\mathbb{R}^{H'\times H}\)（\(H'H\) 个）、\(W_{\mathrm{gate}}\in\mathbb{R}^{H'\times H}\)（\(H'H\) 个）、\(W_{\mathrm{up}}\in\mathbb{R}^{H\times H'}\)（\(HH'\) 个），合计 \(3HH'\) 个。</li>
+<li><strong>每层的归一化：</strong>注意力前与 FFN 前各一个 RMSNorm，各 \(H\) 个参数，合计 \(2H\)。</li>
+<li><strong>把 4–6 相加再乘层数，加 1–3：</strong>\(4H^2+3HH'+2H\) 是每 decoder 层的参数量，乘 \(L\) 层，再加 \(2VH+H\)，即得公式 6.5。</li>
+<li><strong>代入 LLaMA-7B 验算：</strong>\(2VH=2\times32000\times4096=262{,}144{,}000\)；\(H=4096\)；每层 \(4\cdot4096^2=67{,}108{,}864\)，\(3\cdot4096\cdot11008=135{,}266{,}304\)，\(2H=8192\)，合计 \(202{,}383{,}360\)，乘 \(32\) 层得 \(6{,}476{,}267{,}520\)。总计约 \(6.74\times10^9\)，与原书 6.4.3 节给出的 \(P\approx6.74\times10^9\) 一致。</li>
+</ol>
+<div class="note"><b>直觉</b>参数几乎全是矩阵。<strong>数参数 = 数矩阵的行 × 列</strong>，没有任何魔法。把 \(6.74\times10^9\) 这个"模型大小"的数字翻译成结构，就是：注意力占 \(32\times67.1\mathrm{M}=2.15\mathrm{B}\)，FFN 占 \(32\times135.3\mathrm{M}=4.33\mathrm{B}\)，嵌入层只占 \(0.26\mathrm{B}\)。这也解释了 LLaMA 为什么选 \(H'=2.7H\) 而非 \(4H\)——省参数、提效果。</div>
+<div class="warn"><b>易错点</b>(a) 嵌入层与输出层经常被重复计算或漏算，二者确实是<em>两个</em>独立矩阵（除非权重绑定）；(b) 公式只对 <code>RMSNorm</code>（无偏置）成立，用 <code>LayerNorm</code> 要额外 \(2L\) 个偏置参数，量级可忽略但计数上要清楚；(c) 公式给的是<em>名义</em>参数量，训练时每个参数还要配 Adam 的一阶矩、二阶矩各一份 FP32 状态，显存开销是参数的 12 倍（见 6.4.4 节）。</div>
+<div class="relnav">相关：<a href="#eq-6-7">(6.7) 线性变换 FLOPs 与参数量的关系</a></div>
+</section>
+
+<!-- ============================== 公式 6.6 ============================== -->
+<section class="fml" id="eq-6-6">
+<h2><span class="num">(6.6)</span>多头注意力层的训练计算量<a class="anchor" href="#eq-6-6">#</a></h2>
+<p class="where"><b>出处</b>第 6 章 6.4.2 节 Estimation of Training Cost　<a href="../thellm/12-6-model-pre-training.html#6-4-2-estimation-of-training-cost">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0140.png" alt="原书公式 6.6"><span class="cap">原书公式 6.6</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \text{Computational Cost}=12\cdot\bigl(BT^{2}ND+BT^{2}N\bigr)\cdot L=12CTL\cdot(H+N) \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(B\)</td><td>批大小</td><td>标量</td></tr>
+<tr><td>\(T\)</td><td>序列长度</td><td>标量</td></tr>
+<tr><td>\(N\)</td><td>注意力头数</td><td>标量，\(D=H/N\)</td></tr>
+<tr><td>\(D\)</td><td>每头维度</td><td>标量</td></tr>
+<tr><td>\(C=BT\)</td><td>一个 batch 的 token 总数</td><td>标量</td></tr>
+<tr><td>FLOPs</td><td>浮点运算次数；约定"一次乘加（乘 + 加）算 2 次"</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<p>先用公式 5.5 的缩放点积注意力：\(\mathrm{Attn}(Q,K,V)=\mathrm{softmax}\bigl(\frac{QK^{\top}}{\sqrt{D}}\bigr)V\)。\(Q,K,V\in\mathbb{R}^{B\times T\times H}\) 拆头转置后为 \(\tilde Q,\tilde K,\tilde V\in\mathbb{R}^{B\times N\times T\times D}\)。</p>
+<ol class="steps">
+<li><strong>矩阵乘 \(\tilde Q\tilde K^{\top}\)：</strong>输出形状 \(B\times N\times T\times T\)，每个元素是长度 \(D\) 的点积，需 \(T\cdot D\) 次乘 + \(T\cdot(D-1)\) 次加 \(\approx2T^2D\) FLOPs，总计 \(2BT^2ND\)。</li>
+<li><strong>缩放（除以 \(\sqrt D\)）与 softmax：</strong>缩放需 \(BT^2N\) 次除法；softmax 分三步——逐元素取指数 \(BT^2N\) 次、按行求和 \(BT^2N\) 次加法、除以行和 \(BT^2N\) 次，合计 \(3BT^2N\)。缩放与 softmax 一起是 \(4BT^2N\)。</li>
+<li><strong>再乘 \(\tilde V\)：</strong>\(\bigl(BT^2N\bigr)\times\bigl(BNTD\bigr)\) 形状的元素，每个元素是长度 \(D\) 的点积，共 \(2BT^2ND\) FLOPs。</li>
+<li><strong>前向合计：</strong>\(4BT^2ND+4BT^2N=4BT^2N(D+1)\)。</li>
+<li><strong>反向 = 2 倍前向。</strong>这是训练计算的通用经验：一个标量损失对某个中间激活求梯度，需要沿前向图回溯一遍，计算量与前向同阶；对 \(Q,K,V\) 的输入梯度各需要一次矩阵乘的转置版本。工程上通常按"反向 ≈ 2× 前向"计（严格地说，softmax 等逐元素算子会多出常数因子，但主导项确实是那两个矩阵乘）。于是每层总计 \(12BT^2N(D+1)\)。</li>
+<li><strong>乘层数并化简：</strong>\(L\cdot12BT^2N(D+1)\)。把 \(D=H/N\) 代入：\(12L(BT^2N\cdot H/N + BT^2N)=12L(BT^2H+BT^2N)=12(BT)TL(H+N)=12CTL(H+N)\)。最后一个等号用了 \(C=BT\)。</li>
+<li><strong>读一下这个式子说了什么。</strong>在固定 \(C\)（token 预算）下，总计算量 \(\propto L(H+N)\)，所以训练成本主要看<strong>宽度 × 层数</strong>；而在固定 \(L(H+N)\) 下，训练成本严格线性于 \(C\)。这就是 Chinchilla 那条"给定算力，数据与参数应按比例增长"结论的算力侧来源。</li>
+</ol>
+<div class="note"><b>直觉</b>注意力的 \(T^2\) 项：序列长度翻倍，注意力部分的计算量翻<strong>四倍</strong>（而线性层只翻倍）。这就是"上下文越长越贵、且贵得超线性"的原因，也是长上下文训练要用 FlashAttention 这类把 \(T^2\) 的显存占用降到 \(T\) 的算法来撑住的原因。</div>
+<div class="warn"><b>易错点</b>(a) FLOPs 计数约定必须是"乘加 = 2"，否则系数 6/12 会差一倍；(b) 这里<strong>没有</strong>包含 softmax 之后乘 \(V\) 之外的项，以及最终输出投影 \(W_O\)、embedding 与输出层的 \(V\) 相关项——它们被归进了 6.7 的"线性变换"或干脆被忽略；(c) 系数 12 里已经包含"反向 = 2× 前向"，不要重复乘 2。</div>
+<div class="relnav">相关：<a href="#eq-6-7">(6.7) 线性变换 FLOPs</a>　<a href="#eq-6-8">(6.8) 激活重计算</a>　<a href="#eq-6-5">(6.5) 参数量</a></div>
+</section>
+
+<!-- ============================== 公式 6.7 ============================== -->
+<section class="fml" id="eq-6-7">
+<h2><span class="num">(6.7)</span>线性变换层的计算量 = 6C × 参数量<a class="anchor" href="#eq-6-7">#</a></h2>
+<p class="where"><b>出处</b>第 6 章 6.4.2 节 Estimation of Training Cost　<a href="../thellm/12-6-model-pre-training.html#6-4-2-estimation-of-training-cost">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0141.png" alt="原书公式 6.7"><span class="cap">原书公式 6.7</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \text{Computational Cost}=6C\cdot\bigl(\text{线性变换中权重矩阵的参数总数}\bigr) \]
+</div>
+<p>更精确的写法（原书正文）：若线性变换部分的参数总量为 \(\Phi_{\mathrm{lin}}\)，则 \(\text{FLOPs}=6C\,\Phi_{\mathrm{lin}}\)。</p>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(C=BT\)</td><td>一个 batch 的 token 总数</td><td>标量</td></tr>
+<tr><td>\(\Phi_{\mathrm{lin}}\)</td><td>所有线性层权重矩阵的元素总数</td><td>标量（参数个数）</td></tr>
+<tr><td>\(X,W,Y\)</td><td>输入、权重、输出</td><td>\(X\in\mathbb{R}^{B\times T\times H}\)，\(W\in\mathbb{R}^{H\times H'}\)，\(Y\in\mathbb{R}^{B\times T\times H'}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>前向。</strong>把 \(X\) 看成 \(BT=C\) 个长度为 \(H\) 的行向量。\(Y=XW\) 需要 \(C\cdot H\cdot H'\) 次乘法 + 几乎同样多次加法，即 \(2CHH'\) FLOPs。</li>
+<li><strong>反向：算 \(dW\)。</strong>分母布局下 \(dW=X^{\top}dY\)，形状 \((H\times C)(C\times H')\)，代价同样是 \(2CHH'\) FLOPs。</li>
+<li><strong>反向：算 \(dX\)。</strong>\(dX=dY\,W^{\top}\)，形状 \((C\times H')(H'\times H)\)，代价 \(2CHH'\) FLOPs。</li>
+<li><strong>合计。</strong>\(2CHH'+2CHH'+2CHH'=6CHH'=6C\cdot(HH')\)。而 \(HH'\) 正是这个权重矩阵的参数个数 \(\Phi\)。推广到任意形状的线性层（\(Q/K/V/O\) 投影、FFN 的三个矩阵、输出层），只要是"输入 \(C\) 行、权重 \(\Phi\) 个元素"，就有 \(\text{FLOPs}=6C\Phi\)。</li>
+<li><strong>为什么这是整章最有用的估算式。</strong>把全模型的线性层加起来，\(\Phi_{\mathrm{lin}}\) 大致就是参数量 \(P\)（attention 的 \(QK^\top\) 不是线性层，故不计入）。于是 \(\text{FLOPs}\approx6CP\)，配合 6.6 的 \(12CTL(H+N)\) 就得到原书 6.4.3 节的 "总 FLOPs \(\approx6CP+12CTL(H+N)\)"。给定 \(P\)、\(C\) 就能直接估 GPU 小时数。</li>
+</ol>
+<div class="note"><b>直觉</b>"<strong>训练一个参数大约要碰 6 倍于 token 数的浮点运算</strong>"。这条经验式的妙处在于它把两个独立的量（参数量、数据量）用乘法绑在一起，所以想省算力只能二选一：把模型做小，或者把数据吃少——这就是 Chinchilla 的全部动机。</div>
+<div class="warn"><b>易错点</b>6 是"含反向"的总系数。如果只想算推理（只前向），系数是 2 而不是 6。另外注意力里的 \(QK^\top\) 与 \(\mathrm{softmax}\cdot V\) 是<strong>双线性</strong>算子，不是线性层，其计算量随 \(T^2\) 增长，必须单独按 6.6 计算；短序列时它可忽略，长序列时它会超过全部线性层之和。</div>
+<div class="relnav">相关：<a href="#eq-6-6">(6.6) 注意力 FLOPs</a>　<a href="#eq-6-8">(6.8) 激活重计算</a></div>
+</section>
+
+<!-- ============================== 公式 6.8 ============================== -->
+<section class="fml" id="eq-6-8">
+<h2><span class="num">(6.8)</span>开启激活重计算后的计算量 = 8C × 参数量<a class="anchor" href="#eq-6-8">#</a></h2>
+<p class="where"><b>出处</b>第 6 章 6.4.2 节 Estimation of Training Cost（6.3.3 节 Activation Recomputation）　<a href="../thellm/12-6-model-pre-training.html#6-4-2-estimation-of-training-cost">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0142.png" alt="原书公式 6.8"><span class="cap">原书公式 6.8</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \text{Computational Cost}=8C\cdot\bigl(\text{线性变换中权重矩阵的参数总数}\bigr) \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(C=BT\)</td><td>一个 batch 的 token 总数</td><td>标量</td></tr>
+<tr><td>\(\Phi_{\mathrm{lin}}\)</td><td>线性层参数总数</td><td>标量</td></tr>
+<tr><td>\(P\)</td><td>全模型参数量（近似取 \(\Phi_{\mathrm{lin}}\approx P\)）</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>先说激活重计算在做什么。</strong>反向传播需要每层的中间激活（前馈网络的输出、softmax 之前的注意力分数等）。默认做法是前向时全部存下来，显存占用巨大。激活重计算（activation checkpointing / gradient checkpointing）的做法是：只保存少数"检查点"层的激活，其余层的激活用完即弃；反向传播走到某一层时，<strong>用同样的输入重新做一次前向</strong>，把激活临时算出来再继续回传。</li>
+<li><strong>代价是多少？</strong>重算用的是前向计算，成本 \(2C\Phi_{\mathrm{lin}}\)，相对于 6.7 的 \(6C\Phi_{\mathrm{lin}}\) 是<b>额外多一次前向</b>：
+\[\text{FLOPs}=6C\Phi_{\mathrm{lin}}+2C\Phi_{\mathrm{lin}}=8C\Phi_{\mathrm{lin}}.\]
+全模型约为 \(8CP\)（原书 6.4.3 节）。</li>
+<li><strong>换来的东西：计算量只涨 \(8/6\approx33\%\)，显存大幅下降。</strong>若每隔 \(s\) 层保存一个检查点，被保存的激活数约为原来的 \(1/s\)，而计算量是 \(2-1/s\) 倍前向。取 \(s\approx L\)（每层都不存）时计算量翻倍、显存降到极低；工程上常用 \(s\approx\sqrt L\) 或固定每若干层存一次来折中。</li>
+<li><strong>数学上的正确性（为什么重算不影响梯度）。</strong>前向传播是一个<strong>确定性纯函数</strong>：同样的输入必然给出同样的激活。因此"先算后扔、要用时再算"与"一直存着"得到的激活在数学上完全相同，梯度自然一致。这也是为什么必须用<em>同一批输入</em>重算（若输入里有 dropout 的随机数，就要把随机种子一起存下来，或者干脆把重算的那段改成无 dropout）。</li>
+</ol>
+<div class="note"><b>直觉</b>用"重算一遍"换"少存一堆中间结果"，本质是拿 33% 的算力买显存。反向传播本来就要用到这些激活，早晚要算一次，所以重算的那一次并不算"白做"——它把前向从"算一次存着"变成"可能算多次但存得极少"。</div>
+<div class="warn"><b>易错点</b>(a) 8C 是<em>线性层</em>的公式；如果对注意力也做重算，还要额外加上一次注意力前向的 \(4BT^2N(D+1)\)（原书的 \(8CP\) 是把注意力部分忽略/单独处理的近似）；(b) 重算必须与"确定性"操作兼容——若层里有 dropout、随机 attention 掩码或任何依赖随机数的算子，不记录随机状态就会得到与前向不一致的激活，梯度直接错；(c) 重算与梯度检查点不同：后者把每层的反向分段以显存换算力，前者是整层的"重做"，粒度粗但实现简单。</div>
+<div class="relnav">相关：<a href="#eq-6-7">(6.7) 不重算时的 6C×参数量</a>　<a href="#eq-6-6">(6.6) 注意力 FLOPs</a>　<a href="#eq-6-s3">(补充 C) 显存与精度的其他手段</a></div>
+</section>
+
+<h2 id="supp">补充：优化设置的数学细节（原书 6.2–6.3 节）</h2>
+<p>下面三节对应原书里只有图、没有编号公式的内容（Table 6.1、Figure 6.2、6.2.3 与 6.2.4 节正文）。它们是把公式 6.1 的损失真正训起来所必需的数学部分。</p>
+
+<!-- ============================== 补充 A ============================== -->
+<section class="fml" id="eq-6-s1">
+<h2><span class="num">补充 A</span>线性 warmup + 余弦退火的学习率<a class="anchor" href="#eq-6-s1">#</a></h2>
+<p class="where"><b>出处</b>第 6 章 6.2.2 节 Learning Rate　<a href="../thellm/12-6-model-pre-training.html#6-2-2-learning-rate">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0130.png" alt="原书 Figure 6.2：线性衰减、余弦衰减、平方根反比衰减的学习率曲线"><span class="cap">原书 Figure 6.2：三种学习率衰减曲线</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \eta_t=\begin{cases} \dfrac{t}{T_w}\,\eta_{\max}, &amp; 0\le t\le T_w \quad\text{（线性 warmup）}\\[6pt] \eta_{\min}+\dfrac12\bigl(\eta_{\max}-\eta_{\min}\bigr)\Bigl(1+\cos\frac{\pi t}{T}\Bigr), &amp; T_w\le t\le T \quad\text{（余弦退火）} \end{cases} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\eta_t\)</td><td>第 \(t\) 步的学习率</td><td>标量，无量纲</td></tr>
+<tr><td>\(\eta_{\max}\)</td><td>峰值学习率</td><td>标量，LLM 常用 \(10^{-5}\sim10^{-4}\)（GPT-3 \(6\times10^{-5}\)，LLaMA \(1.5\times10^{-4}\)）</td></tr>
+<tr><td>\(\eta_{\min}\)</td><td>最终学习率，约为峰值的 10%</td><td>标量</td></tr>
+<tr><td>\(T_w\)</td><td>warmup 步数（原书：占总步数的 0.1%–0.5%）</td><td>标量</td></tr>
+<tr><td>\(T\)</td><td>总训练步数</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>warmup 为什么是线性插值？</strong>"从接近 0 线性涨到 \(\eta_{\max}\)"就是把点 \((0,\eta_0)\)、\((T_w,\eta_{\max})\) 用直线连接。直线方程 \(\eta_t=\eta_0+(\eta_{\max}-\eta_0)\frac{t-t_0}{T_w-t_0}\)，取 \(\eta_0\approx0,\ t_0=0\) 即得 \(\eta_t=\frac{t}{T_w}\eta_{\max}\)。斜率恒为 \(\eta_{\max}/T_w\)，且在 \(t=T_w^{-}\) 处<strong>一阶连续</strong>（左右导数都是 \(\eta_{\max}/T_w\)，若退火段起点导数不为 0 就会在学习率上留一个折角）。</li>
+<li><strong>warmup 为什么必要？（核心原因）</strong>Adam 的更新量是 \(\eta_t\,\hat m_t/(\sqrt{\hat v_t}+\epsilon)\)。第 0 步时 \(v_0=0\)（零初始化），偏差修正后的 \(\hat v_t=\frac{v_t}{1-\beta_2^t}\) 是<strong>只基于 \(t\) 个样本</strong>的估计：用 Jensen 不等式，对 i.i.d. 的梯度 \(g_i=\nabla f(x_i)\)，
+\[\operatorname{Var}\Bigl[\tfrac1B\sum_i g_i\Bigr]=\frac1B\bigl(\mathbb{E}\|g\|^{2}-\|\mathbb{E}g\|^{2}\bigr)\le\frac1B\mathbb{E}\|g\|^{2}\approx\frac1B\sum_i\|\nabla f(x_i)\|^{2}.\]
+方差随 \(B\to\infty\) 才收敛到 0。</li>
+<li><strong>接上一步：</strong>训练最初 \(t\) 很小，\(\hat v_t\) 剧烈波动，\(\sqrt{\hat v_t}\) 偶然很小会让 \(\hat m_t/\sqrt{\hat v_t}\) 爆掉；再加上参数是随机初始化的、\(v_t\) 里混入了 Hessian 的尺度信息尚不可靠，如果此时就用峰值学习率，等于"用最不稳定的步长 + 最大的步长"，极易在头几百步把训练打飞（loss 直接 NaN）。<strong>线性 warmup 用一个小学习率给二阶矩估计留出稳定的"热身期"</strong>。原书也直说了这一点：初期参数随机初始化、梯度偏大，故先用小学习率保证训练稳定。</li>
+<li><strong>余弦退火的构造。</strong>取 \(\eta_t=\eta_{\min}+\frac12(\eta_{\max}-\eta_{\min})(1+\cos(\pi t/T))\)。用恒等式 \(\cos\theta\) 在 \([0,\pi]\) 上<em>单调递减</em>，检查三个端点：\(t=T_w\to0\) 时 \(\cos 0=1\)，得 \(\eta_{\max}\)；\(t=T\to\pi\) 时 \(\cos\pi=-1\)，得 \(\eta_{\min}\)；\(t=T/2\) 时 \(\cos(\pi/2)=0\)，得中点值 \(\frac{\eta_{\max}+\eta_{\min}}{2}\)。所以它是一条从峰值平滑降到谷值的"半余弦波"。</li>
+<li><strong>余弦退火对收敛的作用（看导数）。</strong>\(\frac{d\eta}{dt}=-\frac{\pi(\eta_{\max}-\eta_{\min})}{2T}\sin\frac{\pi t}{T}\)。导数在两端（\(t=0,T\)）为 0、中点（\(t=T/2\)）取到最大值 \(-\frac{\pi(\eta_{\max}-\eta_{\min})}{2T}\)。这解释了 Figure 6.2 的曲线形状：<strong>起步平缓、中段陡、收尾平缓</strong>。</li>
+<li><strong>为什么这种形状有用？</strong>(a) 收尾时学习率趋近 0，参数在一个邻域内"沉淀"，等价于隐式的早停与平均化，末期 loss 的抖动被压住；(b) 起步平缓避免在已下降的 loss 上冲过头；(c) 中段保持较大的步长维持探索效率。相比线性衰减（导数恒定负），余弦在中段衰减更慢、更充分利用了中等学习率阶段。另一种常用方案是 \(t^{-1/2}\)（原书 Figure 6.2 右图，PaLM 与 T5 使用），它的导数同样趋 0，且与"训练越久、步长越保守"的直觉一致。</li>
+</ol>
+<div class="note"><b>直觉</b>整个调度像"先热车、再巡航、最后熄火滑行"。热身段让自适应优化器的统计量稳定下来；巡航段保持高效率探索；滑行段让模型在最小值附近精细落位、不再震荡。</div>
+<div class="warn"><b>易错点</b>(a) \(\eta_{\min}\) 不能设成 0：Adam 的更新量虽然趋于 0，但一旦某些维的二阶矩极大，仍可能产生微小而持续的漂移，设成峰值的 10% 更稳；(b) warmup <strong>只对自适应优化器</strong>（Adam 系）是必需的，对 SGD+momentum 就不是——原因见第 2、3 步，那是 \(1/\sqrt{\hat v}\) 造成的，不是"梯度大"这么笼统；(c) 重启（restart）式余弦调度是另一回事，本页写的是单次退火。</div>
+<div class="relnav">相关：<a href="#eq-6-s2">(补充 B) 学习率要乘在哪个更新量上</a>　<a href="#eq-6-s3">(补充 C) 梯度裁剪</a></div>
+</section>
+
+<!-- ============================== 补充 B ============================== -->
+<section class="fml" id="eq-6-s2">
+<h2><span class="num">补充 B</span>Adam / AdamW 的更新规则与权重衰减<a class="anchor" href="#eq-6-s2">#</a></h2>
+<p class="where"><b>出处</b>第 6 章 6.2.3 节 Optimizer 与 6.2.4 节 Stable Optimization Techniques（Table 6.1）　<a href="../thellm/12-6-model-pre-training.html#6-2-3-optimizer">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0131.png" alt="原书公式：Adam 超参数 β1 = 0.9, β2 = 0.95, ε = 1e-8"><span class="cap">原书 6.2.3 节：Adam 的三个超参数</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \begin{aligned} m_t&amp;=\beta_1 m_{t-1}+(1-\beta_1)g_t,\qquad v_t=\beta_2 v_{t-1}+(1-\beta_2)g_t^2\\[2pt] \hat m_t&amp;=\frac{m_t}{1-\beta_1^t},\qquad \hat v_t=\frac{v_t}{1-\beta_2^t}\\[2pt] \theta_t&amp;=\theta_{t-1}-\eta_t\cdot\frac{\hat m_t}{\sqrt{\hat v_t}+\epsilon}\\[2pt] \text{AdamW:}\quad \theta_t&amp;=\bigl(1-\eta_t\lambda\bigr)\,\theta_{t-1}-\eta_t\cdot\frac{\hat m_t}{\sqrt{\hat v_t}+\epsilon} \end{aligned} \]
+</div>
+<p>其中 \(g_t=\nabla_\theta\mathcal{L}_{\mathrm{avg}}(\theta;\mathbf{u}^{(1..t)})\)，\(\lambda\) 是权重衰减系数（原书与 Table 6.1 中取 0.1）。</p>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(g_t\)</td><td>第 \(t\) 步的随机梯度（batch 采样引入噪声）</td><td>与 \(\theta\) 同形状的向量</td></tr>
+<tr><td>\(m_t,v_t\)</td><td>一阶矩（动量）、二阶矩（逐元素平方的滑动平均）</td><td>与 \(\theta\) 同形状；\(v\ge0\)</td></tr>
+<tr><td>\(\beta_1,\beta_2\)</td><td>衰减因子，\(0\le\beta_1,\beta_2&lt;1\)</td><td>无量纲；LLM 用 \(0.9, 0.95\)</td></tr>
+<tr><td>\(\hat m_t,\hat v_t\)</td><td>偏差修正后的一阶/二阶矩</td><td>同上</td></tr>
+<tr><td>\(\epsilon\)</td><td>防止除零的小量</td><td>\(10^{-8}\)</td></tr>
+<tr><td>\(\lambda\)</td><td>权重衰减系数</td><td>无量纲，\(0.1\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>\(m_t\) 就是梯度的指数加权平均。</strong>把递推式展开：\(m_t=(1-\beta_1)\bigl(g_t+\beta_1g_{t-1}+\beta_1^2g_{t-2}+\cdots+\beta_1^{t-1}g_1\bigr)\)。权重 \((1-\beta_1)\beta_1^{t-j}\) 构成<strong>几何级数</strong>，其和为 \(\frac{(1-\beta_1)\sum_{j=0}^{t-1}\beta_1^{j}}{1}=\frac{(1-\beta_1)(1-\beta_1^t)}{1-\beta_1}=1-\beta_1^t&lt;1\)：总权重不足 1，因为 \(m_0=0\)（零初始化）把历史丢掉了。</li>
+<li><strong>偏差修正。</strong>假设各步梯度同分布、均值 \(\mathbb{E}[g_t]=\mu\)（非零），则 \(\mathbb{E}[m_t]=\mu\sum_j(1-\beta_1)\beta_1^{t-j}=\mu(1-\beta_1^t)\)。它随 \(t\to\infty\) 才趋于 \(\mu\)，但在前期被系统性<strong>低估</strong>了约 \(1-\beta_1^t\) 倍（\(\beta_1=0.9\) 时 \(t=10\) 仍有 \(35\%\) 的偏差）。除以 \(1-\beta_1^t\) 恰好把这个因子消掉：\(\mathbb{E}[\hat m_t]=\mu\)，且 \(\hat m_t=\frac{\sum_j\beta_1^{t-j}g_j}{\sum_j\beta_1^{t-j}}\) 是严格归一化的加权平均。</li>
+<li><strong>为什么需要二阶矩：用局部二次模型推最优步长。</strong>在当前点对损失做泰勒展开（二阶），\(f(\theta-\eta d)\approx f(\theta)-\eta\,g^{\top}d+\frac12\eta^{2}d^{\top}Hd\)，其中 \(g=\nabla f\)、\(H\) 是 Hessian。取移动方向 \(d=-g\) 并对步长 \(\eta\) 求极小（一阶条件）：\(-g^{\top}(-g)+\eta\,g^{\top}Hg=0\Rightarrow \eta^\star=\frac{\|g\|^{2}}{g^{\top}Hg}\)。用高斯近似 \(H\approx\sigma^{2}I\)（各方向曲率相同，方差 \(\sigma^{2}=\mathbb{E}\|g\|^2-\|\mathbb{E}g\|^2\)）代入：\(g^{\top}Hg\approx\sigma^{2}\|g\|^{2}\)，于是 \(\eta^\star\approx\frac{1}{\sigma^{2}}\propto\frac{1}{\sqrt{\mathbb{E}[g^2]}}\)。这就是"更新量除以二阶矩的平方根"的理由：<strong>梯度小的方向步长自动变大、梯度大的方向自动变小，等价于在每个坐标方向上做自适应的最坏情形步长</strong>（更精细的说法是 Diaconis–Ruppert 的可证明小量带 SGD）。</li>
+<li><strong>二阶矩为什么用"指数平均"而不是当前平方。</strong>若只用 \(g_t^2\)，噪声会让步长剧烈抖动。\(v_t\) 对平方做指数平滑，其噪声方差按 \(\frac{1-\beta_2}{1+\beta_2}\) 量级衰减（有效窗口 \(1/(1-\beta_2)=20\) 步）。\(\beta_2=0.95\) 比 \(\beta_1=0.9\) 大，意味着 \(v\) 的记忆窗口更长、更新更平滑；代价是它对<em>曲率</em>突变的响应更慢（例如训练后期 loss 曲面变平时，收敛略慢）。</li>
+<li><strong>权重衰减 1：从 L2 正则的梯度下降推出乘性缩放。</strong>考虑目标 \(\min_\theta\ \hat f(\theta)=\frac1B\sum_{i=1}^{B}f(x_i;\theta)+c\|\theta\|^{2}\)，其中 \(c\) 为正则系数。梯度 \(\nabla\hat f=\nabla\hat f_{\text{data}}+2c\theta\)。代入 vanilla 梯度下降 \(\theta_t=\theta_{t-1}-\eta\nabla\hat f(\theta_{t-1})\)：
+\[\theta_t=\theta_{t-1}-\eta\nabla\hat f_{\text{data}}(\theta_{t-1})-2c\eta\,\theta_{t-1}=\underbrace{(1-2c\eta)}_{\text{乘性缩放}}\,\theta_{t-1}-\eta\nabla\hat f_{\text{data}}(\theta_{t-1}).\]
+所以 L2 正则等价于"每步把权重额外乘一个小于 1 的因子"——这就是为什么权重衰减能让权重保持小且不会像 L1 那样产生精确的 0。把系数记成 \(\lambda=2c\) 就是常见写法 \(\theta\leftarrow(1-\eta\lambda)\theta-\eta\nabla f\)。</li>
+<li><strong>权重衰减 2：为什么 Adam 里要"解耦"（AdamW）。</strong>如果把 L2 项直接加进梯度，Adam 会先对它做 \(\sqrt{v}\) 归一化：\(2c\theta\) 这一项的"梯度大小"会随 \(v_t\)（它由<em>数据梯度</em>主导）一起缩放，于是"每步乘 \((1-\eta\lambda)\)"这个恒定衰减不再成立——在梯度历史很大的区域，权重衰减会被显著削弱，等价于<strong>衰减率变成了数据相关的量</strong>。AdamW 把衰减从梯度里<strong>拿出来、直接作用在参数上</strong>：\(\theta_t=(1-\eta_t\lambda)\theta_{t-1}-\eta_t\hat m_t/(\sqrt{\hat v_t}+\epsilon)\)。这样 (a) 衰减强度只由超参 \(\lambda\) 决定，与数据无关；(b) 不需要把 \(\lambda\theta\) 加进参数梯度，梯度张量更小，省一次逐元素乘加。</li>
+<li><strong>数值细节。</strong>\(\epsilon\) 加在<strong>根号外面</strong>（分母），所以它保护的是 \(v\) 接近 0 的情形——理论上 \(\hat m_t/\sqrt{\hat v_t}\) 因为偏差修正已经良定义，但 FP32 下 \(\hat v_t\) 仍可能因下溢（梯度极小）变成 0，故留一个 \(10^{-8}\) 的地板。</li>
+</ol>
+<div class="note"><b>直觉</b>Adam 的三个部件各治一种病：<strong>动量 \(m\)</strong>治"梯度噪声导致的上下震荡"（相当于沿累积方向的平均坡度）；<strong>二阶矩 \(v\)</strong>治"不同参数/不同层的梯度尺度差几个数量级，导致小的永远学不动、大的永远飞"（相当于按每个坐标的局部陡峭度归一化）；<strong>warmup</strong>治"前几百步的统计量还不可信"（见补充 A）；<strong>梯度裁剪</strong>治"某一步抽到了离谱的 batch"（见补充 C）。这就是所谓"稳定性技巧"的全部逻辑。</div>
+<div class="warn"><b>易错点</b>(a) 偏差修正只在训练最初几百步有实际影响，\(t\) 大时 \(1-\beta^t\approx1\)，很多实现干脆不算——但 warmup 恰好就在这个前期阶段，所以<strong>不要在 Adam 上省略偏差修正</strong>；(b) 表 6.1 里有的模型用 AdamW（解耦），有的用 Adam（L2 耦合），WD 那一列对 Adam 模型写的是别的东西（PaLM 写 \(lr^{2}\)），照抄时要看清；(c) Adafactor（PaLM、T5 使用）为了省显存，只维护二阶矩的行/列因子而不维护完整的逐元素 \(v\)，超参也是 \(\beta_2=1.0-\tau^{-0.8}\) 这种随步数变化的调度，不能直接套 Adam 的常数 \(\beta_2\)。</div>
+<div class="relnav">相关：<a href="#eq-6-1">(6.1) 梯度 \(\nabla_\theta\mathcal{L}\) 从哪来</a>　<a href="#eq-6-s1">(补充 A) 学习率调度</a>　<a href="#eq-6-s3">(补充 C) 梯度裁剪</a></div>
+</section>
+
+<!-- ============================== 补充 C ============================== -->
+<section class="fml" id="eq-6-s3">
+<h2><span class="num">补充 C</span>梯度裁剪与混合精度的 loss scaling<a class="anchor" href="#eq-6-s3">#</a></h2>
+<p class="where"><b>出处</b>第 6 章 6.2.4 节 Stable Optimization Techniques 与 6.3.4 节 Mixed-Precision Training　<a href="../thellm/12-6-model-pre-training.html#6-3-4-mixed-precision-training">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0129.png" alt="原书 Table 6.1：各 LLM 的学习率、优化器、精度、权重衰减与梯度裁剪设置"><span class="cap">原书 Table 6.1：主流 LLM 的优化设置（GC 列即梯度裁剪阈值）</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \mathrm{clip}(g,c)=g\cdot\min\Bigl(1,\frac{c}{\|g\|_2}\Bigr),\qquad c=1.0 \text{（LLM 常用）} \]
+</div>
+<div class="eq">
+\[ \tilde g_t=S\cdot g_t \ \text{（前向/反向乘以 }S=2^{k}\text{）},\qquad \hat\theta=\theta-\eta\,\frac{S\cdot\mathrm{clip}(g_t,c)}{S} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(g\)</td><td>全模型拼接后的梯度向量</td><td>\(\mathbb{R}^{|\theta|}\)，即把每个参数.grad 拉平</td></tr>
+<tr><td>\(\|g\|_2\)</td><td>全局 2-范数（不是逐元素裁剪）</td><td>标量，通常 \(\gg1\)</td></tr>
+<tr><td>\(c\)</td><td>裁剪阈值，Table 6.1 的 GC 列，取 \(1.0\)（Baichuan-2 用 \(0.5\)、Falcon 用 \(0.4\)）</td><td>标量</td></tr>
+<tr><td>\(S=2^k\)</td><td>loss scaling 因子（\(2^{16}\) 是常见起点）</td><td>标量</td></tr>
+<tr><td>\(\epsilon\)</td><td>FP16 的最小正规数 \(\approx6.1\times10^{-5}\)，最小次正规数 \(\approx6\times10^{-8}\)</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>梯度裁剪的推导：球面上的投影问题。</strong>我们要找一个与原梯度<em>最同向</em>但长度受限的向量。把目标写成带约束的极值问题（约束 \(\|g'\|_2\le c\) 是闭球，是凸集，所以这是凸优化问题，满足 KKT 条件即可解）：\(\max_{g'}\ g^{\top}g'\ \ \text{s.t.}\ \|g'\|_2\le c\)。拉格朗日函数 \(\mathcal{L}=g^{\top}g'+\mu(\|g'\|_2-c)\)，\(\mu\ge0\)。对 \(g'\) 求导置零：\(g+\mu\,\frac{g'}{\|g'\|_2}=0\Rightarrow g'=-\frac{\|g'\|_2}{\mu}g\)，即 \(g'\) 与 \(g\) <strong>同向共线</strong>（负号被吸收到 \(\mu\) 的符号里）。取 \(\|g'\|_2=c\)（约束激活时取边界），得 \(g'=c\frac{g}{\|g\|_2}\)。所以</li>
+<li><strong>合成一个式子（分两种情况）。</strong>若 \(\|g\|_2\le c\)，不需要约束，\(g'=g\)；若 \(\|g\|_2&gt;c\)，\(g'=\frac{c}{\|g\|_2}g\)。写成 \(\mathrm{clip}(g,c)=g\cdot\min(1,\frac{c}{\|g\|_2})\)。<strong>关键性质：裁剪只改变梯度的<em>方向</em>不变、只缩短长度</strong>，且它是 \(\|g\|\) 的单调非减函数（梯度范数大时步长自动被压住），因此不会改变"哪个方向更大"的相对关系。</li>
+<li><strong>为什么有效。</strong>把更新量限制为 \(\|\Delta\theta\|_2=\eta c\)：<strong>无论梯度多大，一步都不会走超过半径 \(\eta c\) 的距离</strong>。若损失曲面 \(L\)-Lipschitz（\(|f(x)-f(y)|\le L\|x-y\|\)，深度网络在局部近似成立），则一步造成的损失上升不超过 \(L\eta c\)——这就是"越过尖峰也不会跳出盆地"的定量表述。注意用<strong>全局范数</strong>而不是逐元素（<code>clip_by_norm</code> vs <code>clip_by_value</code>）：后者会把"少数维度梯度大"这一有用信号也抹平。</li>
+<li><strong>什么时候不该裁。</strong>若 \(\|g\|\) 长期远大于 \(c\)，裁剪就退化成"每步只走长度 \(\eta c\) 的球面梯度下降"，实际步长变得与梯度大小无关，可能拖慢收敛。所以阈值应设在"正常梯度范数"的量级，Table 6.1 里绝大多数模型都取 1.0。</li>
+<li><strong>为什么混合精度需要 loss scaling。</strong>FP16 有 1 位符号、5 位指数、10 位尾数，动态范围只有 \(-65504\sim65504\)，非正规数能到 \(\approx6\times10^{-8}\)。反向传播的梯度是逐层连乘的 <strong>Jacobian 矩阵之积</strong>，量级可能比激活小好几个数量级；一旦某个 \(g\) 的量级落到 \((6\times10^{-8},\,6\times10^{-5})\)，就<em>下溢为 0</em>，该参数从此不再更新（"死掉"），且这个错误是静默的。</li>
+<li><strong>loss scaling 的做法与取值范围。</strong>把 loss 乘以 \(S=2^k\)：梯度是 loss 的线性函数（\(g\) 是 \(\partial(Sf)/\partial\theta=S\,\partial f/\partial\theta\)），于是所有梯度同乘 \(S\)，把它们从下溢区搬到 FP16 的正规数区间里，"下溢为 0"消失。做参数更新前再把梯度除以 \(S\) 还原（unscale），数学上完全等价：
+\[\theta\leftarrow\theta-\eta\frac{S\,g}{S}=\theta-\eta g.\]
+\(S\) 的上限由"不能溢出 FP16 最大值 65504"决定；通常取 \(S=2^{16}\) 并配合<strong>动态调整</strong>：一旦检测到梯度里有 Inf/NaN（溢出），跳过这一步更新并把 \(S\) 减半；若连续 \(n\) 步都正常，把 \(S\) 乘 2 慢慢升回去。</li>
+<li><strong>混合精度的数值误差来自哪里。</strong>FP16 只有 10 位尾数，相对精度约 \(2^{-11}\approx4.9\times10^{-4}\)。前向/反向每一步引入的舍入误差都是这个量级，误差会在层间部分累积，但不会像"梯度下溢"那样造成参数永久失效。因此实践是：<strong>权重、梯度、动量、优化器状态全部用 FP32 存</strong>，只有前向/反向的矩阵乘用 FP16/BF16（张量核心加速）。BF16 的指数位有 8 位（与 FP32 相同）、尾数只有 7 位，相对精度更差（约 \(2^{-8}\)），但动态范围约 \(10^{38}\)，所以<strong>BF16 通常不需要 loss scaling</strong>——这也是现在 LLM 训练主流选 BF16 的原因。</li>
+</ol>
+<div class="note"><b>直觉</b>梯度裁剪是"油门 + 限速器"：方向照旧，只限速。loss scaling 是"先把音量拧到最大（避免小信号被静音），录完再按原音量放回去"。两者都不改变优化的数学目标，只防止实现层面的数值事故。</div>
+<div class="warn"><b>易错点</b>(a) 裁剪必须放在 <strong>unscale 之后</strong>（或先裁剪再 unscale，二者等价），但<em>不能</em>放在 loss scaling 的乘 \(S\) 之前——否则裁剪阈值 \(c=1\) 会被放大 \(S\) 倍而失效；(b) 检测溢出时要跳过整个参数更新而不是只跳过坏梯度；(c) 梯度累积时应在每个 micro-batch 上裁剪（各自算 \(\|g\|\)），而不是累加完再裁；(d) 原书提到的大模型预训练里 dropout 几乎不用、梯度检查点用于省显存，与本节的裁剪、缩放是互补的三件稳定工具。</div>
+<div class="relnav">相关：<a href="#eq-6-s2">(补充 B) 裁剪/缩放后的梯度如何进入 Adam 更新</a>　<a href="#eq-6-s1">(补充 A) 学习率调度</a>　<a href="#eq-6-8">(6.8) 激活重计算（另一种省显存手段）</a></div>
+</section>
+
+<h2 id="next-page">下一部分</h2>
+<p>本页覆盖 6.1–6.8（任务设计 + 参数量与算力估算）。公式 6.9 以后进入模型参数与效率分析的第二部分（训练时间估算、训练显存估算等），见 <a href="06-ch06-pt-b.html">第 6 章 · 预训练（2/2）</a>。若你想回头看损失是怎么被网络输出的 logits 具体实现的，可回到第 5 章的 softmax 与输出层。</p>

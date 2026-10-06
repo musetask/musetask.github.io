@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>数学预备知识速查 · 《Large Language Models》公式推导手册</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23a11f27'/%3E%3Ctext x='16' y='23' font-size='20' font-family='Georgia,serif' fill='%23fff' text-anchor='middle'%3E%E2%88%91%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="style.css">
+<script>(function(){try{var t=localStorage.getItem('thellmmath-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn idxbtn" href="index.html" aria-label="目录"><span aria-hidden="true">&#9776;</span> <span class="lbl">目录</span></a>
+  <a class="brand" href="index.html">《Large Language Models》公式推导手册</a>
+  <button class="btn" id="themeToggle" aria-label="切换深色模式">&#9788;</button>
+</header>
+<main id="main">
+<article>
+<h1><span class="chno">Prerequisites</span>数学预备知识速查</h1>
+<p class="lead">推导 LLM 的 154 个公式，用到的数学其实很集中：<strong>信息论</strong>、<strong>概率与统计</strong>、<strong>微积分（导数/梯度/链式法则）</strong>、<strong>线性代数</strong>、<strong>最优化</strong>。这一页把后面反复用到的工具集中补齐，读者只需要大学理工科背景即可，不必重修整门课。</p>
+<p class="where">这一页不对应原书章节，是推导过程中的"脚手架"。<b>用法</b>：读到某个公式卡住时回到这里查工具，再回去接着读。</p>
+
+<h2 id="map">知识地图：公式用到了什么</h2>
+<table class="sym">
+<tr><th>数学分支</th><th>会用到的具体工具</th><th>典型用在</th></tr>
+<tr><td>信息论</td><td>信息量、熵、交叉熵、KL 散度、困惑度</td><td>损失函数、评测指标</td></tr>
+<tr><td>概率</td><td>期望、方差、大数定律、条件概率、全概率公式、贝叶斯</td><td>奖励建模、采样、统计检验</td></tr>
+<tr><td>微积分</td><td>偏导数、方向导数、梯度、链式法则（标量/向量/Jacobian）</td><td>反向传播、梯度推导</td></tr>
+<tr><td>线性代数</td><td>向量/矩阵乘法、秩、SVD、内积、范数</td><td>注意力、LoRA、量化</td></tr>
+<tr><td>最优化</td><td>驻点、一阶必要条件、凸性、拉格朗日乘子、KKT</td><td>缩放定律、束搜索、PPO 裁剪</td></tr>
+<tr><td>数列与级数</td><td>几何级数、泰勒展开、调和级数</td><td>GAE、温度采样、Wilson 区间</td></tr>
+</table>
+
+<h2 id="info">一、信息论：损失函数的语言</h2>
+
+<h3 id="i-1">1.1 信息量与熵</h3>
+<p>这条链把所有概率和损失串起来，建议完整记住推导过程。</p>
+<ol class="steps">
+<li><strong>自信息（surprisal）</strong>。一个取值为 \(x\) 的随机事件，越罕见越"意外"，定义
+\[\mathrm{I}(x)=-\ln P(x).\]
+用 \(-\ln\) 而不是 \(\ln\)：因为 \(P(x)&lt;1\)，取负号才非负。</li>
+<li><strong>熵 = 自信息的期望</strong>。随机变量 \(X\) 的熵
+\[H(X)=\mathbb{E}_{x\sim P}\big[\mathrm{I}(x)\big]=-\sum_x P(x)\ln P(x).\]
+它是"这个随机源平均有多难预测"的度量。均匀分布在 \(k\) 个取值上时 \(H=\ln k\)（需要 \(\ln k\) 个二进制位）；集中在一个取值时 \(H=0\)。</li>
+<li><strong>两个恒等式（后面反复用）</strong>。对任意 \(q\)，
+\[H(P,Q)=-\sum_xP(x)\ln Q(x)=H(P)+\mathrm{KL}(P\|Q),\qquad
+\mathrm{KL}(P\|Q)=\sum_xP(x)\ln\frac{P(x)}{Q(x)}.\]
+推导只需展开：\(\mathrm{KL}=\sum P\ln P-\sum P\ln Q\)，移项即可。</li>
+<li><strong>KL 的非负性</strong>。用 \(\ln t\le t-1\)（对数凹性，在 \(t=1\) 取等）得
+\[\mathrm{KL}(P\|Q)=-\sum_xP(x)\ln\frac{Q(x)}{P(x)}\ \ge\ -\sum_xP(x)\Big(\frac{Q(x)}{P(x)}-1\Big)=\sum_x(P(x)-Q(x))=0.\]
+等号当且仅当 \(P=Q\)。所以 <strong>\(\mathrm{KL}\) 是"分布之间的距离"，非负、\(P=Q\) 时为零</strong>。注意它不对称：\(\mathrm{KL}(P\|Q)\ne\mathrm{KL}(Q\|P)\)。</li>
+<li><strong>交叉熵的极小值</strong>。因为 \(\mathrm{KL}\ge0\)，固定真实分布 \(P\) 时
+\[\min_Q H(P,Q)=H(P)=\ln(\text{最优编码长度下界}).\]
+这条结论就是"训练再好也超不过数据本身的熵"的数学依据。</li>
+</ol>
+<div class="note"><b>为什么 LLM 用 nat 而不是 bit</b>
+用 2 为底得到的是 bit（信息论经典单位），用 \(e\) 为底得到 nat。两者差 \(\ln2\approx0.693\) 倍：\(H_2=\log_2 e\cdot H_e\approx1.443 H_e\)。原书统一用 nat，这样 \(\exp(-L)\) 天然就是"模型对一段文本赋予的概率"，代数上最干净。</div>
+<div class="warn"><b>符号约定容易混</b>
+\(\mathrm{KL}(P\|Q)\) 中 <strong>第一项是真实分布</strong>（带 \(\ln P\)），第二项是模型分布。有些资料反过来写，读文献时先确认哪边带 \(\ln\)。</div>
+
+<h3 id="i-2">1.2 困惑度：熵的"有效分支因子"</h3>
+<p>语言模型最常被引用的单一指标。它的数学含义其实就是几何平均数的性质。</p>
+<ol class="steps">
+<li><strong>自回归分解</strong>。一句话 \(u=(u_1,\dots,u_T)\) 的联合概率，按概率乘法公式：
+\[P(u)=\prod_{t=1}^{T}P(u_t\mid u_{&lt;t}),\qquad u_{&lt;t}:=(u_1,\dots,u_{t-1}).\]</li>
+<li><strong>取负对数转成求和</strong>。\(\ln\prod=\sum\ln\)，并定义每 token 的平均负对数似然（也叫平均交叉熵，因为 \(-\ln P(u_t|u_{&lt;t})\) 就是模型对真实 token 的交叉熵）：
+\[L=-\frac1T\sum_{t=1}^{T}\ln P(u_t\mid u_{&lt;t}).\]</li>
+<li><strong>取指数</strong>：\(\boxed{\mathrm{PPL}=\exp(L)}\)。</li>
+<li><strong>为什么叫"困惑度"</strong>。由第 2 步，\(\exp(L)=\big(\prod_t P(u_t|u_{&lt;t})\big)^{-1/T}\)，即所有条件概率的<strong>几何平均数的倒数</strong>。含义是：模型在每个位置平均要在多少个"等可能候选"之间犹豫。PPL=20 约等于"平均在 20 个词里选"。</li>
+<li><strong>两个式子并不总是相等</strong>。若所有 \(P(u_t|u_{&lt;t})=p\) 相同，则 \(P(u)=p^T\)，原书公式 12.2 的 \(P(u)^{-1/T}=(p^T)^{-1/T}=p^{-1}\) 恰好等于 \(\exp(-\ln p)\)。但条件概率<strong>一般</strong>不等，所以必须用 12.3 的 \(\exp(-\frac1T\sum\ln P)\)。这是原书两式并存的原因。</li>
+<li><strong>不等长文本的比较要用 token 级平均</strong>。直接算 \(P(u)^{-1/T}\) 时，\(T\) 不同会让尺度不可比；必须用平均损失 \(\frac1T\sum\)。</li>
+</ol>
+
+<h3 id="i-3">1.3 指数族与 softmax</h3>
+<p>LLM 里所有"打分转概率"的操作都是 softmax，值得单独推出它的两条关键性质。</p>
+<div class="eq">
+\[ s_i=\frac{e^{z_i}}{\sum_{k=1}^{n}e^{z_k}},\qquad i=1,\dots,n \]
+</div>
+<ol class="steps">
+<li><strong>归一化</strong>。\(\sum_i s_i=\frac{\sum_i e^{z_i}}{\sum_k e^{z_k}}=1\)。</li>
+<li><strong>平移不变</strong>。给所有 \(z_i\) 加同一个常数 \(c\)：
+\(\frac{e^{z_i+c}}{\sum_k e^{z_k+c}}=\frac{e^c e^{z_i}}{e^c\sum_k e^{z_k}}=s_i\)。所以实现时可以先减最大值 \(z_{\max}\) 防溢出：
+\(\text{softmax}(\mathbf z)=\text{softmax}(\mathbf z-z_{\max}\mathbf 1)\)。这就是所有框架里那一行 `logits - logits.max()` 的来由。</li>
+<li><strong>雅可比矩阵（重点）</strong>。要得到 \(\frac{\partial s_i}{\partial z_j}\)。分两步：
+  <ul>
+  <li>商法则：\(\dfrac{\partial s_i}{\partial z_j}=\dfrac{\partial e^{z_i}}{\partial z_j}\cdot\frac{1}{S}-\dfrac{e^{z_i}}{S^2}\cdot\dfrac{\partial S}{\partial z_j}\)，其中 \(S=\sum_k e^{z_k}\)。因为 \(\frac{\partial e^{z_i}}{\partial z_j}=e^{z_i}\delta_{ij}\)、\(\frac{\partial S}{\partial z_j}=e^{z_j}\)，得
+  \(=\dfrac{e^{z_i}\delta_{ij}}{S}-\dfrac{e^{z_i}e^{z_j}}{S^2}=s_i\delta_{ij}-s_is_j\)。</li>
+  <li>矩阵形式：\(\dfrac{\partial \mathbf{s}}{\partial \mathbf{z}}=\mathrm{diag}(\mathbf{s})-\mathbf{s}\mathbf{s}^{\top}\)。</li>
+  </ul></li>
+<li><strong>这个雅可比的含义</strong>。\(\mathrm{diag}(\mathbf{s})-\mathbf{s}\mathbf{s}^\top\) 是协方差矩阵的形式：概率越高的地方，"压低它"的梯度越接近 0。这解释了 softmax 饱和时梯度消失。</li>
+<li><strong>交叉熵 + softmax 的梯度（务必掌握）</strong>。设 \(y\) 是 one-hot 标签，损失 \(\ell=-\sum_i y_i\ln s_i\)。用链式法则：
+\[\frac{\partial\ell}{\partial z_j}=\sum_i\frac{\partial\ell}{\partial s_i}\cdot\frac{\partial s_i}{\partial z_j}=-\sum_i\frac{y_i}{s_i}\big(s_i\delta_{ij}-s_is_j\big)=-\Big(y_j-s_j\sum_i y_i\Big)=s_j-y_j.\]
+<b>结论：logits 的梯度 = 模型预测的概率 − one-hot 真值。</b>后面 PPO、DPO、奖励模型的梯度几乎都是这一条的变形。</li>
+<li><strong>数值稳定实现</strong>。计算 \(\ln s_j\) 时不要先算 \(s_j\)：
+\[\ln s_j=z_j-\ln\sum_k e^{z_k}=z_j-z_{\max}-\ln\sum_k e^{z_k-z_{\max}},\]
+先减最大值再取对数。同理 \(\log\sigma(z)=-\log(1+e^{-z})=-\text{softplus}(-z)\)。</li>
+</ol>
+<div class="note"><b>凸性</b>
+softmax 输出 \(s_i\in(0,1)\)，\(\ln s_i=z_i-\ln\sum e^{z_k}\)。因为 \(-\ln\sum_ke^{z_k}\) 是凸函数之负，所以 \(\ln s_i\) 是凹函数；于是 \(-\ln s_i\) 是凸函数，交叉熵在 logits 上是凸的，梯度下降能找到全局最优（这是逻辑回归能稳定训练的原因）。</div>
+
+<h2 id="calc">二、微积分：从标量到向量</h2>
+
+<h3 id="c-1">2.1 偏导数与梯度</h3>
+<ol class="steps">
+<li><strong>偏导数</strong>。多元函数 \(f:\mathbb{R}^n\to\mathbb{R}\) 对第 \(j\) 个变量的偏导：固定其余变量，\(f\) 沿 \(e_j\) 方向的变化率。
+\[\frac{\partial f}{\partial x_j}=\lim_{h\to0}\frac{f(\mathbf{x}+h\mathbf{e}_j)-f(\mathbf{x})}{h}.\]</li>
+<li><strong>梯度是偏导向量的拼接</strong>：\(\nabla_{\mathbf{x}}f=\left(\frac{\partial f}{\partial x_1},\dots,\frac{\partial f}{\partial x_n}\right)^\top\)。梯度有两个几何性质：
+  <ul>
+  <li>方向导数定理：\(f(\mathbf{x}+h\mathbf{v})\approx f(\mathbf{x})+h\,\nabla f^\top\mathbf{v}\)。所以 \(\nabla f\) 与方向 \(\mathbf{v}\) 的内积给出该方向的一阶变化率。</li>
+  <li>可微时梯度与最陡上升方向<strong>平行</strong>，所以最陡上升方向就是 \(\nabla f\) 本身；最陡下降方向是 \(-\nabla f\)。梯度下降 \(\mathbf{x}_{t+1}=\mathbf{x}_t-\eta\nabla f(\mathbf{x}_t)\) 就来自这里。</li>
+  </ul></li>
+<li><strong>一阶必要条件（极值）</strong>：若 \(\mathbf{x}^*\) 是内点极值且可微，则 \(\nabla f(\mathbf{x}^*)=0\)。反之不成立（驻点可能是鞍点）——深度学习的非凸性就来自这里。</li>
+<li><strong>二阶条件（极小）</strong>：Hessian \(\nabla^2 f\)（Jacobian 的 Jacobian）在驻点处半正定 \(\Rightarrow\) 局部极小；半负定 \(\Rightarrow\) 局部极大；不定 \(\Rightarrow\) 鞍点。</li>
+</ol>
+
+<h3 id="c-2">2.2 链式法则的三种形态</h3>
+<p>这是全书用得最多的工具，三种形态必须分清。</p>
+<table class="sym">
+<tr><th>形态</th><th>公式</th><th>用在哪</th></tr>
+<tr><td>标量–标量</td><td>\(\dfrac{dz}{dx}=\dfrac{dz}{dy}\dfrac{dy}{dx}\)，\(z=f(y),y=g(x)\)</td><td>单个变量的求导</td></tr>
+<tr><td>向量–向量</td><td>\(\dfrac{\partial\mathbf{z}}{\partial\mathbf{x}}=\dfrac{\partial\mathbf{z}}{\partial\mathbf{y}}\dfrac{\partial\mathbf{y}}{\partial\mathbf{x}}\)（Jacobian 乘积）</td><td>反向传播</td></tr>
+<tr><td>标量–向量</td><td>\(\nabla_{\mathbf{x}}\!\big(f(Wx)\big)\)、\(\frac{\partial L}{\partial \mathbf{x}}=\frac{\partial L}{\partial\mathbf{y}}\frac{\partial\mathbf{y}}{\partial\mathbf{x}}\)</td><td>层间梯度传递</td></tr>
+</table>
+<p>反向传播的"链式法则"具体是：网络 \(\mathbf{h}^{(l)}=f_l(\mathbf{h}^{(l-1)};\mathbf{W}^{(l)})\)，损失 \(L=L(\mathbf{h}^{(L)})\)。逐层反传：
+\[\frac{\partial L}{\partial \mathbf{h}^{(l-1)}}=\frac{\partial L}{\partial\mathbf{h}^{(l)}}\frac{\partial\mathbf{h}^{(l)}}{\partial\mathbf{h}^{(l-1)}}.\]
+每层只有"局部 Jacobian"，链式法则把它们按层序乘起来——这就是"反向传播 = 链式法则的高效实现"。</p>
+
+<h3 id="c-3">2.3 矩阵求导：一个必须定死的约定</h3>
+<div class="warn"><b>先说约定</b>
+矩阵求导有两种布局约定，混用会得到转置的答案。本手册统一用<strong>分母布局（denominator layout / "梯度记号"）</strong>：\(\frac{\partial L}{\partial \mathbf{y}}\) 是与 \(\mathbf{y}\) <strong>同形</strong>的向量，且 \(\frac{\partial L}{\partial y_i}\) 表示"标量 \(L\) 对 \(y_i\) 的偏导"。这与 PyTorch 的 autograd 和 \(\nabla_{\mathbf y}L\) 的惯例一致。</div>
+<p>在这一约定下，最常用的三条（务必会用）：</p>
+<table class="sym">
+<tr><th>关系</th><th>结果</th><th>形状</th></tr>
+<tr><td>\(\mathbf{y}=W\mathbf{x}\)</td><td>\(\dfrac{\partial L}{\partial\mathbf{x}}=W^\top\dfrac{\partial L}{\partial\mathbf{y}}\)</td><td>\(n\times1\)</td></tr>
+<tr><td>\(\mathbf{y}=W\mathbf{x}\)</td><td>\(\dfrac{\partial L}{\partial W}=\dfrac{\partial L}{\partial\mathbf{y}}\mathbf{x}^\top\)</td><td>\(m\times n\)</td></tr>
+<tr><td>\(\mathbf{y}=\mathbf{A}\mathbf{x}\)，\(L=\mathbf{r}^\top\mathbf{y}\)</td><td>\(\dfrac{\partial L}{\partial\mathbf{A}}=\mathbf{r}\mathbf{x}^\top\)</td><td>\(m\times n\)</td></tr>
+</table>
+<p>第一条的完整推导（不要背，要会推）：由 \(L\) 只通过 \(\mathbf{y}=W\mathbf{x}\) 依赖 \(\mathbf{x}\)，把 \(L\) 看作 \(g(\mathbf{x})=f(W\mathbf{x})\)，对 \(x_k\) 求偏导：
+\[\frac{\partial L}{\partial x_k}=\sum_{i=1}^{m}\frac{\partial L}{\partial y_i}\frac{\partial y_i}{\partial x_k}
+=\sum_{i=1}^{m}\frac{\partial L}{\partial y_i}W_{ik}
+=\Big[\Big(\frac{\partial L}{\partial\mathbf{y}}\Big)^\top W\Big]_k.\]
+写成向量即 \(\frac{\partial L}{\partial\mathbf{x}}=W^\top\frac{\partial L}{\partial\mathbf{y}}\)。第二条把 \(W_{ij}\) 当作变量、对 \(L\) 求偏导：
+\[\frac{\partial L}{\partial W_{ij}}=\frac{\partial L}{\partial y_i}\frac{\partial y_i}{\partial W_{ij}}=\frac{\partial L}{\partial y_i}x_j,\]
+即 \(\frac{\partial L}{\partial W}=\frac{\partial L}{\partial\mathbf{y}}\mathbf{x}^\top\)。</p>
+<div class="note"><b>对偶数技巧（验证用）</b>
+对任意标量 \(L\) 与矩阵 \(W\)：\(\mathrm{tr}(A^\top B)=\sum_{ij}A_{ij}B_{ij}\)。所以若能把 \(L\) 写成 \(\mathrm{tr}(\mathbf{G}^\top W)\)，则 \(\frac{\partial L}{\partial W}=\mathbf{G}\)。这个技巧用来交叉验证你手推的结果，非常有效。</div>
+
+<h2 id="la">三、线性代数</h2>
+
+<h3 id="l-1">3.1 范数与距离</h3>
+<table class="sym">
+<tr><th>名称</th><th>定义</th><th>说明</th></tr>
+<tr><td>\(L_2\)（欧氏）</td><td>\(\|\mathbf{x}\|_2=\sqrt{\sum_i x_i^2}\)</td><td>欧氏几何里的长度</td></tr>
+<tr><td>\(L_1\)（曼哈顿）</td><td>\(\|\mathbf{x}\|_1=\sum_i|x_i|\)</td><td>稀疏惩罚常用</td></tr>
+<tr><td>Frobenius</td><td>\(\|\mathbf{A}\|_F=\sqrt{\sum_{ij}A_{ij}^2}\)</td><td>矩阵的"长度"，可当作向量化的 \(L_2\)</td></tr>
+<tr><td>谱范数</td><td>\(\|\mathbf{A}\|_2=\sigma_{\max}(\mathbf{A})\)</td><td>\(\max_{\|\mathbf{x}\|=1}\|\mathbf{Ax}\|\)，LoRA 里衡量 \(\Delta W\) 大小时用</td></tr>
+</table>
+<p>提示：\(\|\mathbf{A}\|_2\le\|\mathbf{A}\|_F\le\sqrt{n}\|\mathbf{A}\|_2\)（\(n\) 为元素数）。</p>
+
+<h3 id="l-2">3.2 秩、SVD 与低秩近似</h3>
+<p>这是 LoRA、量化、LoRA 式微调一整族方法的共同数学基础。</p>
+<ol class="steps">
+<li><strong>奇异值分解（SVD）</strong>。任意实矩阵 \(\mathbf{M}\in\mathbb{R}^{m\times n}\)（设 \(m\ge n\)）可写成
+\[\mathbf{M}=\mathbf{U}\boldsymbol{\Sigma}\mathbf{V}^\top=\sum_{i=1}^{r}\sigma_i\,\mathbf{u}_i\mathbf{v}_i^\top,\]
+其中 \(\mathbf{u}_i,\mathbf{v}_i\) 是单位正交向量，\(\sigma_1\ge\dots\ge\sigma_r&gt;0\)，\(r=\mathrm{rank}(\mathbf{M})\)。</li>
+<li><strong>Frobenius 误差的分解（关键）</strong>。取前 \(k\) 个奇异值做近似 \(\mathbf{M}_k=\sum_{i\le k}\sigma_i\mathbf u_i\mathbf v_i^\top\)，则
+\[\|\mathbf{M}-\mathbf{M}_k\|_F^2=\sum_{i&gt;k}\sigma_i^2.\]
+<em>证明</em>：\(\mathbf{M}-\mathbf{M}_k\) 的奇异向量与 \(\mathbf{M}\) 相同、奇异值为 \(\sigma_{k+1},\dots\)，而正交分解下 Frobenius 范数平方等于奇异值平方之和（\(\|\mathbf{M}\|_F^2=\sum_{ij}M_{ij}^2=\mathrm{tr}(\mathbf{M}^\top\mathbf{M})=\mathrm{tr}(\boldsymbol{\Sigma}^\top\boldsymbol{\Sigma})=\sum_i\sigma_i^2\)）。</li>
+<li><strong>Eckart–Young 定理</strong>：上述 \(\mathbf{M}_k\) 是在 Frobenius 范数（以及谱范数）下<strong>最优</strong>的秩-\(k\) 近似。推论：如果 \(\mathbf{M}\) 的奇异值衰减很快（\(\sigma_{r+1}\) 很小），那么低秩近似几乎无损。</li>
+<li><strong>低秩因子化的代价</strong>。\(\mathbf{M}\in\mathbb{R}^{H\times H}\) 秩 \(r\) 时，参数量从 \(H^2\) 降到 \(\mathbf{A}\in\mathbb{R}^{r\times H}\)、\(\mathbf{B}\in\mathbb{R}^{H\times r}\) 共 \(2Hr\)。以 \(H=4096,r=16\) 算：\(2\times4096\times16=131072\)，而 \(4096^2=16777216\)，比例 \(0.78\%\)。</li>
+<li><strong>初始化技巧的数学解释</strong>。令 \(\mathbf{B}=\mathbf{0}\)、\(\mathbf{A}\sim\mathcal N(0,\sigma^2)\)，则 \(\mathbf{B}\mathbf{A}=\mathbf{0}\) 几乎必然（连续分布下概率 1），因此微调起点严格等于原模型——保证"微调初期不破坏预训练能力"。</li>
+</ol>
+
+<h3 id="l-3">3.3 矩阵乘法的两种视角</h3>
+<ul>
+<li><strong>向量视角</strong>：\(\mathbf{y}=\mathbf{W}\mathbf{x}\) 把 \(\mathbf{x}\) 线性映射到 \(\mathbf{y}\)。列空间是能"看到"的方向；\(\mathbf{W}\) 的行空间是能"影响"的方向。</li>
+<li><strong>外积视角</strong>：\(\mathbf{y}=\mathbf{W}\mathbf{x}=\sum_j \mathbf{w}_j x_j\)。所以 <strong>\(\mathbf{W}\) 是若干列向量按输入分量加权和而成</strong>。反向传播时 \(\frac{\partial L}{\partial \mathbf{W}}=\sum_t\frac{\partial L}{\partial \mathbf{h}_t}\mathbf{x}_t^\top\)（对 batch 求和），每一项是一个秩 1 外积——这个"秩 1 之和"是理解微调梯度低秩性的关键。</li>
+</ul>
+
+<h2 id="prob">四、概率与统计</h2>
+
+<h3 id="p-1">4.1 期望、方差与矩</h3>
+<div class="eq">
+\[\mathbb{E}[X]=\sum_x xP(x),\qquad
+\mathrm{Var}[X]=\mathbb{E}[(X-\mathbb{E}[X])^2]=\mathbb{E}[X^2]-(\mathbb{E}[X])^2,\qquad
+\mathrm{Cov}[X,Y]=\mathbb{E}[XY]-\mathbb{E}[X]\mathbb{E}[Y] \]
+</div>
+<ul>
+<li>线性：\(\mathbb{E}[aX+b]=a\mathbb{E}[X]+b\)，\(\mathbb{E}[X+Y]=\mathbb{E}[X]+\mathbb{E}[Y]\)（不需要独立）。</li>
+<li>方差：\(\mathrm{Var}[aX]=a^2\mathrm{Var}[X]\)，\(\mathrm{Var}[X+Y]=\mathrm{Var}[X]+\mathrm{Var}[Y]+2\mathrm{Cov}[X,Y]\)。只有<strong>独立（更弱：不相关）</strong>时协方差为 0。</li>
+<li>独立同分布样本均值：\(\mathbb{E}\big[\frac1n\sum X_i\big]=\mu\)，\(\mathrm{Var}\big[\frac1n\sum X_i\big]=\frac{\sigma^2}{n}\)。这就是大数定律与中心极限定理的结论。</li>
+<li><strong>批量梯度的方差</strong>：\(\nabla\frac1B\sum_i f(\mathbf{x}_i)\) 的方差是 \(\frac{1}{B^2}\sum_i\mathrm{Var}[\nabla f(\mathbf{x}_i)]\le\frac{1}{B^2}\sum_i\|\nabla f(\mathbf{x}_i)\|^2\)。所以增大 batch \(B\) 会把梯度噪声标准差按 \(1/\sqrt B\) 压低——这是 LLM 训练用大 batch 的直接原因。</li>
+</ul>
+
+<h3 id="p-2">4.2 条件概率与贝叶斯</h3>
+<ol class="steps">
+<li><strong>链式（乘法）法则</strong>：\(P(A\cap B)=P(A)P(B\mid A)\)。反复使用得到联合分布的链式分解 —— 这就是语言模型自回归分解的来源。</li>
+<li><strong>全概率公式</strong>：\(P(B)=\sum_iP(B\mid A_i)P(A_i)\)。按事件 \(A_i\) 划分样本空间。</li>
+<li><strong>贝叶斯公式</strong>：\(P(A\mid B)=\frac{P(B\mid A)P(A)}{P(B)}\)。含义是"由结果反推原因"，需要除以证据的边缘概率来归一化。</li>
+<li><strong>为什么 KL 惩罚要写成"条件"形式</strong>。RLHF 里我们想要 \(\pi_\theta\) 但同时要它贴近 \(\pi_{ref}\)。解
+\(\max_\pi\mathbb{E}_\pi[r]-\beta\mathrm{KL}(\pi\|\pi_{ref})\) 的最优解满足
+\(\frac{\partial}{\partial \pi(a|x)}\big[\pi(a|x)r(x,a)-\beta\pi(a|x)\ln\frac{\pi(a|x)}{\pi_{ref}(a|x)}\big]=0\)，整理得
+\[\pi^*(a|x)=\frac{1}{Z(x)}\pi_{ref}(a|x)\exp\!\Big(\frac{r(x,a)}{\beta}\Big).\]
+（\(Z(x)\) 是配分函数，用于归一化。）这条式子就是 DPO 的出发点。</li>
+</ol>
+
+<h3 id="p-3">4.3 极大似然与"为什么损失是负对数"</h3>
+<ol class="steps">
+<li><strong>参数估计的两种流派</strong>：最小化平方误差（最小二乘，对应高斯噪声）vs 最大化似然。</li>
+<li><strong>似然与对数似然</strong>。独立同分布数据 \(\mathcal{D}=\{(x_i,y_i)\}_{i=1}^n\)，模型 \(p_\theta(y\mid x)\)，似然
+\[L(\theta)=\prod_i p_\theta(y_i\mid x_i).\]
+因为 \(\ln\) 单调递增，最大化 \(L\) 等价于最大化 \(\ln L=\sum_i\ln p_\theta(y_i\mid x_i)\)。</li>
+<li><strong>取负号成为损失</strong>：\(\mathcal{L}=-\frac1n\sum_i\ln p_\theta(y_i\mid x_i)\)。这就是"交叉熵损失"的来历——它是<strong>对数似然的负数</strong>。</li>
+<li><strong>为什么不用概率本身</strong>。很多个小于 1 的数连乘会数值下溢到 0（浮点最小正数约 \(10^{-308}\)），取对数把它变成求和，既稳定又可加。</li>
+<li><strong>分类情形写成 softmax</strong>。若 \(p_\theta(y|x)=\frac{e^{z_y}}{\sum_k e^{z_k}}\)，则
+\(\mathcal{L}=-\sum_k y_k\ln p_k=-\sum_k y_k\big(z_k-\ln\sum_j e^{z_j}\big)=\ln\sum_j e^{z_j}-\sum_k y_kz_k\)，
+即"log-sum-exp 减真实类别的 logit"。</li>
+</ol>
+
+<h3 id="p-4">4.4 置信区间与假设检验</h3>
+<ol class="steps">
+<li><strong>二项比例</strong>。\(X\sim\mathrm{Bin}(n,p)\)，\(\mathbb{E}X=np\)，\(\mathrm{Var}X=np(1-p)\)。样本比例 \(\hat p=X/n\) 满足 \(\mathbb{E}\hat p=p\)、\(\mathrm{Var}\hat p=\frac{p(1-p)}{n}\)。</li>
+<li><strong>正态近似</strong>。当 \(np\) 与 \(n(1-p)\) 都大时，\(\hat p\approx\mathcal N\!\big(p,\frac{p(1-p)}{n}\big)\)，故 \(\hat p\pm z_{1-\alpha/2}\sqrt{\frac{\hat p(1-\hat p)}{n}}\) 是常用区间。</li>
+<li><strong>Wilson 区间的由来</strong>。正态近似在 \(\hat p\to0\) 或 1 时失效（此时 \(\sqrt{\hat p(1-\hat p)}\to0\)，区间宽度错误地缩到 0）。Wilson 的修正是<strong>不解 \(\hat p\) 的近似方程，而是精确解真实方程</strong>：
+\[\frac{|\hat p-p|}{\sqrt{p(1-p)/n}}\le z\quad\Longleftrightarrow\quad n(\hat p-p)^2\le z^2p(1-p).\]
+把右端整理成 \(n p^2-(n\hat p+z^2)p+n\hat p^2\le0\)，这是一个关于 \(p\) 的二次不等式，解其两根得
+\[\frac{\hat p+z^2/(2n)\ \pm\ z\sqrt{\frac{\hat p(1-\hat p)}{n}+\frac{z^2}{4n^2}}}{1+z^2/n}.\]
+<strong>这一步很值得记住</strong>：它是"把近似代回原方程精确求解"的典范。</li>
+<li><strong>置信区间的正确读法</strong>：\(95\%\) 置信区间不是"参数有 95% 概率落在这里"，而是"若重复抽样 100 次，约 95 次的区间会覆盖真值"。</li>
+<li><strong>配对比较更准</strong>。比较两个模型时，同一对回答被两个模型评判结果是<strong>相关</strong>的。差值方差
+\(\mathrm{Var}(\hat p_1-\hat p_2)=\frac{p_1+p_2-2p_{12}}{n}\)，\(p_{12}\) 为两者同时获胜的概率。因为 \(p_{12}\) 通常显著大于 \(p_1p_2\)（强模型在容易样本上一致获胜），这个方差<strong>远小于</strong>把两者当独立时的 \(\frac{p_1+p_2}{n}\)。所以要用配对检验（McNemar）而不是两独立比例检验。</li>
+</ol>
+
+<h2 id="opt">五、最优化</h2>
+
+<h3 id="o-1">5.1 凸性：什么时候有唯一解</h3>
+<table class="sym">
+<tr><th>概念</th><th>定义</th><th>后果</th></tr>
+<tr><td>凸集</td><td>任意两点连线仍在集合内</td><td>可行域形状</td></tr>
+<tr><td>凸函数</td><td>\(f(\theta a+(1-\theta)b)\le\theta f(a)+(1-\theta)f(b)\)</td><td>Hessian \(\succeq0\)；一阶条件<strong>充分</strong></td></tr>
+<tr><td>强凸</td><td>再加上 \(\mu\|\mathbf{a}-\mathbf{b}\|^2/2\)</td><td>存在唯一最优，梯度下降线性收敛</td></tr>
+<tr><td>凹 / 凸函数最大化</td><td>相反不等号</td><td>Hessian \(\preceq0\)；<strong>最大化凹函数是"容易"的</strong></td></tr>
+</table>
+<p><strong>关键区分</strong>：求凸函数的极小、或凹函数的极大，都是"友好"问题（KKT 条件充分）；反之（非凸求极小）是"难"问题（只能保证驻点）。LLM 训练属于后者，而束搜索、PPO 的裁剪目标属于前者——这就是为什么束搜索能保证近似最优、而梯度下降不能。</p>
+
+<h3 id="o-2">5.2 拉格朗日乘子法</h3>
+<p>用来解"带约束的最优化"，缩放定律的最优分配、RLHF 的 KL 约束策略都是它推出来的。</p>
+<ol class="steps">
+<li><strong>问题形式</strong>：\(\min_\mathbf{x} f(\mathbf{x})\) s.t. \(g_i(\mathbf{x})=0,\ i=1..m\)，\(h_j(\mathbf{x})\le0\)。</li>
+<li><strong>构造拉格朗日函数</strong>：\(\mathcal{L}(\mathbf{x},\lambda,\mu)=f(\mathbf{x})+\sum_i\lambda_ig_i(\mathbf{x})+\sum_j\mu_jh_j(\mathbf{x})\)。</li>
+<li><strong>KKT 条件</strong>（一阶必要条件）：
+  <ul>
+  <li>驻点：\(\nabla_\mathbf{x}\mathcal{L}=0\)；</li>
+  <li>原始可行：\(g_i=0\)；</li>
+  <li>对偶可行：\(\mu_j\ge0\)；</li>
+  <li>互补松弛：\(\mu_jh_j(\mathbf{x})=0\)。</li>
+  </ul></li>
+<li><strong>二阶充分条件</strong>：若存在乘子使 \(\nabla^2_{\mathbf{x}}\mathcal{L}\) 正定，则该点是严格局部极小。</li>
+<li><strong>为什么约束取等号时乘子无符号要求</strong>。等式约束两侧都能动，乘子可正可负；不等式约束只在"一侧可动"，所以乘子必须有符号，配合互补松弛才能给出正确的边界行为。</li>
+<li><strong>拉格朗日对偶（凸情形）</strong>。\(d(\mu)=\inf_\mathbf{x}\mathcal{L}(\mathbf{x},\lambda,\mu)\) 是原问题最优值的下界；\(d(\mu)\) 对 \(\mu\) 是凹的，用梯度上升最大化即可。若满足 Slater 条件（存在严格可行点）且问题凸，则强对偶 \(d^\star=p^\star\)，即<strong>最小化与最大化可以交换</strong>。RLHF 的推导正是利用这一点。</li>
+</ol>
+<div class="note"><b>对称乘子小技巧</b>
+若问题在 \(N\leftrightarrow D\) 下对称（损失 \(A/N^\alpha+B/D^\beta\) 对称、约束 \(6ND=C\) 对称），也可以直接对目标取偏导并利用对称性快速求解，不必完整写拉格朗日函数。</div>
+
+<h3 id="o-3">5.3 凸包与分段函数：min/max 的可微化技巧</h3>
+<p>PPO 的裁剪目标、束搜索的长度惩罚都用到同一条技巧，值得单独记。</p>
+<div class="eq">
+\[\min(u,v)=\frac{u+v-\lvert u-v\rvert}{2},\qquad
+\max(u,v)=\frac{u+v+\lvert u-v\rvert}{2} \]
+</div>
+<p>推导：记 \(a=(u+v)/2,\ b=(u-v)/2\)，则 \(u=a+b,\ v=a-b\)。若 \(b\ge0\) 则 \(u\ge v\)，\(\min=u=a+b=a+|b|\)。所以 \(\min=a+|b|=\frac{u+v}{2}+\frac{|u-v|}{2}\)。\(\max\) 类似。</p>
+<p><strong>用法</strong>：\(\mathrm{clip}(u,l,h)=\min(\max(u,l),h)\) 因此可微性只在拐点处失效；反过来，用 \(\mathrm{clip}\) 构造的目标函数<strong>自动是分段线性/分段多项式的凹函数</strong>，所以"最大化它"是凸优化问题。这正是 PPO-Clip 和温度采样能稳定工作的原因。</p>
+
+<h2 id="series">六、级数与数值方法</h2>
+
+<h3 id="s-1">6.1 几何级数（推导 GAE 与 attention scaling 的基础）</h3>
+<ol class="steps">
+<li>\(|r|&lt;1\) 时 \(\sum_{k=0}^{\infty}r^k=\frac{1}{1-r}\)。<em>证明</em>：设 \(S=\sum_{k=0}^\infty r^k\)，则 \(rS=\sum_{k=1}^\infty r^k\)，两式相减 \(S-rS=1\)，得 \(S=\frac{1}{1-r}\)。</li>
+<li>平方：\(\sum_{k=0}^\infty r^{2k}=\frac{1}{1-r^2}\)。</li>
+<li><strong>折扣累积（有限和）</strong>：\(\sum_{k=0}^{T}r^k=\frac{1-r^{T+1}}{1-r}\)，\(r\to1\) 时趋于 \(T\)。</li>
+<li><strong>方差的递推（用于 bootstrap）</strong>：设 \(\delta_k\) 独立同分布、均值 \(\mu\)、方差 \(\sigma^2\)，则 \(\mathrm{Var}\big(\sum_{k=0}^{K}r^k\delta_k\big)=\sigma^2\sum_{k=0}^{K}r^{2k}=\sigma^2\frac{1-r^{2K+2}}{1-r^2}\)。<strong>折扣因子的方差衰减比期望衰减更快</strong>（分母是 \(1-r^2\) 而不是 \(1-r\)），所以折扣比折扣越大，累积估计的方差越小——这是 TD(λ) 中 \(\lambda\) 起"方差调节旋钮"作用的数学根源。</li>
+</ol>
+
+<h3 id="s-2">6.2 泰勒展开</h3>
+<p>三种形式：</p>
+<div class="eq">
+\[
+\begin{aligned}
+\text{一阶：}\quad &f(x+h)=f(x)+f'(x)h+O(h^2)\\[2pt]
+\text{二阶（多元）：}\quad &f(\mathbf{x}+\mathbf{h})\approx f(\mathbf{x})+\nabla f^\top\mathbf{h}+\tfrac12\mathbf{h}^\top\nabla^2f\,\mathbf{h}\\[2pt]
+\text{含余项：}\quad &f(x)=f(a)+f'(a)(x-a)+\tfrac12f''(\xi)(x-a)^2
+\end{aligned}
+\]
+</div>
+<ul>
+<li><strong>梯度下降的一阶近似</strong>：\(f(\mathbf{x}-\eta\nabla f)=f(\mathbf{x})-\eta\|\nabla f\|^2+O(\eta^2)\)。只要 \(\eta\) 足够小，损失一定下降——这是"学习率不能太大"的来源。</li>
+<li><strong>二阶近似的极小点</strong>：最小化 \(f(\mathbf{x})+\mathbf{h}^\top\nabla f+\frac12\mathbf{h}^\top\mathbf{H}\mathbf{h}\) 得 \(\mathbf{h}^*=-\mathbf{H}^{-1}\nabla f\)，即 Newton 法。</li>
+<li><strong>缩放定律的局部线性化</strong>：\(L(x)=A x^{-b}\) 在 \(x_0\) 处
+\(\ln L\approx \ln A-b\ln x_0-\frac{b}{x_0}(x-x_0)\)，即"损失下降量 \(\approx\) 幂指数 \(\times\) 相对规模增幅"。这就是"参数翻倍损失只降约 5%"的推导方式（\(b=0.076\)，\(\ln2\times0.076\approx0.0527\)，即 5.1%）。</li>
+</ul>
+
+<h3 id="s-3">6.3 数值稳定性 checklist</h3>
+<table class="sym">
+<tr><th>风险</th><th>症状</th><th>标准解法</th></tr>
+<tr><td>exp 溢出</td><td>\(e^{800}=\infty\)</td><td>softmax 前减最大值；log-sum-exp 技巧</td></tr>
+<tr><td>log 下溢</td><td>\(\ln 0.0000...= -\infty\)</td><td>\(\log\sigma(z)=-\text{softplus}(-z)\)，不先算 \(\sigma\)</td></tr>
+<tr><td>大数连乘</td><td>概率乘积归零</td><td>取对数，把乘积变求和</td></tr>
+<tr><td>幂运算溢出</td><td>\(10^{13}\) 类计算溢出</td><td>在对数空间算：\(\log L=b(\log c-\log x)\)</td></tr>
+<tr><td>半精度范围小</td><td>梯度下溢为 0</td><td>loss scaling：先乘 \(2^s\)，更新前再除</td></tr>
+<tr><td>梯度范数过大</td><td>一步跳飞</td><td>裁剪 \(g\cdot\min(1,\frac{c}{\|g\|})\)</td></tr>
+</table>
+<p>对数空间技巧值得强调：\(a^b=\exp(b\ln a)\)。所有缩放定律的推导都可以"先取对数变线性，算完再指数回去"，既避免溢出又更好理解。log-linear 回归也是同一个想法。</p>
+
+<h2 id="pit">七、最容易被忘 / 最容易用错的地方</h2>
+<div class="warn">
+<b>1. "损失下降"和"概率上升"不是一回事</b>
+交叉熵从 3.0 降到 2.0 意味着模型对真实 token 的平均概率从 \(e^{-3}\approx5\%\) 升到 \(e^{-2}\approx13.5\%\)。绝对提升看着大，但相对模型能覆盖的概率空间仍是极小的一部分。
+</div>
+<div class="warn">
+<b>2. 期望的线性性不需要独立性，但方差需要</b>
+\(\mathbb{E}[XY]=\mathbb{E}[X]\mathbb{E}[Y]\) 要求独立（或至少不相关）。自回归 token 之间<strong>显然不独立</strong>，这是语言模型"方差比分类任务大"的根源之一。
+</div>
+<div class="warn">
+<b>3. softmax 不改变大小顺序，但温度会改变排序偏好</b>
+\(T&lt;1\) 放大差异（更尖锐），\(T&gt;1\) 压平（更随机）。极端 \(T\to\infty\) 下所有 token 等概率；\(T\to0\) 时退化为 argmax。
+</div>
+<div class="warn">
+<b>4. 矩阵求导的转置错误</b>
+\(\frac{\partial L}{\partial W}=\frac{\partial L}{\partial\mathbf y}\mathbf x^\top\) 而不是 \(\mathbf x(\frac{\partial L}{\partial\mathbf y})^\top\)。写完用 \(\mathrm{tr}(A^\top B)\) 对偶数技巧验证一遍。
+</div>
+<div class="warn">
+<b>5. KL 不对称</b>
+\(\mathrm{KL}(P\|Q)\) 与 \(\mathrm{KL}(Q\|P)\) 是不同的量。前向 KL（\(P\) 真实、\(Q\) 模型）让 \(Q\) 覆盖 \(P\) 的全部模式（mode-covering），反向 KL 让 \(Q\) 只落在 \(P\) 的某个模态上（mode-seeking）。VAE 用反向 KL，RLHF 用前向 KL——这个选择会实质改变行为模式。
+</div>
+<div class="warn">
+<b>6. 经验拟合的"常数"不是数学常数</b>
+缩放定律的指数、奖励模型的温度系数、PPO 的 clip 范围都是超参数，依赖具体架构与数据。推导它们的<b>形式</b>是数学任务，拟合它们的<b>数值</b>是实验任务。
+</div>
+
+<h2 id="mapback">下一步</h2>
+<p>工具齐了。去 <a href="01-ch02-scaling.html">第 2 章 · 缩放定律</a> 开始——那是全书数学密度最高、也最能建立"公式即工程决策"直觉的一章。之后按顺序读 <a href="03-ch05-arch-a.html">第 5 章模型架构</a>、<a href="06-ch06-pt-a.html">第 6 章预训练</a>、<a href="09-ch08-align-a.html">第 8 章人类对齐</a>、<a href="12-ch09-dec-a.html">第 9 章解码</a>、<a href="15-ch12-eval-a.html">第 12 章评测</a>。</p>
+</article>
+</main>
+<nav class="chapnav" aria-label="上下页导航"><div class="chapnav-inner">
+<span class="none"></span><a class="next" href="01-ch02-scaling.html"><span class="lbl">下一章</span><span class="nm">Chapter 2　第 2 章 · 缩放定律</span></a>
+</div></nav>
+<script src="../assets/katex/katex.min.js"></script>
+<script src="../assets/katex/auto-render.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

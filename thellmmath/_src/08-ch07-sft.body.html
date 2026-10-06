@@ -1,0 +1,383 @@
+<h1><span class="chno">Chapter 7 · Instruction Tuning</span>第 7 章 · 指令微调</h1>
+<p class="lead">指令微调（Instruction Tuning）的核心矛盾是：要跟着任务走，就得改参数；可一个 70 亿参数的大模型，光是存下全量参数和它的优化器状态就要上百 GB 显存。参数高效微调（Parameter-Efficient Fine-Tuning, PEFT）的思路是——<strong>冻结预训练权重 \(W_0\)，只训练一小撮额外的参数</strong>。本页覆盖第 7.3 节里的 4 条编号公式：LoRA 的权重分解式 (7.1) 与低秩分解定义（无编号）、前向传播式 (7.2)、Adapter 的瓶颈结构式 (7.3)、Prefix tuning 的注意力式 (7.4)。合在一起它们回答同一个问题：<em>那一小撮参数该插在哪里，才能既省显存又不掉效果？</em>LoRA 插在<b>权重</b>上（可合并、零推理开销），Adapter 插在<b>残差流</b>上（串行瓶颈小网络），Prefix 插在<b>键值缓存</b>上（不改权重，改注意力分布）。</p>
+<p class="where"><b>原书位置</b>第 7 章 7.3 节 <a href="../thellm/14-7-instruction-tuning.html#7-3-parameter-efficient-fine-tuning">Parameter-Efficient Fine-Tuning</a>　代码实践见 <a href="../thellm/14-7-instruction-tuning.html#7-4-3-code-practice-and-analysis-for-lora">7.4.3 节</a></p>
+
+<h2 id="overview">本页公式一览</h2>
+<table class="sym">
+<tr><th>编号</th><th>一句话</th><th>核心数学工具</th></tr>
+<tr><td><a href="#eq-7-1">7.1</a></td><td>全参数微调写法 \(W=W_0+\Delta W\)</td><td>梯度下降一步的展开</td></tr>
+<tr><td><a href="#eq-7-1b">（无编号）</a></td><td>LoRA 的低秩分解 \(\Delta W=AB^{\top}\)</td><td>奇异值分解 + Eckart–Young 定理</td></tr>
+<tr><td><a href="#eq-7-2">7.2</a></td><td>前向传播 \(h=W_0x+AB^{\top}x\)</td><td>矩阵乘法结合律、零初始化</td></tr>
+<tr><td><a href="#eq-7-3">7.3</a></td><td>Adapter 瓶颈模块 \(h=h+\sigma(hW_d)W_u\)</td><td>降维–非线性–升维、残差连接</td></tr>
+<tr><td><a href="#eq-7-4">7.4</a></td><td>Prefix 注意力 \(\mathrm{Attention}(XW^Q,\,P^K\oplus XW^K,\,P^V\oplus XW^V)\)</td><td>分块矩阵乘法、softmax 的分母</td></tr>
+<tr><td><a href="#why">补充</a></td><td>秩/尺度解耦 \(\Delta W=\frac{\alpha}{r}AB^{\top}\)</td><td>梯度量纲分析</td></tr>
+</table>
+
+<h2 id="setup">先约定记号</h2>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(H\)</td><td>隐藏维数（hidden size），一个 token 的表示长度</td><td>标量，LLaMA-7B 中 \(H=4096\)</td></tr>
+<tr><td>\(R\)（或 \(r\)）</td><td>低秩分解的<b>秩</b>（rank），即"瓶颈"宽度</td><td>标量，典型取 4/8/16/64</td></tr>
+<tr><td>\(x\)</td><td>某个线性层的输入向量（一个 token 的表示）</td><td>\(\mathbb{R}^{H}\)（列向量）</td></tr>
+<tr><td>\(h\)</td><td>该线性层的输出向量</td><td>\(\mathbb{R}^{H}\)（列向量）</td></tr>
+<tr><td>\(W_0\)</td><td>预训练得到的原始权重，<b>冻结</b>不更新</td><td>\(\mathbb{R}^{H\times H}\)</td></tr>
+<tr><td>\(\Delta W\)</td><td>微调带来的权重增量，即"要学的东西"</td><td>\(\mathbb{R}^{H\times H}\)（但内在秩很低）</td></tr>
+<tr><td>\(L_{\text{layer}}\)</td><td>模型层数（原书用 \(L\)）</td><td>标量，LLaMA-7B 中 \(L=32\)</td></tr>
+<tr><td>\(T\)</td><td>训练时一条样本的 token 数（序列长度）</td><td>标量</td></tr>
+</table>
+<div class="warn">
+<b>向量约定先说清</b>全页统一用<b>列向量</b>：\(h=W_0x\)，\(x,h\in\mathbb{R}^{H}\)，矩阵右乘向量。原书公式 (7.3) 把 \(h\) 写成行向量再右乘 \(W_d\)，于是它写的是 \(W_d\in\mathbb{R}^{H\times R}\)、\(W_u\in\mathbb{R}^{R\times H}\)。两种写法只是转置之差，本页在符号表里同时给出两种形状，读原书公式时不会晕。
+</div>
+
+<!-- ============================== 公式 7.1 ============================== -->
+<section class="fml" id="eq-7-1">
+<h2><span class="num">(7.1)</span>全参数微调的标准写法：\(W=W_0+\Delta W\)<a class="anchor" href="#eq-7-1">#</a></h2>
+<p class="where"><b>出处</b>第 7 章 7.3.1 节 Low-Rank Adaptation (LoRA)　<a href="../thellm/14-7-instruction-tuning.html#7-3-1-low-rank-adaptation-lora">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0157.png" alt="原书公式 7.1"><span class="cap">原书公式 7.1</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ W = W_0 + \Delta W, \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(W\)</td><td>微调后的权重（真正参与前向计算的矩阵）</td><td>\(\mathbb{R}^{H\times H}\)</td></tr>
+<tr><td>\(W_0\)</td><td>预训练权重，微调期间<b>冻结</b></td><td>\(\mathbb{R}^{H\times H}\)</td></tr>
+<tr><td>\(\Delta W\)</td><td>权重增量。书里称 "gradient matrix for updates"，即梯度给出的更新量</td><td>\(\mathbb{R}^{H\times H}\)，矩阵</td></tr>
+</table>
+
+<h3>③ 推导：这一步从哪来？</h3>
+<p>它就是<b>一步梯度下降</b>写开的结果。回忆带动量/不带量量的梯度下降（Gradient Descent, GD）：在第 \(k\) 步，参数沿负梯度方向移动学习率 \(\eta\) 倍，</p>
+<div class="eq">
+\[ W_{k+1} = W_k - \eta \left.\frac{\partial L}{\partial W}\right|_{W=W_k} \]
+</div>
+<p>其中 \(L\) 是训练损失（如交叉熵），\(\frac{\partial L}{\partial W}\) 是损失对权重矩阵的梯度。把第 \(0\) 步代进去：</p>
+<div class="eq">
+\[ W_1 = W_0 - \eta\left.\frac{\partial L}{\partial W}\right|_{W_0} = W_0 + \Big(-\eta\left.\frac{\partial L}{\partial W}\right|_{W_0}\Big) = W_0 + \Delta W \]
+</div>
+<p>于是把那个带负号的梯度重新起个名字，就叫 \(\Delta W\)。所以 (7.1) 有两种完全等价的读法：</p>
+<ol class="steps">
+<li><b>读法一（优化视角）</b>：\(W_0\) 是底座，\(\Delta W\) 是学出来的偏移量。所有 PEFT 方法做的事，都是<b>换一种更省参数的方式去表示 \(\Delta W\)</b>。</li>
+<li><b>读法二（分析视角）</b>：第一步梯度下降时 \(\Delta W=-\eta\,\partial L/\partial W\)。所以想压缩 \(\Delta W\)，就等于想压缩损失对 \(W\) 的梯度矩阵。这正是下一页要干的事。</li>
+</ol>
+
+<h3>④ 为什么 \(\Delta W\) 可以低秩？（数学依据）</h3>
+<p>这是 LoRA 全部灵感的来源，也是最值得细讲的一步。分三层。</p>
+<p><b>第 1 层：梯度矩阵是"向量外积之和"，秩被序列长度卡住。</b>线性层的输出是 \(h_t=W_0x_t\)，\(t=1,\dots,T\) 遍历一条样本的所有 token。损失 \(L\) 同时依赖所有 \(h_t\)。矩阵形式的链式法则（若 \(\mathbf{z}=f(\mathbf{y}),\mathbf{y}=g(\mathbf{x})\)，则 \(\frac{\partial \mathbf{z}}{\partial \mathbf{x}}=\frac{\partial \mathbf{z}}{\partial \mathbf{y}}\frac{\partial \mathbf{y}}{\partial \mathbf{x}}\)）在这里给出</p>
+<div class="eq">
+\[ \begin{aligned} \frac{\partial L}{\partial W} &amp;= \sum_{t=1}^{T} \frac{\partial L}{\partial h_t}\cdot\frac{\partial h_t}{\partial W} = \sum_{t=1}^{T} g_t\,x_t^{\top}, \qquad g_t:=\frac{\partial L}{\partial h_t}\in\mathbb{R}^{H} \end{aligned} \]
+</div>
+<p>这里用的是"分子布局"：\(\frac{\partial L}{\partial h_t}\) 视为行向量的梯度转置成列向量 \(g_t\)；由于 \(h_t=W_0x_t\) 对 \(W_0\) 是线性的，\(\frac{\partial h_t}{\partial W}\) 就是把 \(h_t\) 复制的那个线性算子，写成矩阵就是 \(x_t^{\top}\)。两项一外积，得到一个 \(H\times H\) 的<b>秩一</b>矩阵。把 \(T\) 个秩一矩阵加起来，秩最多是它们的秩之和：</p>
+<div class="eq">
+\[ \operatorname{rank}\Big(\frac{\partial L}{\partial W}\Big) = \operatorname{rank}\Big(\sum_{t=1}^{T} g_t x_t^{\top}\Big) \;\le\; \sum_{t=1}^{T} \operatorname{rank}(g_t x_t^{\top}) = T \]
+</div>
+<p>更精确的写法是把 \(\frac{\partial L}{\partial W}\) 看成一个 \(H\times T\) 的矩阵 \(\big[\,g_1\ \cdots\ g_T\,\big]\) 乘一个 \(T\times H\) 的矩阵 \(\big[\,x_1\ \cdots\ x_T\,\big]^{\top}\)。两个矩阵相乘的秩不超过两者秩的较小值，于是</p>
+<div class="eq">
+\[ \operatorname{rank}\Big(\tfrac{\partial L}{\partial W}\Big) \le \min(T,\;H) \]
+</div>
+<p><strong>关键在于 \(T \ll H\)</strong>：序列长度是 512、2048，隐藏维是 4096。就算 \(T=H=4096\)，秩的上界也只是"和矩阵一样大"，毫无信息；只有当 \(T\) 相对 \(H\) 小时，结论才有价值。而"低秩"比"秩 \(\le T\)"更强的说法——有效秩（有效自由度数目）往往比 \(T\) 还小得多，这是经验观测，下面会明说。</p>
+<p><b>第 2 层：把 \(\Delta W\) 做奇异值分解（SVD），低秩就是"奇异值集中"。</b>任何实矩阵都能写成 \(\Delta W=\mathbf{U}\Sigma\mathbf{V}^{\top}\)，其中 \(\mathbf{U},\mathbf{V}\) 是正交矩阵（\(\mathbf{U}^{\top}\mathbf{U}=\mathbf{V}^{\top}\mathbf{V}=\mathbf{I}\)），\(\Sigma=\operatorname{diag}(\sigma_1,\dots,\sigma_H)\) 是对角奇异值矩阵，约定 \(\sigma_1\ge\sigma_2\ge\cdots\ge\sigma_H\ge0\)。数学上"低秩"的准确含义就是：<b>只有前 \(r\) 个奇异值显著非零，其余可以忽略</b>。这时</p>
+<div class="eq">
+\[ \Delta W \;\approx\; \mathbf{U}_r\Sigma_r\mathbf{V}_r^{\top}, \qquad \mathbf{U}_r\in\mathbb{R}^{H\times r},\ \mathbf{V}_r\in\mathbb{R}^{H\times r},\ \Sigma_r=\operatorname{diag}(\sigma_1,\dots,\sigma_r) \]
+</div>
+<p>而 \(\mathbf{U}_r\Sigma_r\mathbf{V}_r^{\top}\) 正好可以拆成两个瘦长矩阵的乘积：取 \(A=\mathbf{U}_r\Sigma_r\)、\(B=\mathbf{V}_r\)，就得到 \(\Delta W\approx AB^{\top}\)。<b>"低秩"与"两矩阵相乘"是同一件事</b>：\(\operatorname{rank}(AB^{\top})\le\min(\operatorname{rank}A,\operatorname{rank}B)\le r\)。</p>
+<p><b>第 3 层：截断到秩 \(r\) 到底损失多少？——Eckart–Young 定理。</b>既然要扔掉一部分，凭什么说扔掉小的那些最不亏？Frobenius 范数 \(\|\mathbf{M}\|_F=\sqrt{\sum_{ij}M_{ij}^2}\) 下的 Eckart–Young–Mirsky 定理说：</p>
+<div class="eq">
+\[ \boxed{\ \min_{\operatorname{rank}(\mathbf{X})\le r}\ \|\mathbf{M}-\mathbf{X}\|_F = \Big(\sum_{i&gt;r}\sigma_i^2\Big)^{1/2},\qquad \text{最优解唯一到 } \mathbf{U}\text{、}\mathbf{V}\text{ 的正交变换}\ } \]
+</div>
+<p>先看它说了什么，再看它为什么成立。取 \(M=\mathbf{U}\Sigma\mathbf{V}^{\top}\)，令最优解 \(\mathbf{X}=\mathbf{U}_r\Sigma_r\mathbf{V}_r^{\top}\)。误差矩阵 \(\mathbf{M}-\mathbf{X}\) 与 \(\mathbf{U}_r\) 正交（因为 \(\mathbf{M}\) 的列空间前 \(r\) 个左奇异向量恰好张成 \(\mathbf{U}_r\)），\(\mathbf{M}\) 和 \(\mathbf{X}\) 的 Frobenius 范数又都是 \(\sqrt{\sum_{i\le r}\sigma_i^2}\)，于是</p>
+<div class="eq">
+\[ \|\mathbf{M}-\mathbf{X}\|_F^2 = \|\mathbf{M}\|_F^2 + \|\mathbf{X}\|_F^2 - 2\,\langle \mathbf{M},\mathbf{X}\rangle_F = 2\sum_{i\le r}\sigma_i^2 - 2\sum_{i\le r}\sigma_i^2 = \sum_{i&gt;r}\sigma_i^2 \]
+</div>
+<p>反过来证"不可能更小"：任取秩 \(\le r\) 的 \(\mathbf{Y}\)，写成 \(\mathbf{Y}=\mathbf{U}_Y\mathbf{V}_Y^{\top}\)（\(\mathbf{U}_Y,\mathbf{V}_Y\) 各含 \(r\) 个标准正交列）。用柯西–施瓦茨不等式 \(\langle\mathbf{A},\mathbf{B}\rangle_F\le\|\mathbf{A}\|_F\|\mathbf{B}\|_F\) 两步夹逼，</p>
+<div class="eq">
+\[ \|\mathbf{M}-\mathbf{Y}\|_F^2 = \|\mathbf{M}\|_F^2 + r - 2\operatorname{tr}(\mathbf{U}_Y^{\top}\mathbf{M}\mathbf{V}_Y) \;\ge\; \sum_{i}\sigma_i^2 + r - 2\sqrt{r}\Big(\sum_{i\le r}\sigma_i^2\Big)^{1/2} = \sum_{i&gt;r}\sigma_i^2 \]
+</div>
+<p>（中间用了 \(\operatorname{tr}(\mathbf{U}_Y^{\top}\mathbf{M}\mathbf{V}_Y)\le\|\mathbf{U}_Y^{\top}\mathbf{M}\mathbf{V}_Y\|_F\le\sqrt{\sum_{i\le r}\sigma_i^2}\)。）两边夹住了，定理成立。</p>
+
+<h3>⑤ 参数量账：\(H^2\) vs \(2HR\)</h3>
+<div class="eq">
+\[ \text{全量微调：}\; H^2 \qquad\qquad \text{LoRA：}\; HR + RH = 2HR \qquad\qquad \frac{2HR}{H^2} = \frac{2R}{H} \]
+</div>
+<p>拿 LLaMA-7B（\(H=4096\)）取 \(R=16\) 算一遍：</p>
+<ul>
+<li>一个矩阵全量要训 \(4096^2 = 16{,}777{,}216\) 个参数（约 1678 万）；</li>
+<li>低秩只训 \(2\times4096\times16 = 131{,}072\) 个（约 13.1 万）；</li>
+<li>比例 \(\dfrac{131072}{16777216} = 0.0078 = 0.78\%\)，即每个矩阵省掉约 <strong>128 倍</strong>的梯度与优化器状态。</li>
+<li>放到整模型：LoRA 通常只挂在注意力的 4 个投影 \(W_Q,W_K,W_V,W_O\in\mathbb{R}^{H\times H}\) 上（此时每个投影贡献 \(2HR\)），故 \(P_{\text{LoRA}}= 4\cdot 2HR\cdot L = 8LHR\)。取 \(L=32,H=4096,R=16\)：\(P_{\text{LoRA}} = 16{,}777{,}216\approx1.68\times10^7\)，占 7B 总参数的 <strong>约 0.25%</strong>。若取原书示例的 \(R=8\)，则再减半。</li>
+</ul>
+
+<div class="note">
+<b>直觉</b>
+整块 \(H\times H\) 权重是一个"富矿"，但为了做一件<b>特定的</b>事（比如学会按指令输出 JSON），你真正要改动的方向可能只有十几个——这就是内在秩（intrinsic rank）远小于 \(H\) 的含义。LoRA 的赌注是：既然要改的方向本来就稀疏，那与其存一整个 \(4096\times4096\) 的矩阵再去用其中十几个方向，不如<strong>直接参数化那十几个方向</strong>。Eckart–Young 定理保证了"只留前 \(r\) 个奇异值"是这个取舍下的最优解，误差恰好等于被丢掉的那部分能量 \(\sum_{i&gt;r}\sigma_i^2\)。
+</div>
+<div class="warn">
+<b>易错点：低秩不是数学定理，是经验观测</b>
+上面只有"梯度矩阵的秩 \(\le T\)"是严格结论。而且这个结论只对<b>单步、单条样本</b>的梯度成立。训练几千步后，\(\Delta W=-\eta\sum_{s=1}^{S}\mathbf{G}_s\) 是 \(S\) 个低秩梯度矩阵之和，秩的上界是 \(\min(H, ST)\)，<b>并不保证仍然低秩</b>。真正的依据是论文作者的实验观测：微调过程中 \(\Delta W\) 的奇异值谱衰减极快，前十几个奇异值就吃掉了绝大部分能量（\(\sum_{i\le 16}\sigma_i^2\) 占比很高）。"秩取 16 就够"是实验结论，不是定理。书里说的 "over-parameterized / lower intrinsic rank" 也是这个意思。
+</div>
+<div class="note">
+<b>记忆负担最小化</b>
+\(W_0\) 一定要冻结。理由：\(W_0\) 不更新，就只需要给 \(\Delta W\) 的两个矩阵存梯度和优化器状态；而如果 \(W_0\) 也训，优化器状态就是全量的，LoRA 省显存的意义立刻消失（详见下一节的显存分析）。
+</div>
+<div class="relnav">相关：<a href="#eq-7-1b">低秩分解 \(\Delta W=AB^{\top}\)</a>　<a href="#eq-7-2">(7.2) 前向传播</a></div>
+</section>
+
+<!-- ==================== 无编号公式（LoRA 低秩分解定义） ==================== -->
+<section class="fml" id="eq-7-1b">
+<h2><span class="num">(7.1′)</span>LoRA 的低秩分解：\(\Delta W=AB^{\top}\)<a class="anchor" href="#eq-7-1b">#</a></h2>
+<p class="where"><b>出处</b>第 7 章 7.3.1 节（紧接公式 7.1 之后的行内公式，书中未编号）　<a href="../thellm/14-7-instruction-tuning.html#7-3-1-low-rank-adaptation-lora">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0158.png" alt="原书行内公式：低秩分解 ΔW = A·Bᵀ"><span class="cap">原书行内公式：\(\Delta W=A\cdot B^{\top}\)（无编号）</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \Delta W = A \cdot B^{\top} \quad\text{用低秩分解矩阵}\quad A\in\mathbb{R}^{H\times R},\ B\in\mathbb{R}^{H\times R},\quad R \ll H \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(A\)</td><td>低秩矩阵之一，作用是"压到 \(R\) 维瓶颈"（down-projection）</td><td>\(\mathbb{R}^{H\times R}\)，\(R\ll H\)</td></tr>
+<tr><td>\(B\)</td><td>低秩矩阵之二，作用是"从 \(R\) 维瓶颈还原回 \(H\) 维"（up-projection）</td><td>\(\mathbb{R}^{H\times R}\)</td></tr>
+<tr><td>\(B^{\top}\)</td><td>\(B\) 的转置，因为对列向量要从右边乘</td><td>\(\mathbb{R}^{R\times H}\)</td></tr>
+<tr><td>\(\Delta W=AB^{\top}\)</td><td>权重增量，被强制约束成秩 \(\le R\) 的矩阵</td><td>\(\mathbb{R}^{H\times H}\)，秩 \(\le R\)</td></tr>
+<tr><td>\(R\)</td><td>秩 / 瓶颈宽度，是需要调的<b>超参数</b></td><td>标量正整数，\(1\le R\ll H\)</td></tr>
+</table>
+
+<h3>③ 推导：形状怎么对上？SVD 怎么拆？</h3>
+<ol class="steps">
+<li><b>形状必须自洽。</b>\(AB^{\top}\) 要等于 \(H\times H\)。取 \(A\in\mathbb{R}^{H\times R}\)、\(B^{\top}\in\mathbb{R}^{R\times H}\)，即 \(B\in\mathbb{R}^{H\times R}\)。✅ 秩：\(\operatorname{rank}(AB^{\top})\le\min(\operatorname{rank}A,\operatorname{rank}B)=R\)。✅ 参数量：\(HR+RH=2HR\)。✅</li>
+<li><b>从 SVD 拿一个更好的拆分。</b>设 \(\Delta W=\mathbf{U}\Sigma\mathbf{V}^{\top}\)，\(\Sigma_r=\operatorname{diag}(\sqrt{\sigma_1},\dots,\sqrt{\sigma_r})\)。取 \(A=\mathbf{U}_r\Sigma_r\)、\(B=\mathbf{V}_r\Sigma_r\)，则 \(AB^{\top}=\mathbf{U}_r\Sigma_r^{2}\mathbf{V}_r^{\top}=\mathbf{U}_r\Sigma_r^{(\text{原})}\mathbf{V}_r^{\top}\)，恰好等于秩-\(R\) 截断 \(\Delta W\) 的 SVD。把 \(\sqrt{\sigma}\) 一人一半分给两边，是为了让 \(A\) 和 \(B\) 的奇异值尺度相当，训练更稳；直接用 \(A=\mathbf{U}_r\Sigma_r,\ B=\mathbf{V}_r\) 也对，只是 \(A\) 的量纲偏大。</li>
+<li><b>秩被写进了架构</b>。因为 \(B^{\top}x\in\mathbb{R}^{R}\)，任何输入向量 \(x\) 经过这条支路时都被压缩到 \(R\) 维子空间里，输出 \(A(B^{\top}x)\) 必然落在 \(A\) 的列空间（一个 \(R\) 维子空间）中。这等价于硬约束：<b>更新方向被限制在一个固定的 \(R\) 维子空间里</b>，而这个子空间的位置本身也是可学的（\(A,B\) 都在训）。</li>
+<li><b>不损失冻结权重</b>\(W_0\) 完全没有出现在这个式子里——它被原封不动地存着、加载时直接用。微调产物只有两个瘦矩阵，加起来通常几 MB 到几十 MB。</li>
+</ol>
+
+<div class="note">
+<b>记号陷阱：\(AB^{\top}\) 和 \(BA\) 是同一回事</b>
+原书写 \(\Delta W=AB^{\top}\)（\(A\) 上、\(B\) 下）。HuggingFace PEFT 的实现里常写成 \(\Delta W=BA\)，其中 <code>lora_A</code> 是下投影 \(r\times H\)、<code>lora_B</code> 是上投影 \(H\times r\)。数学上只是把两个字母的顺序换了，但<b>读代码时必须先确认哪个字母在上</b>，否则初始化该置零的那一个会搞反（见 (7.2) 的易错点）。本页正文一律沿用原书的 \(AB^{\top}\)。
+</div>
+<div class="note">
+<b>显存账（原书 7.3.1 节）</b>
+设模型总参数 \(P\)，LoRA 可训参数 \(P_{\text{LoRA}}\)。全参数微调要存：fp16 权重 \(2P\)、梯度 \(2P\)、Adam 的一阶矩 \(4P\)、二阶矩 \(4P\)、fp32 主权重 \(4P\)，合计 \(16P\)。LoRA 微调要存：\(2P\)（fp16 冻结权重）+ \(2P_{\text{LoRA}}\)（低秩权重）\(+2P_{\text{LoRA}}\)（梯度）\(+4P_{\text{LoRA}}+4P_{\text{LoRA}}\)（两个矩）\(+4P_{\text{LoRA}}\)（fp32 主权重）\(=2P+16P_{\text{LoRA}}\)。因为 \(P_{\text{LoRA}}/P\approx0.25\%\)，\(16P_{\text{LoRA}}\) 相对 \(2P\) 几乎可以忽略，所以显存从 \(16P\) 降到约 \(2P\)。原书用 LLaMA-7B（\(R=8\)）举例：\(108\,\mathrm{GB}\to14\,\mathrm{GB}\)。真正的门槛因此变成<b>能不能装下模型本身</b>，这也正是 QLoRA（把 \(W_0\) 量化到 4-bit，降到约 \(0.5P\)）的动机。
+</div>
+<div class="relnav">相关：<a href="#eq-7-1">(7.1) \(W=W_0+\Delta W\)</a>　<a href="#why">rank/alpha 缩放</a></div>
+</section>
+
+<!-- ============================== 公式 7.2 ============================== -->
+<section class="fml" id="eq-7-2">
+<h2><span class="num">(7.2)</span>LoRA 前向传播：\(h=W_0x+AB^{\top}x\)<a class="anchor" href="#eq-7-2">#</a></h2>
+<p class="where"><b>出处</b>第 7 章 7.3.1 节 Low-Rank Adaptation (LoRA)　<a href="../thellm/14-7-instruction-tuning.html#7-3-1-low-rank-adaptation-lora">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0159.png" alt="原书公式 7.2"><span class="cap">原书公式 7.2</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ h = W_0 \cdot x + A \cdot B^{\top} \cdot x. \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(x\)</td><td>该层的输入向量</td><td>\(\mathbb{R}^{H}\)（列向量）</td></tr>
+<tr><td>\(h\)</td><td>该层的输出向量，\(W_0x\) 是原模型输出，\(AB^{\top}x\) 是微调引入的修正</td><td>\(\mathbb{R}^{H}\)</td></tr>
+<tr><td>\(W_0\cdot x\)</td><td>冻结权重的原始计算，形状 \(\mathbb{R}^{H\times H}\cdot\mathbb{R}^{H}\)</td><td>\(\mathbb{R}^{H}\)</td></tr>
+<tr><td>\(A\cdot(B^{\top}x)\)</td><td>低秩支路：先压到 \(R\) 维再升回 \(H\) 维</td><td>\(\mathbb{R}^{R}\to\mathbb{R}^{H}\)</td></tr>
+</table>
+
+<h3>③ 推导：三件事</h3>
+<p><b>(a) 这就是 (7.1) 代进去。</b>把 \(\Delta W=AB^{\top}\) 代入 \(h=Wx=(W_0+\Delta W)x\)，利用分配律得 \(h=W_0x+AB^{\top}x\)。这是一条<b>并联（残差）</b>结构：两条支路的结果相加，而不是串联。</p>
+<p><b>(b) 计算顺序：先 \(R\) 后 \(H\)。</b>矩阵乘法有结合律，可以自由决定括号位置，但代价完全不同：</p>
+<div class="eq">
+\[ \underbrace{B^{\top}x}_{\text{成本 } RH}\in\mathbb{R}^{R} \qquad\text{然后}\qquad \underbrace{A(\cdot)}_{\text{成本 } HR}\in\mathbb{R}^{H} \qquad\Rightarrow\qquad \text{总 } 2RH \ \ll\ H^2 \]
+</div>
+<p>这叫"瓶颈"：中间那个 \(R\) 维向量是唯一需要物化的中间量，大小只有原来的 \(R/H\)。若先算 \(AB^{\top}\) 反而浪费——那是 \(RH+HR+R^2\) 次乘加，和直接全量更新没区别。<b>推理时的关键一步是根本不用算这条支路。</b></p>
+<p><b>(c) 推理零开销：把 \(\Delta W\) 预合并回 \(W_0\)。</b></p>
+<div class="eq">
+\[ W_{\text{merged}} = W_0 + \Delta W = W_0 + AB^{\top} \]
+</div>
+<p>训练结束后，\(A,B\) 都不再变化，把乘积<b>预先算一次</b>存成一个普通矩阵 \(W_{\text{merged}}\in\mathbb{R}^{H\times H}\)，推理时就退化成一句普通的 `h = x @ W_merged.T`。矩阵乘法结合律保证了数值上完全等价（浮点误差除外）。于是 LoRA 相比全量微调<b>不增加任何推理延迟、不增加任何激活显存</b>——加载的是一个和原模型一模一样的权重文件。这是 LoRA 相对于 Adapter 和 Prefix tuning 的决定性工程优势。</p>
+
+<h3>④ 初始化：\(B=0\)、\(A\sim\mathcal N(0,\sigma^2)\)</h3>
+<p>原书代码里写得很明确：\(A\) 用标准差 0.02 的正态分布初始化，\(B\) <b>置零</b>。为什么？</p>
+<ol class="steps">
+<li>\(B=0 \Rightarrow AB^{\top}=\mathbf{0}\Rightarrow h=W_0x+0=W_0x\)。第 0 步的模型<b>精确等于</b>预训练模型，微调从原点出发，不会因为随机初始化把原能力搞坏。</li>
+<li>虽然此刻 \(\partial L/\partial B \neq 0\)（因为它前面还串着非零的 \(A\)：\(\frac{\partial L}{\partial B}\) 含因子 \(A^{\top}\frac{\partial L}{\partial h}x^{\top}\)），但 \(\frac{\partial L}{\partial A}\) 里含因子 \(B\)，此时为 \(0\)。</li>
+<li>于是第一步只有 \(B\) 被更新，\(A\) 保持随机值不动。等 \(B\) 变成非零之后，\(A\) 才开始收到梯度。这保证了训练是"渐进地"把低秩支路打开的，训练初期行为与基座一致。</li>
+<li>注意 \(A,B\) 的量纲：\(A\sim\mathcal N(0,\sigma^2)\) 里 \(\sigma\) 要配 \(\frac{1}{\sqrt{R}}\)（Kaiming 初始化）或 \(1/\sqrt{H}\) 才不炸；原书用的 0.02 是经验值。</li>
+</ol>
+
+<div class="note">
+<b>直觉</b>
+公式 (7.2) 就是给每个线性层<span>并联</span>了一个又细又浅的小分支。主干（\(W_0\)）管通用能力，小分支（\(AB^{\top}\)）管这个具体任务。训练时主干冻结，只拧小分支的旋钮；训完之后把两个旋钮的结果预先加成一个，转成一个普通矩阵交付——用户拿到手的东西和全量微调没有任何区别。
+</div>
+<div class="warn">
+<b>易错点：置零的是"上投影"，不是下投影</b>
+按 (7.2) 的记号，\(A\) 是 \(H\times R\)（上），\(B\) 是 \(H\times R\)、\(B^{\top}\) 是 \(R\times H\)（下），要置零的是 <b>\(B\)</b>。若误把 \(A\) 置零，则 \(\frac{\partial L}{\partial B}=0\)（\(B\) 的梯度前面串着 \(A\)），两个矩阵都永远不动，损失纹丝不动——这是 LoRA 实现里最经典的"训练 loss 完全不变"故障。HF PEFT 里字母顺序相反，要置零的是 <code>lora_B</code>，别搞混。
+</div>
+<div class="note">
+<b>还有几处实现细节</b>
+原书的 <code>LoRALinear</code> 还在输入上套了一层 <code>Dropout</code>（正则化，防小数据上过拟合），并且 \(A,B\) 都用 <code>bias=False</code>——因为偏置的自由度已经被 \(B\) 的第 0 列（恒为 0 那一列的前 \(R-1\) 维……更准确地说 \(B\) 为 0 时仍可学）吸收，再加偏置没有必要。另外 \(A,B\) 的可训参数要放进优化器的 <code>requires_grad=True</code> 参数列表，否则梯度算出来也不会更新。
+</div>
+<div class="relnav">相关：<a href="#eq-7-1b">低秩分解定义</a>　<a href="#why">rank/alpha 缩放</a>　<a href="#eq-7-4">(7.4) Prefix tuning 对比</a></div>
+</section>
+
+<!-- ============================== 公式 7.3 ============================== -->
+<section class="fml" id="eq-7-3">
+<h2><span class="num">(7.3)</span>Adapter 模块：压缩–激活–还原的瓶颈结构<a class="anchor" href="#eq-7-3">#</a></h2>
+<p class="where"><b>出处</b>第 7 章 7.3.2 节 Other Parameter-Efficient Fine-Tuning Methods　<a href="../thellm/14-7-instruction-tuning.html#7-3-2-other-parameter-efficient-fine-tuning-me">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0161.png" alt="原书公式 7.3"><span class="cap">原书公式 7.3</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ h = h + \sigma(h\cdot W_d)\cdot W_u, \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(h\)</td><td>子层（MHA 或 FFN）的输出向量，Adapter 的输入；等号左边是被更新后的 \(h\)</td><td>\(\mathbb{R}^{H}\)（原书按行向量写）</td></tr>
+<tr><td>\(W_d\)</td><td>down-projection，压缩矩阵。列向量约定下 \(W_d\in\mathbb{R}^{R\times H}\)（原书写 \(\mathbb{R}^{H\times R}\)，按行向量）</td><td>\(\mathbb{R}^{H\times R}\) / \(\mathbb{R}^{R\times H}\)（两种约定）</td></tr>
+<tr><td>\(W_u\)</td><td>up-projection，还原矩阵。列向量约定下 \(W_u\in\mathbb{R}^{H\times R}\)</td><td>\(\mathbb{R}^{R\times H}\) / \(\mathbb{R}^{H\times R}\)</td></tr>
+<tr><td>\(\sigma(\cdot)\)</td><td>逐元素非线性激活函数（ReLU、GELU 等）</td><td>作用在 \(\mathbb{R}^{R}\) 上，\(\mathbb{R}^{R}\to\mathbb{R}^{R}\)</td></tr>
+<tr><td>\(R\ll H\)</td><td>瓶颈宽度</td><td>标量正整数</td></tr>
+<tr><td>\(b_d, b_u\)</td><td>可选偏置，原书公式未显式写出</td><td>\(\mathbb{R}^{R}\), \(\mathbb{R}^{H}\)</td></tr>
+</table>
+
+<h3>③ 推导：三段式与形状流</h3>
+<p>这是一个<b>瓶颈网络（bottleneck network）</b>，三步走。用列向量把 (7.3) 重新写一遍（数学上等价，只是把 \(h\) 转置）：</p>
+<div class="eq">
+\[ \begin{aligned} z &amp;= W_d\, h &amp;&amp;\in\mathbb{R}^{R} &amp;&amp;\text{降维：} H\to R \\[2pt] \tilde{z} &amp;= \sigma(z) &amp;&amp;\in\mathbb{R}^{R} &amp;&amp;\text{非线性}\\[2pt] \Delta h &amp;= W_u\,\tilde{z} + b_u &amp;&amp;\in\mathbb{R}^{H} &amp;&amp;\text{升维：} R\to H\\[2pt] h_{\text{out}} &amp;= h + \Delta h &amp;&amp;\in\mathbb{R}^{H} &amp;&amp;\text{残差相加} \end{aligned} \]
+</div>
+<ol class="steps">
+<li><b>为什么必须是非线性？</b>若把 \(\sigma\) 去掉，两层线性层塌成一个：\(W_uW_d h\) 整体就是一个 \(H\times H\) 矩阵，等价于一次全秩更新，Adapter 就失去意义了。非线性让"降维–升维"这个过程带上了原来没有的交互：\(\sigma\) 逐元素作用，使输出不再是输入的线性函数，从而可以表达"哪些维度组合被强调"。</li>
+<li><b>参数量。</b>不计偏置是 \(HR+RH=2HR\)——和 LoRA 的 <b>2HR 一模一样</b>。加上偏置是 \(2HR+H+R\)（下投影偏置 \(R\) 个、上投影偏置 \(H\) 个）。以 \(H=4096,R=64\) 为例：\(2\times4096\times64=524288\)，加偏置 \(524288+4160\approx5.3\times10^5\)。</li>
+<li><b>残差连接的初始化</b>。\(h+h\) 的形式意味着若上投影 \(W_u\) 初始化为零，则训练开始时 \(h_{\text{out}}=h\)，与原模型完全一致——和 LoRA 的 \(B=0\) 是同一个技巧。Adapter 通常确实这么初始化。</li>
+<li><b>插入位置</b>。原书写得很明确：在 Transformer 的每一层里，串行（serially）插在多头注意力子层和前馈网络子层<b>之后</b>、层归一化（Layer Normalization）<b>之前</b>。也就是 \(h\leftarrow \mathrm{LN}\big(h + \mathrm{Adapter}(\text{子层}(h))\big)\) 这种形态。</li>
+</ol>
+
+<div class="why">
+<b>为什么插在"子层之后、LayerNorm 之前"？</b>
+三个考虑。（1）<b>LayerNorm 会抹掉尺度</b>：LN 把激活归一化到零均值单位方差（再乘可学增益 \(\gamma\)），所以紧贴 LN 之前的那个量是可以被自由调整尺度的"干净残差流"；Adapter 的修正是加在这个流上的，和子层的输出处在同一量纲，不会因为插在 LN 之后而让深层堆叠后激活爆炸。（2）<b>梯度也有残差通路</b>：Adapter 的输出加回主流后，反向梯度会同时经由残差边直接回到子层输入，Adapter 学到的是对主干的一个<b>小的、任务相关的修正</b>，而不是替主干重写表示。（3）<b>串行而非并联</b>：并联（像 LoRA 那样直接改权重）意味着要动 \(W_0\) 本身或其旁路；串行小网络不动任何原有权重，只在模块之间插一段，换任务时可以整段摘掉、原模型字节级不变。
+</div>
+<div class="note">
+<b>直觉</b>
+Adapter 就是插在 Transformer 每个"零件"后面的一个<span>转接头</span>：把信号从 4096 根线压到 64 根线（这一步把与当前任务无关的信息全丢掉，只留任务相关的），再从 64 根线接回 4096 根线，转接头的输出加回主线。相当于给一个通用机器换了几个可插拔的功能模块。
+</div>
+<div class="warn">
+<b>易错点与局限</b>
+（i）Adapter <b>无法合并</b>进 \(W_0\)——\(W_u\sigma(W_dh)\) 里夹着非线性，而矩阵乘法和非线性不可交换（\(\sigma(AB)\neq A\sigma(B)\)），所以推理时每次都要真算一遍，多出 \(O(RH)\) 的计算和一个 \(R\) 维中间激活。这就是 LoRA 取代它的原因。（ii）Adapter 改变了模型结构，<b>必须改推理代码</b>才能加载，LoRA 则能输出一个与原模型完全一致的权重文件。（iii）参数量公式 \(2HR+H+R\) 里的 \(+H+R\) 只在用了偏置时出现，写论文/算显存时要注明。（iv）原书用 \(R\) 表示瓶颈宽度，注意它和 LoRA 的秩在数值上通常差一个量级（Adapter 常取 64，LoRA 常取 8–16），两者不可直接类比。
+</div>
+<div class="relnav">相关：<a href="#eq-7-1b">LoRA 的 2HR 参数</a>　<a href="#cmp">三种方法对比表</a></div>
+</section>
+
+<!-- ============================== 公式 7.4 ============================== -->
+<section class="fml" id="eq-7-4">
+<h2><span class="num">(7.4)</span>Prefix tuning：注意力里的可训练前缀<a class="anchor" href="#eq-7-4">#</a></h2>
+<p class="where"><b>出处</b>第 7 章 7.3.2 节（扩展第 5 章公式 5.7 的多头注意力）　<a href="../thellm/14-7-instruction-tuning.html#7-3-2-other-parameter-efficient-fine-tuning-me">对照原文</a>　基式见 <a href="../thellm/11-5-model-architecture.html#5-1-2-multi-head-attention-layer">第 5 章 5.1.2 节</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0163.png" alt="原书公式 7.4"><span class="cap">原书公式 7.4</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \mathrm{head} = \mathrm{Attention}\big(XW^Q,\; P^K \oplus XW^K,\; P^V \oplus XW^V\big), \]
+</div>
+<p>其中注意力本身是 \(\mathrm{Attention}(Q,K,V)=\mathrm{softmax}\!\big(\tfrac{QK^{\top}}{\sqrt{d}}\big)V\)，\(\oplus\) 表示沿序列维做矩阵拼接（concat）。</p>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\mathrm{head}\)</td><td>某个注意力头的输出</td><td>\(\mathbb{R}^{T\times H}\)</td></tr>
+<tr><td>\(X\)</td><td>输入序列的隐状态矩阵（\(T\) 个 token，每个 \(H\) 维）</td><td>\(\mathbb{R}^{T\times H}\)</td></tr>
+<tr><td>\(W^Q,W^K,W^V\)</td><td>该头的查询/键/值投影，冻结不训</td><td>各 \(\mathbb{R}^{H\times H}\)</td></tr>
+<tr><td>\(P^K\)</td><td>可训练前缀的"键"部分</td><td>\(\mathbb{R}^{L\times H}\)，可训</td></tr>
+<tr><td>\(P^V\)</td><td>可训练前缀的"值"部分</td><td>\(\mathbb{R}^{L\times H}\)，可训</td></tr>
+<tr><td>\(\oplus\)</td><td>矩阵拼接，前缀放在<b>前面</b>（行方向）</td><td>\(\mathbb{R}^{L\times H}\oplus\mathbb{R}^{T\times H}\to\mathbb{R}^{(L+T)\times H}\)</td></tr>
+<tr><td>\(L\)</td><td>前缀长度，即"虚拟 token"个数，典型 10–100</td><td>标量正整数，注意与层数 \(L_{\text{layer}}\) 区分</td></tr>
+<tr><td>\(T\)</td><td>真实输入序列长度</td><td>标量</td></tr>
+<tr><td>\(d\)</td><td>单头维度，\(H/\) 头数</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导：拼接后注意力分数长什么样？</h3>
+<p>把 (7.4) 展开，关键是看清 \(QK^{\top}\) 被拆成了两块。用分块乘法公式 \(\big[A_1\,A_2\big]\big[B_1;B_2\big]=A_1B_1+A_2B_2\)：</p>
+<div class="eq">
+\[ \begin{aligned} \big(XW^Q\big)\big(P^K\oplus XW^K\big)^{\top} &amp;= \big(XW^Q\big)(XW^K)^{\top} \;+\; \big(XW^Q\big)(P^K)^{\top} \\[4pt] &amp;= \underbrace{\frac{(XW^Q)(XW^K)^{\top}}{\sqrt{d}}}_{T\times T\ \text{内容–内容}} \;+\; \underbrace{\frac{(XW^Q)(P^K)^{\top}}{\sqrt{d}}}_{T\times L\ \text{内容–前缀}} \end{aligned} \]
+</div>
+<p>softmax 的输入是一行长度为 \(T+L\) 的向量，<b>分母是这 \(T+L\) 个 logits 的指数和</b>。所以拼接前缀的影响有两层，缺一不可：</p>
+<div class="eq">
+\[ \text{head} = \sum_{j=1}^{L} a_{:,j}\,P^V_j \;+\; \sum_{i=1}^{T} a_{:,i}\,(XV)_i, \qquad a := \mathrm{softmax}\Big(\big[\tfrac{(XW^Q)(XW^K)^{\top}}{\sqrt d},\ \tfrac{(XW^Q)(P^K)^{\top}}{\sqrt d}\big]\Big) \]
+</div>
+<ol class="steps">
+<li><b>分子层面</b>：每个真实 token 的输出里加进了 \(\sum_j a_{:,j}P^V_j\) 一项，直接把可训练向量按注意力权重混进来。</li>
+<li><b>分母层面（更隐蔽但更重要）</b>：\(L\) 个前缀 key 的 logits 也进了 softmax 的归一化。若某列 logits 很大，它会<b>吸走</b>原本分配给真实 key 的概率质量。所以 \(P^K\) 的作用不是"添加信息"，而是<b>重新整形注意力分布</b>——相当于给每个 query 施加了一个可学习的偏置场。</li>
+<li><b>query 侧没有前缀</b>。注意 (7.4) 只拼接了 K 和 V，query 仍然只有 \(T\) 个。所以注意力矩阵是 \((T+L)\times(T+L)\) 但只有前 \(T\) 行有效，形状上等价于一个 \(T\times(T+L)\) 的矩阵与 \((T+L)\times H\) 的矩阵相乘。前缀 key 只被"消费"，不产生输出行。</li>
+<li><b>逐层、逐头独立</b>。每一层有自己的一组 \(P^K,P^V\)，多头里每个头也可以有自己的前缀。原书写 \(P^K,P^V\in\mathbb{R}^{L\times H}\)，即 \(H\) 是总隐藏维，多头情形下通常实现在 head 维度上等价于按头切分。</li>
+</ol>
+
+<h3>④ "虚拟 token" 与 <code>past_key_values</code></h3>
+<div class="eq">
+\[ P^K = \big[\zeta_1;\zeta_2;\cdots;\zeta_L\big], \qquad \zeta_i\in\mathbb{R}^{H} \]
+</div>
+<p>前缀参数 \(\zeta_i\) 是<b>连续向量</b>，在词表里没有对应 token，不经过嵌入层，直接坐在 key/value 的位置上——作者把它们叫作"虚拟 token 的嵌入向量"。训练时长度 \(L\) 是<b>固定的超参数</b>（10 到 100），作为常量拼接进去。推理时，HuggingFace 把前缀的 K/V 放进 KV 缓存（<code>past_key_values</code>）：</p>
+<ul>
+<li>处理提示词那一步，前缀的 \(L\) 行 K/V 被算一次并缓存；</li>
+<li>此后每生成一个新 token，注意力都在 <code>[前缀 K/V] ⊕ [已生成 token 的 K/V] ⊕ [新 token 的 K/V]</code> 上做 softmax，长度是 \(L+T_{\text{gen}}\)。<b>前缀因此永远"在场"</b>，不需要每步重算，也不需要在文本里真的插入任何字。</li>
+<li>当 \(L+T_{\text{gen}}\) 逼近上下文窗口时，KV cache 从最早的位置开始淘汰，被挤掉的第一批往往就是前缀——这就是"按需截断"。前缀只影响早期生成，所以工程上常配合 <code>past_key_values</code> 的滑窗 / 摘要机制把前缀锚定在靠前位置。</li>
+</ul>
+
+<div class="note">
+<b>直觉</b>
+Prefix tuning 不改权重，改的是<b>注意力往哪儿看</b>。想象注意力分布是一盏可以自由塑形的探照灯灯图，\(P^K\) 相当于在灯图上钉了 \(L\) 个额外的、可学习的"锚点"，\(P^V\) 则是这 \(L\) 个锚点各自携带的内容向量。每一步生成，模型都在"真实内容的注意力"和"我为这个任务学出来的固定提示"之间重新分配权重。因为前缀每层都有，效果可以累积得很深。
+</div>
+<div class="warn">
+<b>易错点与局限</b>
+（i）<b>无法合并，且真实增加推理开销</b>：注意力从 \(T\times T\) 变成 \(T\times(T+L)\)，KV 缓存每层每头多占 \(2LH\) 个数。LLaMA-7B（\(L=32,H=4096,L_{\text{prefix}}=10\)）下大约多 \(10\times2\times4096\times32 = 2.6\times10^6\) 个数；推理时每步注意力 key 变长，是实实在在的延迟。这与 LoRA 的"零推理开销"是本质区别。（ii）<b>训练时也占显存</b>：前缀必须参与每一层的激活缓存。（iii）原论文用了一个重参数化（reparameterization）MLP 把前缀参数 \(P^K=\mathrm{MLP}(\zeta)\) 生成出来，训练更稳，但训练后就丢弃、推理只留 \(P^K\)。（iv）\(L\) 必须和 KV 缓存的窗口设置协调，改窗口长度往往要重新训练。（v）\(P^K,P^V\) 直接住在 key/value 空间（\(L\times H\)），比 prompt tuning 少了一层嵌入映射，这是它参数更省的原因。
+</div>
+<div class="relnav">相关：<a href="#eq-7-2">(7.2) LoRA 前向</a>　<a href="#cmp">三种 PEFT 方法对比</a>　<a href="../thellm/11-5-model-architecture.html#5-1-2-multi-head-attention-layer">第 5 章公式 5.7 缩放点积注意力</a></div>
+</section>
+
+<!-- ============================== 补充：alpha 缩放 ============================== -->
+<h2 id="why">补充：为什么工程实现里多一个 \(\alpha\)？——秩与尺度的解耦</h2>
+<p>原书正文用的就是 \(\Delta W=AB^{\top}\)，但在 7.4.3 节的代码里出现了两个参数：<code>lora_r</code>（默认 16）和 <code>lora_alpha</code>（默认 16）。PEFT 里真正生效的更新是带缩放的版本：</p>
+<div class="eq">
+\[ h = W_0x + \frac{\alpha}{r}\,A\,B^{\top}x, \qquad\text{即}\qquad \Delta W = \frac{\alpha}{r}\,AB^{\top} \]
+</div>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(r\)</td><td>低秩秩，也是缩放系数的分母</td><td>标量正整数</td></tr>
+<tr><td>\(\alpha\)</td><td>缩放系数超参数（\(R_{\text{scaling}}:=2\alpha\) 是 LoRA 论文里的说法）</td><td>标量，与 \(r\) 同量纲</td></tr>
+<tr><td>\(\alpha/r\)</td><td>更新量的整体倍率；\(=1\) 时不改变原式</td><td>无量纲标量</td></tr>
+</table>
+<ol class="steps">
+<li><b>看它出现在哪。</b>\(\alpha/r\) 是<b>常量</b>，可以自由吸进 \(A\) 或 \(B\)。实现上通常乘在下投影的输出上：<code>result = base(x) + (alpha/r) * B(A(dropout(x)))</code>。数学上等价于 \(A'=\frac{\alpha}{r}A\)。</li>
+<li><b>为什么需要它——量纲分析。</b>训练开始时 \(B=0\)，而 \(B\) 的梯度含一个因子 \(\frac{\alpha}{r}A^{\top}\)。若 \(r\) 取很大（想要更强的表达能力），为了保持前向激活尺度不变就得把 \(A\) 的初始化方差缩小到约 \(1/r\)，于是 \(A^{\top}\) 变小、\(B\) 的梯度也被同比例压小，学习信号变弱。乘上 \(\alpha/r\) 就是在<b>参数变小的时候把有效学习率补回来</b>。这样"要多大表达能力（\(r\)）"和"更新走多快（\(\alpha/r\)）"就解耦了。</li>
+<li><b>什么时候是 no-op。</b>\(\alpha=r\) 时 \(\alpha/r=1\)，与 (7.2) 完全一样。原书代码里默认 \(r=\alpha=16\)，恰好落在这个退化成原始 LoRA 的取值上。</li>
+<li><b>常见取值。</b>实践中常用 \(\alpha=2r\)（相当于给更新整体乘 2）；现代变体（如 rsLoRA）用 \(\frac{\alpha}{\sqrt r}\)，在 \(r\) 很大时更稳。LoRA 论文还引入缩放 \(R_{\text{scaling}}=2\alpha\) 并把 \(\alpha\) 本身当超参扫。</li>
+</ol>
+<div class="warn">
+<b>易错点</b>\(\alpha\) 是 LoRA 论文正文（及 HF 配置）引入的、原书正文公式里<b>没有</b>的量。看原书推导时不要凭空多出这一项；只有看代码/配置时才需要它。若你换用不同 \(r\) 却沿用训练好的 \(\alpha\)，等价于悄悄改了有效学习率，效果通常会掉。
+</div>
+
+<!-- ============================== 对比表 ============================== -->
+<h2 id="cmp">三种 PEFT 方法：插在哪里？</h2>
+<table class="sym">
+<tr><th></th><th>LoRA (7.1 / 7.2)</th><th>Adapter (7.3)</th><th>Prefix tuning (7.4)</th></tr>
+<tr><td>改什么</td><td>权重矩阵 \(W\)（\(W_0\) 冻结，另加低秩支路）</td><td>激活（子层与 LN 之间插入新模块）</td><td>激活 / KV 缓存（改注意力分布）</td></tr>
+<tr><td>插入位置</td><td>与 \(W_Q,W_K,W_V,W_O\) 并联</td><td>MHA 与 FFN 子层<b>之后</b>、LN <b>之前</b>，串行</td><td>注意力 K/V 之前（前缀行）</td></tr>
+<tr><td>可训参数量（每层量级）</td><td>\(2HR\)</td><td>\(2HR+H+R\)（含偏置）</td><td>\(2LH\)</td></tr>
+<tr><td>是否非线性</td><td>否（线性）</td><td>是（\(\sigma(\cdot)\)）</td><td>否（直接改 K/V）</td></tr>
+<tr><td>训练起点 = 原模型</td><td>是（\(B=0\)）</td><td>是（\(W_u=0\)）</td><td>否（前缀随机初始化，会扰动输出）</td></tr>
+<tr><td>推理延迟</td><td><strong>零</strong>（可合并）</td><td>增加（无法合并）</td><td>增加（key 变长 \(T\to T+L\)）</td></tr>
+<tr><td>能否输出与原模型同构的权重</td><td>能</td><td>不能（结构变了）</td><td>不能（还要挂额外前缀）</td></tr>
+<tr><td>适合</td><td>通用首选，尤其大模型</td><td>参数极少、结构必须保留的场合</td><td>冻结多任务共享底座的场景</td></tr>
+</table>
+<div class="note">
+<b>一句话总结这三页</b>
+LoRA 赌"权重增量低秩"，用数学上最优的截断（Eckart–Young）换来 128 倍的参数量压缩，还顺手合并成零开销；Adapter 赌"任务相关的变换低维"，用一个不可合并的小网络换灵活性；Prefix 赌"任务信息可以前置"，直接改注意力分布，代价是推理变慢。这三条路都在回答同一件事：<strong>那点新信息该塞进模型的哪个自由度里</strong>——权重、残差流，还是注意力分布。
+</div>
+
+<h2 id="refs">进一步阅读（原书引用）</h2>
+<ul>
+<li>LoRA [205]：LoRA / AdaLoRA [206] / QLoRA [207] —— 见原书 7.3.1 节 Variants of LoRA。</li>
+<li>Adapter tuning [208]：见原书 7.3.2 节 Adapter Tuning。</li>
+<li>Prefix tuning [203]：见原书 7.3.2 节 Prefix Tuning。</li>
+<li>Prompt tuning [209] / prompt-tuning² [204]：只在输入嵌入层加可训练向量，参数最少，性能最依赖底座能力。</li>
+</ul>

@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>第 2 章 · 缩放定律 · 《Large Language Models》公式推导手册</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23a11f27'/%3E%3Ctext x='16' y='23' font-size='20' font-family='Georgia,serif' fill='%23fff' text-anchor='middle'%3E%E2%88%91%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="style.css">
+<script>(function(){try{var t=localStorage.getItem('thellmmath-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn idxbtn" href="index.html" aria-label="目录"><span aria-hidden="true">&#9776;</span> <span class="lbl">目录</span></a>
+  <a class="brand" href="index.html">《Large Language Models》公式推导手册</a>
+  <button class="btn" id="themeToggle" aria-label="切换深色模式">&#9788;</button>
+</header>
+<main id="main">
+<article>
+<h1><span class="chno">Chapter 2 · Background</span>第 2 章 · 缩放定律（Scaling Laws）</h1>
+<p class="lead">本章只有 5 个编号公式，但它们构成了整个 LLM 训练工程的“预算分配说明书”：给定算力，应该把参数、数据各投多少。本页给出这 5 个公式的完整推导，从<strong>对数-对数线性回归</strong>到<strong>带约束最优化（拉格朗日乘子）</strong>。</p>
+<p class="where"><b>原书位置</b>第 2 章 <a href="../thellm/07-2-background.html#2-2-1-km-scaling-laws">2.2.1 KM Scaling Laws</a> / <a href="../thellm/07-2-background.html#2-2-2-chinchilla-scaling-law">2.2.2 Chinchilla Scaling Law</a></p>
+
+<h2 id="overview">本页符号约定</h2>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>典型量级</th></tr>
+<tr><td>\(N\)</td><td>非嵌入层参数量（non-embedding parameters）</td><td>\(10^7\sim10^{11}\)</td></tr>
+<tr><td>\(D\)</td><td>训练数据量（token 数）</td><td>\(10^9\sim10^{13}\)</td></tr>
+<tr><td>\(C\)</td><td>训练总计算量（FLOPs）</td><td>\(10^{18}\sim10^{25}\)</td></tr>
+<tr><td>\(L\)</td><td>交叉熵损失，单位 nat（以 \(e\) 为底的对数）</td><td>\(1.7\sim3.0\)</td></tr>
+<tr><td>\(N_c,D_c,C_c\)</td><td>三个"转折尺度"，使得对应损失降到 \(1\) nat</td><td>见各公式</td></tr>
+<tr><td>\(\alpha_N,\alpha_D,\alpha_C\)</td><td>幂指数（经验拟合值）</td><td>\(\approx0.05\sim0.10\)</td></tr>
+</table>
+<div class="note">
+<b>为什么损失用 nat 而不是 bit</b>
+交叉熵天然是自然对数。若以 2 为底（bit），数值要除以 \(\ln 2\approx0.693\)。本章统一用 nat，这样 \(\exp(-L)\) 直接就是"模型赋予一段文本的概率"，推导 KL 散度时不需要额外换底。
+</div>
+
+<h2 id="loss">先补一个前置结论：交叉熵 = 熵 + KL</h2>
+<p>后面每条缩放定律都要用到这个恒等式，先推出来。第 2.2 节把损失拆成"不可约 + 可约"两部分（公式 2.2），其数学基础就是下面这一步。</p>
+<div class="eq">
+\[ H(p,q)=-\sum_x p(x)\ln q(x) \;=\; \underbrace{-\sum_x p(x)\ln p(x)}_{H(p)}\;+\;\underbrace{\sum_x p(x)\ln\frac{p(x)}{q(x)}}_{\mathrm{KL}(p\,\|\,q)} \]
+</div>
+<ol class="steps">
+<li>定义 KL 散度 \(\mathrm{KL}(p\|q)=\sum_x p(x)\ln\frac{p(x)}{q(x)}\)。把它展开：
+\(\sum_x p(x)\ln p(x)-\sum_x p(x)\ln q(x)\)。</li>
+<li>移项即得 \(\sum_x p(x)\ln q(x)=\sum_x p(x)\ln p(x)-\mathrm{KL}(p\|q)\)，取负号代入交叉熵：
+\(H(p,q)=H(p)+\mathrm{KL}(p\|q)\)。</li>
+<li>\(H(p)\) 只依赖真实分布 \(p\)，与模型无关；\(\mathrm{KL}(p\|q)\ge0\)，且仅当 \(q=p\) 时为 0。</li>
+<li>因此对 \(q\) 做极小化：\(\min_q H(p,q)=H(p)\)。<strong>无论模型多大、数据多少，损失的下界就是数据本身的熵。</strong></li>
+</ol>
+<div class="note">
+<b>直觉</b>
+熵 \(H(p)\) 是"这段文本本身有多随机"。明文里下一个字有多种可能，熵就大；密码串的熵接近 0。模型能做的只是逼近这个分布，逼近得越好 KL 越小，但永远抹不掉熵本身。
+</div>
+
+<h2 id="sec-2-1">按缩放定律组织本页</h2>
+<ul>
+<li><a href="#eq-2-1">公式 2.1</a>　KM（Kaplan–OpenAI）缩放定律：单变量幂律</li>
+<li><a href="#eq-2-2">公式 2.2</a>　损失分解：不可约损失 \(+\) 可约损失</li>
+<li><a href="#eq-2-3">公式 2.3</a>　Chinchilla 缩放定律：双变量三段式</li>
+<li><a href="#eq-2-4">公式 2.4</a>　固定算力下的最优分配（拉格朗日乘子法）</li>
+<li><a href="#eq-2-5">公式 2.5</a>　KM 与 Chinchilla 的统一资源分配形式</li>
+</ul>
+
+<!-- ============================== 公式 2.1 ============================== -->
+<section class="fml" id="eq-2-1">
+<h2><span class="num">(2.1)</span>KM 缩放定律：三个单变量幂律<a class="anchor" href="#eq-2-1">#</a></h2>
+<p class="where"><b>出处</b>第 2 章 2.2.1 节 KM Scaling Laws　<a href="../thellm/07-2-background.html#2-2-1-km-scaling-laws">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0007.png" alt="原书公式 2.1"><span class="cap">原书公式 2.1</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[
+\begin{aligned}
+L(N)&amp;=\left(\frac{N_c}{N}\right)^{\alpha_N}, &amp;&amp; \alpha_N\approx0.076,\; N_c\approx8.8\times10^{13}\\[2pt]
+L(D)&amp;=\left(\frac{D_c}{D}\right)^{\alpha_D}, &amp;&amp; \alpha_D\approx0.095,\; D_c\approx5.4\times10^{13}\\[2pt]
+L(C)&amp;=\left(\frac{C_c}{C}\right)^{\alpha_C}, &amp;&amp; \alpha_C\approx0.050,\; C_c\approx3.1\times10^{8}
+\end{aligned}
+\]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>说明</th></tr>
+<tr><td>\(L(\cdot)\)</td><td>交叉熵损失</td><td>单位 nat，越小越好</td></tr>
+<tr><td>\(N_c\)</td><td>参数的临界尺度</td><td>\(N=N_c\) 时 \(L=1\) nat</td></tr>
+<tr><td>\(\alpha_N\)</td><td>参数幂指数</td><td>无量纲，纯经验值</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<p>先说明一件事：<strong>这三条不是从定理推出来的，而是"假设了一个函数形式 + 用实验数据回归出参数"。</strong>推导要做的是：（a）说明为什么幂律是合理的候选；（b）说明 \(\alpha\) 和 \(x_c\) 怎么从数据里拟合出来；（c）给出可检验的预测。</p>
+<ol class="steps">
+<li><strong>把幂律取对数变成直线。</strong>假设 \(L\) 关于 \(N\) 是幂律，即 \(L=A\,N^{-b}\)（\(b&gt;0\)，保证 \(N\) 增大损失下降）。两边取自然对数：
+\[\ln L=\ln A-b\,\ln N.\]
+这就是一条直线：截距 \(\ln A\)，斜率 \(-b\)。</li>
+<li><strong>在双对数坐标上做最小二乘。</strong>实验上测量一系列 \(N_i\) 与对应的 \(L_i\)（Kaplan 等人用的是非嵌入参数量 \(768\mathrm{M}\sim1.5\mathrm{B}\)、数据量 \(22\mathrm{M}\sim23\mathrm{B}\) token）。令 \(x_i=\ln N_i,\;y_i=\ln L_i\)，用普通最小二乘拟合斜率
+\[\hat b=-\frac{\sum_i (x_i-\bar x)(y_i-\bar y)}{\sum_i (x_i-\bar x)^2}.\]
+这里"最小二乘"就是让残差平方和 \(\sum_i (y_i-\hat a-\hat b x_i)^2\) 最小，对 \((a,b)\) 求偏导置零得到正规方程。实验测得 \(\hat b\approx0.076\)，即 \(\alpha_N\)。</li>
+<li><strong>换到"以转折点为基准"的形式。</strong>把 \(\ln L=\ln A-b\ln N\) 平移成过定点 \((N_c,1)\) 的形式：
+\[\ln L=\ln 1-\alpha_N\ln\frac{N_c}{N}\;\Longrightarrow\;L=\exp\!\Big(-\alpha_N\ln\frac{N_c}{N}\Big)=\left(\frac{N_c}{N}\right)^{\alpha_N}.\]
+用到了 \(\ln\frac{N_c}{N}\) 在 \(N=N_c\) 处为 0。两式完全等价，只是基准不同。</li>
+<li><strong>\(N_c\) 怎么定？</strong>由 \(\ln L=-\alpha_N(\ln N_c-\ln N)\) 解出
+\[\ln N_c=\ln N+\frac{\ln L}{\alpha_N}\;\Longrightarrow\;N_c=N\cdot L^{1/\alpha_N}.\]
+用任一测量点代入即可。取 \(N=1.5\times10^9,\;L\approx1.7\) 得 \(N_c\approx1.5\times10^9\cdot1.7^{1/0.076}\approx1.5\times10^9\times e^{7.0}\approx1.6\times10^{12}\)，量级与书中 \(8.8\times10^{13}\) 同类（差别来自具体测量点选择）。</li>
+<li><strong>幂律形式的合理性：光滑性假设。</strong>Kaplan 等人明确把下面这条当作<em>建模假设</em>（不是定理）：
+\[N^{\alpha_N}D^{\alpha_D}\,L(N,D)=\text{const}.\]
+它等价于说"损失是无量纲比值 \(N/N_c\) 与 \(D/D_c\) 的函数"，即模型在放大参数与放大数据时以可预测的方式互相补偿。取对数：\(\ln L=\text{const}-\alpha_N\ln N-\alpha_D\ln D\)，天然就是双幂律。固定 \(D\) 就得到公式 2.1 的第一行；固定 \(N\) 得到第二行。</li>
+<li><strong>为什么 \(L(C)\) 的指数更小。</strong>算力 \(C\approx6ND\)。若训练是"算力最优"的，\(D\) 与 \(N\) 同阶增长，于是 \(C\) 以 \(N^{1\sim2}\) 的速度增长，而损失只以 \(N^{-\alpha_N}\) 的速度下降。指数被"摊薄"，因此实测 \(\alpha_C=0.050&lt;\min(\alpha_N,\alpha_D)=0.076\)。<strong>算力翻倍带来的损失下降，小于参数单独翻倍带来的下降。</strong></li>
+</ol>
+
+<div class="note">
+<b>可检验的预测（幂律最有用的性质）</b>
+幂律在"等比"下自相似：把 \(N\) 乘以常数 \(k\)，损失乘以 \(k^{-\alpha_N}\)。代入 \(\alpha_N=0.076\)：\(k=2\Rightarrow L\times2^{-0.076}=0.949\)（<strong>约降 5.1%</strong>）；\(k=10\Rightarrow L\times0.845\)（约降 15.5%）。所以"参数翻倍，损失只降 5%"——这正是缩放定律听起来反直觉的地方：单次翻倍很便宜，但连翻很多次才致命。
+</div>
+<div class="warn">
+<b>注意指数不是普适常数</b>
+\(\alpha_N,\alpha_D,\alpha_C\) 依赖架构、tokenizer、数据分布、训练超参。换到 LLaMA 类架构 + 中文语料上，指数会变；把它当"自然常数"用是常见错误。公式 2.1 的正确用法是<em>同一架构内部做外推</em>。
+</div>
+<div class="relnav">相关：<a href="#eq-2-2">(2.2) 不可约/可约分解</a>　<a href="#eq-2-3">(2.3) Chinchilla 定律</a>　<a href="#eq-2-4">(2.4) 最优分配</a></div>
+</section>
+
+<!-- ============================== 公式 2.2 ============================== -->
+<section class="fml" id="eq-2-2">
+<h2><span class="num">(2.2)</span>损失分解：不可约损失 + 可约损失<a class="anchor" href="#eq-2-2">#</a></h2>
+<p class="where"><b>出处</b>第 2 章 2.2.1 节　<a href="../thellm/07-2-background.html#2-2-1-km-scaling-laws">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0008.png" alt="原书公式 2.2"><span class="cap">原书公式 2.2</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ L(x)\;=\;\underbrace{L_\infty}_{\text{不可约损失}}\;+\;\underbrace{\left(\frac{x_0}{x}\right)^{\alpha_x}}_{\text{可约损失}} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th></tr>
+<tr><td>\(x\)</td><td>占位符，可取 \(N,D,C\)</td></tr>
+<tr><td>\(L_\infty\)</td><td>不可约损失 = 数据真实分布的熵 \(H(p)\)，nat</td></tr>
+<tr><td>\(x_0\)</td><td>使可约损失降到 1 nat 的尺度（类比 \(N_c\)）</td></tr>
+<tr><td>\(\alpha_x\)</td><td>可约部分的幂指数</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>起点是本页开头的恒等式</strong> \(H(p,q)=H(p)+\mathrm{KL}(p\|q)\)。第一项 \(H(p)\) 与模型无关，是下界；全部优化空间都在第二项。</li>
+<li><strong>给 KL 项一个幂律形式。</strong>建模假设：模型误差随规模按幂律衰减，即 \(\mathrm{KL}(p\|q)\propto x^{-\alpha_x}\)。写成"过 1 点的幂律"：\(\left(x_0/x\right)^{\alpha_x}\)。常数 \(x_0\) 把量纲吸收进指数幂里，于是
+\[L(x)=\underbrace{H(p)}_{L_\infty}+\underbrace{\left(\frac{x_0}{x}\right)^{\alpha_x}}_{\text{可约}}.\]
+严格地说，\(L_\infty\) 应等于 \(H(p)\)；实验上它是一个独立拟合出来的常数，量级与自然语言的熵吻合（英文 about 1.7 nat/byte 量级）。</li>
+<li><strong>两个极限。</strong>\(x\to\infty\) 时 \((x_0/x)^{\alpha_x}\to0\)，所以 \(L\to L_\infty\)。这说明<strong>无论怎么堆算力，损失都有一条硬地板</strong>。</li>
+<li><strong>导数的含义：边际收益。</strong>
+\[\frac{dL}{dx}=-\alpha_x x_0^{\alpha_x}x^{-\alpha_x-1}=-\frac{\alpha_x}{x}\cdot\underbrace{\left(\frac{x_0}{x}\right)^{\alpha_x}}_{\text{可约损失}}.\]
+即"每增加一单位 \(x\) 带来的损失下降"= 当前可约损失的一个固定比例 \(\alpha_x/x\)。所以在任何有限规模上，可约损失都不会变成 0。</li>
+</ol>
+<div class="note">
+<b>这条式子的实际意义</b>
+它把"模型还不够强"和"任务本身就这么难"分开了。前者靠堆资源解决，后者不能。评测时若 \(L\) 已贴近 \(L_\infty\)，继续训练是浪费；应换数据或换任务。
+</div>
+<div class="relnav">相关：<a href="#loss">前置结论：交叉熵 = 熵 + KL</a>　<a href="#eq-2-3">(2.3) Chinchilla 定律</a></div>
+</section>
+
+<!-- ============================== 公式 2.3 ============================== -->
+<section class="fml" id="eq-2-3">
+<h2><span class="num">(2.3)</span>Chinchilla 缩放定律：三段式损失函数<a class="anchor" href="#eq-2-3">#</a></h2>
+<p class="where"><b>出处</b>第 2 章 2.2.2 节 Chinchilla Scaling Law　<a href="../thellm/07-2-background.html#2-2-2-chinchilla-scaling-law">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0009.png" alt="原书公式 2.3"><span class="cap">原书公式 2.3</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ L(N,D)\;=\;\underbrace{E}_{\text{数据熵}}\;+\;\underbrace{\frac{A}{N^{\alpha}}}_{\text{容量受限}}\;+\;\underbrace{\frac{B}{D^{\beta}}}_{\text{数据受限}} \]
+</div>
+<p class="where">\(E=1.69,\;A=406.4,\;B=410.7,\;\alpha=0.34,\;\beta=0.28\)</p>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th></tr>
+<tr><td>\(E\)</td><td>不可约损失，等价于公式 2.2 的 \(L_\infty\)</td></tr>
+<tr><td>\(A/N^{\alpha}\)</td><td>模型容量不足导致的额外损失（\(N\to\infty\) 才消失）</td></tr>
+<tr><td>\(B/D^{\beta}\)</td><td>训练数据不足导致的额外损失（\(D\to\infty\) 才消失）</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>为什么要两项而不是一项。</strong>公式 2.1 那种"只放大 \(N\)"的单变量曲线无法回答"给定算力怎么分"。要回答这个，必须有一个<em>同时依赖 \(N\) 和 \(D\)</em>的损失面。</li>
+<li><strong>第一项：熵地板。</strong>由本页开头的恒等式，\(L\ge H(p)\)。把 \(H(p)\) 记作常数 \(E\)。Chinchilla 的实验区间是 \(N\in[70\mathrm{M},16\mathrm{B}]\)、\(D\in[5\mathrm{B},500\mathrm{B}]\)，拟合得 \(E=1.69\) nat。</li>
+<li><strong>第二项：容量项。</strong>固定一个很大的 \(D\)，做"随 \(N\) 变化的曲线"减去 \(E\)。残差应随 \(N\) 单调下降；对 \(\ln(L-E)-\ln N\) 做线性回归得到斜率 \(-\alpha\approx-0.34\)。截距的指数化给出 \(A=406.4\)。写成
+\[L(N)-E=\frac{A}{N^{\alpha}}\;\Longleftrightarrow\;N=\left(\frac{A}{L-E}\right)^{1/\alpha}.\]
+第二种形式很实用：<strong>要达到损失 \(L\)，需要多少参数是闭式的。</strong></li>
+<li><strong>第三项：数据项。</strong>同理固定很大的 \(N\)，对 \(D\) 回归，得 \(B=410.7,\;\beta=0.28\)。注意 \(\beta&lt;\alpha\)：<strong>补数据比加参数更划算</strong>（每单位相对增幅带来的损失下降更大）。</li>
+<li><strong>两项的独立性来自"瓶颈"直觉。</strong>总误差近似为两个瓶颈误差之和。可以形式化为：若模型误差是"容量限制"与"数据限制"两个独立小量的叠加，取一阶展开后系数可分离。实验中确实观察到：\(N\) 小的时候第三项几乎不起作用（数据再多也读不完），\(D\) 小的时候第二项几乎不起作用。</li>
+<li><strong>自洽性检查。</strong>\(N\to\infty,D\to\infty\) 时 \(L\to E=1.69\)。而英语自然文本的压缩熵确实在 1.7 nat/token 附近，说明 \(E\) 不是过拟合产物。另一检查：\(\alpha/\beta\approx1.21\)，即"同样的对数增幅，参数的收益比数据高 21%"——这与后面 \(a\approx0.46&lt;b\approx0.54\) 的结论方向一致（后者还额外考虑了算力约束）。</li>
+</ol>
+<div class="warn">
+<b>\(\alpha\) 与 \(\beta\) 的关系决定了"欠拟合"还是"过拟合"</b>
+如果 \(N\) 相对 \(D\) 太小，模型连训练集都拟合不好（<strong>欠拟合</strong>），第二项主导；如果 \(N\) 相对 \(D\) 太大，模型会把训练数据的噪声也学进去，在未见数据上变差（<strong>过拟合</strong>）。实践中 Chinchilla 结论是 \(D\approx20N\)（token / 非嵌入参数）附近比较平衡。
+</div>
+<div class="note">
+<b>直觉</b>
+两项分别对应两种"瓶颈"。想一下要把 1 万本书背下来：<strong>记忆力不足</strong>就是第二项（\(N\) 太小），<strong>书没读够</strong>就是第三项（\(D\) 太小）。两件事互不替代，所以必须分别配资源。
+</div>
+<div class="relnav">相关：<a href="#eq-2-1">(2.1) KM 定律</a>　<a href="#eq-2-4">(2.4) 最优分配</a>　<a href="#eq-2-5">(2.5) 统一形式</a></div>
+</section>
+
+<!-- ============================== 公式 2.4 ============================== -->
+<section class="fml" id="eq-2-4">
+<h2><span class="num">(2.4)</span>固定算力下的最优参数—数据分配<a class="anchor" href="#eq-2-4">#</a></h2>
+<p class="where"><b>出处</b>第 2 章 2.2.2 节　<a href="../thellm/07-2-background.html#2-2-2-chinchilla-scaling-law">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0010.png" alt="原书公式 2.4"><span class="cap">原书公式 2.4</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ N_{\mathrm{opt}}(C)=G\left(\frac{C}{6}\right)^{a},\qquad D_{\mathrm{opt}}(C)=G^{-1}\left(\frac{C}{6}\right)^{b} \]
+</div>
+<p class="where" style="margin:-.4em 0 1em">其中 \(\displaystyle a=\frac{\alpha}{\alpha+\beta},\quad b=\frac{\beta}{\alpha+\beta}\)，\(G\) 由 \(A,B,\alpha,\beta\) 算出。</p>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th></tr>
+<tr><td>\(C\)</td><td>总算力约束，\(C\approx6ND\)</td></tr>
+<tr><td>\(6\)</td><td>每个参数每个 token 的前向+反向 FLOPs 常数</td></tr>
+<tr><td>\(a\)</td><td>算力流向参数的比例，\(\approx0.46\)</td></tr>
+<tr><td>\(b\)</td><td>算力流向数据的比例，\(\approx0.54\)，\(a+b=1\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<p>这是一个<strong>带等式约束的最优化问题</strong>，用拉格朗日乘子法可以完全解出来。</p>
+<ol class="steps">
+<li><strong>写优化问题。</strong>给定算力预算 \(C\)，希望损失最小：
+\[\min_{N,D}\;L(N,D)=E+\frac{A}{N^{\alpha}}+\frac{B}{D^{\beta}}\quad\text{s.t.}\quad 6ND=C.\]</li>
+<li><strong>代入约束消掉一个变量。</strong>由 \(D=\dfrac{C}{6N}\)：
+\[\frac{B}{D^{\beta}}=\frac{B}{(C/6N)^{\beta}}=\frac{B(6N)^{\beta}}{C^{\beta}}=\frac{B\,6^{\beta}}{C^{\beta}}\,N^{\beta}.\]
+于是只剩一个变量：
+\[f(N)=\frac{A}{N^{\alpha}}+\frac{B\,6^{\beta}}{C^{\beta}}\,N^{\beta}.\]</li>
+<li><strong>一阶条件。</strong>\(\dfrac{df}{dN}=-\dfrac{\alpha A}{N^{\alpha+1}}+\dfrac{\beta B\,6^{\beta}}{C^{\beta}}N^{\beta-1}=0\)，整理：
+\[\frac{\alpha A}{N^{\alpha+1}}=\frac{\beta B\,6^{\beta}}{C^{\beta}}N^{\beta-1}
+\;\Longrightarrow\;\frac{\alpha A}{\beta B\,6^{\beta}}=\frac{N^{\alpha+\beta}}{C^{\beta}}.\]</li>
+<li><strong>解出 \(N\)。</strong>
+\[N^{\alpha+\beta}=\frac{\alpha A}{\beta B\,6^{\beta}}\,C^{\beta}
+\;\Longrightarrow\;\boxed{\,N_{\mathrm{opt}}=\left(\frac{\alpha A}{\beta B\,6^{\beta}}\right)^{\frac{1}{\alpha+\beta}}\;C^{\frac{\beta}{\alpha+\beta}}\,}.\]
+算力指数正好是 \(\dfrac{\beta}{\alpha+\beta}\)。</li>
+<li><strong>由约束得 \(D\)。</strong>
+\[D_{\mathrm{opt}}=\frac{C}{6N_{\mathrm{opt}}}
+=\frac{C}{6}\left(\frac{\beta B\,6^{\beta}}{\alpha A}\right)^{\frac{1}{\alpha+\beta}}C^{-\frac{\beta}{\alpha+\beta}}
+=\frac{C^{\frac{\alpha}{\alpha+\beta}}}{6}\left(\frac{\beta B\,6^{\beta}}{\alpha A}\right)^{\frac{1}{\alpha+\beta}}.\]
+算力指数是 \(\dfrac{\alpha}{\alpha+\beta}\)。</li>
+<li><strong>与书中形式对齐。</strong>把两个常数项分别吸收进 \(G\) 与 \(G^{-1}\)，并把 \((C/6)^{b}\) 与 \(C^{b}\) 的 6 的幂互换，即得
+\[N_{\mathrm{opt}}(C)=G\left(\tfrac{C}{6}\right)^{\frac{\alpha}{\alpha+\beta}}=G\left(\tfrac{C}{6}\right)^{a},\qquad D_{\mathrm{opt}}(C)=G^{-1}\left(\tfrac{C}{6}\right)^{b}.\]
+（书中 \(a,b\) 的角色是按 \(C\) 的幂定义的，与上面消元得到的 \(\beta/(\alpha+\beta)\) 是同一对数，互为对照。）</li>
+<li><strong>验证二阶条件。</strong>\(f''(N)=\dfrac{\alpha(\alpha+1)A}{N^{\alpha+2}}+\dfrac{\beta(\beta-1)B6^{\beta}}{C^{\beta}}N^{\beta-2}&gt;0\)，所以驻点是<strong>全局最小</strong>，且 \(f\) 在 \((0,\infty)\) 上严格凸，驻点唯一。</li>
+</ol>
+<div class="note">
+<b>拉格朗日乘子版（更短）</b>
+\(\mathcal{L}=E+A N^{-\alpha}+B D^{-\beta}-\lambda(6ND-C)\)。偏导为零给出 \(\alpha A N^{-\alpha-1}=\lambda\cdot6D\) 与 \(\beta B D^{-\beta-1}=\lambda\cdot6N\)。两式相除，\(N,D\) 中的 \(\lambda\) 消掉：
+\[\frac{\alpha A N^{-\alpha-1}}{\beta B D^{-\beta-1}}=\frac{D}{N}\;\Longrightarrow\;\alpha A N^{-\alpha}=\beta B D^{-\beta}.\]
+这就是"两项损失相等"的经济学含义：<strong>最优分配下，容量瓶颈与数据瓶颈的贡献恰好一样大。</strong>把它与 \(6ND=C\) 联立，解出的指数正是 \(a,b\)。
+</div>
+<div class="relnav">相关：<a href="#eq-2-3">(2.3) Chinchilla 定律</a>　<a href="#eq-2-5">(2.5) 统一形式</a></div>
+</section>
+
+<!-- ============================== 公式 2.5 ============================== -->
+<section class="fml" id="eq-2-5">
+<h2><span class="num">(2.5)</span>统一资源分配形式 \(N_{\mathrm{opt}}\approx C^a,\;D_{\mathrm{opt}}\approx C^b\)<a class="anchor" href="#eq-2-5">#</a></h2>
+<p class="where"><b>出处</b>第 2 章 2.2.3 节 Discussion on Scaling Laws　<a href="../thellm/07-2-background.html#2-2-3-discussion-on-scaling-laws">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0012.png" alt="原书公式 2.5"><span class="cap">原书公式 2.5</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ N_{\mathrm{opt}}\approx C^{a},\qquad D_{\mathrm{opt}}\approx C^{b} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th></tr>
+<tr><td>\(a\)</td><td>KM 定律 \(\approx0.73\)；Chinchilla \(\approx0.46\)</td></tr>
+<tr><td>\(b\)</td><td>KM 定律 \(\approx0.27\)；Chinchilla \(\approx0.54\)</td></tr>
+</table>
+
+<h3>③ 推导与解读</h3>
+<ol class="steps">
+<li><strong>它是公式 2.4 的"剥掉常数"版本。</strong>2.4 给出 \(N_{\mathrm{opt}}=G(C/6)^{a}\)，其中 \(G\) 是与 \(C\) 无关的量纲修正。工程上做外推时只关心随 \(C\) 增长的部分，于是写成 \(\approx C^{a}\)。</li>
+<li><strong>\(a+b=1\) 的原因。</strong>由于 \(C\approx6ND\)，若 \(N\propto C^{a}\) 则 \(D=C/(6N)\propto C^{1-a}\)，即 \(b=1-a\)。所以"参数份额"与"数据份额"天然互补。</li>
+<li><strong>两组系数的对比。</strong>KM：\(a\approx0.73&gt;b\approx0.27\)，倾向于把预算压向参数。Chinchilla：\(a\approx0.46&lt;b\approx0.54\)，倾向于压向数据。这正是两条定律的核心分歧。</li>
+<li><strong>为什么分歧存在。</strong>KM 的实验在"参数远超数据"的区间（他们发现大模型需要<em>重复</em>多轮数据才最优），所以观测到的最优 \(N\) 偏大；Chinchilla 把实验扩展到参数/数据更平衡的区间，修正了这一定性结论。</li>
+</ol>
+<div class="note">
+<b>实用读法</b>
+\(a=0.46\) 意味着算力翻倍时参数只增长 \(2^{0.46}=1.38\) 倍，数据增长 \(2^{0.54}=1.46\) 倍。<strong>这就是"至少 20 倍 token 换 1 倍参数"这条经验法则的来源。</strong>
+</div>
+<div class="relnav">相关：<a href="#eq-2-1">(2.1) KM 定律</a>　<a href="#eq-2-3">(2.3) Chinchilla 定律</a>　<a href="#eq-2-4">(2.4) 严格形式</a></div>
+</section>
+</article>
+</main>
+<nav class="chapnav" aria-label="上下页导航"><div class="chapnav-inner">
+<a class="" href="00-prereq.html"><span class="lbl">上一章</span><span class="nm">预备知识　数学预备知识速查</span></a><a class="next" href="02-ch04-data.html"><span class="lbl">下一章</span><span class="nm">Chapter 4　第 4 章 · 数据准备</span></a>
+</div></nav>
+<script src="../assets/katex/katex.min.js"></script>
+<script src="../assets/katex/auto-render.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

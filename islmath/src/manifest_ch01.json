@@ -1,0 +1,109 @@
+{
+ "chapter": "1",
+ "cn": "导论",
+ "en": "Introduction",
+ "book": "02-introduction.html",
+ "count": 10,
+ "equations": [
+  {
+   "id": null,
+   "num": null,
+   "page": 20,
+   "img": "eq-p020-127y148-204x318.png",
+   "section": "Notation and Simple Matrix Algebra",
+   "link": "../isl/02-introduction.html",
+   "before": "We will use n to represent the number of distinct data points, or observations, in our sample. We will let p denote the number of variables that are available for use in making predictions. For example, the Wage data set consists of 11 variables for 3,000 people, so we have n = 3,000 observations and p = 11 variables (such as year, age, race, and more). Note that throughout this book, we indicate variable names using colored font: Variable Name. In some examples, p might be quite large, such as …",
+   "after": "X =⋯⋯⋯ ⋯ For readers who are unfamiliar with matrices, it is useful to visualize X as a spreadsheet of numbers with n rows and p columns. At times we will be interested in the rows of X, which we write as x1, x2,⋯, xn. Here xi is a vector of length p, containing the p variable measurements for the ith observation. That is,"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 20,
+   "img": "eq-p020-172y190-204x323.png",
+   "section": "Notation and Simple Matrix Algebra",
+   "link": "../isl/02-introduction.html",
+   "before": "In general, we will let xij represent the value of the jth variable for the ith observation, where i = 1, 2,⋯, n and j = 1, 2,⋯, p. Throughout this book, i will be used to index the samples or observations (from 1 to n) and j will be used to index the variables (from 1 to p). We let X denote an n × p matrix whose (i, j)th element is xij. That is, XT =⋯⋯⋯ while X =⋯⋯⋯ ⋯",
+   "after": "For readers who are unfamiliar with matrices, it is useful to visualize X as a spreadsheet of numbers with n rows and p columns. At times we will be interested in the rows of X, which we write as x1, x2,⋯, xn. Here xi is a vector of length p, containing the p variable measurements for the ith observation. That is, (1.1) (Vectors are by default represented as columns.) For example, for the Wage data, xi is a vector of length 11, consisting of year, age, race, and other values for the ith individual. At other times we will instead be interested in the columns of X, which we write as x1, x2,⋯, xp. Each is a vector of"
+  },
+  {
+   "id": "eq-1-1",
+   "num": "(1.1)",
+   "page": 20,
+   "img": "eq-p020-255y324-219x385.png",
+   "section": "Notation and Simple Matrix Algebra",
+   "link": "../isl/02-introduction.html#eq-1-1",
+   "before": "X =⋯⋯⋯ ⋯ For readers who are unfamiliar with matrices, it is useful to visualize X as a spreadsheet of numbers with n rows and p columns. At times we will be interested in the rows of X, which we write as x1, x2,⋯, xn. Here xi is a vector of length p, containing the p variable measurements for the ith observation. That is,",
+   "after": "(Vectors are by default represented as columns.) For example, for the Wage data, xi is a vector of length 11, consisting of year, age, race, and other values for the ith individual. At other times we will instead be interested in the columns of X, which we write as x1, x2,⋯, xp. Each is a vector of For example, for the Wage data, x1 contains the n = 3,000 values for year. Using this notation, the matrix X can be written as"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 20,
+   "img": "eq-p020-473y501-193x312.png",
+   "section": "Notation and Simple Matrix Algebra",
+   "link": "../isl/02-introduction.html",
+   "before": "(Vectors are by default represented as columns.) For example, for the Wage data, xi is a vector of length 11, consisting of year, age, race, and other values for the ith individual. At other times we will instead be interested in the columns of X, which we write as x1, x2,⋯, xp. Each is a vector of For example, for the Wage data, x1 contains the n = 3,000 values for year. Using this notation, the matrix X can be written as",
+   "after": "The T notation denotes the transpose of a matrix or vector. So, for example,"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 20,
+   "img": "eq-p020-590y615-208x321.png",
+   "section": "Notation and Simple Matrix Algebra",
+   "link": "../isl/02-introduction.html",
+   "before": "Using this notation, the matrix X can be written as The T notation denotes the transpose of a matrix or vector. So, for example,",
+   "after": "We use yi to denote the ith observation of the variable on which we wish to make predictions, such as wage. Hence, we write the set of all n observations in vector form as  y1  y2  y =⋯ . yn"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 20,
+   "img": "eq-p020-660y668-208x325.png",
+   "section": "Notation and Simple Matrix Algebra",
+   "link": "../isl/02-introduction.html",
+   "before": "The T notation denotes the transpose of a matrix or vector. So, for example,",
+   "after": "We use yi to denote the ith observation of the variable on which we wish to make predictions, such as wage. Hence, we write the set of all n observations in vector form as  y1  y2  y =⋯ . yn Then our observed data consists of {(x1, y1), (x2, y2),⋯, (xn, yn)}, where each xi is a vector of length p. (If p = 1, then xi is simply a scalar.)"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 21,
+   "img": "eq-p021-72y84-188x317.png",
+   "section": "Notation and Simple Matrix Algebra",
+   "link": "../isl/02-introduction.html",
+   "before": "The T notation denotes the transpose of a matrix or vector. So, for example,",
+   "after": "We use yi to denote the ith observation of the variable on which we wish to make predictions, such as wage. Hence, we write the set of all n observations in vector form as  y1  y2  y =⋯ . yn Then our observed data consists of {(x1, y1), (x2, y2),⋯, (xn, yn)}, where each xi is a vector of length p. (If p = 1, then xi is simply a scalar.) In this text, a vector of length n will always be denoted in lower case bold; e.g."
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 21,
+   "img": "eq-p021-556y564-199x323.png",
+   "section": "Notation and Simple Matrix Algebra",
+   "link": "../isl/02-introduction.html",
+   "before": "In this text, a vector of length n will always be denoted in lower case bold; e.g.  a1  a2  a =⋯ . an However, vectors that are not of length n (such as feature vectors of length p, as in (1.1)) will be denoted in lower case normal font, e.g. a. Scalars will also be denoted in lower case normal font, e.g. a. In the rare cases in which these two uses for lower case normal font lead to ambiguity, we will clarify which use is intended. Matrices will be denoted using bold capitals, such as…",
+   "after": "Note that this operation produces an r × s matrix. It is only possible to compute AB if the number of columns of A is the same as the number of rows of B. Organization of This Book#"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 21,
+   "img": "eq-p021-568y576-192x323.png",
+   "section": "Notation and Simple Matrix Algebra",
+   "link": "../isl/02-introduction.html",
+   "before": " a1  a2  a =⋯ . an However, vectors that are not of length n (such as feature vectors of length p, as in (1.1)) will be denoted in lower case normal font, e.g. a. Scalars will also be denoted in lower case normal font, e.g. a. In the rare cases in which these two uses for lower case normal font lead to ambiguity, we will clarify which use is intended. Matrices will be denoted using bold capitals, such as A. Random variables will be denoted using capital normal font, e.g. A, regardless …",
+   "after": "Note that this operation produces an r × s matrix. It is only possible to compute AB if the number of columns of A is the same as the number of rows of B. Organization of This Book# Chapter 2 introduces the basic terminology and concepts behind statistical learning. This chapter also presents the K-nearest neighbor classifier, a very simple method that works surprisingly well on many problems. Chapters 3 and 4 cover classical linear methods for regression and classification. In particular, Chapter 3 reviews linear regression, the fundamental starting point for all regression methods. In Chapter 4 we discuss two of the most important classical classification methods, logistic regression and l…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 21,
+   "img": "eq-p021-578y611-90x414.png",
+   "section": "Notation and Simple Matrix Algebra",
+   "link": "../isl/02-introduction.html",
+   "before": "Occasionally we will want to indicate the dimension of a particular object. To indicate that an object is a scalar, we will use the notation a ∈R. To indicate that it is a vector of length k, we will use a ∈Rk (or a ∈Rn if it is of length n). We will indicate that an object is an r × s matrix using A ∈Rr×s. We have avoided using matrix algebra whenever possible. However, in a few instances it becomes too cumbersome to avoid it entirely. In these rare instances it is important to understand the c…",
+   "after": "Note that this operation produces an r × s matrix. It is only possible to compute AB if the number of columns of A is the same as the number of rows of B. Organization of This Book# Chapter 2 introduces the basic terminology and concepts behind statistical learning. This chapter also presents the K-nearest neighbor classifier, a very simple method that works surprisingly well on many problems. Chapters 3 and 4 cover classical linear methods for regression and classification. In particular, Chapter 3 reviews linear regression, the fundamental starting point for all regression methods. In Chapter 4 we discuss two of the most important classical classification methods, logistic regression and l…"
+  }
+ ]
+}

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Ch 8 DPO · RLHF 数学推导手册</title>
+<link rel="icon" href="assets/icon.svg">
+<link rel="stylesheet" href="assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('rlhf-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light')}catch(e){}}());</script>
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="bar">
+<a class="ib" href="index.html" aria-label="目录">&#9776;</a>
+<span class="title">Ch 8 DPO 推导</span>
+<button class="ib" id="theme" type="button" aria-label="切换深色模式">&#9681;</button>
+</header>
+<main id="main">
+<h1 class="chapter"><span class="chno">Ch 8</span>DPO：三段推导全程</h1>
+<div class="callout"><div class="lab">This chapter covers</div><ul><li>Eq 8.1–8.4 DPO loss 长什么样、梯度在干什么</li><li>Eq 8.5–8.17 RLHF 最优解 π*＝π<sub>ref</sub>e<sup>r/β</sup>/Z（Gibbs）</li><li>Eq 8.18–8.26 把 r 代回 BT 得 sigmoid（Z 相消）</li><li>Eq 8.27–8.29 loss 求导得加权 SFT 梯度</li></ul></div>
+
+<h2 id="d01"><a class="anchor" href="#d01">#</a>Eq 8.1–8.3 先看答案</h2>
+<div class="math"><span class="eqtag">Eq 8.1 RLHF 目标（同 3.4）</span><br>max<sub>π</sub> E<sub>x</sub>E<sub>y∼π</sub>[r(x,y)] −βD<sub>KL</sub>(π‖π<sub>ref</sub>)<br><span class="eqtag">Eq 8.2 DPO loss</span><br>L＝−E[ logσ( βlog(π(y<sub>c</sub>|x)/π<sub>ref</sub>(y<sub>c</sub>|x)) −βlog(π(y<sub>r</sub>|x)/π<sub>ref</sub>(y<sub>r</sub>|x)) ) ]<br><span class="eqtag">Eq 8.3 隐式奖励</span><br>r(x,y)＝βlog(π<sub>r</sub>(y|x)/π<sub>ref</sub>(y|x))</div>
+<p><b>人话：</b>DPO 不训奖励模型，它说“最优策略和最优奖励是一枚硬币两面”（8.3），把 r 用 π 表示后塞进 BT，就得到只含两个模型 log prob 的 8.2。β 还是 KL 价格。</p>
+
+<h2 id="d04"><a class="anchor" href="#d04">#</a>Eq 8.4 梯度直觉（先记住，证在最后）</h2>
+<div class="math"><span class="eqtag">Eq 8.4</span><br>∇L＝−βE[ σ(r(y<sub>r</sub>)−r(y<sub>c</sub>))·(∇logπ(y<sub>c</sub>|x)−∇logπ(y<sub>r</sub>|x)) ]</div>
+<ol class="steps">
+<li><b>权重 σ(r<sub>r</sub>−r<sub>c</sub>)∈(0,1)：</b>排错了（r<sub>r</sub>＞r<sub>c</sub>）权重→1，大力改；排对且拉开，权重→0，几乎不动。</li>
+<li><b>方向：</b>加 y<sub>c</sub> 的 log prob，减 y<sub>r</sub> 的——加权版的 SFT。β 控制步子：β 大更信 KL（贴着 ref），β 小更激进。</li>
+<li><b>伏笔：</b>只增大 margin（c−r 之差），c、r 各自绝对值都可能掉——preference displacement（图 8.2），-calDPO 等变体为此而生。</li>
+</ol>
+
+<h2 id="d0517"><a class="anchor" href="#d0517">#</a>第一段 Eq 8.5–8.17：解出最优策略</h2>
+<div class="math"><span class="eqtag">Eq 8.5–8.6 展开 KL</span><br>max E[r]−βE[log(π/π<sub>ref</sub>)] ＝ max E[ r −βlog(π/π<sub>ref</sub>) ]<br><span class="eqtag">Eq 8.7–8.9 除以 β 变 min</span><br>＝ min E[ log(π/π<sub>ref</sub>) −r/β ]（提 −1、除 β、max 变 min）</div>
+<div class="recall"><div class="lab">前置 · 配分函数 Z</div>Z(x)＝Σ<sub>y</sub>π<sub>ref</sub>(y|x)exp(r(x,y)/β)：对所有可能回答求和的归一化常数，只与 x 有关。实际算不出（y 空间巨大），但推导中会被消掉——DPO 巧妙正在此。</div>
+<div class="math"><span class="eqtag">Eq 8.10–8.11 配分</span><br>Z(x)＝Σ<sub>y</sub>π<sub>ref</sub>exp(r/β)；目标＝min E[ log( π/( (1/Z)π<sub>ref</sub>exp(r/β) ) ) −logZ ]</div>
+<ol class="steps">
+<li><b>8.12→8.15（加减 logZ＋合并）：</b>原式 log(π/π<sub>ref</sub>)−r/β，加 (logZ−logZ)＝0 得 [log(π/π<sub>ref</sub>)＋logZ]−logZ−r/β；log a＋log b＝log ab 得 log(πZ/π<sub>ref</sub>)−logZ−r/β；把 r/β 写成 log exp(r/β) 并入分母，即得 8.11 方括号。</li>
+<li><b>8.16 看成 KL：</b>方括号＝log( π / [ (1/Z)π<sub>ref</sub>exp(r/β) ] )，对 y∼π 取期望正是 D<sub>KL</sub>(π‖(1/Z)π<sub>ref</sub>e<sup>r/β</sup>)。−logZ 与 π 无关，扔掉。</li>
+<li><b>8.17 Gibbs 不等式：</b>KL≥0，仅当两分布相等取 0，故最优 π*＝(1/Z)π<sub>ref</sub>exp(r/β)。<b>一句话：最优策略＝参考策略按 e<sup>r/β</sup> 加权再归一化。</b></li>
+</ol>
+
+<h2 id="d1826"><a class="anchor" href="#d1826">#</a>第二段 Eq 8.18–8.26：把 r 换成 π</h2>
+<div class="math"><span class="eqtag">Eq 8.18 BT</span><br>p*(y<sub>1</sub>≻y<sub>2</sub>|x)＝e<sup>r*(x,y<sub>1</sub>)</sup>/(e<sup>r*</sup><sub>1</sub>＋e<sup>r*</sup><sub>2</sub>)<br><span class="eqtag">Eq 8.19–8.22 解 r*</span><br>logπ*＝−logZ＋logπ<sub>ref</sub>＋r*/β ⇒ r*＝βlog(π*/π<sub>ref</sub>)＋βlogZ</div>
+<ol class="steps">
+<li><b>8.19–8.20：</b>对 8.17 取 log：logπ*＝log(1/Z)＋logπ<sub>ref</sub>＋log exp(r*/β)＝−logZ＋logπ<sub>ref</sub>＋r*/β（log abc＝和）。</li>
+<li><b>8.21–8.22：</b>移项 ×β 即得 r* 表达式。注意多出 βlogZ——下一步会被消掉。</li>
+<li><b>8.23–8.24 代入 BT：</b>p*＝exp(βlog(π*<sub>1</sub>/π<sub>ref1</sub>)＋βlogZ)/[分母两项同理]。e<sup>a+b</sup>＝e<sup>a</sup>e<sup>b</sup>，每项都带因子 e<sup>βlogZ</sup>＝Z<sup>β</sup>，分子分母约掉（Z 与 y 无关），得 8.24。</li>
+<li><b>8.25–8.26 化 sigmoid：</b>分子分母同乘 exp(−βlog(π*<sub>1</sub>/π<sub>ref1</sub>))：＝1/[1＋exp(βlog(π*<sub>2</sub>/π<sub>ref2</sub>)−βlog(π*<sub>1</sub>/π<sub>ref1</sub>))]；记 x＝βlog(π*<sub>1</sub>/π<sub>ref1</sub>)−βlog(π*<sub>2</sub>/π<sub>ref2</sub>)，分母＝1＋e<sup>−x</sup>，即 σ(x)。证毕——这就是 8.2（y<sub>1</sub>＝y<sub>c</sub>）。</li>
+</ol>
+<div class="warnbox"><div class="lab">Z 去哪了？</div>Z(x) 只与 prompt 有关，与 y 无关，在 BT 的比值里分子分母同乘同除被消掉。这就是 DPO 不用估计不可算的 Z 也能训的原因——BT 只关心差值（回看 §5.1“只有差值重要”）。</div>
+
+<h2 id="d2729"><a class="anchor" href="#d2729">#</a>第三段 Eq 8.27–8.29：对 loss 求导</h2>
+<div class="math"><span class="eqtag">Eq 8.27–8.28</span><br>∇L＝−∇E[logσ(u)]，u＝βlog(π(y<sub>c</sub>)/π<sub>ref</sub>)−βlog(π(y<sub>r</sub>)/π<sub>ref</sub>)；＝−E[ σ′(u)/σ(u)·∇u ]<br><span class="eqtag">Eq 8.29 结果</span><br>＝−E[ βσ(βlog(π(y<sub>r</sub>)/π<sub>ref</sub>)−βlog(π(y<sub>c</sub>)/π<sub>ref</sub>))·(∇logπ(y<sub>c</sub>)−∇logπ(y<sub>r</sub>)) ]</div>
+<div class="recall"><div class="lab">前置 · 三个求导</div>dσ/dx＝σ(1−σ)；dlogx/dx＝1/x；σ(−x)＝1−σ(x)。π<sub>ref</sub> 与 θ 无关，∇ 只打 π<sub>θ</sub>。</div>
+<ol class="steps">
+<li><b>链式：</b>∇logσ(u)＝(1/σ(u))·σ′(u)·∇u＝(1/σ)·σ(1−σ)·∇u＝(1−σ(u))∇u。</li>
+<li><b>1−σ(u)＝σ(−u)：</b>−u＝βlog(π<sub>r</sub>/π<sub>ref</sub>)−βlog(π<sub>c</sub>/π<sub>ref</sub>)，即 8.29 的 σ 里那串。</li>
+<li><b>∇u：</b>∇[βlogπ(y<sub>c</sub>)−βlogπ<sub>ref</sub>−βlogπ(y<sub>r</sub>)＋…]＝β(∇logπ(y<sub>c</sub>)−∇logπ(y<sub>r</sub>))（ref 项导数 0）。合起来即 8.29＝8.4。证毕。</li>
+<li><b>代码：</b><code>pi＝chosen−rejected；ref＝ref_chosen−ref_rejected；loss＝−logsigmoid(β·(pi−ref))</code>，chosen_rewards＝β·(policy−ref).detach() 供打日志。</li>
+</ol>
+<p>记住 DPO 的 tradeoff：简单（无采样、无 value、无 reward 模型）、KL 静态（β 一步到位），但信号来自离线 pair，上限常比在线 RL 低一截（原书 8.5）。</p>
+</main>
+<nav class="pager" aria-label="翻页">
+<a class="pv" href="04-policy-gradient.html"><span class="dir">上一章</span><span class="t">策略梯度 Eq 6</span></a>
+<a class="nx" href="06-rejection-kl.html"><span class="dir">下一章</span><span class="t">拒绝采样与 KL</span></a>
+</nav>
+<script src="assets/app.js"></script>
+</body>
+</html>

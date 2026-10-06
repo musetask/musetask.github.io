@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="author" content="Nathan Lambert">
+<meta name="generator" content="pdf2html">
+<title>Regularization · The RLHF Book</title>
+<link rel="icon" href="assets/icon.svg">
+<link rel="stylesheet" href="assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('rlhf-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light')}catch(e){}}());</script>
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="bar">
+<a class="ib" href="index.html" aria-label="目录">&#9776;</a>
+<span class="title">Regularization</span>
+<button class="ib" id="theme" type="button" aria-label="切换深色模式">&#9681;</button>
+</header>
+<main id="main">
+<h1 class="chapter"><span class="chno">1</span>5 Regularization</h1>
+<div class="callout"><div class="lab">This chapter covers</div><ul><li>How a KL divergence constrains the RLHF process</li><li>Why regularization prevents models from producing nonsensical outputs</li><li>Different regularization techniques including pretraining gradients</li></ul></div>
+<p>Throughout the RLHF optimization, many regularization steps are used to prevent over-optimization of the reward model. Over-optimization in these contexts looks like models that output nonsensical text. Some examples of optimization “off the rails” are that models can output followable math reasoning with extremely incorrect answers, repeated text, switching languages, or excessive special characters. This chapter covers the different methods that’re used to control the optimization of models.</p>
+<p>The most popular variant, used in most RLHF implementations at the time of writing, is a KL distance from the current policy to a reference policy across generated samples. “KL distance” is a colloquial term for expressing the <em>optimization distance</em> within the training process, even though KL divergence—the underlying mathematical method for measuring the separation of two probability distributions—does not satisfy the formal properties required to be a true distance metric (it is simply easier to call the number a distance than a numeric measure of distributional difference). Many other regularization techniques have emerged in the literature to then disappear in the next model iteration in that line of research. That is to say that regularization outside the core KL distance from generations is often used to stabilize experimental setups that can then be simplified in the next generation. Still, it is important to understand tools to constrain optimization in RLHF.</p>
+<p><em>Throughout this chapter, we use </em>x<em> to denote prompts and </em>y<em> to denote completions. This</em> <em>notation is common in the language model literature, where methods operate on full</em> <em>prompt-completion pairs rather than individual tokens.</em></p>
+<p>The general formulation, when used in an RLHF framework with a reward model, r<sub>θ</sub> is as follows:</p>
+<figure class="eq"><div class="eqno">Equation 15.1</div><a class="zoom" href="assets/0121.png"><img src="assets/0121.png" alt="公式 15.1" loading="lazy"></a></figure>
+<p>With the reference implementation being:</p>
+<figure class="eq"><div class="eqno">Equation 15.2</div><a class="zoom" href="assets/0122.png"><img src="assets/0122.png" alt="公式 15.2" loading="lazy"></a></figure>
+<h2 id="15-1-kl-divergences-in-rl-optimization"><a class="anchor" href="#15-1-kl-divergences-in-rl-optimization">#</a>15.1 KL Divergences in RL Optimization</h2>
+<p>For mathematical definitions, see Appendix a. Recall that a KL divergence measure of probability difference is defined as follows:</p>
+<figure class="eq"><div class="eqno">Equation 15.3</div><a class="zoom" href="assets/0123.png"><img src="assets/0123.png" alt="公式 15.3" loading="lazy"></a></figure>
+<p>In RLHF, the two distributions of interest are often the distribution of the new model version, say P(x), and a distribution of the reference policy, say Q(x). Different optimizers use different KL directions. Throughout this book, the most common “KL Penalty” that is used is called the reverse KL to the reference policy. In practice, this reduces to a Monte Carlo estimate that samples tokens from the RL model and computes probabilities from the reference model. Intuitively, this reverse KL has a numerical property that applies a large penalty when the new model, P or π<sub>R</sub><sub>L</sub>, puts substantial probability mass where the original reference model assigns low probability.</p>
+<p>The other KL direction is still often used in ML, e.g. in the internal trust region calculation of some RL algorithms. This penalty intuitively penalizes the new model when its update does <em>not</em> apply probability to a high-likelihood region in Q or π<sub>r</sub><sub>e</sub><sub>f</sub>. This is closer to an objective used for distillation or behavioral cloning.</p>
+<h3 id="15-1-1-reference-model-to-generations"><a class="anchor" href="#15-1-1-reference-model-to-generations">#</a>15.1.1 Reference Model to Generations</h3>
+<p>KL penalties are most commonly implemented by comparing the distance between the generated tokens during training to a static reference model. The intuition is that the model you’re training from has a style that you would like to stay close to. This reference model is most often the instruction tuned model, but can also be a previous RL checkpoint. With simple substitution, the model we are sampling from becomes π<sub>R</sub><sub>L</sub>(x) and π<sub>r</sub><sub>e</sub><sub>f</sub>(x), shown above in eq. 15.2 (often P, and Q, in standard definitions, when applied for RL KL penalties). Such a KL divergence penalty was first applied to dialogue agents well before the popularity of large language models [1], yet KL control was quickly established as a <a href="17-regularization.html">core technique for fine-tuning pretrained models [2].</a></p>
+<h3 id="15-1-2-implementation-example"><a class="anchor" href="#15-1-2-implementation-example">#</a>15.1.2 Implementation Example</h3>
+<p>In practice, the implementation of KL divergence is often approximated [3], making the implementation far simpler. With the above definition, the summation of KL can be converted to an expectation when sampling directly from the distribution P(x). In this case, the distribution P(x) is the generative distribution of the model currently being trained (i.e. not the reference model). Then, the computation for KL divergence changes to the following:</p>
+<figure class="eq"><div class="eqno">Equation 15.4</div><a class="zoom" href="assets/0124.png"><img src="assets/0124.png" alt="公式 15.4" loading="lazy"></a></figure>
+<p>This mode is far simpler to implement, particularly when dealing directly with log probabilities used frequently in language model training.</p>
+<div class="codeblock"><div class="bar2"><span class="lang">python</span><button class="copy" type="button">复制</button></div><pre><code> <span class="c-com">#1</span>
+generated_tokens = model.generate(inputs)
+ <span class="c-com">#2</span>
+logits       = model.forward(generated_tokens[:, :-<span class="c-num">1</span>]).logits
+ref_logits   = ref_model.forward(generated_tokens[:, :-<span class="c-num">1</span>]).logits
+ <span class="c-com">#3</span>
+logprobs     = F.log_softmax(logits, dim=-<span class="c-num">1</span>)
+ref_logprobs = F.log_softmax(ref_logits, dim=-<span class="c-num">1</span>)
+ <span class="c-com">#4</span>
+token_logprobs     = logprobs.gather(-<span class="c-num">1</span>, generated_tokens[:,
+<span class="c-num">1</span>:].unsqueeze(-<span class="c-num">1</span>)).squeeze(-<span class="c-num">1</span>)
+ref_token_logprobs = ref_logprobs.gather(-<span class="c-num">1</span>, generated_tokens[:,
+<span class="c-num">1</span>:].unsqueeze(-<span class="c-num">1</span>)).squeeze(-<span class="c-num">1</span>)
+ <span class="c-com">#5</span>
+seq_logprob     = token_logprobs.sum(dim=-<span class="c-num">1</span>)
+ref_seq_logprob = ref_token_logprobs.sum(dim=-<span class="c-num">1</span>)
+kl_approx = seq_logprob - ref_seq_logprob
+kl_full   = F.kl_div(ref_logprobs, logprobs, reduction=<span class="c-str">'batchmean'</span>)</code></pre></div>
+<p><a href="https://github.com/hamishivi/EasyLM/blob/main/EasyLM/models/llama/llama_train_ppo.py#L278">Some example implementations include TRL and Hamish Ivison’s Jax Code.</a></p>
+<h2 id="15-2-pretraining-gradients"><a class="anchor" href="#15-2-pretraining-gradients">#</a>15.2 Pretraining Gradients</h2>
+<p>Another way of viewing regularization is that you may have a <em>dataset</em> that you want the model to remain close to, as done in InstructGPT [4] “in order to fix the performance regressions on public NLP datasets”. To implement this, they modify the training objective for RLHF. Taking eq. 15.1, we can transform this into an objective function to optimize by sampling from the RL policy model, completions y from prompts x in the RL dataset used for RLHF, which yields:</p>
+<figure class="eq"><div class="eqno">Equation 15.5</div><a class="zoom" href="assets/0125.png"><img src="assets/0125.png" alt="公式 15.5" loading="lazy"></a></figure>
+<p>Then, we can add an additional reward for higher probabilities on the standard autoregressive next-token prediction loss used at pretraining, over a set of documents sampled from the pretraining corpus (or another dataset) to maintain textual coherence:</p>
+<figure class="eq"><div class="eqno">Equation 15.6</div><a class="zoom" href="assets/0126.png"><img src="assets/0126.png" alt="公式 15.6" loading="lazy"></a></figure>
+<p>Recent work proposed using a negative log-likelihood term to balance the optimization of Direct Preference Optimization (DPO) [5]. Given the pairwise nature of the DPO loss, the same loss modification can be made to reward model training, constraining the model to predict accurate text (rumors from laboratories that did not publish the work).</p>
+<p>The optimization follows as a modification to DPO.</p>
+<figure class="eq"><div class="eqno">Equation 15.7</div><a class="zoom" href="assets/0127.png"><img src="assets/0127.png" alt="公式 15.7" loading="lazy"></a></figure>
+<figure class="eq"><div class="eqno">Equation 15.8</div><a class="zoom" href="assets/0128.png"><img src="assets/0128.png" alt="公式 15.8" loading="lazy"></a></figure>
+<p>where P<sub>θ</sub> is the trainable policy model, P<sub>r</sub><sub>e</sub><sub>f</sub><sub>.</sub> is a fixed reference model (often the SFT checkpoint), and (c<sub>i</sub><sub>w</sub> , y<sub>i</sub><sub>w</sub> ) and (c<sub>i</sub><sub>l</sub>, y<sub>i</sub><sub>l</sub>) denote the winning and losing completions for prompt x<sub>i</sub> . The first term is the standard DPO logistic loss: it increases the margin between the win and loss using the difference of log-likelihood ratios, log<span class="frac"><span class="nu"><sub>P</sub><sub>θ</sub></span><span class="de"><sub>P</sub><sub>r</sub><sub>e</sub><sub>f</sub><sub>.</sub></span></span>, and β controls how strongly this preference signal pulls away from the reference. The second term is a length-normalized negative log-likelihood penalty on the winning completion, weighted by α, which helps keep the preferred text high-likelihood in an absolute language modeling sense rather than only relatively better than the rejected sample.</p>
+<h2 id="15-3-other-regularization"><a class="anchor" href="#15-3-other-regularization">#</a>15.3 Other Regularization</h2>
+<p>Controlling the optimization is less well defined in other parts of the RLHF stack. Most reward models have no regularization beyond the standard contrastive loss function. Direct Alignment Algorithms handle regularization to KL divergences differently, through the β parameter (see the chapter on Direct Alignment).</p>
+<p>Llama 2 proposed a margin loss for reward model training [6]:</p>
+<figure class="eq"><div class="eqno">Equation 15.9</div><a class="zoom" href="assets/0129.png"><img src="assets/0129.png" alt="公式 15.9" loading="lazy"></a></figure>
+<p>where m(y<sub>c</sub>, y<sub>r</sub>) is the margin between two datapoints y<sub>c</sub> and y<sub>r</sub> representing numerical difference in delta between the ratings of two annotators. This is either achieved by having annotators rate the outputs on a numerical scale or by using a quantified ranking method, such as Likert scales.</p>
+<p>Reward margins have been used heavily in the direct alignment literature, such as Reward weighted DPO, ‘’Reward-aware Preference Optimization’ ’ (RPO), which integrates reward model scores into the update rule following a DPO loss [7], or REBEL [8] that has a reward delta weighting in a regression-loss formulation.</p>
+<p>[1]N. Jaques, S. Gu, D. Bahdanau, J. M. Hernández-Lobato, R. E. Turner, and D. Eck,</p>
+<p>“Sequence tutor: Conservative fine-tuning of sequence generation models with kl-control,” in <em>International conference on machine learning</em>, PMLR, 2017, pp. 1645–</p>
+<p>1654.</p>
+<p>[2]N. Jaques <em>et al.</em>, “Human-centric dialog training via offline reinforcement learning,” in <em>Conference on empirical methods in natural language processing (EMNLP)</em>, 2020.</p>
+<p><a href="http://joschu.net/blog/kl-approx.html">[3]J. Schulman, “Approximating KL-divergence.” http://joschu. net/blog/ kl-approx. html,</a> 2016.</p>
+<p>[4]L. Ouyang <em>et al.</em>, “Training language models to follow instructions with human</p>
+<p>feedback,” <em>Advances in neural information processing systems</em>, vol. 35, pp. 27730– 27744, 2022.</p>
+<p>[5]R. Y. Pang, W. Yuan, K. Cho, H. He, S. Sukhbaatar, and J. Weston, “Iterative</p>
+<p>reasoning preference optimization,” in <em>Advances in neural information processing</em></p>
+<p><em>systems (NeurIPS)</em>, 2024.</p>
+<p>[6]H. Touvron <em>et al.</em>, “Llama 2: Open foundation and fine-tuned chat models,” <em>arXiv</em></p>
+<p><em>preprint arXiv:2307.09288</em>, 2023.</p>
+<p>[7]B. Adler <em>et al.</em>, “Nemotron-4 340B technical report,” <em>arXiv preprint</em></p>
+<p><em>arXiv:2406.11704</em>, 2024.</p>
+<p>[8]Z. Gao <em>et al.</em>, “Rebel: Reinforcement learning via regressing relative rewards,” in</p>
+<p><em>Advances in neural information processing systems (NeurIPS)</em>, 2024.</p>
+</main>
+<nav class="pager" aria-label="翻页">
+<a class="pv" href="16-style-and-information.html"><span class="dir">上一章</span><span class="t">Style and Information</span></a>
+<a class="nx" href="18-over-optimization.html"><span class="dir">下一章</span><span class="t">Over Optimization</span></a>
+</nav>
+<div class="lightbox" id="lb" hidden><img alt="放大查看"><button class="x" type="button" aria-label="关闭">&#10005;</button></div>
+<script src="assets/app.js"></script>
+</body>
+</html>

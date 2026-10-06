@@ -1,0 +1,389 @@
+{
+ "chapter": "10",
+ "cn": "深度学习",
+ "en": "Deep Learning",
+ "book": "11-deep-learning.html",
+ "count": 38,
+ "equations": [
+  {
+   "id": "eq-10-1",
+   "num": "(10.1)",
+   "page": 407,
+   "img": "eq-p407-563y604-143x380.png",
+   "section": "10.1 Single Layer Neural Networks",
+   "link": "../isl/11-deep-learning.html#eq-10-1",
+   "before": "It is built up here in two steps. First the K activations Ak, k = 1,⋯, K, in the hidden layer are computed as functions of the input features X1,⋯, Xp, where g(z) is a nonlinear activation function that is specified in advance. We can think of each Ak as a different transformation hk(X) of the original features, much like the basis functions of Chapter 7. These K activations from the hidden layer then feed into the output layer, resulting in The material in this chapter is slightly more challeng…",
+   "after": "(10.2) The nonlinearity in the activation function g(·) is essential, since without it the model f(X) in (10.1) would collapse into a simple linear model in X1,⋯, Xp. Moreover, having a nonlinear activation function allows the model to capture complex nonlinearities and interaction effects. Consider a very simple example with p = 2 input variables X = (X1, X2), and K = 2 hidden units h1(X) and h2(X) with g(z) = z2. We specify the other parameters as FIGURE 10.2 Activation functions. The piecewise-linear ReLU function is pop- ular for its efficiency and computability. We have scaled it down by a factor of five for ease of comparison. (10.3)"
+  },
+  {
+   "id": "eq-10-2",
+   "num": "(10.2)",
+   "page": 407,
+   "img": "eq-p407-633y657-165x380.png",
+   "section": "10.1 Single Layer Neural Networks",
+   "link": "../isl/11-deep-learning.html#eq-10-2",
+   "before": "The material in this chapter is slightly more challenging than elsewhere in this book. 10.1Single Layer Neural Networks# A neural network takes an input vector of p variables X = (X1, X2,⋯, Xp) and builds a nonlinear function f(X) to predict the response Y. We have built nonlinear prediction models in earlier chapters, using trees, boosting and generalized additive models. What distinguishes neural networks from these methods is the particular structure of the model. Figure 10.1 shows a simple f…",
+   "after": "The nonlinearity in the activation function g(·) is essential, since without it the model f(X) in (10.1) would collapse into a simple linear model in X1,⋯, Xp. Moreover, having a nonlinear activation function allows the model to capture complex nonlinearities and interaction effects. Consider a very simple example with p = 2 input variables X = (X1, X2), and K = 2 hidden units h1(X) and h2(X) with g(z) = z2. We specify the other parameters as FIGURE 10.2 Activation functions. The piecewise-linear ReLU function is pop- ular for its efficiency and computability. We have scaled it down by a factor of five for ease of comparison. (10.3) a linear regression model in the K = 5 activations. All the…"
+  },
+  {
+   "id": "eq-10-3",
+   "num": "(10.3)",
+   "page": 408,
+   "img": "eq-p408-295y333-197x380.png",
+   "section": "10.1 Single Layer Neural Networks",
+   "link": "../isl/11-deep-learning.html#eq-10-3",
+   "before": "(10.1) (10.2) The nonlinearity in the activation function g(·) is essential, since without it the model f(X) in (10.1) would collapse into a simple linear model in X1,⋯, Xp. Moreover, having a nonlinear activation function allows the model to capture complex nonlinearities and interaction effects. Consider a very simple example with p = 2 input variables X = (X1, X2), and K = 2 hidden units h1(X) and h2(X) with g(z) = z2. We specify the other parameters as FIGURE 10.2 Activation functions. The p…",
+   "after": "a linear regression model in the K = 5 activations. All the parameters β0,⋯, βK and w10,⋯, wKp need to be estimated from data. In the early instances of neural networks, the sigmoid activation function was favored, (10.4) which is the same function used in logistic regression to convert a linear function into probabilities between zero and one (see Figure 10.2). The preferred choice in modern neural networks is the ReLU (rectified linear unit) activation function, which takes the form"
+  },
+  {
+   "id": "eq-10-4",
+   "num": "(10.4)",
+   "page": 408,
+   "img": "eq-p408-379y405-192x380.png",
+   "section": "10.1 Single Layer Neural Networks",
+   "link": "../isl/11-deep-learning.html#eq-10-4",
+   "before": "The nonlinearity in the activation function g(·) is essential, since without it the model f(X) in (10.1) would collapse into a simple linear model in X1,⋯, Xp. Moreover, having a nonlinear activation function allows the model to capture complex nonlinearities and interaction effects. Consider a very simple example with p = 2 input variables X = (X1, X2), and K = 2 hidden units h1(X) and h2(X) with g(z) = z2. We specify the other parameters as FIGURE 10.2 Activation functions. The piecewise-linea…",
+   "after": "which is the same function used in logistic regression to convert a linear function into probabilities between zero and one (see Figure 10.2). The preferred choice in modern neural networks is the ReLU (rectified linear unit) activation function, which takes the form A ReLU activation can be computed and stored more efficiently than a sigmoid activation. Although it thresholds at zero, because we apply it to a linear function (10.2) the constant term wk0 will shift this inflection point. (10.5)"
+  },
+  {
+   "id": "eq-10-5",
+   "num": "(10.5)",
+   "page": 408,
+   "img": "eq-p408-496y504-175x380.png",
+   "section": "10.1 Single Layer Neural Networks",
+   "link": "../isl/11-deep-learning.html#eq-10-5",
+   "before": "(10.4) which is the same function used in logistic regression to convert a linear function into probabilities between zero and one (see Figure 10.2). The preferred choice in modern neural networks is the ReLU (rectified linear unit) activation function, which takes the form A ReLU activation can be computed and stored more efficiently than a sigmoid activation. Although it thresholds at zero, because we apply it to a linear function (10.2) the constant term wk0 will shift this inflection point.",
+   "after": "So in words, the model depicted in Figure 10.1 derives five new features by computing five different linear combinations of X, and then squashes each through an activation function g(·) to transform it. The final model is linear in these derived variables. The name neural network originally derived from thinking of these hidden units as analogous to neurons in the brain — values of the activations Ak = hk(X) close to one are firing, while those close to zero are silent (using the sigmoid activation function). (10.6) From (10.2), this means that"
+  },
+  {
+   "id": "eq-10-6",
+   "num": "(10.6)",
+   "page": 409,
+   "img": "eq-p409-120y157-179x380.png",
+   "section": "10.1 Single Layer Neural Networks",
+   "link": "../isl/11-deep-learning.html#eq-10-6",
+   "before": "A ReLU activation can be computed and stored more efficiently than a sigmoid activation. Although it thresholds at zero, because we apply it to a linear function (10.2) the constant term wk0 will shift this inflection point. (10.5) So in words, the model depicted in Figure 10.1 derives five new features by computing five different linear combinations of X, and then squashes each through an activation function g(·) to transform it. The final model is linear in these derived variables. The name ne…",
+   "after": "From (10.2), this means that (10.7) Then plugging (10.7) into (10.1), we get (10.8)"
+  },
+  {
+   "id": "eq-10-7",
+   "num": "(10.7)",
+   "page": 409,
+   "img": "eq-p409-179y213-185x380.png",
+   "section": "10.1 Single Layer Neural Networks",
+   "link": "../isl/11-deep-learning.html#eq-10-7",
+   "before": "So in words, the model depicted in Figure 10.1 derives five new features by computing five different linear combinations of X, and then squashes each through an activation function g(·) to transform it. The final model is linear in these derived variables. The name neural network originally derived from thinking of these hidden units as analogous to neurons in the brain — values of the activations Ak = hk(X) close to one are firing, while those close to zero are silent (using the sigmoid activat…",
+   "after": "Then plugging (10.7) into (10.1), we get (10.8) We will illustrate a large dense network on the famous and publicly available MNIST handwritten digit dataset.1 Figure 10.3 shows examples of these digits. The idea is to build a model to classify the images into their correct digit class 0–9. Every image has p = 28 × 28 = 784 pixels, each of which is an eight-bit grayscale value between 0 and 255 representing the relative amount of the written digit in that tiny square.2 These pixels are stored in the input vector X (in, say, column order). The output is the class label, represented by a vector Y = (Y0, Y1,⋯, Y9) of 10 dummy variables, with a one in the position corresponding to the label, and…"
+  },
+  {
+   "id": "eq-10-8",
+   "num": "(10.8)",
+   "page": 409,
+   "img": "eq-p409-233y281-114x380.png",
+   "section": "10.1 Single Layer Neural Networks",
+   "link": "../isl/11-deep-learning.html#eq-10-8",
+   "before": "(10.6) From (10.2), this means that (10.7) Then plugging (10.7) into (10.1), we get",
+   "after": "We will illustrate a large dense network on the famous and publicly available MNIST handwritten digit dataset.1 Figure 10.3 shows examples of these digits. The idea is to build a model to classify the images into their correct digit class 0–9. Every image has p = 28 × 28 = 784 pixels, each of which is an eight-bit grayscale value between 0 and 255 representing the relative amount of the written digit in that tiny square.2 These pixels are stored in the input vector X (in, say, column order). The output is the class label, represented by a vector Y = (Y0, Y1,⋯, Y9) of 10 dummy variables, with a one in the position corresponding to the label, and zeros elsewhere. In the machine learning commun…"
+  },
+  {
+   "id": "eq-10-9",
+   "num": "(10.9)",
+   "page": 409,
+   "img": "eq-p409-386y426-210x380.png",
+   "section": "10.1 Single Layer Neural Networks",
+   "link": "../isl/11-deep-learning.html#eq-10-9",
+   "before": "(10.8) We will illustrate a large dense network on the famous and publicly available MNIST handwritten digit dataset.1 Figure 10.3 shows examples of these digits. The idea is to build a model to classify the images into their correct digit class 0–9. Every image has p = 28 × 28 = 784 pixels, each of which is an eight-bit grayscale value between 0 and 255 representing the relative amount of the written digit in that tiny square.2 These pixels are stored in the input vector X (in, say, column orde…",
+   "after": "Details about how to perform this minimization are provided in Section 10.7. 10.2Multilayer Neural Networks# Modern neural networks typically have more than one hidden layer, and often many units per layer. In theory a single hidden layer with a large number of units has the ability to approximate most functions. However, the learning task of discovering a good solution is made much easier with multiple layers each of modest size. 注1 See LeCun, Cortes, and Burges (2010) “The MNIST database of handwritten digits”,"
+  },
+  {
+   "id": "eq-10-10",
+   "num": "(10.10)",
+   "page": 411,
+   "img": "eq-p411-407y449-174x375.png",
+   "section": "10.2 Multilayer Neural Networks",
+   "link": "../isl/11-deep-learning.html#eq-10-10",
+   "before": "FIGURE 10.4 Neural network diagram with two hidden layers and multiple outputs, suitable for the MNIST handwritten-digit problem. The input layer has We have introduced additional superscript notation such as h(2) ℓ(X) and w(2)in (10.10) and (10.11) to indicate to which layer the activations and weights (coefficients) belong, in this case layer 2. The notation W1 in Figure 10.4 represents the entire matrix of weights that feed from the input layer to the first hidden layer L1. This matrix will h…",
+   "after": "for k = 1,⋯, K1. The second hidden layer treats the activations A(1)kof the first hidden layer as inputs and computes new activations (10.11) for ℓ= 1,⋯, K2. Notice that each of the activations in the second layer A(2)= h(2) ℓℓ(X) is a function of the input vector X. This is the case because while they are explicitly a function of the activations A(1)from layer L1, these in turn are functions of X. This would also be the case with more hidden layers. Thus, through a chain of transformations, the network is able to build up fairly complex transformations of X that ultimately feed into the output layer as features."
+  },
+  {
+   "id": "eq-10-11",
+   "num": "(10.11)",
+   "page": 411,
+   "img": "eq-p411-482y520-171x375.png",
+   "section": "10.2 Multilayer Neural Networks",
+   "link": "../isl/11-deep-learning.html#eq-10-11",
+   "before": "p = 784 units, the two hidden layers K1 = 256 and K2 = 128 units respectively, and the output layer 10 units. Along with intercepts (referred to as biases in the deep-learning community) this network has 235,146 parameters (referred to as weights). The first hidden layer is as in (10.2), with (10.10) for k = 1,⋯, K1. The second hidden layer treats the activations A(1)kof the first hidden layer as inputs and computes new activations",
+   "after": "for ℓ= 1,⋯, K2. Notice that each of the activations in the second layer A(2)= h(2) ℓℓ(X) is a function of the input vector X. This is the case because while they are explicitly a function of the activations A(1)from layer L1, these in turn are functions of X. This would also be the case with more hidden layers. Thus, through a chain of transformations, the network is able to build up fairly complex transformations of X that ultimately feed into the output layer as features. 注ℓj Each element A(1)feeds to the second hidden layer L2 via the matrix of weights W2 of dimension 257 × 128 = 32,896."
+  },
+  {
+   "id": "eq-10-12",
+   "num": "(10.12)",
+   "page": 412,
+   "img": "eq-p412-169y212-174x375.png",
+   "section": "10.2 Multilayer Neural Networks",
+   "link": "../isl/11-deep-learning.html#eq-10-12",
+   "before": "ℓℓ(X) is a function of the input vector X. This is the case because while they are explicitly a function of the activations A(1)from layer L1, these in turn are functions of X. This would also be the case with more hidden layers. Thus, through a chain of transformations, the network is able to build up fairly complex transformations of X that ultimately feed into the output layer as features. 注ℓj Each element A(1)feeds to the second hidden layer L2 via the matrix of weights W2 of dimension 257 ×…",
+   "after": "for m = 0, 1,⋯, 9. The matrix B stores all 129 × 10 = 1,290 of these weights. If these were all separate quantitative responses, we would simply set each fm(X) = Zm and be done. However, we would like our estimates to represent class probabilities fm(X) = Pr(Y = m|X), just like in multinomial logistic regression in Section 4.3.5. So we use the special softmax activation function (see (4.13) on page 145), (10.13) for m = 0, 1,⋯, 9. This ensures that the 10 numbers behave like probabilities (non-negative and sum to one). Even though the goal is to build a classifier, our model actually estimates a probability for each of the 10 classes. The classifier then assigns the image to the class with t…"
+  },
+  {
+   "id": "eq-10-13",
+   "num": "(10.13)",
+   "page": 412,
+   "img": "eq-p412-301y332-167x375.png",
+   "section": "10.2 Multilayer Neural Networks",
+   "link": "../isl/11-deep-learning.html#eq-10-13",
+   "before": "We now get to the output layer, where we now have ten responses rather than one. The first step is to compute ten different linear models similar to our single model (10.1), (10.12) for m = 0, 1,⋯, 9. The matrix B stores all 129 × 10 = 1,290 of these weights. If these were all separate quantitative responses, we would simply set each fm(X) = Zm and be done. However, we would like our estimates to represent class probabilities fm(X) = Pr(Y = m|X), just like in multinomial logistic regression in S…",
+   "after": "for m = 0, 1,⋯, 9. This ensures that the 10 numbers behave like probabilities (non-negative and sum to one). Even though the goal is to build a classifier, our model actually estimates a probability for each of the 10 classes. The classifier then assigns the image to the class with the highest probability. To train this network, since the response is qualitative, we look for coefficient estimates that minimize the negative multinomial log-likelihood (10.14) also known as the cross-entropy. This is a generalization of the criterion (4.5) for two-class logistic regression. Details on how to minimize this objective are given in Section 10.7. If the response were quantitative, we would instead m…"
+  },
+  {
+   "id": "eq-10-14",
+   "num": "(10.14)",
+   "page": 412,
+   "img": "eq-p412-421y456-191x375.png",
+   "section": "10.2 Multilayer Neural Networks",
+   "link": "../isl/11-deep-learning.html#eq-10-14",
+   "before": "If these were all separate quantitative responses, we would simply set each fm(X) = Zm and be done. However, we would like our estimates to represent class probabilities fm(X) = Pr(Y = m|X), just like in multinomial logistic regression in Section 4.3.5. So we use the special softmax activation function (see (4.13) on page 145), (10.13) for m = 0, 1,⋯, 9. This ensures that the 10 numbers behave like probabilities (non-negative and sum to one). Even though the goal is to build a classifier, our mo…",
+   "after": "also known as the cross-entropy. This is a generalization of the criterion (4.5) for two-class logistic regression. Details on how to minimize this objective are given in Section 10.7. If the response were quantitative, we would instead minimize squared-error loss as in (10.9). Table 10.1 compares the test performance of the neural network with two simple models presented in Chapter 4 that make use of linear decision boundaries: multinomial logistic regression and linear discriminant analysis. The improvement of neural networks over both of these linear methods is dramatic: the network with dropout regularization achieves a test error rate below 2% on the 10,000 test images. (We describe dro…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 415,
+   "img": "eq-p415-139y191-181x324.png",
+   "section": "10.3 Convolutional Neural Networks › 10.3.1 Convolution Layers",
+   "link": "../isl/11-deep-learning.html",
+   "before": "注5 The term channel is taken from the signal-processing literature. Each channel is a convolution distinct source of information. filter 6 ThankstoElenaTuzhilinaforproducingthediagramandhttps://www. cartooning4kids.com/ for permission to use the cartoon tiger. of which is a template that determines whether a particular local feature is present in an image. A convolution filter relies on a very simple operation, called a convolution, which basically amounts to repeatedly multiplying matrix elemen…",
+   "after": "Now consider a 2 × 2 filter of the form When we convolve the image with the filter, we get the result7"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 415,
+   "img": "eq-p415-215y243-182x323.png",
+   "section": "10.3 Convolutional Neural Networks › 10.3.1 Convolution Layers",
+   "link": "../isl/11-deep-learning.html",
+   "before": "of which is a template that determines whether a particular local feature is present in an image. A convolution filter relies on a very simple operation, called a convolution, which basically amounts to repeatedly multiplying matrix elements and then adding the results. To understand how a convolution filter works, consider a very simple example of a 4 × 3 image: Now consider a 2 × 2 filter of the form",
+   "after": "When we convolve the image with the filter, we get the result7 For instance, the top-left element comes from multiplying each element in the 2 × 2 filter by the corresponding element in the top left 2 × 2 portion of the image, and adding the results. The other elements are obtained in a similar way: the convolution filter is applied to every 2×2 submatrix of the original image in order to obtain the convolved image. If a 2 × 2 submatrix of the original image resembles the convolution filter, then it will have a large value in the convolved image; otherwise, it will have a small value. Thus, the convolved image highlights regions of the original image that resemble the convolution filter.We h…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 415,
+   "img": "eq-p415-260y307-110x395.png",
+   "section": "10.3 Convolutional Neural Networks › 10.3.1 Convolution Layers",
+   "link": "../isl/11-deep-learning.html",
+   "before": "Now consider a 2 × 2 filter of the form When we convolve the image with the filter, we get the result7",
+   "after": "For instance, the top-left element comes from multiplying each element in the 2 × 2 filter by the corresponding element in the top left 2 × 2 portion of the image, and adding the results. The other elements are obtained in a similar way: the convolution filter is applied to every 2×2 submatrix of the original image in order to obtain the convolved image. If a 2 × 2 submatrix of the original image resembles the convolution filter, then it will have a large value in the convolved image; otherwise, it will have a small value. Thus, the convolved image highlights regions of the original image that resemble the convolution filter.We have used 2 × 2 as an example; in general convolution filters ar…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 417,
+   "img": "eq-p417-356y373-214x333.png",
+   "section": "10.3 Convolutional Neural Networks › 10.3.1 Convolution Layers › 10.3.2 Pooling Layers",
+   "link": "../isl/11-deep-learning.html",
+   "before": "We typically apply the ReLU activation function (10.5) to the convolved image. This step is sometimes viewed as a separate layer in the convolutional neural network, in which case it is referred to as a detector layer. 10.3.2Pooling Layers# A pooling layer provides a way to condense a large image into a smaller summary image. While there are a number of possible ways to perform pooling, the max pooling operation summarizes each non-overlapping 2 × 2 block of pixels in an image using the maximum …",
+   "after": "Max pool→. 10.3.3Architecture of a Convolutional Neural Network# So far we have defined a single convolution layer — each filter produces a new two-dimensional feature map. The number of convolution filters in a convolution layer is akin to the number of units at a particular hidden layer in a fully-connected neural network of the type we saw in Section 10.2. This number also defines the number of channels in the resulting threedimensional feature map. We have also described a pooling layer, which reduces the first two dimensions of each three-dimensional feature map. Deep CNNs have many such layers. Figure 10.8 shows a typical architecture for a CNN for the CIFAR100 image classification …"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 417,
+   "img": "eq-p417-425y433-221x328.png",
+   "section": "10.3 Convolutional Neural Networks › 10.3.1 Convolution Layers › 10.3.2 Pooling Layers",
+   "link": "../isl/11-deep-learning.html",
+   "before": "A pooling layer provides a way to condense a large image into a smaller summary image. While there are a number of possible ways to perform pooling, the max pooling operation summarizes each non-overlapping 2 × 2 block of pixels in an image using the maximum value in the block. This reduces the size of the image by a factor of two in each direction, and it also provides some location invariance: i.e. as long as there is a large value in one of the four pixels in the block, the whole block regist…",
+   "after": "10.3.3Architecture of a Convolutional Neural Network# So far we have defined a single convolution layer — each filter produces a new two-dimensional feature map. The number of convolution filters in a convolution layer is akin to the number of units at a particular hidden layer in a fully-connected neural network of the type we saw in Section 10.2. This number also defines the number of channels in the resulting threedimensional feature map. We have also described a pooling layer, which reduces the first two dimensions of each three-dimensional feature map. Deep CNNs have many such layers. Figure 10.8 shows a typical architecture for a CNN for the CIFAR100 image classification task. At the i…"
+  },
+  {
+   "id": "eq-10-15",
+   "num": "(10.15)",
+   "page": 422,
+   "img": "eq-p422-457y531-118x375.png",
+   "section": "10.4 Document Classification",
+   "link": "../isl/11-deep-learning.html#eq-10-15",
+   "before": "●●● ●●● ●●●● ●●● ●●● ●●● ●●●●●●●● ●train ●●●●●●●●● ●validation ●●●●●●●●●●●●●●●●●●● FIGURE 10.11 Accuracy of the lasso and a two-hidden-layer neural network on the IMDb data. For the lasso, the x-axis displays − log(λ), while for the neural network it displays epochs (number of times the fitting algorithm passes through the training set). Both show a tendency to overfit, and achieve approximately the same test accuracy. Both methods produce a sequence of solutions. The lasso sequence is indexed b…",
+   "after": "(This shows the redundancy in the softmax function; for K classes we really only need to estimate K −1 sets of coefficients. See Section 4.3.5.) In Figure 10.11 we show accuracy (fraction correct) rather than classification error (fraction incorrect), the former being more popular in the machine learning community. Both models achieve a test-set accuracy of about 88%. The bag-of-words model summarizes a document by the words present, and ignores their context. There are at least two popular ways to take the context into account: The bag-of-n-grams model. For example, a bag of 2-grams records the consecutive co-occurrence of every distinct pair of words. “Blissfully long” can be seen as a pos…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 424,
+   "img": "eq-p424-64y179-107x390.png",
+   "section": "10.5 Recurrent Neural Networks",
+   "link": "../isl/11-deep-learning.html",
+   "before": "Recorded speech, musical recordings, and other sound recordings. We may want to give a text transcription of a speech, or perhaps a language translation. We may want to assess the quality of a piece of music, or assign certain attributes. Handwriting, such as doctor’s notes, and handwritten digits such as zip codes. Here we want to turn the handwriting into digital text, or read the digits (optical character recognition). In a recurrent neural network (RNN), the input object X is a sequence. Con…",
+   "after": "FIGURE 10.12 Schematic of a simple recurrent neural network. The input is a sequence of vectors {Xℓ}L1, and here the target is a single response. The network processes the input sequence X sequentially; each Xℓ feeds into the hidden layer, which also has as input the activation vector Aℓ−1 from the previous element in the sequence, and produces the current activation vector Aℓ. The same collections of weights W, U and B are used as each element of the sequence is processed. The output layer produces a sequence of predictions Oℓ from the current activation Aℓ, but typically only the last of these, OL, is of relevance. To the left of the equal sign is a concise representation of the network, w…"
+  },
+  {
+   "id": "eq-10-16",
+   "num": "(10.16)",
+   "page": 424,
+   "img": "eq-p424-512y552-150x375.png",
+   "section": "10.5 Recurrent Neural Networks",
+   "link": "../isl/11-deep-learning.html#eq-10-16",
+   "before": "Aℓ, but typically only the last of these, OL, is of relevance. To the left of the equal sign is a concise representation of the network, which is unrolled into a more explicit version on the right. Figure 10.12 illustrates the structure of a very basic RNN with a sequence X = {X1, X2,⋯, XL} as input, a simple output Y, and a hidden-layer sequence {Aℓ}L1 = {A1, A2,⋯, AL}. Each Xℓis a vector; in the document example Xℓcould represent a one-hot encoding for the ℓth word based on the language dictio…",
+   "after": "and the output Oℓis computed as (10.17) For regression problems the loss function for an observation (X, Y) is (10.18)"
+  },
+  {
+   "id": "eq-10-17",
+   "num": "(10.17)",
+   "page": 424,
+   "img": "eq-p424-573y611-203x375.png",
+   "section": "10.5 Recurrent Neural Networks",
+   "link": "../isl/11-deep-learning.html#eq-10-17",
+   "before": "In detail, suppose each vector Xℓof the input sequence has p components XT ℓ= (Xℓ1, Xℓ2,⋯, Xℓp), and the hidden layer consists of K units ATℓ= (Aℓ1, Aℓ2,⋯, AℓK). As in Figure 10.4, we represent the collection of K × (p+1) shared weights wkj for the input layer by a matrix W, and similarly U is a K × K matrix of the weights uks for the hidden-to-hidden layers, and B is a K + 1 vector of weights βk for the output layer. Then (10.16) and the output Oℓis computed as",
+   "after": "For regression problems the loss function for an observation (X, Y) is (10.18) which only references the final output OL = β0+)Kk=1 βkALk. Thus O1, O2, ⋯, OL−1 are not used. When we fit the model, each element Xℓof the input sequence X contributes to OL via the chain (10.16), and hence contributes indirectly to learning the shared parameters W, U and B via the loss (10.18). With n input sequence/response pairs (xi, yi), the parameters are found by minimizing the sum of squares (10.19)"
+  },
+  {
+   "id": "eq-10-18",
+   "num": "(10.18)",
+   "page": 425,
+   "img": "eq-p425-133y154-223x375.png",
+   "section": "10.5 Recurrent Neural Networks",
+   "link": "../isl/11-deep-learning.html#eq-10-18",
+   "before": "(10.16) and the output Oℓis computed as (10.17) For regression problems the loss function for an observation (X, Y) is",
+   "after": "which only references the final output OL = β0+)Kk=1 βkALk. Thus O1, O2, ⋯, OL−1 are not used. When we fit the model, each element Xℓof the input sequence X contributes to OL via the chain (10.16), and hence contributes indirectly to learning the shared parameters W, U and B via the loss (10.18). With n input sequence/response pairs (xi, yi), the parameters are found by minimizing the sum of squares (10.19) We have, however, a dimensionality problem: each word in our document is represented by a one-hot-encoded vector (dummy variable) with 10,000 elements (one per word in the dictionary)! An approach that has become popular is to represent each word in a much lower-dimensional embedding spac…"
+  },
+  {
+   "id": "eq-10-19",
+   "num": "(10.19)",
+   "page": 425,
+   "img": "eq-p425-238y283-88x375.png",
+   "section": "10.5 Recurrent Neural Networks",
+   "link": "../isl/11-deep-learning.html#eq-10-19",
+   "before": "(10.17) For regression problems the loss function for an observation (X, Y) is (10.18) which only references the final output OL = β0+)Kk=1 βkALk. Thus O1, O2, ⋯, OL−1 are not used. When we fit the model, each element Xℓof the input sequence X contributes to OL via the chain (10.16), and hence contributes indirectly to learning the shared parameters W, U and B via the loss (10.18). With n input sequence/response pairs (xi, yi), the parameters are found by minimizing the sum of squares",
+   "after": "We have, however, a dimensionality problem: each word in our document is represented by a one-hot-encoded vector (dummy variable) with 10,000 elements (one per word in the dictionary)! An approach that has become popular is to represent each word in a much lower-dimensional embedding space. This means that rather than representing each word by a binary vector with 9,999 zeros and a single one in some position, we will represent it instead by a set of m real numbers, none of which are typically zero. Here m is the embedding dimension, and can be in the low 100s, or even less. This means (in our case) that we need a matrix E of dimension m×10,000, where each column is indexed by one of the 10,…"
+  },
+  {
+   "id": "eq-10-20",
+   "num": "(10.20)",
+   "page": 429,
+   "img": "eq-p429-535y587-98x375.png",
+   "section": "10.5 Recurrent Neural Networks › 10.5.1 Sequential Models for Document Classification › 10.5.2 Time Series Forecasting",
+   "link": "../isl/11-deep-learning.html#eq-10-20",
+   "before": "RNN forecaster We wish to predict a value vt from past values vt−1, vt−2,⋯, and also to make use of past values of the other series rt−1, rt−2,⋯ and zt−1, zt−2,⋯. Although our combined data is quite a long series with 6,051 trading days, the structure of the problem is different from the previous documentclassification example. We only have one series of data, not 25,000. We have an entire series of targets vt, and the inputs include past values of this series. How do we represent this problem i…",
+   "after": "M and y each have T −L rows, one per observation. We see that the predictors for any given response vt on day t are the previous L values of the same series. Fitting a regression of y on M amounts to fitting the model FIGURE 10.16 RNN forecast of log_volume on the NYSE test data. The black lines are the true volumes, and the superimposed orange the forecasts. The fore- casted series accounts for 42% of the variance of log_volume. We fit this model with K = 12 hidden units using the 4,281 training sequences derived from the data before January 2, 1980 (see Figure 10.14), and then used it to forecast the 1,770 values of log_volume after this date. We achieve an R2 = 0.42 on the test data. Deta…"
+  },
+  {
+   "id": "eq-10-21",
+   "num": "(10.21)",
+   "page": 430,
+   "img": "eq-p430-508y546-103x375.png",
+   "section": "10.5 Recurrent Neural Networks › 10.5.1 Sequential Models for Document Classification › 10.5.2 Time Series Forecasting",
+   "link": "../isl/11-deep-learning.html#eq-10-21",
+   "before": "FIGURE 10.16 RNN forecast of log_volume on the NYSE test data. The black lines are the true volumes, and the superimposed orange the forecasts. The fore- casted series accounts for 42% of the variance of log_volume. We fit this model with K = 12 hidden units using the 4,281 training sequences derived from the data before January 2, 1980 (see Figure 10.14), and then used it to forecast the 1,770 values of log_volume after this date. We achieve an R2 = 0.42 on the test data. Details are given in S…",
+   "after": "⋯⋯⋯⋯⋯⋯ 注19 A straw man here refers to a simple and sensible prediction that can be used as a baseline for comparison. (10.22)"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 430,
+   "img": "eq-p430-571y586-139x355.png",
+   "section": "10.5 Recurrent Neural Networks › 10.5.1 Sequential Models for Document Classification › 10.5.2 Time Series Forecasting",
+   "link": "../isl/11-deep-learning.html",
+   "before": "In forecasting the value of log_volume in the test period, we have to use the test data itself in forming the input sequences X. This may feel like cheating, but in fact it is not; we are always using past data to predict the future. Autoregression The RNN we just fit has much in common with a traditional autoregression (AR) linear model, which we present now for comparison. We first consider the response sequence vt alone, and construct a response vector y and a matrix M of predictors for least…",
+   "after": "注19 A straw man here refers to a simple and sensible prediction that can be used as a baseline for comparison. (10.22) and is called an order-L autoregressive model, or simply AR(L). For the NYSE data we can include lagged versions of DJ_return and log_volatility, rt and zt, in the predictor matrix M, resulting in 3L + 1 columns. An AR model with L = 5 achieves a test R2 of 0.41, slightly inferior to the 0.42 achieved by the RNN. Of course the RNN and AR models are very similar. They both use the same response Y and input sequences X of length L = 5 and dimension p = 3 in this case. The RNN processes this sequence from left to right with the same weights W (for the input layer), while the AR…"
+  },
+  {
+   "id": "eq-10-22",
+   "num": "(10.22)",
+   "page": 431,
+   "img": "eq-p431-84y96-156x375.png",
+   "section": "10.5 Recurrent Neural Networks › 10.5.1 Sequential Models for Document Classification › 10.5.2 Time Series Forecasting",
+   "link": "../isl/11-deep-learning.html#eq-10-22",
+   "before": "(10.21) ⋯⋯⋯⋯⋯⋯ 注19 A straw man here refers to a simple and sensible prediction that can be used as a baseline for comparison.",
+   "after": "and is called an order-L autoregressive model, or simply AR(L). For the NYSE data we can include lagged versions of DJ_return and log_volatility, rt and zt, in the predictor matrix M, resulting in 3L + 1 columns. An AR model with L = 5 achieves a test R2 of 0.41, slightly inferior to the 0.42 achieved by the RNN. Of course the RNN and AR models are very similar. They both use the same response Y and input sequences X of length L = 5 and dimension p = 3 in this case. The RNN processes this sequence from left to right with the same weights W (for the input layer), while the AR model simply treats all L elements of the sequence equally as a vector of L × p predictors — a process called flatteni…"
+  },
+  {
+   "id": "eq-10-23",
+   "num": "(10.23)",
+   "page": 434,
+   "img": "eq-p434-313y348-187x375.png",
+   "section": "10.7 Fitting a Neural Network",
+   "link": "../isl/11-deep-learning.html#eq-10-23",
+   "before": "Typically we expect deep learning to be an attractive choice when the sample size of the training set is extremely large, and when interpretability of the model is not a high priority. 10.7Fitting a Neural Network# Fitting neural networks is somewhat complex, and we give a brief overview here. The ideas generalize to much more complex networks. Readers who find this material challenging can safely skip it. Fortunately, as we see in the lab at the end of this chapter, good software is available t…",
+   "after": "where (10.24) The objective in (10.23) looks simple enough, but because of the nested arrangement of the parameters and the symmetry of the hidden units, it is not straightforward to minimize. The problem is nonconvex in the parameters, and hence there are multiple solutions. As an example, Figure 10.17 shows a simple nonconvex function of a single variable θ; there are two solutions: one is a local minimum and the other is a global minimum. Furthermore, (10.1) is the very simplest of neural networks; in this chapter we have presented much more complex ones where these problems are compounded. To overcome some of these issues and to protect from overfitting, two general strategies are employ…"
+  },
+  {
+   "id": "eq-10-24",
+   "num": "(10.24)",
+   "page": 434,
+   "img": "eq-p434-365y394-159x375.png",
+   "section": "10.7 Fitting a Neural Network",
+   "link": "../isl/11-deep-learning.html#eq-10-24",
+   "before": "Fitting neural networks is somewhat complex, and we give a brief overview here. The ideas generalize to much more complex networks. Readers who find this material challenging can safely skip it. Fortunately, as we see in the lab at the end of this chapter, good software is available to fit neural network models in a relatively automated way, without worrying about the technical details of the model-fitting procedure. We start with the simple network depicted in Figure 10.1 in Section 10.1. In mo…",
+   "after": "The objective in (10.23) looks simple enough, but because of the nested arrangement of the parameters and the symmetry of the hidden units, it is not straightforward to minimize. The problem is nonconvex in the parameters, and hence there are multiple solutions. As an example, Figure 10.17 shows a simple nonconvex function of a single variable θ; there are two solutions: one is a local minimum and the other is a global minimum. Furthermore, (10.1) is the very simplest of neural networks; in this chapter we have presented much more complex ones where these problems are compounded. To overcome some of these issues and to protect from overfitting, two general strategies are employed when fittin…"
+  },
+  {
+   "id": "eq-10-25",
+   "num": "(10.25)",
+   "page": 434,
+   "img": "eq-p434-618y657-188x375.png",
+   "section": "10.7 Fitting a Neural Network",
+   "link": "../isl/11-deep-learning.html#eq-10-25",
+   "before": "(10.24) The objective in (10.23) looks simple enough, but because of the nested arrangement of the parameters and the symmetry of the hidden units, it is not straightforward to minimize. The problem is nonconvex in the parameters, and hence there are multiple solutions. As an example, Figure 10.17 shows a simple nonconvex function of a single variable θ; there are two solutions: one is a local minimum and the other is a global minimum. Furthermore, (10.1) is the very simplest of neural networks;…",
+   "after": "● ● FIGURE 10.17 Illustration of gradient descent for one-dimensional θ. The objective function R(θ) is not convex, and has two minima, one at θ = −0.46 (local), the other at θ = 1.02 (global). Starting at some value θ0 (typically ran- domly chosen), each step in θ moves downhill — against the gradient — until it cannot go down any further. Here gradient descent reached the global minimum in 7 steps."
+  },
+  {
+   "id": "eq-10-26",
+   "num": "(10.26)",
+   "page": 435,
+   "img": "eq-p435-542y574-195x375.png",
+   "section": "10.7 Fitting a Neural Network › 10.7.1 Backpropagation",
+   "link": "../isl/11-deep-learning.html#eq-10-26",
+   "before": "(a) Find a vector δ that reflects a small change in θ, such that θt+1 = θt + δ reduces the objective; i.e. such that R(θt+1) < R(θt). (b) Set t ←t + 1. One can visualize (Figure 10.17) standing in a mountainous terrain, and the goal is to get to the bottom through a series of steps. As long as each step goes downhill, we must eventually get to the bottom. In this case we were lucky, because with our starting guess θ0 we end up at the global minimum. In general we can hope to end up at a (good) l…",
+   "after": "The subscript θ = θm means that after computing the vector of derivatives, we evaluate it at the current guess, θm. This gives the direction in θ-space in which R(θ) increases most rapidly. The idea of gradient descent is to move θ a little in the opposite direction (since we wish to go downhill): (10.27) For a small enough value of the learning rate ρ, this step will decrease the objective R(θ); i.e. R(θm+1) ≤R(θm). If the gradient vector is zero, then we may have arrived at a minimum of the objective. How complicated is the calculation (10.26)? It turns out that it is quite simple here, and remains simple even for much more complex networks, because of the chain rule of differentiation."
+  },
+  {
+   "id": "eq-10-27",
+   "num": "(10.27)",
+   "page": 435,
+   "img": "eq-p435-632y657-194x375.png",
+   "section": "10.7 Fitting a Neural Network › 10.7.1 Backpropagation",
+   "link": "../isl/11-deep-learning.html#eq-10-27",
+   "before": "10.7.1Backpropagation# How do we find the directions to move θ so as to decrease the objective R(θ) in (10.25)? The gradient of R(θ), evaluated at some current value θ = θm, is the vector of partial derivatives at that point: (10.26) The subscript θ = θm means that after computing the vector of derivatives, we evaluate it at the current guess, θm. This gives the direction in θ-space in which R(θ) increases most rapidly. The idea of gradient descent is to move θ a little in the opposite direction…",
+   "after": "For a small enough value of the learning rate ρ, this step will decrease the objective R(θ); i.e. R(θm+1) ≤R(θm). If the gradient vector is zero, then we may have arrived at a minimum of the objective. How complicated is the calculation (10.26)? It turns out that it is quite simple here, and remains simple even for much more complex networks, because of the chain rule of differentiation. )n Since R(θ) = )n i=1 Ri(θ) = 12i=1(yi −fθ(xi))2 is a sum, its gradient is also a sum over the n observations, so we will just examine one of these terms, (10.28)"
+  },
+  {
+   "id": "eq-10-28",
+   "num": "(10.28)",
+   "page": 436,
+   "img": "eq-p436-172y212-122x375.png",
+   "section": "10.7 Fitting a Neural Network › 10.7.1 Backpropagation",
+   "link": "../isl/11-deep-learning.html#eq-10-28",
+   "before": "(10.27) For a small enough value of the learning rate ρ, this step will decrease the objective R(θ); i.e. R(θm+1) ≤R(θm). If the gradient vector is zero, then we may have arrived at a minimum of the objective. How complicated is the calculation (10.26)? It turns out that it is quite simple here, and remains simple even for much more complex networks, because of the chain rule of differentiation. )n Since R(θ) = )n i=1 Ri(θ) = 12i=1(yi −fθ(xi))2 is a sum, its gradient is also a sum over the n obs…",
+   "after": "To simplify the expressions to follow, we write zik = wk0 + )pj=1 wkjxij. First we take the derivative with respect to βk: (10.29) We now turn to the multilayer network (Figure 10.4) used in the digit recognition problem. The network has over 235,000 weights, which is around four times the number of training examples. Regularization is essential here to avoid overfitting. The first row in Table 10.1 uses ridge regularization on the weights. This is achieved by augmenting the objective function (10.14) with a penalty term: And now we take the derivative with respect to wkj:"
+  },
+  {
+   "id": "eq-10-29",
+   "num": "(10.29)",
+   "page": 436,
+   "img": "eq-p436-249y298-170x375.png",
+   "section": "10.7 Fitting a Neural Network › 10.7.1 Backpropagation",
+   "link": "../isl/11-deep-learning.html#eq-10-29",
+   "before": "How complicated is the calculation (10.26)? It turns out that it is quite simple here, and remains simple even for much more complex networks, because of the chain rule of differentiation. )n Since R(θ) = )n i=1 Ri(θ) = 12i=1(yi −fθ(xi))2 is a sum, its gradient is also a sum over the n observations, so we will just examine one of these terms, (10.28) To simplify the expressions to follow, we write zik = wk0 + )pj=1 wkjxij. First we take the derivative with respect to βk:",
+   "after": "We now turn to the multilayer network (Figure 10.4) used in the digit recognition problem. The network has over 235,000 weights, which is around four times the number of training examples. Regularization is essential here to avoid overfitting. The first row in Table 10.1 uses ridge regularization on the weights. This is achieved by augmenting the objective function (10.14) with a penalty term: And now we take the derivative with respect to wkj: (10.30) Notice that both these expressions contain the residual yi −fθ(xi). In (10.29) we see that a fraction of that residual gets attributed to each of the hidden units according to the value of g(zik). Then in (10.30) we see a similar attribution t…"
+  },
+  {
+   "id": "eq-10-30",
+   "num": "(10.30)",
+   "page": 436,
+   "img": "eq-p436-320y370-145x375.png",
+   "section": "10.7 Fitting a Neural Network › 10.7.1 Backpropagation",
+   "link": "../isl/11-deep-learning.html#eq-10-30",
+   "before": "To simplify the expressions to follow, we write zik = wk0 + )pj=1 wkjxij. First we take the derivative with respect to βk: (10.29) We now turn to the multilayer network (Figure 10.4) used in the digit recognition problem. The network has over 235,000 weights, which is around four times the number of training examples. Regularization is essential here to avoid overfitting. The first row in Table 10.1 uses ridge regularization on the weights. This is achieved by augmenting the objective function (…",
+   "after": "Notice that both these expressions contain the residual yi −fθ(xi). In (10.29) we see that a fraction of that residual gets attributed to each of the hidden units according to the value of g(zik). Then in (10.30) we see a similar attribution to input j via hidden unit k. So the act of differentiation assigns a fraction of the residual to each of the parameters via the chain rule — a process known as backpropagation in the neural network literature. Although these calculations are straightforward, it takes careful bookkeeping to keep track of all the pieces. 10.7.2Regularization and Stochastic Gradient Descent# Gradient descent usually takes many steps to reach a local minimum. In practice, t…"
+  },
+  {
+   "id": "eq-10-31",
+   "num": "(10.31)",
+   "page": 437,
+   "img": "eq-p437-325y369-131x375.png",
+   "section": "10.7 Fitting a Neural Network › 10.7.1 Backpropagation › 10.7.2 Regularization and Stochastic Gradient Descent",
+   "link": "../isl/11-deep-learning.html#eq-10-31",
+   "before": "Notice that both these expressions contain the residual yi −fθ(xi). In (10.29) we see that a fraction of that residual gets attributed to each of the hidden units according to the value of g(zik). Then in (10.30) we see a similar attribution to input j via hidden unit k. So the act of differentiation assigns a fraction of the residual to each of the parameters via the chain rule — a process known as backpropagation in the neural network literature. Although these calculations are straightforward…",
+   "after": "The parameter λ is often preset at a small value, or else it is found using the validation-set approach of Section 5.3.1. We can also use different values of λ for the groups of weights from different layers; in this case W1 and W2 were penalized, while the relatively few weights B of the output layer were not penalized at all. Lasso regularization is also popular as an additional form of regularization, or as an alternative to ridge. Figure 10.18 shows some metrics that evolve during the training of the network on the MNIST data. It turns out that SGD naturally enforces its own form of approximately quadratic regularization.21 Here the minibatch size was 128 observations per gradient update…"
+  }
+ ]
+}

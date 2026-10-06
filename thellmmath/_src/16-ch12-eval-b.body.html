@@ -1,0 +1,374 @@
+<h1><span class="chno">Chapter 12 · 2/2</span>第 12 章 · 评测（2/2）</h1>
+<p class="lead">本页覆盖原书 12.9–12.15 七条公式，全部落在 12.1.1 节 <em>Common Evaluation Metrics</em> 里，是"常用评测指标"的下半场：<strong>条件文本生成</strong>（BLEU 的 n-gram 精确率、ROUGE-n 召回率、ROUGE-L 的 LCS-F1）、<strong>任务执行</strong>（Pass@k 的无偏估计量）、<strong>偏好排序</strong>（Elo 期望胜率与 Elo 更新）。这七条公式串起来是一条主线：<em>评测分数 = 某种"计数比"或"概率"，而这些计数比要有意义，前提是分母能枚举全集、无偏估计要靠等概率抽样的对称性、排序分数要有一个满足概率公理的更新规则</em>。上一页 <a href="../15-ch12-eval-a.html">16-ch12-eval-a</a> 讲困惑度与分类指标，本页接着把"生成质量"和"偏好"两件事的算术讲完。</p>
+<p class="where"><b>原书位置</b>第 12 章 12.1.1 节 Common Evaluation Metrics（BLEU / ROUGE / Pass@k / Elo rating 四小段）　<a href="../thellm/20-12-evaluation.html#12-1-1-common-evaluation-metrics">对照原文</a></p>
+
+<h2 id="toc-b">本页公式一览</h2>
+<table class="sym">
+<tr><th>编号</th><th>一句话</th><th>核心数学工具</th></tr>
+<tr><td><a href="#eq-12-9">12.9</a></td><td>BLEU 的 n-gram 精确率（裁剪计数）</td><td>多重集计数、求和号交换</td></tr>
+<tr><td><a href="#eq-12-10">12.10</a></td><td>ROUGE-n：n-gram 召回率</td><td>多重集计数、\( |C|-n+1 \)</td></tr>
+<tr><td><a href="#eq-12-11">12.11</a></td><td>ROUGE-L：LCS 精确率 / 召回率 / 加权调和平均 F1</td><td>最长公共子序列、加权调和平均</td></tr>
+<tr><td><a href="#eq-12-12">12.12</a></td><td>Pass@k 的组合计数无偏估计量</td><td>组合数、期望线性性、\(1-\) 无放回抽样的对称性</td></tr>
+<tr><td><a href="#eq-12-13">12.13</a></td><td>Elo：模型 A 的期望胜率</td><td>Bradley–Terry 模型、logistic 函数</td></tr>
+<tr><td><a href="#eq-12-14">12.14</a></td><td>Elo：模型 B 的期望胜率（= \(1-\mathbb E_A\)）</td><td>logistic 的奇对称性</td></tr>
+<tr><td><a href="#eq-12-15">12.15</a></td><td>Elo 分数更新</td><td>二元交叉熵梯度、随机梯度上升、零和性质</td></tr>
+</table>
+
+<h2 id="symconv">本页符号约定</h2>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>类型 / 取值</th></tr>
+<tr><td>\(C\)</td><td>候选文本（candidate，模型输出 / 机器翻译结果）</td><td>长度 \(|C|\) 个 token 的字符串</td></tr>
+<tr><td>\(R\)</td><td>参考文本（reference，人工标注的标准答案）</td><td>长度 \(|R|\) 个 token</td></tr>
+<tr><td>\(\mathcal R\)</td><td>参考文本的集合（机器翻译常有多条参考）</td><td>有限集合，\(|\mathcal R|\ge 1\)</td></tr>
+<tr><td>\(\mathrm{count}_X(g)\)</td><td>n-gram \(g\) 在文本 \(X\) 中出现的次数</td><td>\(\mathbb Z_{\ge 0}\)（多重集的重数）</td></tr>
+<tr><td>\(n\)</td><td>n-gram 的阶数；12.12 中另指"生成样本总数"</td><td>\(n\ge 1\) 的整数</td></tr>
+<tr><td>\(N\)</td><td>候选中 n-gram 的<strong>总个数</strong>（含重复）</td><td>\(N=|C|-n+1\)（当 \(|C|\ge n\)）</td></tr>
+<tr><td>\(\mathrm{LCS}(C,R)\)</td><td>\(C\) 与 \(R\) 的最长公共子序列<strong>长度</strong></td><td>\(\mathbb Z_{\ge 0}\)，\(\le \min(|C|,|R|)\)</td></tr>
+<tr><td>\(\beta\)</td><td>ROUGE-L 的 F1 权重，调 precision / recall 的天平</td><td>正实数，\(\beta=1\) 为普通 F1</td></tr>
+<tr><td>\(c\)</td><td>12.12 中通过测试的样本数</td><td>\(0\le c\le n\) 的整数</td></tr>
+<tr><td>\(r_A,r_B\)</td><td>模型 A、B 的当前 Elo 分</td><td>实数，通常从 1000 起，典型跨度几百~几千</td></tr>
+<tr><td>\(S_A\)</td><td>本场对局 A 的<strong>实际</strong>得分</td><td>\(\{1,0.5,0\}\)</td></tr>
+<tr><td>\(\mathbb E_A,\mathbb E_B\)</td><td>由当前 Elo 分<strong>预测</strong>的期望得分</td><td>\(\mathbb R\)，且 \(\mathbb E_A+\mathbb E_B=1\)</td></tr>
+<tr><td>\(K\)</td><td>Elo 更新的调节系数（等价于学习率）</td><td>正实数，常取 \(16\sim32\)</td></tr>
+<tr><td>\(g\)</td><td>一个具体的 n-gram（作为求和/求最大值的哑变量）</td><td>字符串</td></tr>
+</table>
+
+<h2 id="calc">数学工具箱：计数、等概率抽样、期望与 logistic</h2>
+<p>下面四条是推导 12.9–12.15 反复用到的基本件，先集中补齐，后面直接引用编号 (T1)–(T4)。</p>
+
+<h3>(T1) 组合数与多重集计数</h3>
+<div class="eq">
+\[ \binom{n}{k}=\frac{n!}{k!(n-k)!},\qquad \text{约定 } k&gt;n \text{ 时 } \binom{n}{k}=0 \]
+</div>
+<p>\(\binom{n}{k}\) 数的是"从 \(n\) 个不同对象里取 \(k\) 个<strong>不计顺序</strong>"的方案数。推导：先排列 \(n\cdot(n-1)\cdots(n-k+1)=n!/(n-k)!\)，但每一组选出的 \(k\) 个对象被数了 \(k!\) 次（它们的内部顺序），所以除以 \(k!\)。</p>
+<div class="note"><b>关键区分：集合 vs 多重集</b>字符串里的 n-gram 会重复（"the" 出现 5 次），所以计数时必须按多重集（multiset）处理：\(\mathrm{count}_X(g)\) 是重数，取值 \(0,1,2,\dots\)。而"总共有多少个 n-gram"是<strong>带重复的位置数</strong>，不等于不同 n-gram 的种类数。这一条搞混，BLEU/ROUGE 的分母就全错了。</div>
+
+<h3>(T2) 无放回抽样下的等概率性</h3>
+<div class="eq">
+\[ \text{从 } \{1,\dots,n\} \text{ 中均匀随机取 } k \text{ 个（不放回）},\qquad \Pr(\text{位置 } j \text{ 被选中})=\frac{k}{n},\quad \forall j \]
+</div>
+<ol class="steps">
+<li>总共可能的无序 \(k\) 元子集有 \(\binom{n}{k}\) 个，且<strong>等概率</strong>（这是"均匀随机"抽样的定义）。</li>
+<li>固定位置 \(j\)。含 \(j\) 的 \(k\) 元子集个数 = 再从剩下 \(n-1\) 个里选 \(k-1\) 个，即 \(\binom{n-1}{k-1}\)。</li>
+<li>所以 \(\Pr(j\text{ 被选中})=\binom{n-1}{k-1}/\binom{n}{k}=\frac{k}{n}\)，与 \(j\) 无关。这说明每个位置<strong>边缘同分布</strong>，虽然它们之间不独立（这正是"不放回"与"放回"的唯一区别，也是 Pass@k 无偏性的来源）。</li>
+</ol>
+
+<h3>(T3) 期望的线性性与指示变量法</h3>
+<div class="eq">
+\[ \mathbb E[X_1+\dots+X_m]=\sum_i\mathbb E[X_i],\qquad \text{取 } X=\mathbb 1_{\{A\}} \Rightarrow \mathbb E[\mathbb 1_{\{A\}}]=\Pr(A) \]
+</div>
+<p>期望对<strong>任意</strong>随机变量都线性，不要求独立（独立性能把方差拆开，线性性不需要）。指示变量法的威力在于：\(\mathbb E[\sum \mathbb 1_i]=\sum \Pr(\text{事件 }i)\)，把"求和统计量的期望"变成"逐项概率的求和"，而每项概率往往可以直接数出来。这是 12.12 全部推导的核心。</p>
+
+<h3>(T4) logistic 函数与二元交叉熵</h3>
+<div class="eq">
+\[ \sigma(z)=\frac{1}{1+e^{-z}},\qquad \sigma(z)+\sigma(-z)=1,\qquad \sigma'(z)=\sigma(z)\bigl(1-\sigma(z)\bigr) \]
+</div>
+<ol class="steps">
+<li><strong>互补性</strong>：\(\sigma(-z)=\frac{1}{1+e^{z}}\)，于是 \(\sigma(z)+\sigma(-z)=\frac{(1+e^{z})+(1+e^{-z})}{(1+e^{z})(1+e^{-z})}=\frac{2+e^z+e^{-z}}{2+e^z+e^{-z}}=1\)。几何意义：\(z\to+\infty\) 时 \(\sigma\to1\)，\(z\to-\infty\) 时 \(\sigma\to0\)。</li>
+<li><strong>二元交叉熵（BCE）</strong>：把标签记成 \(S\in\{0,1\}\)，损失 \(L=-[S\ln\sigma(z)+(1-S)\ln(1-\sigma(z))]\)。用 (T3) 的期望形式即 \(\mathbb E[L]=-\mathrm{CE}(\sigma(z),S)\)。</li>
+<li><strong>关键梯度</strong>：对 \(z\) 求导，先用链式法则
+\(\frac{\partial L}{\partial z}=-\left[S\frac{\sigma'(z)}{\sigma(z)}-(1-S)\frac{\sigma'(z)}{1-\sigma(z)}\right]\)，再代入 \(\sigma'/\sigma=1-\sigma\)、\(\sigma'/(1-\sigma)=\sigma\)：
+<div class="eq">
+\[ \frac{\partial L}{\partial z}=-\bigl[S(1-\sigma(z))-(1-S)\sigma(z)\bigr]=-(S-S\sigma(z)-\sigma(z)+S\sigma(z))=\sigma(z)-S. \]
+</div>
+即 <strong>\(\partial L/\partial z = \sigma(z)-S\)</strong>，预测偏大（\(\sigma(z)&gt;S\)）则梯度为正、下降会减小 \(z\)。</li>
+</ol>
+<div class="note"><b>为什么是 logistic，而不是别的 sigmoid</b>logistic 的 \(\ln\) 几率（log-odds）是线性的：\(\ln\frac{\sigma(z)}{1-\sigma(z)}=z\)。所以"评分差 \(\to\) 胜率"取指数形式后必然落回 logistic，Elo 的 \(10^{(r_B-r_A)/400}\) 而不是 \(e^{r_B-r_A}\)，只是因为 Elo 历史上用"10 倍强度 = 400 分"这个约定换底，见 <a href="#eq-12-13">(12.13)</a>。</div>
+
+<!-- ============================== 公式 12.9 ============================== -->
+<section class="fml" id="eq-12-9">
+<h2><span class="num">(12.9)</span>BLEU 的 n-gram 精确率（裁剪计数）<a class="anchor" href="#eq-12-9">#</a></h2>
+<p class="where"><b>出处</b>第 12 章 12.1.1 节 Metrics for Conditional Text Generation → BLEU　<a href="../thellm/20-12-evaluation.html#12-1-1-common-evaluation-metrics">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0306.png" alt="原书公式 12.9"><span class="cap">原书公式 12.9</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ p_n=\frac{\displaystyle\sum_{g\in\mathcal N_n(C)}\min\bigl(\mathrm{count}_C(g),\ \max_{R\in\mathcal R}\mathrm{count}_R(g)\bigr)}{\displaystyle\sum_{g\in\mathcal N_n(C)}\mathrm{count}_C(g)} \]
+</div>
+<p style="margin-top:-.4em;font-size:.9em;color:#666">其中 \(\mathcal N_n(C)\) 表示候选文本 \(C\) 中出现过的<strong>不同</strong> n-gram 的集合（求和时每个种类只出现一次，但 \(\mathrm{count}\) 把重数带进来）。</p>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>类型 / 量纲</th></tr>
+<tr><td>\(p_n\)</td><td>\(n\)-gram 精确率（precision）</td><td>标量，\(\in[0,1]\)</td></tr>
+<tr><td>\(g\)</td><td>求和的哑变量，一个具体的 n-gram</td><td>长度 \(n\) 的 token 串</td></tr>
+<tr><td>\(\mathcal N_n(C)\)</td><td>\(C\) 中出现过的 n-gram 种类集合</td><td>集合，\(|\mathcal N_n(C)|\le |C|-n+1\)</td></tr>
+<tr><td>\(\mathrm{count}_C(g)\)</td><td>\(g\) 在候选中的出现次数</td><td>整数，\(\ge0\)</td></tr>
+<tr><td>\(\max_{R\in\mathcal R}\mathrm{count}_R(g)\)</td><td>\(g\) 在<strong>最好那条</strong>参考里出现的次数</td><td>整数，\(\ge0\)</td></tr>
+<tr><td>\(n\)</td><td>n-gram 的阶数</td><td>整数，实践常取 \(1\sim4\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>先算分母。</strong>分母 \(\sum_{g\in\mathcal N_n(C)}\mathrm{count}_C(g)\) 是"候选里 n-gram 的总个数（计重复）"。候选长度 \(|C|\)，可形成 n-gram 的起点位置是 \(1,\dots,|C|-n+1\)，每个位置贡献恰好 1 个 n-gram，所以当 \(|C|\ge n\) 时
+\(\displaystyle\sum_g\mathrm{count}_C(g)=|C|-n+1\)。这就是式 (T1) 里说的"带重复的位置数 \(\ne\) 种类数"。</li>
+<li><strong>再想分子要度量什么。</strong>我们要数"候选里有多少个 n-gram 能在参考里找到对应"。难点在于重复：若候选写 "the the the the the"，参考只含 1 次 "the"，那么只有 1 次该算命中，其余 4 次<strong>不能</strong>算。</li>
+<li><strong>因此引入裁剪（clipping）</strong>：对每个种类 \(g\)，有效命中数取 \(\min(\mathrm{count}_C(g),\ \max_{R\in\mathcal R}\mathrm{count}_R(g))\)。内层 \(\max_R\) 处理多参考：只要<strong>有一条</strong>参考支持 \(g\) 就算它存在（"参考集"是合取要求，候选只要命中其中一条即可）；外层 \(\min\) 保证候选的重复不会超过参考能"消化"的上限。</li>
+<li><strong>验证 \(p_n\le1\)。</strong>逐项 \(\min(c_C(g),\max_R c_R(g))\le c_C(g)\)，对两边同时求和得分子 \(\le\) 分母，所以 \(p_n\in[0,1]\)，是一个合法的比率型分数。</li>
+<li><strong>它在 BLEU 里的位置。</strong>式 12.7 的 BLEU \(=\mathrm{BP}\times\exp\bigl(\sum_{n=1}^{N}w_n\ln p_n\bigr)\)。取对数后 \(n\)-gram 部分变成<strong>对数加权平均</strong>，所以 BLEU 是各阶 \(p_n\) 的<em>几何平均</em>；几何平均被任何一项接近 0 拖垮，逼着模型在每个阶数上都靠谱，而不是只把 4-gram 堆漂亮。</li>
+</ol>
+<div class="note"><b>直觉</b>分母是"我写了多少个 \(n\)-gram"，分子是"其中有多少个在参考里真的存在"。裁剪这一步是 BLEU 相对早期版本的核心修正：<strong>复读机拿不到高分</strong>。想象翻译里把一个虚词重复 20 次，没裁剪时分子会按 20 算、白送 19 分。</div>
+<div class="warn"><b>易错点</b>原书这一式把"多参考"简化成<strong>逐个 n-gram 取 max</strong>（先在每个 n-gram 上跨参考取最好，再求和）。原始 BLEU 论文用的是另一个口径：对<em>每条参考分别</em>裁剪、算出该参考下的 \(p_n\)，再跨参考取<em>最大值</em>（多参考时取平均）。前者更宽松、对参考集大小不敏感，是工业界（如 sacreBLEU）的近似做法；两者数值略有差别，读论文时不要混用。另一注意：式 12.8 的 BP 用的是<em>最短</em>参考长度 \(l_r\)，与这里"逐 n-gram 取 max"的乐观口径不一致，会让长度惩罚略偏松。</div>
+<div class="relnav">相关：<a href="#eq-12-10">(12.10) ROUGE-n</a>　<a href="#eq-12-11">(12.11) ROUGE-L</a>　<a href="../15-ch12-eval-a.html">公式 12.7 BLEU 主式与 12.8 长度惩罚</a></div>
+</section>
+
+<!-- ============================== 公式 12.10 ============================== -->
+<section class="fml" id="eq-12-10">
+<h2><span class="num">(12.10)</span>ROUGE-n：n-gram 召回率<a class="anchor" href="#eq-12-10">#</a></h2>
+<p class="where"><b>出处</b>第 12 章 12.1.1 节 Metrics for Conditional Text Generation → ROUGE-n　<a href="../thellm/20-12-evaluation.html#12-1-1-common-evaluation-metrics">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0307.png" alt="原书公式 12.10"><span class="cap">原书公式 12.10</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \mathrm{ROUGE}\text{-}n=\frac{\displaystyle\sum_{g\in\mathcal N_n(R)}\min\bigl(\mathrm{count}_C(g),\ \mathrm{count}_R(g)\bigr)}{\displaystyle\sum_{g\in\mathcal N_n(R)}\mathrm{count}_R(g)} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>类型 / 量纲</th></tr>
+<tr><td>\(\mathrm{ROUGE}\text{-}n\)</td><td>ROUGE-n 得分（= 该 n-gram 的召回率）</td><td>标量，\(\in[0,1]\)，越大越好</td></tr>
+<tr><td>\(\mathcal N_n(R)\)</td><td>参考文本中出现的 n-gram 种类集合</td><td>集合</td></tr>
+<tr><td>\(\mathrm{count}_C(g),\mathrm{count}_R(g)\)</td><td>\(g\) 在候选 / 参考中的出现次数</td><td>整数，\(\ge0\)</td></tr>
+<tr><td>\(|C|,|R|\)</td><td>候选 / 参考的 token 长度</td><td>整数；\(n\ge1\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>分母换成参考侧。</strong>\(\sum_{g\in\mathcal N_n(R)}\mathrm{count}_R(g)=|R|-n+1\)（同 12.9 第 1 步，只是把 \(C\) 换成 \(R\)）。分母现在数的是"参考里有多少 n-gram"，这就是 <em>Recall</em>（召回率）的定义：一个系统从所有"真值"里找回了多少。</li>
+<li><strong>分子是"被覆盖的参考 n-gram 个数"。</strong>仍然用 \(\min\) 裁剪：参考里写了 3 次的词，候选只写 1 次，只能算 1 次命中，否则"多写"就能把召回刷到 1 以上。</li>
+<li><strong>上下界证明。</strong>\(\min(c_C,c_R)\le c_R=c_R\cdot1\) 逐项求和得分子 \(\le\) 分母，故得分 \(\le1\)；当候选完全包含参考所有 n-gram 时取等号 1。</li>
+<li><strong>与 12.9 的对照就一句：分母在谁那边。</strong>BLEU（12.9）分母在<strong>候选</strong>，惩罚啰嗦；ROUGE-n 分母在<strong>参考</strong>，鼓励覆盖。同一个 \(\min\) 裁剪，两个方向。ROUGE 之所以全称是 <em>Recall-Oriented</em>，就是这个分母位置。</li>
+<li><strong>词序完全丢失。</strong>式子只看 n-gram 的<em>多重集</em>是否重合，"猫追狗"与"狗追猫"的 1-gram、2-gram 分布可以完全一样。这是 ROUGE 的硬伤，也正是 <a href="#eq-12-11">ROUGE-L</a> 用 LCS 修补它的动机。</li>
+</ol>
+<div class="note"><b>直觉</b>做摘要时，把参考摘要该说的点全说了 = 召回高，哪怕说得啰嗦、顺序乱、夹带废话。ROUGE-n 只问"该提的点提到了吗"。</div>
+<div class="warn"><b>易错点</b>因为分母在参考侧，<strong>无脑灌长文本就能单调提高 ROUGE-n</strong>（多写不扣分，只可能命中更多）。所以只报 ROUGE-1/ROUGE-2 的绝对值几乎没有意义，必须配合长度约束、同时报 F1，或改用 ROUGE-L（自动被 \(\mathrm{length}(C)\) 分母惩罚）。原书也没给 ROUGE-n 的 F1 变体，实际使用时应自行与 precision 组合。</div>
+<div class="relnav">相关：<a href="#eq-12-9">(12.9) BLEU 精确率</a>　<a href="#eq-12-11">(12.11) ROUGE-L</a></div>
+</section>
+
+<!-- ============================== 公式 12.11 ============================== -->
+<section class="fml" id="eq-12-11">
+<h2><span class="num">(12.11)</span>ROUGE-L：LCS 的精确率、召回率与加权调和平均 F1<a class="anchor" href="#eq-12-11">#</a></h2>
+<p class="where"><b>出处</b>第 12 章 12.1.1 节 Metrics for Conditional Text Generation → ROUGE-L　<a href="../thellm/20-12-evaluation.html#12-1-1-common-evaluation-metrics">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0308.png" alt="原书公式 12.11"><span class="cap">原书公式 12.11</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \begin{aligned}
+\mathrm{Recall}&amp;=\frac{\mathrm{LCS}(C,R)}{\mathrm{length}(R)}\\[4pt]
+\mathrm{Precision}&amp;=\frac{\mathrm{LCS}(C,R)}{\mathrm{length}(C)}\\[4pt]
+F1&amp;=\frac{(1+\beta^{2})\cdot\mathrm{Precision}\cdot\mathrm{Recall}}{\beta^{2}\cdot\mathrm{Precision}+\mathrm{Recall}}
+\end{aligned} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>类型 / 量纲</th></tr>
+<tr><td>\(\mathrm{LCS}(C,R)\)</td><td>最长公共子序列的长度</td><td>整数，\(0\le \mathrm{LCS}\le\min(|C|,|R|)\)</td></tr>
+<tr><td>\(\mathrm{length}(X)\)</td><td>文本 \(X\) 的 token 数</td><td>整数 \(|X|\)，\(&gt;0\)</td></tr>
+<tr><td>\(\mathrm{Precision},\mathrm{Recall}\)</td><td>候选 / 参考侧的比例</td><td>标量，\(\in[0,1]\)</td></tr>
+<tr><td>\(\beta\)</td><td>调 F1 天平的权重</td><td>正实数；\(\beta&gt;1\) 偏向 recall</td></tr>
+<tr><td>\(F1\)</td><td>加权调和平均（\(F_\beta\) 分数）</td><td>标量，\(\in[0,1]\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>LCS 的定义与上界。</strong>子序列（subsequence）允许跳词但保持相对顺序，子串（substring）不允许跳词。LCS 是所有子序列中既是 \(C\) 的子序列、又是 \(R\) 的子序列的最长者。因为公共子序列本身是 \(C\) 的一个子序列，长度不超过 \(|C|\)；同理不超过 \(|R|\)。于是
+\(\mathrm{LCS}\le\min(|C|,|R|)\)，代入即得 \(\mathrm{Precision},\mathrm{Recall}\in[0,1]\)。</li>
+<li><strong>为什么 LCS 是正确的相似度。</strong>关键性质：<strong>保序</strong>。若 \(C\) 与 \(R\) 词序不同，LCS 会被打断——"狗咬猫"与"猫咬狗"的 LCS 长度只有 1，而它们的一阶 n-gram 多重集完全相同。这正是 ROUGE-n（12.10）修不了的缺陷。</li>
+<li><strong>怎么算 LCS（动态规划）。</strong>令 \(D[i][j]\) = 前 \(i\) 个词的前缀与前 \(j\) 个词的前缀的 LCS 长度，边界 \(D[i][0]=D[0][j]=0\)，则
+<div class="eq">
+\[ D[i][j]=\begin{cases}D[i-1][j-1]+1, &amp; u_i=v_j\\ \max\bigl(D[i-1][j],\,D[i][j-1]\bigr), &amp; u_i\ne v_j\end{cases} \]
+</div>
+<p>两分支的含义：词对上了就各退一格再接上（+1）；对不上时只能弃掉其中一个词（取两者的较大值）。答案 \(D[|C|][|R|]\)。复杂度 \(O(|C||R|)\)。</p></li>
+<li><strong>F1 作为"加权调和平均"。</strong>普通调和平均是 \(H(P,R)=2/(1/P+1/R)=2PR/(P+R)\)，它天生<strong>偏向小的那一项</strong>（这是调和平均的性质，也是 F1 的来历）。推广成 \(F_\beta\)：把倒数按权重 \(\beta^{2}\) 与 \(1\) 加权再取倒数
+<div class="eq">
+\[ F_\beta=\left(\frac{\beta^{2}}{P}+\frac{1}{R}\right)^{-1}=\frac{(1+\beta^{2})PR}{\beta^{2}P+R} \]
+</div>
+通分即得式 (12.11) 第三行。这里权重取 \(\beta^{2}\) 而不是 \(\beta\)，是为了让 \(\beta\) 成为"precision 相对 recall 的重要性倍数"：\(\beta^{2}P\) 出现在分子同时出现在分母，量纲干净。</li>
+<li><strong>验证边界行为。</strong>\(\beta=1\) 时退化为 \(2PR/(P+R)\)，即普通 F1。<strong>\(\beta\to\infty\)</strong> 时 \(F_\beta\approx\frac{\beta^{2}PR}{\beta^{2}P}=R\)（变成纯召回）。<strong>\(\beta\to0^{+}\)</strong> 时 \(F_\beta\approx\frac{PR}{R}=P\)（变成纯精确率）。取 \(\beta&gt;1\) 就是"宁滥勿缺"。</li>
+<li><strong>为什么不能取算术平均。</strong>算术平均 \(A=\frac{P+R}{2}\) 在 \(P=1,R=0\) 时给 0.5，看起来"半分"，但这种情形恰恰是最糟的（一点用都没有）。调和平均给 \(\frac{2\cdot1\cdot0}{1+0}=0\)，如实惩罚。<strong>调和平均是"不和谐就一起完蛋"的平均方式</strong>，这是 F 系列指标的立身之本。</li>
+</ol>
+<div class="note"><b>直觉</b>Recall 问"参考该说的都说了吗"，Precision 问"我说的都是废话吗"。ROUGE-L 用 LCS 当"有效字数"：它既数到了真正对齐的内容，又天然包含顺序信息，所以比 ROUGE-n 更贴近人读起来的相似度。F1 是"两个都及格才算好"的门槛。</div>
+<div class="warn"><b>易错点</b>(a) 原书正文说"用 F1 合并 precision 和 recall"，但没有给 \(\beta\) 的推荐值，也没有解释它为何以平方出现——不要以为 \(\beta\) 可以当权重线性代入。(b) LCS 是<strong>全局</strong>最优对齐，不是贪心逐词匹配；实现时若用贪心（例如统计共同词频后取交集）会得到偏小的值，ROUGE-L 会被系统性低估。(c) LCS 不惩罚<strong>顺序完全相同但内容差</strong>的情况，所以 ROUGE-L 同样会被"复读"刷分，只是比 ROUGE-n 难刷。</div>
+<div class="relnav">相关：<a href="#eq-12-10">(12.10) ROUGE-n</a>　<a href="#eq-12-9">(12.9) BLEU 精确率</a>　<a href="../15-ch12-eval-a.html">公式 12.6 分类任务的 F1</a></div>
+</section>
+
+<!-- ============================== 公式 12.12 ============================== -->
+<section class="fml" id="eq-12-12">
+<h2><span class="num">(12.12)</span>Pass@k 的组合计数无偏估计量<a class="anchor" href="#eq-12-12">#</a></h2>
+<p class="where"><b>出处</b>第 12 章 12.1.1 节 Metrics for Task Execution → Pass@k（HumanEval）　<a href="../thellm/20-12-evaluation.html#12-1-1-common-evaluation-metrics">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0309.png" alt="原书公式 12.12"><span class="cap">原书公式 12.12</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \mathrm{Pass}@k=\mathbb{E}\left[1-\frac{\binom{n-c}{k}}{\binom{n}{k}}\right] \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>类型 / 量纲</th></tr>
+<tr><td>\(\mathrm{Pass}@k\)</td><td>从 \(k\) 个样本中<strong>至少一个</strong>通过测试的概率</td><td>\(\mathbb R\)，\(&gt;0\) 的概率值</td></tr>
+<tr><td>\(n\)</td><td>该题<strong>总共生成</strong>的样本数</td><td>整数，\(n\ge k\)</td></tr>
+<tr><td>\(c\)</td><td>其中<strong>通过测试</strong>的样本数</td><td>整数，\(0\le c\le n\)</td></tr>
+<tr><td>\(\binom{n}{k}\)</td><td>从 \(n\) 个里选 \(k\) 个的方案总数（式 T1）</td><td>整数</td></tr>
+<tr><td>\(\binom{n-c}{k}\)</td><td>从 \(n-c\) 个<strong>不通过</strong>的样本里选 \(k\) 个的方案数</td><td>整数；约定 \(k&gt;n-c\) 时为 \(0\)</td></tr>
+<tr><td>\(\mathbb E[\cdot]\)</td><td>对整个题库求期望（每题一个值再平均）</td><td>算子</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>目标是什么。</strong>Pass@k 定义为"从模型为这道题生成的 \(n\) 个样本里<strong>随机挑</strong> \(k\) 个，这 \(k\) 个里至少有一个通过测试"的概率。记挑出的集合为 \(S\)，\(|S|=k\)；指标就是
+\(\mathrm{Pass}@k=\Pr\bigl(S\cap\{\text{通过样本}\}\ne\emptyset\bigr)\)。</li>
+<li><strong>用指示变量把"至少一个"变成 \(1-\)（式 T3）。</strong>令 \(\mathbb 1_{\{S\cap\mathcal P=\emptyset\}}\) 为"挑出的 \(k\) 个全是失败样本"的指示变量。两个事件互补，故
+\(\mathbb 1_{\{S\cap\mathcal P\ne\emptyset\}}=1-\mathbb 1_{\{S\cap\mathcal P=\emptyset\}}\)。取期望（线性，不需独立）：\(\mathbb E[1-\mathbb 1]=\mathbb E[1]-\mathbb E[\mathbb 1]=1-\Pr(S\cap\mathcal P=\emptyset)\)。<strong>这就是式 (12.12) 里那个 \(1-\)。</strong></li>
+<li><strong>把概率数出来。</strong>\(n\) 个样本中失败的有 \(n-c\) 个。"挑的 \(k\) 个全失败"= 在 \(n-c\) 个失败样本里选 \(k\) 个，方案数 \(\binom{n-c}{k}\)；总的 \(k\) 元子集有 \(\binom{n}{k}\) 个且等概率（式 T2）。所以
+\(\Pr(S\cap\mathcal P=\emptyset)=\frac{\binom{n-c}{k}}{\binom{n}{k}}\)。代回第 2 步即得 \(\mathrm{Pass}@k=1-\frac{\binom{n-c}{k}}{\binom{n}{k}}\)。</li>
+<li><strong>为什么叫"无偏"。</strong>估计量 \(1-\frac{\binom{n-c}{k}}{\binom{n}{k}}\) 的期望<strong>恰好等于</strong>总体参数 \(\mathrm{Pass}@k\)，误差的均值为 0（只是方差不为 0）。它是无偏的，因为分母 \(\binom nk\) 是"等概率抽样下所有可能 \(k\) 元组的<strong>总数</strong>"，分子数的是其中<strong>坏</strong>的那部分——这正是 (T2) 的对称性在起作用。反例：若取"生成顺序里的<strong>前</strong> \(k\) 个"而不是随机子集，第 3 步的等概率性就破了（前面的样本分布可能与后面不同），估计量变成有偏。</li>
+<li><strong>边界情形。</strong>若 \(n-c&lt;k\)（失败样本不够挑，或 \(c\ge1\) 且被挑的必然落在通过的里面），则 \(\binom{n-c}{k}=0\)，得 \(\mathrm{Pass}@k=1\)。特别是 \(k=1\) 时 \(\mathrm{Pass}@1=1-\frac{n-c}{n}=\frac cn\)，恰好退化为"经验通过率"，验证了公式自洽。</li>
+<li><strong>与朴素估计的对比（可以严格证明方向）。</strong>若错误地把样本当成独立同分布做放回抽样，会写成 \(1-\left(1-\frac cn\right)^{k}\)。真实值更大。证明：记 \(f(i)=\frac{n-c-i}{n-i}=1-\frac{c}{n-i}\)，\(i\) 增大时 \(n-i\) 减小，\(f(i)\) <strong>单调递减</strong>。于是
+\(\frac{\binom{n-c}{k}}{\binom{n}{k}}=\prod_{i=0}^{k-1}\frac{n-c-i}{n-i}\le\left(\frac{n-c}{n}\right)^{k}\)，两边取 \(1-\) 反转不等号，\(\mathrm{Pass}@k\ge 1-\left(1-\frac cn\right)^k\)。直觉：无放回抽样时，越往后挑，剩下的失败样本比例越低，所以"全军覆没"比独立假设预测的更难发生。</li>
+<li><strong>为什么要费劲。</strong>直接评测 Pass@k 需要对每题生成 \(k\) 个样本并逐个跑测试，代价是 \(k\) 倍。<strong>只要生成 \(n\ge k\) 个样本、跑一遍测试，就能对所有 \(k\le n\) 一次性估出 Pass@k</strong>——分母 \(\binom nk\) 只是个整数比值，不需要重新采样。这就是 HumanEval 排行榜能对所有 \(k\) 一次性汇报的原因。</li>
+</ol>
+<div class="note"><b>直觉</b>"从 \(n\) 个苹果里随便抓 \(k\) 个，一个坏的都没有"——抓法有 \(\binom nk\) 种，而全是烂苹果的抓法只有 \(\binom{n-c}k\) 种，除一下就是全坏的概率。剩下那部分就是"至少有一个好苹果"。</div>
+<div class="warn"><b>易错点</b>(a) 前提是 <strong>(i) \(n\) 个样本独立同分布地从模型采出，(ii) 评测时这 \(k\) 个是<strong>随机无序子集</strong></strong>。若按温度/不同 prompt 分别生成再各取前若干条，(ii) 失效。(b) \(k&gt;n\) 时公式无定义，实现里应直接返回 1（"总共不足 \(k\) 个样本，一定至少有一个通过"只成立于 \(c\ge1\)，故原论文在 \(n&lt;c\) 时置 1）。(c) 原书正文在这里有点含糊：它把 \(\binom{n-c}{k}/\binom nk\) 说成"k 个代码都不满足要求的<strong>无偏概率估计</strong>"——这个说法没错，但"<strong>Pass@k</strong> 的无偏估计"指的是 \(1-\) 之后那个整体，别把分子单独当成 Pass@k。</div>
+<div class="relnav">相关：<a href="#eq-12-13">(12.13) Elo 期望胜率</a>　<a href="#calc">数学工具箱 (T1)(T2)(T3)</a></div>
+</section>
+
+<!-- ============================== 公式 12.13 ============================== -->
+<section class="fml" id="eq-12-13">
+<h2><span class="num">(12.13)</span>Elo：模型 A 的期望胜率<a class="anchor" href="#eq-12-13">#</a></h2>
+<p class="where"><b>出处</b>第 12 章 12.1.1 节 Metrics for Preference Ranking → Elo rating　<a href="../thellm/20-12-evaluation.html#12-1-1-common-evaluation-metrics">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0311.png" alt="原书公式 12.13"><span class="cap">原书公式 12.13</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \mathbb{E}_A=\frac{1}{1+10^{\frac{r_B-r_A}{400}}} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>类型 / 量纲</th></tr>
+<tr><td>\(\mathbb{E}_A\)</td><td>本场对局中 A 的<strong>期望</strong>得分</td><td>概率，\(\in(0,1)\)</td></tr>
+<tr><td>\(r_A,r_B\)</td><td>A、B 的当前 Elo 分</td><td>实数；差值无量纲</td></tr>
+<tr><td>\(400\)</td><td>Elo 的<strong>尺度常数</strong>（scale）</td><td>分，<strong>经验约定</strong>非推导值</td></tr>
+<tr><td>\(\pi_A=10^{r_A/400}\)</td><td>由评分反解出的"隐实力"（潜在胜率尺度）</td><td>正实数，只有比值有意义</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>起点：一个两选一的可比性模型。</strong>假设每个模型有一个隐藏的"强度" \(\pi_i&gt;0\)（正实数，只有比值可辨识）。Bradley–Terry 模型规定胜负概率由比值决定：
+<div class="eq">
+\[ \Pr(A\succ B)=\frac{\pi_A}{\pi_A+\pi_B}=\frac{1}{1+\pi_B/\pi_A} \]
+</div>
+这一步没有额外假设，只是"强度大的赢得多"的概率化表述；\(\pi\) 只能辨识到乘性常数（\(\pi_i\to c\pi_i\) 不改变任何概率）。</li>
+<li><strong>关键一步：把评分定义成强度的对数。</strong>Elo（以及所有基于分数的对数几率模型）规定 \(\pi_A\propto 10^{r_A/400}\)，即
+\(\pi_A=10^{r_A/400}\)、\(\pi_B=10^{r_B/400}\)，于是
+\(\frac{\pi_B}{\pi_A}=10^{(r_B-r_A)/400}\)。代回第 1 步即得式 (12.13)。</li>
+<li><strong>为什么是 400 而不是别的数。</strong>底数 \(10\) 和分母 \(400\) 是<strong>历史约定</strong>：Elo 定 400 分为"强度差 10 倍"（胜率约 10:1），因为这样常见棋类里几百分的差距落在合理区间、增量数值读起来像"胜率涨了几个百分点"。<strong>它不是推导出来的</strong>，换 200 或 800 只改变曲线的陡峭程度，不改变模型结构。注意 \(400/\ln10\approx173.7\)，所以式 (12.13) 等价于
+<div class="eq">
+\[ \mathbb{E}_A=\sigma\!\left(\frac{\ln10}{400}(r_A-r_B)\right) \]
+</div>
+即 logistic 函数（式 T4）以 \(\ln10/400\approx0.0058\) 为斜率尺度。<strong>真正的理论尺度是 Bradley–Terry 的自由参数 \(\theta=1/\ln10\cdot400\)</strong>，应当用数据拟合；固定 400 只是省事的做法。</li>
+<li><strong>基本性质自检。</strong>(i) \(r_A=r_B\Rightarrow\mathbb{E}_A=\frac{1}{1+10^0}=\frac12\)，势均力敌。(ii) \(r_A-r_B\to+\infty\Rightarrow\mathbb{E}_A\to1\)；反之 \(\to0\)。(iii) 在原点处求导：令 \(d=r_A-r_B\)，\(\frac{d\mathbb{E}_A}{dd}=\frac{\ln10}{400}\cdot\sigma(z)(1-\sigma(z))\)，在 \(d=0\) 处 \(z=0,\sigma(0)=\frac12\)，得 \(\frac{d\mathbb E_A}{dd}\big|_{0}=\frac{\ln10}{400}\cdot\frac14\approx0.00144\)。也就是说 <strong>分数每差 1 分，期望胜率只变约 0.14 个百分点</strong>——分数是很"钝"的刻度。</li>
+</ol>
+<div class="note"><b>直觉</b>Elo 分不是"实力"，是"实力差"的一个对数刻度。它只回答"在这套对手里，A 该赢多少"，不回答"A 到底有多好"。把一个新模型丢进一个全是强对手的池子里，它的分自然低——分是<strong>相对的</strong>。</div>
+<div class="why"><b>为什么用 \(\pi\propto 10^{r/400}\) 而不是 \(\pi=e^{r}\)</b>两种取法在数学上<strong>完全等价</strong>（后者相当于把分母换成 1，把 \(r\) 重新标定为"自然对数强度"）。用 10 为底纯粹是 Elo 的工程惯例：分数是整数、变化是 50 分/200 分这种粗粒度增量，10 为底让"分差"和"倍数"能心算对应。真正的区别只在第 (ii)(iii) 条那些数值性质上。</div>
+<div class="warn"><b>易错点</b>(a) <strong>400 是经验常数，不是理论值</strong>；照抄 400 到新的评分体系前应先用少量对战数据拟合尺度。(b) \(\mathbb{E}_A\) 是<em>期望得分</em>而非"胜率"的严格定义——当允许和棋且记 0.5 分时它才是 \(\Pr(A\succ B)\)；不区分"胜率"和"期望得分"是常见混淆。(c) Elo 分数<strong>只能横向比、不能纵向比</strong>：换一批对手重跑，分数不可比；随时间推移整体分数会漂移（新人涌入、对手变强），所以榜单要看"区间"和"漂移量"。(d) 前提是<strong>传递性</strong>：若人类偏好存在循环（A&gt;B、B&gt;C、C&gt;A），任何基于单一标量的评分都无法同时满足，必须靠 \(K\) 与投票噪声吸收。</div>
+<div class="relnav">相关：<a href="#eq-12-14">(12.14) \(\mathbb E_B=1-\mathbb E_A\)</a>　<a href="#eq-12-15">(12.15) Elo 更新</a>　<a href="../09-ch08-align-a.html">Bradley–Terry 与奖励模型（第 8 章）</a></div>
+</section>
+
+<!-- ============================== 公式 12.14 ============================== -->
+<section class="fml" id="eq-12-14">
+<h2><span class="num">(12.14)</span>Elo：模型 B 的期望胜率<a class="anchor" href="#eq-12-14">#</a></h2>
+<p class="where"><b>出处</b>第 12 章 12.1.1 节 Metrics for Preference Ranking → Elo rating　<a href="../thellm/20-12-evaluation.html#12-1-1-common-evaluation-metrics">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0312.png" alt="原书公式 12.14"><span class="cap">原书公式 12.14</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \mathbb{E}_B=\frac{1}{1+10^{\frac{r_A-r_B}{400}}} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>类型 / 量纲</th></tr>
+<tr><td>\(\mathbb{E}_B\)</td><td>本场对局中 B 的期望得分</td><td>概率，\(\in(0,1)\)</td></tr>
+<tr><td>\(r_A,r_B\)</td><td>两方当前 Elo 分</td><td>实数</td></tr>
+<tr><td>\(400\)</td><td>Elo 尺度常数</td><td>经验约定</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>式 (12.14) 就是式 (12.13) 把 \(A,B\) 对调的结果</strong>，因此不需要新的假设：用 12.13 第 1 步的 \(\Pr(B\succ A)=\frac{\pi_B}{\pi_A+\pi_B}\)，同样的强度定义，代入即得。</li>
+<li><strong>验证两式自洽：\(\mathbb{E}_A+\mathbb{E}_B=1\)。</strong>令 \(x=\frac{r_B-r_A}{400}\)，则 \(\frac{r_A-r_B}{400}=-x\)。于是
+<div class="eq">
+\[
+\mathbb{E}_A+\mathbb{E}_B=\frac{1}{1+10^{x}}+\frac{1}{1+10^{-x}}=\frac{(1+10^{-x})+(1+10^{x})}{(1+10^{x})(1+10^{-x})}=\frac{2+10^{x}+10^{-x}}{1+10^{x}+10^{-x}+1}=1
+\]
+</div>
+这就是式 (T4) 里 logistic 互补性 \(\sigma(z)+\sigma(-z)=1\) 的直接代入。<strong>这一步是 Elo 的概率公理</strong>：期望得分必须归一化，否则更新公式无法解释。</li>
+<li><strong>为什么不省掉这一式。</strong>因为原书把 \(A,B\) 的期望分开写，是为了让 12.15 的两条更新式<strong>形式完全对称</strong>：\(r'_A=r_A+K(S_A-\mathbb{E}_A)\) 与 \(r'_B=r_B+K(S_B-\mathbb{E}_B)\)，可以机械地写成一个循环。工程实现里只需算一次 \(\mathbb{E}_A\)，再取补。</li>
+</ol>
+<div class="note"><b>直觉</b>两个对手的期望得分之和恒为 1，因为一场对局总共只分出 1 分（或者说是"零和"的）。这也是为什么 Elo 的两个更新量必然互相抵消（见 <a href="#eq-12-15">(12.15)</a> 的零和讨论）。</div>
+<div class="warn"><b>易错点</b>数值实现时若先算 \(\mathbb{E}_B=1-\mathbb{E}_A\)，在 \(r_A-r_B\) 极大时会因浮点抵消得到 \(-0\) 或精度损失；稳妥做法是两边各自用稳定的表达式（如按分差符号选分支、用 \(\mathrm{expit}\)）。另外公式里的 \(\frac{r_B-r_A}{400}\) 是<strong>有符号</strong>的差，不是 \(|r_A-r_B|\)。</div>
+<div class="relnav">相关：<a href="#eq-12-13">(12.13) \(\mathbb{E}_A\)</a>　<a href="#eq-12-15">(12.15) Elo 更新</a></div>
+</section>
+
+<!-- ============================== 公式 12.15 ============================== -->
+<section class="fml" id="eq-12-15">
+<h2><span class="num">(12.15)</span>Elo 分数更新：一次对局后的分数修正<a class="anchor" href="#eq-12-15">#</a></h2>
+<p class="where"><b>出处</b>第 12 章 12.1.1 节 Metrics for Preference Ranking → Elo rating　<a href="../thellm/20-12-evaluation.html#12-1-1-common-evaluation-metrics">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0313.png" alt="原书公式 12.15"><span class="cap">原书公式 12.15</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ r_A^{\prime}=r_A+K\bigl(S_A-\mathbb{E}_A\bigr) \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>类型 / 量纲</th></tr>
+<tr><td>\(r_A^{\prime}\)</td><td>本场之后的 A 的新 Elo 分</td><td>实数</td></tr>
+<tr><td>\(r_A\)</td><td>更新前的 Elo 分</td><td>实数</td></tr>
+<tr><td>\(S_A\)</td><td>本场 A 的<strong>实际</strong>得分</td><td>\(\{1,0.5,0\}\)：胜 / 平 / 负</td></tr>
+<tr><td>\(\mathbb{E}_A\)</td><td>由式 (12.13) 预测的 A 的期望得分</td><td>\((0,1)\) 的概率</td></tr>
+<tr><td>\(K\)</td><td>调节系数，决定单场结果对分数的影响幅度</td><td>正实数，等价于学习率</td></tr>
+<tr><td>\(r_B^{\prime},S_B,\mathbb{E}_B\)</td><td>B 的对应量，更新式完全对称</td><td>同 \(A\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<p>最漂亮的结论是：<strong>Elo 更新就是 Bradley–Terry 模型在"每一场对局一个样本"上的随机梯度上升步</strong>。下面把它推出来。</p>
+<ol class="steps">
+<li><strong>写出要最大化的似然。</strong>用式 (12.13) 的记号 \(\mathbb{E}_A=\sigma(z)\)、\(z=\frac{\ln10}{400}(r_A-r_B)\)。单场对局的观测是 \(S_A\in\{0,1\}\)（和棋记 \(0.5\)，形式上按两次半局或直接当软标签处理，见下方 warn）。负对数似然（NLL）就是二元交叉熵：
+<div class="eq">
+\[ L=-\bigl[S_A\ln\mathbb{E}_A+(1-S_A)\ln\mathbb{E}_B\bigr] \]
+</div>
+用式 (12.14) 的 \(\mathbb{E}_B=1-\mathbb{E}_A\)，这正好是 \(\mathrm{BCE}(\sigma(z),S_A)\)。注意：<strong>\(L\) 只是两项的加权和，不含系数</strong>，所以它对每场对局是等权的。</li>
+<li><strong>对 \(r_A\) 求偏导（用式 T4 的结论）。</strong>链式法则 \(z\) 只通过 \(r_A\) 依赖它，故
+<div class="eq">
+\[ \frac{\partial L}{\partial r_A}=\frac{\partial L}{\partial z}\cdot\frac{\partial z}{\partial r_A}=(S_A-\mathbb{E}_A)\cdot\frac{\ln10}{400} \]
+</div>
+其中用到了 <strong>\(\partial L/\partial z=\sigma(z)-S_A=\mathbb{E}_A-S_A\)</strong>（式 T4 第 3 步）。同理 \(\frac{\partial L}{\partial r_B}=-\frac{\partial L}{\partial r_A}\)。</li>
+<li><strong>做一步梯度下降。</strong>更新 \(r_A\leftarrow r_A-\eta\,\frac{\partial L}{\partial r_A}=r_A+\eta\frac{\ln10}{400}(\mathbb{E}_A-S_A)\)。要让更新方向与式 (12.15) 一致（结果爆冷要加分），取
+\(\eta\frac{\ln10}{400}=-K\)，即等价于取"学习率 \(\eta=K\frac{400}{\ln10}\)"、并按<strong>上升</strong>\(-\mathcal{L}\) 的符号书写：
+<div class="eq">
+\[ r_A^{\prime}=r_A-K\frac{\partial L}{\partial r_A}=r_A+K(S_A-\mathbb{E}_A) \]
+</div>
+其中把梯度里的常数 \(\frac{\ln10}{400}\) 吸收进了 \(K\)。这就是式 (12.15)。<strong>\(K\) 就是学习率，\(400\) 就是 logit 的斜率尺度，两个常数被合并成了一个可调超参。</strong></li>
+<li><strong>逐项解读三种结局。</strong>
+<ul>
+<li>\(S_A=1\)（爆冷赢了弱对手）且 \(\mathbb{E}_A&lt;\frac12\)：\(S_A-\mathbb{E}_A&gt;0\)，<strong>加分多于平均</strong>。赢"不该赢"的比赛收益最大。</li>
+<li>\(S_A=1\) 且 \(\mathbb{E}_A\approx1\)（碾压强敌）：\(S_A-\mathbb{E}_A\approx0\)，加分极小——符合它的实力。</li>
+<li>\(S_A=0\)（输给弱对手）：\(S_A-\mathbb{E}_A&lt;0\)，扣分。</li>
+</ul></li>
+<li><strong>零和性：为什么总分不变。</strong>对 B 的更新用同样的式子（\(S_B=1-S_A\)、\(\mathbb{E}_B=1-\mathbb{E}_A\)），故 \(\Delta r_B=K(S_B-\mathbb{E}_B)=K(-\mathbb{E}_A+S_A)=\Delta r_A\)，<strong>等号成立</strong>——修正量<strong>相同</strong>。所以本场结束后 \(r_A+r_B\) 不变，\(\min(r_A,r_B)\) 上升、\(\max\) 下降，相当于在固定总分 \(1500\)（或任意常数）下重新分配。这解释了两件事：Elo 分<strong>只有相对意义</strong>（整体平移无影响），以及"打了 1000 场的老模型分数虚高"这一榜单普遍现象。</li>
+<li><strong>常数 \(K\) 的动力学含义。</strong>增量 \(\propto |S_A-\mathbb{E}_A|\)，这是"意外程度"。若 \(K\) 很小，前几百场的偶然结果会主导分数；若很大则分数剧烈抖动、榜单不稳。实践中用固定 \(K\approx16\sim32\)，等效于<strong>常数学习率的随机梯度</strong>——它在真解附近<strong>永不停歇</strong>，只会随机抖动（涨跌幅 \(\approx K\sqrt{\mathrm{Var}(S-\mathbb{E})}\)）。若想收敛更干净，应让 \(K\) 随比赛数衰减，或改用批量 MLE（一次性解出满足全部对战约束的最大似然分数，如 Chatbot Arena 的做法）。</li>
+</ol>
+<div class="note"><b>直觉</b>Elo 就是"打脸系统"：你以为你能赢 \(30\%\)，结果赢了，就说明你被低估，把分数往上拉——而且拉多少正比于低估的程度。反之，赢下"必赢"的比赛几乎不加分。整套机制就是让分数去追踪 <a href="#eq-12-13">(12.13)</a> 那条 logistic 曲线预测的概率。</div>
+<div class="warn"><b>易错点与前提</b>
+(a) <strong>平局</strong>：式 12.15 原文允许 \(S_A=0.5\)。此时若 \(\mathbb{E}_A\ne0.5\)，仍会扣/加分，这在数学上等价于把"平"当作"随机二选一"（logistic 模型只能表达两类事件），是有意的近似——BCE 严格来说只接受 \(S\in\{0,1\}\)。
+(b) <strong>对数几率尺度与更新步长耦合</strong>：有人会把 \(K\) 直接当 Elo 的通用步长搬到别处，但换底数（\(10\to e\)）或换尺度常数（\(400\to\theta^{-1}\)）会同时改变曲率与有效步长，必须重新调 \(K\)。
+(c) <strong>顺序依赖</strong>：更新是逐场的在线 SGD，同一批对局按不同顺序处理结果不同；<strong>对局对手的选择偏差会被直接写进分数</strong>（只在弱对手身上刷分能拿高分）。
+(d) <strong>LLM-as-a-judge 的位置偏置与长度偏置</strong>：当对战由另一个 LLM 当裁判时，它对"排在前面"的回答、对"更长的回答"有系统性偏好，这会污染 \(S_A\)。矫正办法是<strong>交换呈现顺序各判一次再取平均</strong>：\(S_A^{\text{avg}}=\frac{S_A^{\text{A先}}+S_A^{\text{B先}}}{2}\)。在 Bradley–Terry 视角下这很有道理——偏置 \(\delta\) 若与顺序相关，交换平均把它变成零均值噪声，而 12.15 的更新对 \(S_A-\mathbb{E}_A\) 是<strong>线性</strong>响应，所以 \(K\) 取小一点（或对同一对重复判定 \(\ge2\) 次）能把这种噪声的方差也一起压下去。长度偏置无法靠交换消除（交换后长度不变），需要用长度归一化的分数或成对约束样本专门压制。
+(e) <strong>不保证收敛到"真实"质量</strong>：Elo 只拟合对战数据里的相对序，如果偏好本身有偏或存在循环，分数照样稳定但有偏。</div>
+<div class="relnav">相关：<a href="#eq-12-13">(12.13) 期望胜率 \(\mathbb E_A\)</a>　<a href="#eq-12-14">(12.14) 期望胜率 \(\mathbb E_B\)</a>　<a href="#calc">数学工具箱 (T3)(T4)</a>　<a href="../09-ch08-align-a.html">Bradley–Terry 与 DPO（第 8 章）</a></div>
+</section>

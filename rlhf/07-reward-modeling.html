@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="author" content="Nathan Lambert">
+<meta name="generator" content="pdf2html">
+<title>Reward Modeling · The RLHF Book</title>
+<link rel="icon" href="assets/icon.svg">
+<link rel="stylesheet" href="assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('rlhf-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light')}catch(e){}}());</script>
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="bar">
+<a class="ib" href="index.html" aria-label="目录">&#9776;</a>
+<span class="title">Reward Modeling</span>
+<button class="ib" id="theme" type="button" aria-label="切换深色模式">&#9681;</button>
+</header>
+<main id="main">
+<h1 class="chapter"><span class="chno">5</span>Reward Modeling</h1>
+<div class="callout"><div class="lab">This chapter covers</div><ul><li>How language models are trained to predict human preferences</li><li>How to implement reward models in PyTorch</li><li>The different varieties of reward models used today</li></ul></div>
+<p>Reward models are core to the modern approach to RLHF by being where the complex human preferences are learned. They are what enable our models to learn from hard to specify signals. They compress complex features in the data into a representation that can be used in downstream training – a sort of magic that once again shows the complex capacity of modern deep learning. These models act as the proxy objectives by which the core optimization is done, as studied in the following chapters.</p>
+<p>Reward models broadly have historically been used extensively in reinforcement learning research as a proxy for environment rewards [1]. Reward models were proposed, in their modern form, as a tool for studying the value alignment problem [2]. These models tend to take in some sort of input and output a single scalar value of reward. This reward can take multiple forms – in traditional RL problems it was attempting to approximate the exact environment reward for the problem, but we will see in RLHF that reward models actually output a probability of a certain input being “of high quality” (i.e. the chosen answer among a pairwise preference relation). The practice of reward modeling for RLHF is closely related to inverse reinforcement learning, where the problem is to approximate an agent’s reward function given trajectories of behavior [3], and other areas of deep reinforcement learning. The high level problem statement is the same, but the implementation and focus areas are entirely different, so they’re often considered as totally separate areas of study.</p>
+<p>The most common reward model, often called a Bradley-Terry reward model and the primary focus of this chapter, predicts the probability that a piece of text was close to a “preferred” piece of text from the training comparisons. Later in this section we also compare these to Outcome Reward Models (ORMs), Process Reward Model (PRM), and other types of reward models.</p>
+<p><em>Throughout this chapter, we use </em>x<em> to denote prompts and </em>y<em> to denote completions. This</em> <em>notation is common in the language model literature, where methods operate on full</em> <em>prompt-completion pairs rather than individual tokens.</em></p>
+<h2 id="5-1-training-reward-models"><a class="anchor" href="#5-1-training-reward-models">#</a>5.1 Training Reward Models</h2>
+<p>The canonical implementation of a reward model is derived from the Bradley-Terry model of preference [4]. There are two popular expressions for how to train a standard reward model for RLHF – they are mathematically equivalent. To start, a Bradley-Terry model of preferences defines the probability that, in a pairwise comparison between two items i and j, a judge prefers i over j:</p>
+<figure class="eq"><div class="eqno">Equation 5.1</div><a class="zoom" href="assets/0014.png"><img src="assets/0014.png" alt="公式 5.1" loading="lazy"></a></figure>
+<p>The Bradley-Terry model assumes that each item has a latent strength p<sub>i</sub> &gt; 0, and that observed preferences are a noisy reflection of these underlying strengths. It is common to reparametrize the Bradley-Terry model with unbounded scores, where p<sub>i</sub> = e<sub>r</sub><sub>i</sub>, which results in the following form (where σ denotes the sigmoid function, σ(z) = 1/(1 + e<sub>−</sub><sub>z</sub>)):</p>
+<figure class="eq"><div class="eqno">Equation 5.2</div><a class="zoom" href="assets/0015.png"><img src="assets/0015.png" alt="公式 5.2" loading="lazy"></a></figure>
+<p>Only differences in scores matter: adding the same constant to all r<sub>i</sub> leaves P(i &gt; j) unchanged. These forms are not a law of nature, but a useful approximation of human preferences that often works well in RLHF.</p>
+<p>To train a reward model, we must formulate a loss function that satisfies the above relation. In practice, this is done by converting a language model into a model that outputs a scalar score, often via a small linear head that produces a single logit. Given a prompt x and two sampled completions y<sub>1</sub> and y<sub>2</sub>, we score both with a reward model r<sub>θ</sub> and write the conditional scores as r<sub>θ</sub>(y<sub>i</sub> ∣x).</p>
+<p>The probability of success for a given reward model in a pairwise comparison becomes:</p>
+<figure class="eq"><div class="eqno">Equation 5.3</div><a class="zoom" href="assets/0016.png"><img src="assets/0016.png" alt="公式 5.3" loading="lazy"></a></figure>
+<p>We denote the preferred completion as y<sub>c</sub> (chosen) and the rejected completion as y<sub>r</sub>, where the preference relation y<sub>c</sub> ≻y<sub>r</sub> indicates that y<sub>c</sub> is preferred over y<sub>r</sub>.</p>
+<p>Then, by maximizing the log-likelihood of the above function (or alternatively minimizing the negative log-likelihood), we can arrive at the loss function to train a reward model:</p>
+<figure class="eq"><div class="eqno">Equation 5.4</div><a class="zoom" href="assets/0017.png"><img src="assets/0017.png" alt="公式 5.4" loading="lazy"></a></figure>
+<p>The first form, as in [5] and other works:</p>
+<figure class="eq"><div class="eqno">Equation 5.5</div><a class="zoom" href="assets/0018.png"><img src="assets/0018.png" alt="公式 5.5" loading="lazy"></a></figure>
+<p>Second, as in [6] and other works:</p>
+<figure class="eq"><div class="eqno">Equation 5.6</div><a class="zoom" href="assets/0019.png"><img src="assets/0019.png" alt="公式 5.6" loading="lazy"></a></figure>
+<p>These are equivalent by letting Δ = r<sub>θ</sub>(y<sub>c</sub> ∣x) −r<sub>θ</sub>(y<sub>r</sub> ∣x) and using σ(Δ) =<span class="frac"><span class="nu"><sub>1</sub></span><span class="de"><sub>1</sub><sub>+</sub><sub>e</sub><sub>−</sub><sub>Δ</sub></span></span>, which implies −log σ(Δ) = log(1 + e<sub>−</sub><sub>Δ</sub>) = log (1 + e<sub>r</sub><sub>θ</sub><sub>(</sub><sub>y</sub><sub>r</sub><sub>∣</sub><sub>x</sub><sub>)</sub><sub>−</sub><sub>r</sub><sub>θ</sub><sub>(</sub><sub>y</sub><sub>c</sub><sub>∣</sub><sub>x</sub><sub>)</sub>). They both appear in the RLHF literature.</p>
+<h2 id="5-2-architecture"><a class="anchor" href="#5-2-architecture">#</a>5.2 Architecture</h2>
+<p>The most common way reward models are implemented is through an abstraction similar to Transformer’s <code>AutoModelForSequenceClassification</code>, which appends a small linear head to the language model that performs classification between two outcomes – chosen and rejected. At inference time, the model outputs the <em>probability that the piece of text is</em> <em>chosen</em> as a single logit from the model.</p>
+<p>Other implementation options exist, such as just taking a linear layer directly from the final embeddings, but they are less common in open tooling.</p>
+<h2 id="5-3-implementation-example"><a class="anchor" href="#5-3-implementation-example">#</a>5.3 Implementation Example</h2>
+<p>Implementing the reward modeling loss is quite simple. More of the implementation challenge is on setting up a separate data loader and inference pipeline. Given the correct dataloader with tokenized, chosen and rejected prompts with completions, the loss is implemented as:</p>
+<div class="codeblock"><div class="bar2"><span class="lang">python</span><button class="copy" type="button">复制</button></div><pre><code><span class="c-kw">import</span> torch.nn <span class="c-kw">as</span> nn
+<span class="c-com"># inputs_chosen / inputs_rejected include the prompt tokens x and the respective</span>
+<span class="c-com"># completion tokens (y_c or y_r) that the reward model scores jointly.</span>
+rewards_chosen = model(**inputs_chosen)
+rewards_rejected = model(**inputs_rejected)
+loss = -nn.functional.logsigmoid(rewards_chosen - rewards_rejected).mean()</code></pre></div>
+<p>As for the bigger picture, this is often within a causal language model that has an additional head added (and learned with the above loss) that transitions from the final hidden state to the score of the inputs. This model will have a structure as follows:</p>
+<div class="codeblock"><div class="bar2"><span class="lang">python</span><button class="copy" type="button">复制</button></div><pre><code><span class="c-kw">import</span> torch
+<span class="c-kw">import</span> torch.nn <span class="c-kw">as</span> nn
+<span class="c-kw">import</span> torch.nn.functional <span class="c-kw">as</span> F
+<span class="c-kw">class</span> BradleyTerryRewardModel(nn.Module):
+    <span class="c-str">"""
+    Standard scalar reward model for Bradley-Terry preference learning.
+    Usage (pairwise BT loss):
+        rewards_chosen = model(**inputs_chosen)    # (batch,)
+        rewards_rejected = model(**inputs_rejected)  # (batch,)
+        loss = -F.logsigmoid(rewards_chosen - rewards_rejected).mean()
+    """</span>
+    <span class="c-kw">def</span> __init__(<span class="c-kw">self</span>, base_lm):
+        super().__init__()
+        <span class="c-kw">self</span>.lm = base_lm  <span class="c-com"># e.g., AutoModelForCausalLM</span>
+        <span class="c-kw">self</span>.head = nn.Linear(<span class="c-kw">self</span>.lm.config.hidden_size, <span class="c-num">1</span>)
+    <span class="c-kw">def</span> _sequence_rep(<span class="c-kw">self</span>, hidden, attention_mask):
+        <span class="c-str">"""
+        Get a single vector per sequence to score.
+        Default: last non-padding token (EOS token); if no mask, last token.
+        hidden: (batch, seq_len, hidden_size)
+        attention_mask: (batch, seq_len)
+        """</span>
+        <span class="c-com"># Index of last non-pad token in each sequence</span>
+        <span class="c-com"># attention_mask is 1 for real tokens, 0 for padding</span>
+        lengths = attention_mask.sum(dim=<span class="c-num">1</span>) - <span class="c-num">1</span>  <span class="c-com"># (batch,)</span>
+        batch_idx = torch.arange(hidden.size(<span class="c-num">0</span>), device=hidden.device)
+        <span class="c-kw">return</span> hidden[batch_idx, lengths]  <span class="c-com"># (batch, hidden_size)</span>
+    <span class="c-kw">def</span> forward(<span class="c-kw">self</span>, input_ids, attention_mask):
+        <span class="c-str">"""
+        A forward pass designed to show inference structure of a standard reward
+model.
+        To train one, this function will need to be modified to compute rewards
+from both
+         chosen and rejected inputs, applying the loss above.
+        """</span>
+        outputs = <span class="c-kw">self</span>.lm(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            output_hidden_states=<span class="c-kw">True</span>,
+            return_dict=<span class="c-kw">True</span>,
+        )
+        <span class="c-com"># Final hidden states: (batch, seq_len, hidden_size)</span>
+        hidden = outputs.hidden_states[-<span class="c-num">1</span>]
+        <span class="c-com"># One scalar reward per sequence: (batch,)</span>
+        seq_repr = <span class="c-kw">self</span>._sequence_rep(hidden, attention_mask)
+        rewards = <span class="c-kw">self</span>.head(seq_repr).squeeze(-<span class="c-num">1</span>)
+        <span class="c-kw">return</span> rewards</code></pre></div>
+<p>In this section and what follows, most of the implementation complexity for reward models (and much of post-training) is around constructing the data-loaders correctly and distributed learning systems. Note, when training reward models, the most common practice is to train for only 1 epoch to avoid overfitting.</p>
+<h2 id="5-4-variants"><a class="anchor" href="#5-4-variants">#</a>5.4 Variants</h2>
+<p>Reward modeling is a relatively under-explored area of RLHF. The traditional reward modeling loss has been modified in many popular works, but the modifications have not solidified into a single best practice.</p>
+<h3 id="5-4-1-preference-margin-loss"><a class="anchor" href="#5-4-1-preference-margin-loss">#</a>5.4.1 Preference Margin Loss</h3>
+<p>In the case where annotators are providing either scores or rankings on a Likert Scale, the magnitude of the relational quantities can be used in training. The most common practice is to binarize the data along the preference direction, reducing the mixed information of relative ratings or the strength of the ranking to just chosen and rejected completions. The additional information, such as the magnitude of the preference, has been used to improve model training, but it has not converged as a standard practice. Llama 2 proposes using the margin between two datapoints, m(y<sub>c</sub>, y<sub>r</sub>), to distinguish the magnitude of preference:</p>
+<figure class="eq"><div class="eqno">Equation 5.7</div><a class="zoom" href="assets/0020.png"><img src="assets/0020.png" alt="公式 5.7" loading="lazy"></a></figure>
+<p>For example, each completion is often given a ranking from 1 to 5 in terms of quality. In the case where the chosen sample was assigned a score of 5 and rejected a score of 2, the margin m(y<sub>c</sub>, y<sub>r</sub>) = 5 −2 = 3. Other functions for computing margins can be explored.</p>
+<p>Note that in Llama 3 the margin term was removed as the team observed diminishing improvements after scaling.</p>
+<h3 id="5-4-2-balancing-multiple-comparisons-per-prompt"><a class="anchor" href="#5-4-2-balancing-multiple-comparisons-per-prompt">#</a>5.4.2 Balancing Multiple Comparisons Per Prompt</h3>
+<p>InstructGPT studies the impact of using a variable number of completions per prompt, yet balancing them in the reward model training [5]. To do this, they weight the loss updates per comparison per prompt. At an implementation level, this can be done automatically by including all examples with the same prompt in the same training batch, naturally weighing the different pairs – not doing this caused overfitting to the prompts. The loss function becomes:</p>
+<figure class="eq"><div class="eqno">Equation 5.8</div><a class="zoom" href="assets/0021.png"><img src="assets/0021.png" alt="公式 5.8" loading="lazy"></a></figure>
+<h3 id="5-4-3-k-wise-loss-function"><a class="anchor" href="#5-4-3-k-wise-loss-function">#</a>5.4.3 K-wise Loss Function</h3>
+<p>There are many other formulations that can create suitable models of human preferences for RLHF. One such example, used in the popular, early RLHF’d models Starling 7B and 34B [7], is a K-wise loss function based on the Plackett-Luce model [8].</p>
+<p>Zhu et al. 2023 [9] formalizes the setup as follows. With a prompt, or state, s<sub>i</sub>, K actions (a<sub>0</sub><sub>i</sub>, a<sub>1</sub><sub>i</sub>, ⋯, a<sub>K</sub><sub>i</sub><sub>−</sub><sub>1</sub>) are sampled from P(a<sub>0</sub>, ⋯, a<sub>K</sub><sub>−</sub><sub>1</sub>|s<sub>i</sub>). Then, labelers are used to rank preferences with σ<sub>i</sub> : [K] ↦[K] is a function representing action rankings, where σ<sub>i</sub>(0) is the most preferred action. This yields a preference model capturing the following:</p>
+<figure class="eq"><div class="eqno">Equation 5.9</div><a class="zoom" href="assets/0022.png"><img src="assets/0022.png" alt="公式 5.9" loading="lazy"></a></figure>
+<p>When K = 2, this reduces to the Bradley-Terry (BT) model for pairwise comparisons. Regardless, once trained, these models are used similarly to other reward models during RLHF training.</p>
+<h2 id="5-5-outcome-reward-models"><a class="anchor" href="#5-5-outcome-reward-models">#</a>5.5 Outcome Reward Models</h2>
+<p>The majority of <em>preference tuning</em> for language models and other AI systems is done with the Bradley Terry models discussed above. For reasoning heavy tasks, one can use an Outcome Reward Model (ORM). The training data for an ORM is constructed in a similar manner to standard preference tuning. Here, we have a problem statement or prompt, x and two completions y<sub>1</sub> and y<sub>2</sub>. The inductive bias used here is that one completion should be a correct solution to the problem and one incorrect, resulting in (y<sub>c</sub>, y<sub>i</sub><sub>c</sub>).</p>
+<p>The shape of the models used is very similar to a standard reward model, with a linear layer appended to a model that can output a single logit (in the case of an RM) – with an ORM, the training objective that follows is slightly different [10]:</p>
+<p>[We] train verifiers with a joint objective where the model learns to label a model completion as correct or incorrect, in addition to the original language modeling objective. Architecturally, this means our verifiers are language models, with a small scalar head that outputs predictions on a per-token basis. We implement this scalar head as a single bias parameter and single gain parameter that operate on the logits outputted by the language model’s final unembedding layer.</p>
+<p>To translate, this is implemented as a language modeling head that can predict two classes per token (1 for correct, 0 for incorrect), rather than a classification head of a traditional RM that outputs one logit for the entire sequence. Formally, following [11] this can be shown as:</p>
+<figure class="eq"><div class="eqno">Equation 5.10</div><a class="zoom" href="assets/0023.png"><img src="assets/0023.png" alt="公式 5.10" loading="lazy"></a></figure>
+<p>where r ∈0, 1 is a binary label where 1 applies to a correct answer to a given prompt and 0 applies to an incorrect, and p<sub>θ</sub>(s) is the scalar proportional to predicted probability of correctness from the model being trained.</p>
+<p>Implementing an outcome reward model (and other types, as we’ll see with the Process Reward Model) involves applying the cross-entropy loss per-token based on if the completion is a correct sample. This is far closer to the language modeling loss, where it does not need the structured chosen-rejected nature of standard Bradley-Terry reward models.</p>
+<p>The model structure could follow as:</p>
+<div class="codeblock"><div class="bar2"><span class="lang">python</span><button class="copy" type="button">复制</button></div><pre><code><span class="c-kw">import</span> torch.nn <span class="c-kw">as</span> nn
+<span class="c-kw">import</span> torch.nn.functional <span class="c-kw">as</span> F
+<span class="c-kw">class</span> OutcomeRewardModel(nn.Module):
+    <span class="c-kw">def</span> __init__(<span class="c-kw">self</span>, base_lm):
+        super().__init__()
+        <span class="c-kw">self</span>.lm = base_lm  <span class="c-com"># e.g., AutoModelForCausalLM</span>
+        <span class="c-kw">self</span>.head = nn.Linear(<span class="c-kw">self</span>.lm.config.hidden_size, <span class="c-num">1</span>)
+    <span class="c-kw">def</span> forward(<span class="c-kw">self</span>, input_ids, attention_mask=<span class="c-kw">None</span>, labels=<span class="c-kw">None</span>):
+        <span class="c-str">"""
+        The input data here will be tokenized prompts and completions along with
+labels
+         per prompt for correctness.
+        """</span>
+        outputs = <span class="c-kw">self</span>.lm(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            output_hidden_states=<span class="c-kw">True</span>,
+            return_dict=<span class="c-kw">True</span>,
+        )
+        <span class="c-com"># Final hidden states: (batch, seq_len, hidden_size)</span>
+        hidden = outputs.hidden_states[-<span class="c-num">1</span>]
+        <span class="c-com"># One scalar logit per token: (batch, seq_len)</span>
+        logits = <span class="c-kw">self</span>.head(hidden).squeeze(-<span class="c-num">1</span>)
+        <span class="c-com"># Only compute loss on completion tokens (labels 0 or 1)</span>
+        <span class="c-com"># Prompt tokens have labels = -100</span>
+        mask = labels != -<span class="c-num">100</span>
+        <span class="c-kw">if</span> mask.any():
+            loss = F.binary_cross_entropy_with_logits(
+                logits[mask], labels[mask].float()
+            )
+        <span class="c-kw">return</span> loss, logits</code></pre></div>
+<p>A simplified version of the loss follows:</p>
+<div class="codeblock"><div class="bar2"><span class="lang">python</span><button class="copy" type="button">复制</button></div><pre><code><span class="c-com"># Assume model already has: model.lm (backbone) + model.head</span>
+hidden = model.lm(**inputs, output_hidden_states=<span class="c-kw">True</span>).hidden_states[-<span class="c-num">1</span>]
+logits_per_token = model.head(hidden).squeeze(-<span class="c-num">1</span>)  <span class="c-com"># (batch, seq_len)</span>
+<span class="c-com"># This will sometimes be compressed as model.forward() in other implementations</span>
+<span class="c-com"># Binary labels: 1=correct, 0=incorrect (prompt tokens masked as -100)</span>
+mask = labels != -<span class="c-num">100</span>
+loss = F.binary_cross_entropy_with_logits(
+    logits_per_token[mask], labels[mask].float()
+)</code></pre></div>
+<p>The important intuition here is that an ORM will output a probability of correctness at every token in the sequence. This can be a noisy process, as the updates and loss propagates per token depending on outcomes and attention mappings.</p>
+<p>These models have continued in use, but are less supported in open-source RLHF tools. For example, the same type of ORM was used in the seminal work <em>Let’s Verify Step by Step</em> [12], but without the language modeling prediction piece of the loss. Then, the final loss is a cross-entropy loss on every token predicting if the final answer is correct.</p>
+<p>Given the lack of support, the term outcome reward model (ORM) has been used in multiple ways. Some literature, e.g. [11], continues to use the original definition from Cobbe et al. 2021. Others do not.</p>
+<h2 id="5-6-process-reward-models"><a class="anchor" href="#5-6-process-reward-models">#</a>5.6 Process Reward Models</h2>
+<p>Process Reward Models (PRMs), originally called Process-supervised Reward Models, are reward models trained to output scores at every <em>step</em> in a chain-of-thought reasoning process. These differ from a standard RM that outputs a score only at an EOS token or a ORM that outputs a score at every token. Process Reward Models require supervision at the end of each reasoning step, and then are trained similarly where the tokens in the step are trained to their relevant target – the target is the step in PRMs and the entire response for ORMs.</p>
+<p>Following [12], a binary-labeled PRM is commonly optimized with a per-step cross-entropy loss:</p>
+<figure class="eq"><div class="eqno">Equation 5.11</div><a class="zoom" href="assets/0024.png"><img src="assets/0024.png" alt="公式 5.11" loading="lazy"></a></figure>
+<p>where s is a sampled chain-of-thought with K annotated steps, y<sub>s</sub><sub>i</sub> ∈{0, 1} denotes whether the i-th step is correct, and r<sub>θ</sub>(s<sub>i</sub> ∣x) is the PRM’s predicted probability that step s<sub>i</sub> is valid conditioned on the original prompt x.</p>
+<p>Here’s an example of how this per-step label can be packaged in a trainer, from HuggingFace’s TRL (Transformer Reinforcement Learning) [13]:</p>
+<div class="codeblock"><div class="bar2"><span class="lang">python</span><button class="copy" type="button">复制</button></div><pre><code><span class="c-com"># Get the ID of the separator token and add it to the completions</span>
+separator_ids = tokenizer.encode(step_separator, add_special_tokens=<span class="c-kw">False</span>)
+completions_ids = [completion + separator_ids <span class="c-kw">for</span> completion <span class="c-kw">in</span> completions_ids]
+<span class="c-com"># Create the label</span>
+labels = [[-<span class="c-num">100</span>] * (len(completion) - <span class="c-num">1</span>) + [label] <span class="c-kw">for</span> completion, label <span class="c-kw">in</span>
+zip(completions_ids, labels)]</code></pre></div>
+<p>Traditionally PRMs are trained with a language modeling head that outputs a token only at the end of a reasoning step, e.g. at the token corresponding to a double new line or other special token. These predictions tend to be -1 for incorrect, 0 for neutral, and 1 for correct. These labels do not necessarily tie with whether or not the model is on the right path, but if the step is correct.</p>
+<p>An example construction of a PRM is shown below.</p>
+<div class="codeblock"><div class="bar2"><span class="lang">python</span><button class="copy" type="button">复制</button></div><pre><code><span class="c-kw">import</span> torch.nn <span class="c-kw">as</span> nn
+<span class="c-kw">import</span> torch.nn.functional <span class="c-kw">as</span> F
+<span class="c-kw">class</span> ProcessRewardModel(nn.Module):
+    <span class="c-kw">def</span> __init__(<span class="c-kw">self</span>, base_lm, num_classes=<span class="c-num">3</span>):
+        super().__init__()
+        <span class="c-kw">self</span>.lm = base_lm  <span class="c-com"># e.g., AutoModelForCausalLM</span>
+        <span class="c-kw">self</span>.head = nn.Linear(<span class="c-kw">self</span>.lm.config.hidden_size, num_classes)
+    <span class="c-kw">def</span> forward(<span class="c-kw">self</span>, input_ids, attention_mask=<span class="c-kw">None</span>, labels=<span class="c-kw">None</span>):
+        <span class="c-str">"""
+        The inputs are tokenizer prompts and completions, where the the end of a
+         "reasoning step" is denoted by another non-padding token.
+        labels will be a list of labels, True, False, and Neutral (3 labels)
+which
+         will be predicted by the model.
+        """</span>
+        outputs = <span class="c-kw">self</span>.lm(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            output_hidden_states=<span class="c-kw">True</span>,
+            return_dict=<span class="c-kw">True</span>,
+        )
+        <span class="c-com"># Final hidden states: (batch, seq_len, hidden_size)</span>
+        hidden = outputs.hidden_states[-<span class="c-num">1</span>]
+        <span class="c-com"># One logit vector per token: (batch, seq_len, num_classes)</span>
+        logits = <span class="c-kw">self</span>.head(hidden)
+        <span class="c-com"># Only compute loss at step boundaries (where labels != -100)</span>
+        <span class="c-com"># Labels map: -1 -&gt; 0, 0 -&gt; 1, 1 -&gt; 2 (class indices)</span>
+        mask = labels != -<span class="c-num">100</span>
+        <span class="c-kw">if</span> mask.any():
+            loss = F.cross_entropy(
+                logits[mask], labels[mask]
+            )
+        <span class="c-kw">return</span> loss, logits</code></pre></div>
+<p>The core loss function looks very similar to outcome reward models, with the labels being applied at different intervals.</p>
+<div class="codeblock"><div class="bar2"><span class="lang">python</span><button class="copy" type="button">复制</button></div><pre><code><span class="c-com"># Assume model outputs 3-class logits per token</span>
+hidden = model.lm(**inputs, output_hidden_states=<span class="c-kw">True</span>).hidden_states[-<span class="c-num">1</span>]
+logits = model.head(hidden)  <span class="c-com"># (batch, seq_len, 3)</span>
+<span class="c-com"># 3-class labels at step boundaries only: 0=-1, 1=0, 2=1 (others masked as -100)</span>
+mask = labels != -<span class="c-num">100</span>
+loss = F.cross_entropy(logits[mask], labels[mask])</code></pre></div>
+<h2 id="5-7-reward-models-vs-outcome-rms-vs-process-rms-vs-value"><a class="anchor" href="#5-7-reward-models-vs-outcome-rms-vs-process-rms-vs-value">#</a>5.7 Reward Models vs. Outcome RMs vs. Process RMs vs. Value</h2>
+<h2 id="functions"><a class="anchor" href="#functions">#</a>Functions</h2>
+<p>The various types of reward models covered indicate the spectrum of ways that “quality” can be measured in RLHF and other post-training methods. Below, a summary of what the models predict and how they are trained.</p>
+<div class="caption"><span class="lbl">Table 5.1</span> Comparing types of reward models.</div>
+<div class="tw"><table><thead><tr><th>Type</th><th>Output</th><th>Training</th><th>Use Case</th></tr></thead><tbody><tr><td>Reward Models</td><td>chosen response at Quality of text via probability of EOS token</td><td>Contrastive loss between comparisons between pairwise (or N-wise) completions</td><td>Regression or classification head on top of LM features</td></tr><tr><td>Outcome Reward Models</td><td>Probability that an answer is correct per-token</td><td>(e.g., success/failure on Labeled outcome pairs verifiable domains)</td><td>Language modeling head per-token cross-entropy, where every label is the outcome level label</td></tr><tr><td>Process Reward Models</td><td>A reward or score for intermediate reasoning steps steps at end of</td><td>Trained using intermediate token in reasoning step) annotations (trained per feedback or stepwise</td><td>Language modeling head only running inference per reasoning step, predicts three classes -1, 0, 1</td></tr><tr><td>Value Functions</td><td>The expected return given the current state</td><td>Trained via regression to each point in sequence</td><td>A classification with output per-token</td></tr></tbody></table></div>
+<p>Some notes, given the above table has a lot of edge cases.</p>
+<ul class="lst"><li>Both in preference tuning and reasoning training, the value functions often have a discount factor of 1, which makes a value function even <a href="https://livebook.manning.com/book/the-rlhf-book/chapter-5?potentialInternalRefId=81---book-markup-container">closer to an outcome reward model, but with a different training loss. </a></li><li>A process reward model can be supervised by doing rollouts from an intermediate state and collecting outcome data. This blends multiple ideas, but if the <em>loss</em> is per reasoning step labels, it is best referred to as <a href="https://livebook.manning.com/book/the-rlhf-book/chapter-5?potentialInternalRefId=82---book-markup-container">a PRM. </a></li></ul>
+<h2 id="5-8-generative-reward-modeling"><a class="anchor" href="#5-8-generative-reward-modeling">#</a>5.8 Generative Reward Modeling</h2>
+<p>With the cost of preference data, a large research area emerged to use existing language models as a judge of human preferences or in other evaluation settings [14]. The core idea is to prompt a language model with instructions on how to judge, a prompt, and two completions (much as would be done with human labelers). An example prompt, from one of the seminal works here for the chat evaluation MT-Bench [14], follows:</p>
+<div class="codeblock"><div class="bar2"><span class="lang">python</span><button class="copy" type="button">复制</button></div><pre><code>[System]
+Please act <span class="c-kw">as</span> an impartial judge <span class="c-kw">and</span> evaluate the quality of the responses
+provided by two AI assistants to the user question displayed below.
+You should choose the assistant that follows the user's instructions <span class="c-kw">and</span> answers
+the user's question better.
+Your evaluation should consider factors such <span class="c-kw">as</span> the helpfulness, relevance,
+accuracy, depth, creativity, <span class="c-kw">and</span> level of detail of their responses.
+Begin your evaluation by comparing the two responses <span class="c-kw">and</span> provide a short
+explanation.
+Avoid any position biases <span class="c-kw">and</span> ensure that the order <span class="c-kw">in</span> which the responses were
+presented does <span class="c-kw">not</span> influence your decision.
+Do <span class="c-kw">not</span> allow the length of the responses to influence your evaluation.
+Do <span class="c-kw">not</span> favor certain names of the assistants.
+Be <span class="c-kw">as</span> objective <span class="c-kw">as</span> possible.
+After providing your explanation, output your final verdict by strictly following
+this format: <span class="c-str">"[[A]]"</span> <span class="c-kw">if</span> assistant A <span class="c-kw">is</span> better, <span class="c-str">"[[B]]"</span> <span class="c-kw">if</span> assistant B <span class="c-kw">is</span> better,
+<span class="c-kw">and</span> <span class="c-str">"[[C]]"</span> <span class="c-kw">for</span> a tie.
+[User Question]
+{question}
+[The Start of Assistant A's Answer]
+{answer_a}
+[The End of Assistant A's Answer]
+[The Start of Assistant B's Answer]
+{answer_b}
+[The End of Assistant B's Answer]</code></pre></div>
+<p>Given the efficacy of LLM-as-a-judge for evaluation, spawning many other evaluations such as AlpacaEval [15], Arena-Hard [16], and WildBench [17], many began using LLM-as-a-judge instead of reward models to create and use preference data.</p>
+<p>An entire field of study has emerged to study how to use so called “Generative Reward Models” [18] [19] [20] (including models trained <em>specifically</em> to be effective judges [21]), but on RM evaluations they tend to be behind existing reward models, showing that reward modeling is an important technique for current RLHF.</p>
+<p>A common trick to improve the robustness of LLM-as-a-judge workflows is to use a sampling temperature of 0 to reduce variance of ratings.</p>
+<h2 id="5-9-further-reading"><a class="anchor" href="#5-9-further-reading">#</a>5.9 Further Reading</h2>
+<p>The academic literature for reward modeling established itself in 2024. The bulk of progress in reward modeling early on has been in establishing benchmarks and identifying behavior modes. The first RM benchmark, RewardBench, provided common infrastructure for testing reward models [22]. Since then, RM evaluation has expanded to be similar to the types of evaluations available to general post-trained models, where some evaluations test the accuracy of prediction on domains with known true answers [22] or those more similar to <a href="07-reward-modeling.html">“vibes” performed with LLM-as-a-judge or correlations to other benchmarks [23].</a></p>
+<p>Examples of new benchmarks include:</p>
+<ul class="lst"><li><strong>Text-only (general chat / preferences):</strong> RMB [24], RewardBench2 <a href="https://livebook.manning.com/book/the-rlhf-book/chapter-5?potentialInternalRefId=92---source-zhou2024rmb">[25], Preference Proxy Evaluations [26], or RM-Bench [27]. </a></li><li><strong>Specialized text-only (math, etc.):</strong> multilingual reward bench (M- RewardBench) [28], RAG-RewardBench for retrieval augmented <a href="07-reward-modeling.html">generation (RAG) [29], ReWordBench for typos [30], RewardMATH [31],</a> <a href="https://livebook.manning.com/book/the-rlhf-book/chapter-5?potentialInternalRefId=93---source-gureja2024m">or AceMath-RewardBench [32]. </a></li><li><strong>Process RMs:</strong> PRM Bench [33] or ProcessBench [34] and visual <a href="https://livebook.manning.com/book/the-rlhf-book/chapter-5?potentialInternalRefId=94---source-song2025prmbench">benchmarks of VisualProcessBench [35] or ViLBench [36]. </a></li><li><a href="https://livebook.manning.com/book/the-rlhf-book/chapter-5?potentialInternalRefId=95---source-men2025agentrewardbench"><strong>Agentic RMs:</strong> Agent-RewardBench [37] or CUARewardBench [38]. </a></li><li><strong>Multimodal:</strong> MJ-Bench [39], Multimodal RewardBench [40], VL <a href="https://livebook.manning.com/book/the-rlhf-book/chapter-5?potentialInternalRefId=96---source-chen2024mj">RewardBench [41], or VLRMBench [42]. </a></li></ul>
+<p>To understand progress on <em>training</em> reward models, one can reference new reward model <a href="07-reward-modeling.html">training methods, with aspect-conditioned models [43], high-quality human datasets [44]</a> <a href="07-reward-modeling.html">[45], scaling experiments [46], extensive experimentation [47], or debiasing data [48].</a></p>
+<p>[1]R. S. Sutton, “Reinforcement learning: An introduction,” <em>A Bradford Book</em>, 2018.</p>
+<p>[2]J. Leike, D. Krueger, T. Everitt, M. Martic, V. Maini, and S. Legg, “Scalable agent</p>
+<p>alignment via reward modeling: A research direction,” <em>arXiv preprint</em></p>
+<p><em>arXiv:1811.07871</em>, 2018.</p>
+<p>[3]A. Y. Ng, S. Russell, <em>et al.</em>, “Algorithms for inverse reinforcement learning.” in</p>
+<p><em>Proceedings of the seventeenth international conference on machine learning</em>, in</p>
+<p>ICML ’00. 2000, pp. 663--670.</p>
+<p>[4]R. A. Bradley and M. E. Terry, “Rank analysis of incomplete block designs: I. The</p>
+<p>method of paired comparisons,” <em>Biometrika</em>, vol. 39, no. 3/4, pp. 324–345, 1952,</p>
+<p><a href="http://www.jstor.org/stable/2334029">Accessed: Feb. 13, 2023. [Online]. Available: http://www. jstor.org/ stable/2334029</a></p>
+<p><a href="07-reward-modeling.html">[5]2</a></p>
+<p>L. Ouyang <em>et al.</em>, “Training language models to follow instructions with human</p>
+<p>feedback,” <em>Advances in neural information processing systems</em>, vol. 35, pp. 27730– 27744, 2022.</p>
+<p>[6]A. Askell <em>et al.</em>, “A general language assistant as a laboratory for alignment,” <em>arXiv</em> <em>preprint arXiv:2112.00861</em>, 2021.</p>
+<p>[7]B. Zhu <em>et al.</em>, “Starling-7b: Improving helpfulness and harmlessness with rlaif,” in</p>
+<p><em>First conference on language modeling</em>, 2024.</p>
+<p>[8]A. Liu, Z. Zhao, C. Liao, P. Lu, and L. Xia, “Learning plackett-luce mixtures from</p>
+<p>partial preferences,” in <em>Proceedings of the AAAI conference on artificial intelligence</em>, 2019, pp. 4328–4335.</p>
+<p>[9]B. Zhu, M. Jordan, and J. Jiao, “Principled reinforcement learning with human</p>
+<p>feedback from pairwise or k-wise comparisons,” in <em>International conference on</em></p>
+<p><em>machine learning</em>, PMLR, 2023, pp. 43037–43067.</p>
+<p>[10]K. Cobbe <em>et al.</em>, “Training verifiers to solve math word problems,” <em>arXiv preprint</em></p>
+<p><em>arXiv:2110.14168</em>, 2021.</p>
+<p><a href="07-reward-modeling.html">[11]2</a></p>
+<p>C. Lyu <em>et al.</em>, “Exploring the limit of outcome reward for learning mathematical</p>
+<p>reasoning,” <em>arXiv preprint arXiv:2502.06781</em>, 2025.</p>
+<p><a href="07-reward-modeling.html">[12]2</a></p>
+<p>H. Lightman <em>et al.</em>, “Let’s verify step by step,” in <em>International conference on</em></p>
+<p><em>learning representations (ICLR)</em>, 2024.</p>
+<p>[13]L. von Werra <em>et al.</em>, “TRL: Transformer reinforcement learning,” <em>GitHub repository</em>. https://github. com/huggingface/ trl; GitHub, 2020.</p>
+<p><a href="07-reward-modeling.html">[14]2</a></p>
+<p>L. Zheng <em>et al.</em>, “Judging llm-as-a-judge with mt-bench and chatbot arena,”</p>
+<p><em>Advances in Neural Information Processing Systems</em>, vol. 36, pp. 46595–46623,</p>
+<p>2023.</p>
+<p>[15]Y. Dubois, B. Galambosi, P. Liang, and T. B. Hashimoto, “Length-controlled</p>
+<p>alpacaeval: A simple way to debias automatic evaluators,” <em>arXiv preprint</em></p>
+<p><em>arXiv:2404.04475</em>, 2024.</p>
+<p>[16]T. Li <em>et al.</em>, “From crowdsourced data to high-quality benchmarks: Arena-hard and BenchBuilder pipeline,” in <em>International conference on machine learning (ICML)</em>,</p>
+<p>2025.</p>
+<p>[17]B. Y. Lin <em>et al.</em>, “WILDBENCH: Benchmarking LLMs with challenging tasks from real users in the wild,” in <em>International conference on learning representations (ICLR)</em>,</p>
+<p>2025.</p>
+<p>[18]D. Mahan <em>et al.</em>, “Generative reward models,” 2024, Available: https://www.</p>
+<p><a href="https://www.synthlabs.ai/pdf/Generative_Reward_Models.pdf">synthlabs. ai/pdf/Generative_ Reward_Models. pdf</a></p>
+<p>[19]L. Zhang, A. Hosseini, H. Bansal, M. Kazemi, A. Kumar, and R. Agarwal, “Generative verifiers: Reward modeling as next-token prediction,” in <em>International conference on</em> <em>learning representations (ICLR)</em>, 2025.</p>
+<p>[20]Z. Ankner, M. Paul, B. Cui, J. D. Chang, and P. Ammanabrolu, “Critique-out-loud</p>
+<p>reward models,” <em>arXiv preprint arXiv:2408.11791</em>, 2024.</p>
+<p>[21]S. Kim <em>et al.</em>, “Prometheus: Inducing fine-grained evaluation capability in language models,” in <em>The twelfth international conference on learning representations</em>, 2023.</p>
+<p><a href="07-reward-modeling.html">[22]2</a></p>
+<p>N. Lambert <em>et al.</em>, “Rewardbench: Evaluating reward models for language</p>
+<p>modeling,” in <em>Conference of the north american chapter of the association for</em></p>
+<p><em>computational linguistics (NAACL)</em>, 2025.</p>
+<p>[23]X. Wen <em>et al.</em>, “Rethinking reward model evaluation: Are we barking up the wrong</p>
+<p>tree?” in <em>International conference on learning representations (ICLR)</em>, 2025.</p>
+<p>[24]E. Zhou <em>et al.</em>, “RMB: Comprehensively benchmarking reward models in LLM</p>
+<p>alignment,” in <em>International conference on learning representations (ICLR)</em>, 2025.</p>
+<p>[25]S. Malik <em>et al.</em>, “RewardBench 2: Advancing reward model evaluation,” <em>arXiv preprint</em> <em>arXiv:2506.01937</em>, 2025.</p>
+<p>[26]E. Frick <em>et al.</em>, “How to evaluate reward models for RLHF,” in <em>International</em></p>
+<p><em>conference on learning representations (ICLR)</em>, 2025.</p>
+<p>[27]Y. Liu, Z. Yao, R. Min, Y. Cao, L. Hou, and J. Li, “RM-bench: Benchmarking reward</p>
+<p>models of language models with subtlety and style,” in <em>International conference on</em> <em>learning representations (ICLR)</em>, 2025.</p>
+<p>[28]S. Gureja <em>et al.</em>, “M-RewardBench: Evaluating reward models in multilingual</p>
+<p>settings,” in <em>Annual meeting of the association for computational linguistics (ACL)</em>, 2025.</p>
+<p>[29]Z. Jin <em>et al.</em>, “RAG-RewardBench: Benchmarking reward models in retrieval</p>
+<p>augmented generation for preference alignment,” in <em>Annual meeting of the</em></p>
+<p><em>association for computational linguistics (ACL)</em>, 2025.</p>
+<p>[30]Z. Wu, M. Yasunaga, A. Cohen, Y. Kim, A. Celikyilmaz, and M. Ghazvininejad,</p>
+<p>“reWordBench: Benchmarking and improving the robustness of reward models with transformed inputs,” <em>arXiv preprint arXiv:2503.11751</em>, 2025.</p>
+<p>[31]S. Kim <em>et al.</em>, “Evaluating robustness of reward models for mathematical reasoning,” <em>arXiv preprint arXiv:2410.01729</em>, 2024.</p>
+<p>[32]Z. Liu, Y. Chen, M. Shoeybi, B. Catanzaro, and W. Ping, “AceMath: Advancing</p>
+<p>frontier math reasoning with post-training and reward modeling,” in <em>Annual meeting</em> <a href="https://arxiv.org/abs/2412.15084"><em>of the association for computational linguistics (ACL)</em>, 2025. Available: https://arxiv. </a> <a href="https://arxiv.org/abs/2412.15084">org/abs/2412. 15084</a></p>
+<p>[33]M. Song, Z. Su, X. Qu, J. Zhou, and Y. Cheng, “PRMBench: A fine-grained and</p>
+<p>challenging benchmark for process-level reward models,” in <em>Annual meeting of the</em> <em>association for computational linguistics (ACL)</em>, 2025.</p>
+<p>[34]C. Zheng <em>et al.</em>, “ProcessBench: Identifying process errors in mathematical</p>
+<p>reasoning,” in <em>Annual meeting of the association for computational linguistics (ACL)</em>, <a href="https://arxiv.org/abs/2412.06559">2025. Available: https://arxiv. org/abs/2412. 06559</a></p>
+<p>[35]W. Wang <em>et al.</em>, “VisualPRM: An effective process reward model for multimodal</p>
+<p>reasoning,” <em>arXiv preprint arXiv:2503.10291</em>, 2025.</p>
+<p>[36]H. Tu, W. Feng, H. Chen, H. Liu, X. Tang, and C. Xie, “ViLBench: A suite for vision-<a href="https://arxiv.org/abs/2503.20271">language process reward modeling.” Mar. 2025. Available: https://arxiv. </a></p>
+<p><a href="https://arxiv.org/abs/2503.20271">org/abs/2503. 20271</a></p>
+<p>[37]T. Men, Z. Jin, P. Cao, Y. Chen, K. Liu, and J. Zhao, “Agent-RewardBench: Towards a unified benchmark for reward modeling across perception, planning, and safety in</p>
+<p>real-world multimodal agents,” in <em>Proceedings of the 63rd annual meeting of the</em></p>
+<p><em>association for computational linguistics (volume 1: Long papers)</em>, Vienna, Austria: Association for Computational Linguistics, Jul. 2025, pp. 17521–17541. doi:</p>
+<p><a href="https://doi.org/10.18653/v1/2025.acl-long.857">10.18653/v1/2025.acl-long.857.</a></p>
+<p>[38]H. Lin <em>et al.</em>, “CUARewardBench: A benchmark for evaluating reward models on</p>
+<p><a href="https://arxiv.org/abs/2510.18596">computer-using agent.” 2025. Available: https://arxiv. org/abs/2510. 18596</a></p>
+<p>[39]Z. Chen <em>et al.</em>, “MJ-bench: Is your multimodal reward model really a good judge for text-to-image generation?” <em>arXiv preprint arXiv:2407.04842</em>, 2024.</p>
+<p>[40]M. Yasunaga, L. Zettlemoyer, and M. Ghazvininejad, “Multimodal rewardbench:</p>
+<p>Holistic evaluation of reward models for vision language models,” <em>arXiv preprint</em></p>
+<p><em>arXiv:2502.14191</em>, 2025.</p>
+<p>[41]L. Li <em>et al.</em>, “VLRewardBench: A challenging benchmark for vision-language</p>
+<p>generative reward models,” <em>arXiv preprint arXiv:2411.17451</em>, 2024.</p>
+<p>[42]J. Ruan <em>et al.</em>, “Vlrmbench: A comprehensive and challenging benchmark for vision-language reward models,” <em>arXiv preprint arXiv:2503.07478</em>, 2025.</p>
+<p>[43]H. Wang, W. Xiong, T. Xie, H. Zhao, and T. Zhang, “Interpretable preferences via</p>
+<p>multi-objective reward modeling and mixture-of-experts,” in <em>Conference on</em></p>
+<p><em>empirical methods in natural language processing (EMNLP)</em>, 2024.</p>
+<p>[44]Z. Wang <em>et al.</em>, “HelpSteer2: Open-source dataset for training top-performing</p>
+<p>reward models,” <em>arXiv preprint arXiv:2406.08673</em>, 2024.</p>
+<p>[45]Z. Wang <em>et al.</em>, “HelpSteer2-preference: Complementing ratings with preferences,” in <em>International conference on learning representations (ICLR)</em>, 2025.</p>
+<p>[46]B. Adler <em>et al.</em>, “Nemotron-4 340B technical report,” <em>arXiv preprint</em></p>
+<p><em>arXiv:2406.11704</em>, 2024.</p>
+<p>[47]H. Touvron <em>et al.</em>, “Llama 2: Open foundation and fine-tuned chat models,” <em>arXiv</em></p>
+<p><em>preprint arXiv:2307.09288</em>, 2023.</p>
+<p>[48]J. Park, S. Jwa, M. Ren, D. Kim, and S. Choi, “Offsetbias: Leveraging debiased data for tuning evaluators,” in <em>Conference on empirical methods in natural language</em></p>
+<p><em>processing (EMNLP)</em>, 2024.</p>
+</main>
+<nav class="pager" aria-label="翻页">
+<a class="pv" href="06-instruction-fine-tuning.html"><span class="dir">上一章</span><span class="t">Instruction Fine-tuning</span></a>
+<a class="nx" href="08-reinforcement-learning.html"><span class="dir">下一章</span><span class="t">Reinforcement Learning</span></a>
+</nav>
+<div class="lightbox" id="lb" hidden><img alt="放大查看"><button class="x" type="button" aria-label="关闭">&#10005;</button></div>
+<script src="assets/app.js"></script>
+</body>
+</html>

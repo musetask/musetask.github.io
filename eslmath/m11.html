@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="投影寻踪回归与单隐层前馈网络、后向传播的逐项链式法则推导、权重空间对称性与多极小、海森矩阵的秩、随机梯度下降的收敛条件与方差、贝叶斯神经网络的后验平均。">
+<title>神经网络 · Neural Networks · ESL 数学推导</title>
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/style.css">
+<script defer src="../assets/katex/katex.min.js"></script>
+<script defer src="../assets/katex/auto-render.min.js"></script>
+<script defer src="assets/app.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="bar">
+  <button class="icon" id="themeToggle" type="button" aria-label="切换深色模式">&#9681;</button>
+  <a class="title" href="index.html">ESL 数学推导</a>
+  <a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<h1 id="s-11" class="ch anchored"><span class="num">11</span> 神经网络</h1>
+<p>第 10 章的提升法把很多棵树加成一个可解释的集成模型，但每一棵树都只沿一个坐标方向切分，函数形式被限制成分段常数。第 11 章要跳出这个限制：<strong>先对输入取线性组合，再对这些线性组合取非线性函数</strong>。这是本章全部模型的骨架——投影寻踪回归 (11.1)、单隐层前馈网络 (11.5) 都是它。</p>
+<p>本章的主线有三条。第一条是<strong>模型</strong>：投影寻踪回归 (11.1)–(11.4) 与神经网络 (11.5)–(11.8)，它们在「方向 + 一维光滑」上完全同构。第二条是<strong>算法</strong>：损失函数 (11.9)(11.10)、后向传播梯度 (11.12)–(15)、学习率的随机逼近条件、以及权重衰减惩罚 (11.16)(11.17)。第三条是<strong>实践</strong>：初值与对称性、过拟合、输入标准化、多个局部极小，以及两个实例（模拟数据与 ZIP 码），最后是 NIPS 2003 竞赛引出的贝叶斯神经网络 (11.19)–(11.21)。</p>
+<p><a class="src" href="../esl/ch11-neural-networks.html#s-11-2">原文 §11.2</a> 讨论投影寻踪，<a class="src" href="../esl/ch11-neural-networks.html#s-11-4">原文 §11.4</a> 讨论后向传播，<a class="src" href="../esl/ch11-neural-networks.html#s-11-5">原文 §11.5</a> 讨论训练中的实际问题。</p>
+<hr>
+<h2 id="s-11-1" class="anchored"><span class="num">11.1</span> 引言</h2>
+<p>神经网络这个术语覆盖的模型比本章介绍的多得多。本章只处理最通用的一种：<strong>单个隐藏层的前馈网络</strong>（也称单层感知机）。它同时用于回归和分类：回归时通常 $K=1$，只有一个输出单元 $Y_1$；$K$ 类分类时顶部有 $K$ 个单元，第 $k$ 个建模第 $k$ 类的概率，目标是 $0$–$1$ 变量 $Y_k$。</p>
+<p>这一节的结论预告了全章的调子：<strong>神经网络不是神秘的黑箱，它就是第 5 章基展开方法的非线性推广，区别只在于基函数的参数也是从数据里学的</strong>。</p>
+<p><a class="src" href="../esl/ch11-neural-networks.html#s-11-1">原文 §11.1</a></p>
+<hr>
+<h2 id="s-11-2" class="anchored"><span class="num">11.2</span> 投影寻踪回归</h2>
+<h3 id="s-11-2-1" class="anchored"><span class="num">11.2.1</span> 模型与误差函数</h3>
+<p>设输入 $X\in\mathbb{R}^p$，目标 $Y$。令 $\omega_m$，$m=1,\dots,M$，是 $p$ 维单位向量（即 $\lVert\omega_m\rVert=1$）。投影寻踪回归 (PPR) 模型的写法是</p>
+<div class="eq"><div class="escroll">
+$$
+f(X)=\sum_{m=1}^M g_m\big(\omega_m^\top X\big)
+$$
+</div><span class="tag">(11.1)</span></div>
+<p>这是一个<strong>加性模型</strong>，但加性是在派生特征 $V_m=\omega_m^\top X$ 上而不是在输入上。函数 $g_m$ 不指定形式，与方向 $\omega_m$ 一起用某种灵活的光滑方法估计。</p>
+<div class="aside basis"><p class="hd">基础知识 · 单位向量与正交性</p><p>若 $\lVert\omega_m\rVert=1$，则 $V_m=\omega_m^\top X$ 是 $X$ 在 $\omega_m$ 上的<strong>正交投影</strong>分量（见预备知识 L2）：</p>
+<div class="eq"><div class="escroll">
+$$
+X=\sum_{m=1}^M V_m\omega_m+V_\perp,\qquad \langle V_m\omega_m,\,V_{m'}\omega_{m'}\rangle=V_mV_{m'}\delta_{mm'}
+$$
+</div></div>
+<p>推导：$\langle\omega_m,\omega_{m'}\rangle=\sum_j\omega_{mj}\omega_{m'j}=\delta_{mm'}$（由单位性与正交性），所以 $X$ 分解成互相正交的成分。$g_m(\omega_m^\top X)$ 称为 $\mathbb{R}^p$ 中的<strong>脊函数</strong>：它只沿着 $\omega_m$ 规定的方向变化。</p></div>
+<p>PPR 模型非常一般：对线性组合取非线性函数这一操作，生成了一族出人意料地大的模型。例如乘积项 $X_1X_2$ 可以写成</p>
+<div class="eq"><div class="escroll">
+$$
+X_1X_2=\frac{\left(X_1+X_2\right)^2-\left(X_1-X_2\right)^2}{4}
+$$
+</div></div>
+<p>（用 $(a+b)^2-(a-b)^2=4ab$ 展开即可）。高阶乘积同理。更进一步，若 $M$ 取得任意大、$g_m$ 选得合适，PPR 可以任意好地逼近 $\mathbb{R}^p$ 上的任何连续函数——这样的模型类称为<strong>通用逼近器</strong>。</p>
+<div class="aside warn"><p class="hd">坑</p><p>通用逼近性是<strong>存在性</strong>陈述，不是<strong>构造性</strong>陈述。它说「存在一组 $g_m,\omega_m$ 能逼近」，但没说「用有限的 $M$ 和可估的 $g_m$ 就能找到它」。实际中 $M$ 增大到一定程度就会因估计方差而变差，这正是 §11.5.2 权重衰减存在的理由。</p></div>
+<p>模型是加性的，因此对任意 $x$ 都有 $f(\xi+tx)-f(\xi-ts)=t\sum_m\big[g_m(\omega_m^\top\xi+ts)-g_m(\omega_m^\top\xi-ts)\big]$，不必担心它会像树集成那样在某一维上跳变。</p>
+<h3 id="s-11-2-2" class="anchored"><span class="num">11.2.2</span> 误差函数与分阶段拟合</h3>
+<p>给定训练数据 $(x_i,y_i)$，$i=1,\dots,N$，我们求误差函数的近似极小点</p>
+<div class="eq"><div class="escroll">
+$$
+R(\omega)=\sum_{i=1}^N\sum_{m=1}^M\left[y_i-g_m\big(\omega_m^\top x_i\big)\right]^2
+$$
+</div><span class="tag">(11.2)</span></div>
+<p>对 $g_1,\dots,g_M$ 与 $\omega_1,\dots,\omega_M$ 同时最小化。和所有光滑问题一样，必须显式或隐式地对 $g_m$ 施加复杂度约束，否则会得到过拟合解。</p>
+<p><strong>分两步走</strong>（这是 PPR 的全部算法）：</p>
+<ol><li><strong>固定 $\omega$，估 $g$</strong>。设 $v_i=\omega^\top x_i$，问题退化成一维散点光滑，可以用任意一维光滑器（局部回归、光滑样条）。这里有一个便宜：若光滑器同时给出 $g'$，下一步就能直接用。</li><li><strong>固定 $g$，估 $\omega$</strong>。对 $\omega$ 最小化 (11.2)，用 Gauss–Newton 搜索（准牛顿法，把海森中含 $g''$ 的部分丢掉）。</li></ol>
+<div class="aside key"><p class="hd">结果 · 第 2 步的具体推导</p><p>记当前估计为 $\omega_{\text{old}}$。对 $g$ 在 $\omega_{\text{old}}^\top x_i$ 处作一阶泰勒展开：</p>
+<div class="eq long"><div class="escroll">
+$$
+g\big(\omega^\top x_i\big)\approx g\big(\omega_{\text{old}}^\top x_i\big)+(\omega-\omega_{\text{old}})^\top\nabla g\big(\omega_{\text{old}}^\top x_i\big)x_i
+$$
+</div><span class="tag">(11.3)</span></div>
+<p>代入 (11.2) 的被减项并展开平方（记 $A_i=g(\omega_{\text{old}}^\top x_i)$，$B_i=\nabla g(\omega_{\text{old}}^\top x_i)x_i$）：</p>
+<div class="eq long"><div class="escroll">
+$$
+\big[(y_i-A_i)-B_i^\top(\omega-\omega_{\text{old}})\big]^2=\big[(y_i-A_i)-B_i^\top(\omega-\omega_{\text{old}})\big]^2
+$$
+</div></div>
+<p>对 $\omega$ 求导得 $2\sum_i B_i\big[B_i^\top(\omega-\omega_{\text{old}})-(y_i-A_i)\big]=0$，即</p>
+<div class="eq"><div class="escroll">
+$$
+\sum_i B_iB_i^\top\,\omega=\sum_i B_i(y_i-A_i)
+$$
+</div></div>
+<p>右端 $B_i$ 是标量 $g'(\omega_{\text{old}}^\top x_i)\,x_i$，左端是 $p\times p$ 矩阵 $\sum_i g'(\omega_{\text{old}}^\top x_i)^2x_ix_i^\top$。所以这一步<strong>就是一个无截距的、以 $g'(\omega_{\text{old}}^\top x_i)^2$ 为权重的最小二乘回归</strong>，目标值是 $\omega_{\text{old}}^\top x_i+(y_i-A_i)/g'(\omega_{\text{old}}^\top x_i)$，输入是 $x_i$，得到 $\omega_{\text{new}}$。</p></div>
+<p>等价地，也可以把它写成对「残差 + 方向增量」的线性回归形式（ESL 原书把这行单独编号）：</p>
+<div class="eq long"><div class="escroll">
+$$
+y_i-g\big(\omega^\top x_i\big)\approx\big[y_i-g\big(\omega_{\text{old}}^\top x_i\big)\big]+g'\big(\omega_{\text{old}}^\top x_i\big)\big(\omega_{\text{old}}^\top x_i-\omega^\top x_i\big)
+$$
+</div><span class="tag">(11.4)</span></div>
+<p>（式中的 $\omega_{\text{old}}^\top x_i-\omega^\top x_i$ 只是 (11.3) 中 $\omega-\omega_{\text{old}}$ 换号后把「目标 − 输入」写成这个形式。）</p>
+<p>两步迭代到收敛。$M&gt;1$ 时<strong>前向分阶段</strong>建模：每一阶段加一对 $(\omega_m,g_m)$。</p>
+<div class="aside warn"><p class="hd">坑</p><p>一维光滑器必须<strong>同时给出一阶导</strong>。局部回归与光滑样条都满足这个条件，但核估计（Nadaraya–Watson）在边界处 $g'$ 发散，那一步就不可用了。这是第 6 章与本章交界处一个常被忽略的兼容性要求。</p></div>
+<hr>
+<h2 id="s-11-3" class="anchored"><span class="num">11.3</span> 神经网络</h2>
+<h3 id="s-11-3-1" class="anchored"><span class="num">11.3.1</span> 两阶段模型与激活函数</h3>
+<p>神经网络是<strong>两阶段的</strong>回归或分类模型。先由输入的线性组合造出派生特征 $Z_m$，再把目标 $Y_k$ 建模成这些 $Z_m$ 的线性组合的非线性函数：</p>
+<div class="eq long"><div class="escroll">
+$$
+Z_m=\sigma\big(\alpha_{0m}+\alpha_m^\top X\big),\quad m=1,\dots,M,\qquad T_k=\beta_{0k}+\beta_k^\top Z,\quad k=1,\dots,K
+$$
+</div><span class="tag">(11.5)</span></div>
+<p>$f_k(X)=g_k(T)$，其中 $Z=(Z_1,\dots,Z_M)$，$T=(T_1,\dots,T_K)$。激活函数通常取 sigmoid $\sigma(v)=1/(1+e^{-v})$。有时也用高斯径向基函数（第 6 章）作为 $\sigma$，这时得到<strong>径向基函数网络</strong>。</p>
+<div class="aside basis"><p class="hd">基础知识 · sigmoid 的三个可算性质</p><div class="eq"><div class="escroll">
+$$
+\sigma(v)=\frac{1}{1+e^{-v}},\qquad \sigma'(v)=\sigma(v)\big(1-\sigma(v)\big),\qquad \sigma(-v)=1-\sigma(v)
+$$
+</div></div>
+<p>推导第一条：$\dfrac{d}{dv}\left(1+e^{-v}\right)^{-1}=-\left(1+e^{-v}\right)^{-2}\cdot(-e^{-v})=\dfrac{e^{-v}}{(1+e^{-v})^2}$。 整理成 $\sigma(v)(1-\sigma(v))$：$\dfrac{e^{-v}}{(1+e^{-v})^2}=\dfrac{1}{(1+e^{v})(1+e^{-v})}=\left(\dfrac{1}{1+e^v}\right)\left(\dfrac{1}{1+e^{-v}}\right)=\sigma(-v)\sigma(v)$，用第三条。 第二条直接由 $\sigma(-v)=\frac{1-e^{-v}}{1+e^{-v}}=1-\frac{2e^{-v}}{1+e^{-v}}=1-\sigma(v)$。$\blacksquare$</p>
+<p>后向传播 (11.15) 只用到 $\sigma'$，softmax 交叉熵 (11.10) 的梯度只用到 $\sigma$ 与 $1-\sigma$ 的关系，所以这三行是整个算法的全部分析工具。</p></div>
+<p>网络图上常画一个偏置单元（bias unit）连到隐藏层和输出层的每个单元。把常数 $1$ 当作额外的输入特征，这个偏置单元就恰好对应截距 $\alpha_{0m}$ 与 $\beta_{0k}$。</p>
+<p>输出函数 $g_k(T)$ 允许对输出向量作最后的变换。回归取恒等 $g_k(T)=T_k$。早期 $K$ 类分类也用恒等，后来被 softmax 取代：</p>
+<div class="eq"><div class="escroll">
+$$
+g_k(T)=\frac{\exp(T_k)}{\sum_{\ell=1}^K\exp(T_\ell)}
+$$
+</div><span class="tag">(11.6)</span></div>
+<p>这正是第 4 章多项 logit 模型里的同一变换，输出为正且和为 1。</p>
+<div class="aside key"><p class="hd">结果</p><p>softmax 的平移不变性（后面 11.5.2 讨论初值时要用）</p>
+<p>任意 $c\in\mathbb{R}$，记 $S=\sum_\ell\exp(T_\ell)$，则</p>
+<div class="eq"><div class="escroll">
+$$
+\frac{\exp(T_k+c)}{\sum_\ell\exp(T_\ell+c)}=\frac{e^c\exp(T_k)}{e^c\sum_\ell\exp(T_\ell)}=\frac{\exp(T_k)}{S}
+$$
+</div></div>
+<p>所以<strong>给所有 $T_k$ 加同一个常数不改变任何输出</strong>。这条不变量引出 11.5.2 里输出层的一个「梯度零和」性质。</p></div>
+<h3 id="s-11-3-2" class="anchored"><span class="num">11.3.2</span> 与投影寻踪的同构</h3>
+<p>单隐层神经网络与 PPR 模型形式完全相同。把网络看成 PPR，有</p>
+<div class="eq"><div class="escroll">
+$$
+g_m\big(\omega_m^\top X\big)=\beta_m\,\sigma\big(\alpha_{0m}+\lVert\alpha_m\rVert\,(\omega_m^\top X)\big)
+$$
+</div><span class="tag">(11.7)</span></div>
+<p>其中 $\omega_m=\alpha_m/\lVert\alpha_m\rVert$ 是第 $m$ 个单位向量。</p>
+<div class="aside"><p class="hd">推导 · (11.7) 的验证</p><p>把 $\omega_m=\alpha_m/\lVert\alpha_m\rVert$ 代入 (11.5) 的第一式：</p>
+<div class="eq long"><div class="escroll">
+$$
+\sigma\big(\alpha_{0m}+\alpha_m^\top X\big)=\sigma\big(\alpha_{0m}+\lVert\alpha_m\rVert\,(\omega_m^\top X)\big)
+$$
+</div></div>
+<p>再乘上 $\beta_m$（这等价于 PPR 的 $g_m$ 取为「sigmoid 的标量倍数」）。$\blacksquare$</p>
+<p>注意 $\sigma(\beta,\alpha_0,s)(v)=\beta\sigma(\alpha_0+sv)$ 这个「$\beta,\alpha_0,s$」参数化里，$\alpha_0$ 与 $s=\lVert\alpha_m\rVert$ 在纯尺度意义下不可识别：同时放大 $\alpha_0$ 和 $s$ 并缩小 $\beta$ 会改变输出，所以网络本身有非唯一解。</p></div>
+<p>差别只在于复杂度：$\sigma_{\beta,\alpha_0,s}$ 形式固定，PPR 的 $g(v)$ 是完全非参数的。所以不奇怪，网络能用 20 到 100 个这样的函数，而 PPR 通常只用 $M=5$ 或 $10$ 项。</p>
+<div class="aside key"><p class="hd">结果</p><p>若 $\sigma$ 取恒等函数，整个模型退化为输入的<strong>线性模型</strong>。所以神经网络（回归与分类都如此）是线性模型的非线性推广：引入 $\sigma$ 后大大扩大了「线性模型」这个类，而线性模型的解读工具（系数、显著性、单个输入的作用）大体还能迁移。</p>
+<p>从 (11.7) 还读出激活的快慢由 $\lVert\alpha_m\rVert$ 控制：$\lVert\alpha_m\rVert$ 很小时单元工作在 sigmoid 的线性部分（图 11.3 中 $|v|$ 小处 $\sigma'(v)\approx1/4$），是个近线性特征；$\lVert\alpha_m\rVert$ 大时它接近一个硬阈值。</p></div>
+<h3 id="s-11-3-3" class="anchored"><span class="num">11.3.3</span> 权重集合</h3>
+<p>神经网络模型有未知参数（<strong>权重</strong>），合记为 $\theta$：</p>
+<div class="eq long"><div class="escroll">
+$$
+\theta=\Big\{\big(\alpha_{0m},\alpha_m\big);\,m=1,\dots,M\Big\}\cup\Big\{\big(\beta_{0k},\beta_k\big);\,k=1,\dots,K\Big\},\qquad M(p+1)\ \text{个}+K(M+1)\ \text{个}
+$$
+</div><span class="tag">(11.8)</span></div>
+<p>即第一部分 $M(p+1)$ 个权重，第二部分 $K(M+1)$ 个权重。这个计数在后面很关键：只要 $M(p+1)+K(M+1)&gt;N$，训练集误差就必然能压到 0（事实上每个 $N$ 维向量都能被插值，见下文 (11.9) 的注），所以必须靠正则化或早停。</p>
+<hr>
+<h2 id="s-11-4" class="anchored"><span class="num">11.4</span> 拟合神经网络</h2>
+<h3 id="s-11-4-1" class="anchored"><span class="num">11.4.1</span> 误差函数</h3>
+<p>回归用平方和误差作为拟合度量：</p>
+<div class="eq"><div class="escroll">
+$$
+R(\theta)=\sum_{i=1}^N\sum_{k=1}^K\left(y_{ik}-f_k(x_i)\right)^2
+$$
+</div><span class="tag">(11.9)</span></div>
+<p>分类可以用平方误差，也可以用交叉熵（deviance）：</p>
+<div class="eq"><div class="escroll">
+$$
+R(\theta)=-\sum_{i=1}^N\sum_{k=1}^K y_{ik}\log f_k(x_i)
+$$
+</div><span class="tag">(11.10)</span></div>
+<p>对应分类器是 $G(x)=\arg\max_k f_k(x)$。用 softmax 激活 + 交叉熵时，神经网络在隐藏单元上<strong>恰好是线性 logistic 回归</strong>，所有参数由极大似然估计。</p>
+<div class="aside key"><p class="hd">结果</p><p>softmax + 交叉熵 = 逻辑回归的极大似然</p>
+<p>把 (11.5)(11.6) 代入 (11.10)，令 $r_i$ 是第 $i$ 行的 $K$ 维 one-hot 向量：</p>
+<div class="eq long"><div class="escroll">
+$$
+R(\theta)=-\sum_i\sum_k y_{ik}\log\frac{e^{T_{ik}}}{\sum_\ell e^{T_{i\ell}}}=-\sum_i\sum_k y_{ik}T_{ik}+\sum_i\log\Big(\sum_\ell e^{T_{i\ell}}\Big)
+$$
+</div></div>
+<p>第一项对 $\beta$ 是线性的（$T_{ik}=\beta_{0k}+\beta_k^\top z_i$，$z_i$ 不依赖 $\beta$）；第二项是对 $T_{ik}$ 的 log-sum-exp，凸（由预备知识 P3：$\log\sum_\ell e^{\eta_\ell}$ 是 log-分母函数，二阶导等于后验方差 $\ge0$）。$R$ 关于 $\beta$ 严格凸，故解唯一——这与第 4 章的结论一致。$\blacksquare$</p>
+<p><strong>正因如此，网络唯一非线性的部分被隔离在隐藏层 $z_i=\sigma(\alpha_0+\alpha^\top x)$ 里</strong>，而这一层的曲率完全由 $\sigma$ 决定。</p></div>
+<p>通常我们并不想要 $R(\theta)$ 的全局极小点——那很可能是过拟合解。所以需要正则化，或者用<strong>早停</strong>间接达到（详见下一节）。</p>
+<div class="aside warn"><p class="hd">坑</p><p>(11.9) 在参数数超过数据量时总能取到 0 训练误差，这是插值而非「学得好」。原文 ZIP 码一节明确说「五个网络的训练集误差都是 0%」。任何「训练误差为 0」的网络性能陈述都必须配上验证/测试误差。</p></div>
+<h3 id="s-11-4-2" class="anchored"><span class="num">11.4.2</span> 后向传播</h3>
+<p>最小化 $R(\theta)$ 的通用办法是梯度下降，在本设置里称为<strong>后向传播</strong>。因为模型是复合形式，梯度可以用微分链式法则容易地导出，而且只需对网络做一次<strong>前向</strong>和一次<strong>后向</strong>扫描，只记录<strong>局部于每个单元</strong>的量。</p>
+<p>下面给平方误差的完整推导。记 $z_{mi}=\sigma(\alpha_{0m}+\alpha_m^\top x_i)$（由 (11.5)），$z_i=(z_{1i},\dots,z_{Mi})$。则</p>
+<div class="eq"><div class="escroll">
+$$
+R(\theta)\equiv\sum_{i=1}^N R_i,\qquad R_i=\sum_{i=1}^N\sum_{k=1}^K\left(y_{ik}-f_k(x_i)\right)^2
+$$
+</div><span class="tag">(11.11)</span></div>
+<p>其导数为</p>
+<div class="eq"><div class="escroll">
+$$
+\frac{\partial R_i}{\partial\beta_{km}}=-2\left(y_{ik}-f_k(x_i)\right)g'_k\big(\beta_k^\top z_i\big)\,z_{mi}
+$$
+</div><span class="tag">(11.12)</span></div>
+<div class="eq long"><div class="escroll">
+$$
+\frac{\partial R_i}{\partial\alpha_{m\ell}}=-2\sum_{k=1}^K\left(y_{ik}-f_k(x_i)\right)\,g'_k\big(\beta_k^\top z_i\big)\,\beta_{km}\,\sigma'\big(\alpha_m^\top x_i\big)\,x_{i\ell}
+$$
+</div><span class="tag">(11.12)</span></div>
+<div class="aside"><p class="hd">推导</p><p>(11.12) 第一式：$\partial R_i/\partial\beta_{km}$</p>
+<p>从残差出发，逐步用链式法则。令 $r_{ik}=y_{ik}-f_k(x_i)$。</p>
+<p>第 1 步（外层平方）：$\dfrac{\partial}{\partial f}\left(y-f\right)^2=2(y-f)\cdot(-1)=-2(y-f)=-2r$。</p>
+<p>第 2 步（$f_k$ 对 $T$ 的导数）：$f_k=g_k(T)$，所以 $\dfrac{\partial f_k}{\partial T_k}=g'_k(T_k)=g'_k(\beta_k^\top z_i)$。</p>
+<p>第 3 步（$T_k$ 对 $\beta_k$ 的导数）：$T_k=\beta_{0k}+\beta_k^\top z_i=\beta_{0k}+\sum_{j=1}^M\beta_{kj}z_{ji}$。由预备知识 L4 的 $\nabla_x(a^\top x)=a$（$a$ 固定），对 $\beta_{km}$ 求导得 $\dfrac{\partial T_k}{\partial\beta_{km}}=z_{mi}$；偏置项 $\partial T_k/\partial\beta_{0k}=1$。</p>
+<p>三者相乘：</p>
+<div class="eq long"><div class="escroll">
+$$
+\frac{\partial R_i}{\partial\beta_{km}}=\underbrace{-2r_{ik}}_{\text{第 1 步}}\cdot\underbrace{g'_k(\beta_k^\top z_i)}_{\text{第 2 步}}\cdot\underbrace{z_{mi}}_{\text{第 3 步}}\qquad\blacksquare
+$$
+</div></div>
+<p>验证量纲：若 $g_k(t)=t$（回归），则 $g'_k\equiv1$，式子变成 $-2r_{ik}z_{mi}$，正是 $\partial r_{ik}^2/\partial\beta_{km}=2r_{ik}\cdot(-z_{mi})$。</p></div>
+<div class="aside"><p class="hd">推导</p><p>(11.12) 第二式：$\partial R_i/\partial\alpha_{m\ell}$，以及「四个外积之和」的来源</p>
+<p>$R_i$ 对 $\alpha_{m\ell}$ 的依赖是<strong>嵌套</strong>的，必须把 $f_k\to T_k\to z_{mi}\to\alpha_{0m}+\alpha_m^\top x_i\to\alpha_{m\ell}$ 四层链式法则全写出来。</p>
+<p>第 1 步：$\dfrac{\partial R_i}{\partial T_k}=-2r_{ik}\,g'_k(T_k)$，与 $\beta$ 的情形一样。</p>
+<p>第 2 步：$T_k=\beta_{0k}+\sum_j\beta_{kj}z_{ji}$，故 $\dfrac{\partial T_k}{\partial z_{mi}}=\beta_{km}$。这一项的来源是「$T$ 是 $z$ 的线性函数」，而<strong>系数正是我们要反解的那个权重</strong> $\beta_{km}$（它由前向传播算出，被后向传播复用）。</p>
+<p>第 3 步：$z_{mi}=\sigma(u_{mi})$，$u_{mi}:=\alpha_{0m}+\alpha_m^\top x_i$，故 $\dfrac{\partial z_{mi}}{\partial u_{mi}}=\sigma'(u_{mi})=\sigma'(\alpha_m^\top x_i+\alpha_{0m})$（书上省略 $\alpha_{0m}$ 写成 $\alpha_m^\top x_i$）。</p>
+<p>第 4 步：$u_{mi}=\alpha_{0m}+\sum_{\ell=1}^p\alpha_{m\ell}x_{i\ell}$，故 $\dfrac{\partial u_{mi}}{\partial\alpha_{m\ell}}=x_{i\ell}$，且 $\dfrac{\partial u_{mi}}{\partial\alpha_{0m}}=1$。</p>
+<p>连乘并对 $k$ 求和：</p>
+<div class="eq long"><div class="escroll">
+$$
+\frac{\partial R_i}{\partial\alpha_{m\ell}}=\sum_{k=1}^K\left[-2r_{ik}\,g'_k(\beta_k^\top z_i)\right]\cdot\beta_{km}\cdot\sigma'(u_{mi})\cdot x_{i\ell}\qquad\blacksquare
+$$
+</div></div>
+<p><strong>为什么是「四个外积之和」</strong>：把上式整理成矩阵形式。令 $r_i\in\mathbb{R}^K$ 为第 $i$ 个残差向量，$B\in\mathbb{R}^{K\times M}$ 为输出权重矩阵，$\sigma_i'\in\mathbb{R}^M$ 为隐藏层激活导数向量，$x_i\in\mathbb{R}^p$ 为输入：</p>
+<div class="eq"><div class="escroll">
+$$
+\frac{\partial R_i}{\partial B^\top}=-2\,\mathrm{diag}\big(r_i\big)\,\mathrm{diag}\big(g'(T_i)\big)\,Z_i^\top
+$$
+</div></div>
+<div class="eq long"><div class="escroll">
+$$
+\frac{\partial R_i}{\partial \alpha_m}=-2\left(\sum_{k=1}^K r_{ik}\,g'_k(\beta_k^\top z_i)\,\beta_{km}\right)\sigma'(u_{mi})\,x_i=-2\,\big[B\,\mathrm{diag}(r_i)\odot g'(T_i)\big]_m\,\sigma'(u_{mi})\,x_i
+$$
+</div></div>
+<p>这里出现 $\odot$（逐元素积），因为<strong>第 $k$ 个输出单元有自己的 $r_{ik}$ 和 $g'_k$</strong>，先把它们收缩成 $M$ 维向量（对 $k$ 求和、带 $\beta_{km}$），再与标量 $\sigma'(u_{mi})$ 和向量 $x_i$ 做外积。四个因子分别是</p>
+<ul><li><strong>$r_i$</strong>（残差，来自平方损失）</li><li><strong>$g'(T_i)$</strong>（输出非线性）</li><li><strong>$\sigma'(u_i)$</strong>（隐藏层非线性）</li><li><strong>$x_i$</strong>（输入方向）</li></ul>
+<p>记 $\delta_{ki}$：$=-2r_{ik}\,g'_k(\beta_k^\top z_i)$，$s_{mi}:=\sigma'(u_{mi})\sum_k\beta_{km}\delta_{ki}$，则上式化为 $\partial R_i/\partial\alpha_{m\ell}=s_{mi}x_{i\ell}$——<strong>$M$ 个外积之和</strong>。每个样本贡献一个 $(\text{标量})\times(\text{向量})$ 的外积，梯度的样本依赖完全由残差向量承载。这是「反向传播」名字的来源：误差 $\delta$ 从输出层<strong>往回</strong>传到隐藏层，再（借助已知的 $x_i$）生成权重梯度。</p></div>
+<p>有了这些导数，梯度下降更新（第 $r+1$ 次迭代）为</p>
+<div class="eq long"><div class="escroll">
+$$
+\beta_{km}^{(r+1)}=\beta_{km}^{(r)}-\gamma^{(r)}\sum_{i=1}^N\frac{\partial R_i}{\partial\beta_{km}},\qquad
+\alpha_{m\ell}^{(r+1)}=\alpha_{m\ell}^{(r)}-\gamma^{(r)}\sum_{i=1}^N\frac{\partial R_i}{\partial\alpha_{m\ell}}
+$$
+</div><span class="tag">(11.13)</span></div>
+<p>其中 $\gamma^{(r)}$ 是学习率。</p>
+<p>把 (11.12) 重写为「误差」的形式：</p>
+<div class="eq long"><div class="escroll">
+$$
+\frac{\partial R_i}{\partial\beta_{km}}=\delta_{ki}\,z_{mi},\qquad \frac{\partial R_i}{\partial\alpha_{m\ell}}=s_{mi}\,x_{i\ell}
+$$
+</div><span class="tag">(11.14)</span></div>
+<p>其中 $\delta_{ki}=-2r_{ik}\,g'_k(\beta_k^\top z_i)$ 是输出层单元的误差，$s_{mi}$ 是隐藏层单元的误差。由定义可得</p>
+<div class="eq"><div class="escroll">
+$$
+s_{mi}=\sigma'\big(\alpha_m^\top x_i\big)\sum_{k=1}^K\beta_{km}\,\delta_{ki}
+$$
+</div><span class="tag">(11.15)</span></div>
+<div class="aside"><p class="hd">推导</p><p>(11.15)：隐藏层误差是「$k$ 方向加权求和后再乘本地导数」</p>
+<p>用 (11.14) 的第二式与 (11.12) 第二式比较：$\partial R_i/\partial\alpha_{m\ell}=s_{mi}x_{i\ell}$，两边同乘 $1/x_{i\ell}$（对至少一个 $\ell\ne0$）再对 $i,k$ 逐项比较，得</p>
+<div class="eq"><div class="escroll">
+$$
+s_{mi}=\sum_{k=1}^K\big[-2r_{ik}g'_k(\beta_k^\top z_i)\big]\cdot\beta_{km}\cdot\sigma'(u_{mi})
+$$
+</div></div>
+<p>把标量 $\sigma'(u_{mi})$ 提出求和号即得 (12.15)。$\blacksquare$</p>
+<p>注意 (11.15) 里 $\beta_{km}$ 是<strong>前向传播已算出的权重</strong>，$\sigma'$ 是<strong>本地量</strong>，$\delta_{ki}$ 是上一层传回的量。三者都不需要全局信息，所以 (11.15) 可以在并行硬件上实现——这就是「局部性」的严格含义。</p></div>
+<p>利用 (11.15)，更新 (11.13) 可用<strong>两趟扫描</strong>实现：</p>
+<ul><li><strong>前向</strong>：固定当前权重，按 (11.5) 算出 $\hat f_k(x_i)$。</li><li><strong>后向</strong>：算出 $\delta_{ki}$，再用 (11.15) 传回得 $s_{mi}$。</li><li>两组误差经 (11.14) 给出更新 (11.13) 所需的梯度。</li></ul>
+<p>这个两趟过程就是<strong>后向传播</strong>，也叫 delta rule（Widrow & Hoff, 1960）。交叉熵情形的计算组件形式相同（Exercise 11.3）。</p>
+<div class="aside key"><p class="hd">结果 · 后向传播的可复核等价形式</p><p>把 (11.14)(11.15) 代回 (11.13)，并对 $r,r+1$ 作差，得到权重变化量</p>
+<div class="eq long"><div class="escroll">
+$$
+\Delta\beta_{km}=\gamma^{(r)}\sum_i\delta_{ki}z_{mi},\qquad \Delta\alpha_{m\ell}=\gamma^{(r)}\sum_i s_{mi}x_{i\ell}
+$$
+</div></div>
+<p>第一式：$\Delta\beta_{km}$ 是「误差向量 $\delta_i$」与「激活向量 $z_i$」的逐项内积在样本上的求和。第二式：$\Delta\alpha_{m\ell}$ 是 $\sigma'(u_{mi})$ 加权后的误差与输入的内积。两条都只用<strong>一次矩阵–向量乘</strong>，与参数个数成正比（见预备知识 N3），这解释了为什么后向传播能处理 $p$ 很大的问题。</p></div>
+<h3 id="学习率与随机逼近-s-11-4-3-2" class="anchored"><span class="num">11.4.3</span> 学习率与随机逼近 {#s-11.4-3}</h3>
+<p>更新 (11.13) 是一种<strong>批量学习</strong>，参数更新是所有训练样本的求和。也可以<strong>在线</strong>学习：逐个处理观测，每处理一个就更新梯度，多轮循环。此时 (11.13) 里的求和换成单个加项。<strong>一个训练 epoch</strong> 指扫过整个训练集一次。在线学习让网络能处理极大的训练集，并能在新观测到来时更新权重。</p>
+<p>批学习的学习率 $\gamma^{(r)}$ 通常取常数，也可以用线搜索最小化误差函数来优化它。在线学习时 $\gamma^{(r)}$ 应随 $r\to\infty$ 降到 0。这种学习是随机逼近（Robbins & Munro, 1951）；该领域的结果保证：若</p>
+<div class="eq"><div class="escroll">
+$$
+\gamma^{(r)}\to0,\qquad \sum_{r}\gamma^{(r)}=\infty,\qquad \sum_r\big(\gamma^{(r)}\big)^2&lt;\infty
+$$
+</div></div>
+<p>则收敛。$\gamma^{(r)}=1/r$ 满足全部三条（调和级数发散，平方可和 $\pi^2/6&lt;\infty$）。</p>
+<div class="aside"><p class="hd">推导</p><p>在线更新的梯度方差，以及「为什么必须 $\sum\gamma=\infty$」</p>
+<p>把 $R(\theta)=\sum_{i=1}^N R_i(\theta)$ 写成经验平均 $R(\theta)=\frac1N\sum_{i=1}^N \ell_i(\theta)$，$\ell_i=N R_i$。定义随机梯度估计量</p>
+<div class="eq"><div class="escroll">
+$$
+\widetilde\nabla R(\theta)=\nabla \ell_{I}(\theta),\qquad I\sim\text{Uniform}\{1,\dots,N\}
+$$
+</div></div>
+<p><strong>无偏性</strong>：由全期望公式（预备知识 P2），$\mathbb{E}[\widetilde\nabla R]=\frac1N\sum_{i=1}^N\nabla R_i=\nabla R$，因为对每个 $\theta$ $\nabla \ell_i(\theta)=N\nabla R_i(\theta)$ 是常数，期望不改变它。</p>
+<p><strong>方差</strong>：由 $\mathbb{E}[A^2]=(\mathbb{E}A)^2+\mathrm{Var}(A)$ 与全方差公式（预备知识 P2），</p>
+<div class="eq verylong"><div class="escroll">
+$$
+\mathrm{Var}(\widetilde\nabla R)=\mathbb{E}\big[\lVert\nabla\ell_I-\nabla R\rVert^2\big]=\frac1N\sum_{i=1}^N\big\lVert\nabla\ell_i(\theta)-\nabla R(\theta)\big\rVert^2=\frac{N}{N^2}\sum_{i=1}^N\lVert\nabla R_i(\theta)\rVert^2
+$$
+</div></div>
+<div class="eq"><div class="escroll">
+$$
+\boxed{\ \mathrm{Var}(\widetilde\nabla R)=\frac{1}{N}\sum_{i=1}^N\big\lVert\nabla R_i(\theta)\big\rVert^2\ }
+$$
+</div></div>
+<p>即<strong>批次均值的梯度方差等于各样本梯度的平方范数的平均</strong>（线性二乘回归里这正是 $\mathrm{Cov}(X^\top X)/N^2$）。三个推论：</p>
+<ol><li>$N$ 增大时梯度噪声按 $1/\sqrt N$ 衰减，这就是批学习收敛快的原因。</li><li>迭代 $\gamma^{(r)}\widetilde\nabla R$ 的<strong>稳态二阶矩</strong>约为 $\big(\gamma^{(r)}\big)^2\mathrm{Var}$，所以要它趋于 0 就要求 $\sum_r (\gamma^{(r)})^2&lt;\infty$。</li><li>一阶矩的漂移是 $\mathbb{E}[\gamma^{(r)}\widetilde\nabla R]=\gamma^{(r)}\nabla R$，要抵消初始误差 $\lVert\theta^{(0)}-\theta^\star\rVert$ 就要求 $\sum_r\gamma^{(r)}=\infty$。</li></ol>
+<p>两者相加正好是 Robbins–Monro 的三个条件。$\blacksquare$</p>
+<p><strong>坑</strong>：上面的方差公式<strong>没有</strong>假设 $R_i$ 之间独立，独立性只在「样本梯度本身随机」时才需要。实际中 $x_i$ 是固定的设计矩阵，$R_i$ 的「随机性」来自 $y_i$；此时条件化在 $X$ 上、由 P2 的全方差公式仍给出同一个式子（因为给定 $X$ 后各 $y_i$ 的噪声常常独立）。这个区分在小样本或残差相关（时间序列）时很重要——见 §11.6。</p></div>
+<p>后向传播可能很慢，因此通常不是首选方法。二阶技术如牛顿法在这里也不吸引人，因为 $R$ 的二阶导矩阵（海森矩阵）可能非常大。更好的拟合方法包括共轭梯度与可变度量方法：它们避免显式计算二阶导矩阵，同时收敛更快。</p>
+<h3 id="s-11-4-4" class="anchored"><span class="num">11.4.4</span> 海森矩阵的形状与秩</h3>
+<div class="aside"><p class="hd">推导 · 为什么二阶方法在这里失效</p><p>参数总数 $q=M(p+1)+K(M+1)$（见 (11.8)）。海森矩阵是 $q\times q$ 的，所以显式构造并做 Cholesky 分解的代价是 $O(q^3)$。当 $p=256$（ZIP 码像素）、$M=20$ 时 $q=20\cdot257+10\cdot21=5350$，$q^3\approx1.5\times10^{11}$ —— 比一次前向传播贵六个数量级。这就是原文说「海森矩阵非常大」的原因。</p>
+<p>更本质的问题是<strong>秩</strong>。海森的 $\beta$-块可以直接算出。记 $r_i$ 为第 $i$ 个样本的残差向量，$Z$ 为 $N\times M$ 的隐藏层输出矩阵（$Z_{im}=z_{mi}$）。取 $K=1$ 便于看清结构：</p>
+<div class="eq"><div class="escroll">
+$$
+R(\beta)=\sum_{i=1}^N\big(y_i-\beta_0-\beta^\top z_i\big)^2\ \Rightarrow\ \nabla^2_{\beta\beta}R=2ZZ^\top
+$$
+</div></div>
+<p>验证：$\nabla_\beta R=-2Z^\top r$，$r=y-\beta_0\mathbf 1-Z\beta$。因为 $\nabla_\beta r=-Z$，所以</p>
+<div class="eq"><div class="escroll">
+$$
+\nabla^2_{\beta\beta}R=-2\frac{\partial(Z^\top r)}{\partial\beta}=-2Z^\top(-Z)=2ZZ^\top\qquad\blacksquare
+$$
+</div></div>
+<p>$ZZ^\top$ 是 $N\times N$ 的秩不超过 $M$ 的矩阵：写 $Z=U\Sigma V^\top$（SVD，见预备知识 L3），$U\in\mathbb{R}^{N\times M}$ 列正交，于是</p>
+<div class="eq"><div class="escroll">
+$$
+ZZ^\top=U\Sigma^2U^\top
+$$
+</div></div>
+<p>的非零特征值恰为 $\sigma_1^2,\dots,\sigma_M^2$（$\sigma_j$ 是 $Z$ 的奇异值），<strong>其余 $N-M$ 个特征值为 0</strong>。所以 $\nabla^2_{\beta\beta}R$ 至多有 $M$ 个非零特征值、零空间维数至少 $N-M$。</p>
+<p>推广到一般 $K$：$\partial r_{ik}/\partial\beta_{k'm'}=-\delta_{kk'}z_{im'}$，故</p>
+<div class="eq"><div class="escroll">
+$$
+\frac{\partial^2R}{\partial\beta_{km}\,\partial\beta_{k'm'}}=2\,\delta_{kk'}\sum_{i=1}^N z_{im}z_{im'}
+$$
+</div></div>
+<p><strong>$\delta_{kk'}$ 说明 $K$ 个块互不耦合</strong>，每块是 $2Z_kZ_k^\top$，秩 $\le\min(N,M)$。所以</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{rank}\big(\nabla^2_{\beta\beta}R\big)\le K\cdot\min(N,M)
+$$
+</div></div>
+<p>$\alpha$-块没有这么整齐的结构：$R$ 通过 $z_{mi}=\sigma(u_{mi})$ 间接依赖 $\alpha$，二阶导里会同时出现 $\sigma''$。但可以给出一个更漂亮的<strong>显式零方向</strong>。设存在两个隐藏单元 $m,m'$ 使得它们的激活向量在所有样本上仿射相关：$z_{im'}=a\,z_{im}+b$，$a,b$ 为常数（最常见的情形是 $m'=m$，即两个单元完全相同；也包括 logistic 输出 $f_k=\sum_m\beta_{km}z_{mi}$ 里 $z_{mi}$ 取同一 $\sigma$ 的两个仿射重标定时）。此时 $f$ 只通过 $b_{m,m'}:=\beta_{km}+a\beta_{km'}$ 与常数 $\beta_{km'}b$ 依赖这一对单元。沿方向</p>
+<div class="eq"><div class="escroll">
+$$
+v:\quad \delta\beta_{km}=-a,\qquad \delta\beta_{km'}=0
+$$
+</div></div>
+<p>移动（一阶）不改变任何 $f_k(x_i)$，故</p>
+<div class="eq"><div class="escroll">
+$$
+\nabla_\theta R^\top v=0\ \text{且}\ \nabla^2_\theta R\,v=0
+$$
+</div></div>
+<p>即 $v$ 是海森的零特征方向，<strong>而且零空间维数至少是「重复单元数」</strong>。</p>
+<p><strong>这与 §11.8 的可识别性讨论是同一件事</strong>：存在 $\alpha_m$ 张成同一线性空间的另一组解，预测值大致相同。$\blacksquare$</p>
+<p><strong>结论</strong>：$q$ 个参数，但二阶曲率信息只在 $\mathrm{rank}\le K\min(N,M)$（$\beta$ 块）加若干零特征方向的范围内有内容。牛顿法的「步长」在大片零方向上是任意的（步到哪儿都是近似极小），所以</p>
+<ul><li>要么加阻尼（$\nabla^2 R+\tau I$，即 Levenberg–Marquardt，$\tau$ 大时梯度法，$\tau\to0$ 时牛顿法）</li><li>要么换共轭梯度 / 可变度量法（它们只需要 $q$ 个标量对角近似 $O(q^2)$）</li><li>要么直接用 SGD（见 §11.4.3，一次 $O(q)$）</li></ul></div>
+<p><a class="src" href="../esl/ch11-neural-networks.html#s-11-4">原文 §11.4</a></p>
+<hr>
+<h2 id="s-11-5" class="anchored"><span class="num">11.5</span> 训练中的若干问题</h2>
+<h3 id="s-11-5-1" class="anchored"><span class="num">11.5.1</span> 初值与权重空间的对称性</h3>
+<div class="aside"><p class="hd">推导 · 权重空间的对称群，以及它为什么让算法「卡住」</p><p>模型输出是</p>
+<div class="eq"><div class="escroll">
+$$
+f_k(X)=g_k(T),\qquad T_k=\beta_{0k}+\sum_{m=1}^M\beta_{km}\,\sigma\big(\alpha_{0m}+\alpha_m^\top X\big)
+$$
+</div></div>
+<p>只依赖 $\{\alpha_{0m},\alpha_m,\beta_{km}\}$ 通过 $Z_m$ 的<strong>配对</strong>。对任意置换矩阵 $P\in\mathbb{R}^{M\times M}$（$P^\top P=I$），</p>
+<div class="eq long"><div class="escroll">
+$$
+\tilde\alpha_m=\alpha_{\pi(m)},\qquad \tilde\beta_{km}=\beta_{k,\pi(m)}\qquad(\pi\ \text{是 } \{1,\dots,M\}\ \text{的置换})
+$$
+</div></div>
+<p>给出<strong>完全相同</strong>的 $\tilde Z_m=\sigma(\tilde\alpha_{0m}+\tilde\alpha_m^\top X)=\sigma(\alpha_{0,\pi(m)}+\alpha_{\pi(m)}^\top X)=Z_{\pi(m)}$，于是</p>
+<div class="eq"><div class="escroll">
+$$
+\tilde T_k=\beta_{0k}+\sum_m\beta_{k,\pi(m)}Z_{\pi(m)}=\beta_{0k}+\sum_{m'}Z_{m'}\beta_{km'}=T_k
+$$
+</div></div>
+<p><strong>结论 1</strong>：$R(\theta)$ 对 $M$ 个隐藏单元的 $M!$ 个排列完全不变。$\blacksquare$</p>
+<p>把所有权重取零是一个<strong>不动点</strong>：$\nabla R(\theta)=0$ 于 $\theta=0$（因为 $\partial R/\partial\beta_{km}=-2\sum_i r_{ik}z_{mi}$，而 $z_{mi}=\sigma(0)=1/2$、$r_{ik}=y_{ik}-g_k(\mathbf 1\beta_0)$，若所有 $\beta_{0k}$ 也为 0 且 $y$ 对称则恰为 0；即使不完全为 0，$R$ 关于隐藏单元的梯度在 $\alpha_m=0$ 时各项相同，于是梯度下降<strong>永远无法打破对称</strong>，两个单元永远学出同一个东西）。</p>
+<p>更精确地说：$\partial R/\partial\alpha_m=\sum_{i,k}\delta_{ki}\sigma'(0)\beta_{km}x_i$，在 $\alpha_m=0$ 对所有 $m$ 都相同（因为 $\beta_{km}$ 初期也相同）。因此 $\alpha_1=\alpha_2=\dots=\alpha_M$ 是一条<strong>不变子流形</strong>，梯度法在其法向上的分量不受任何力。原文说「用精确零权重会导致零导数和完全对称，算法永不移动」，就是这个意思。</p>
+<p><strong>结论 2（结论 1 的 $K$ 元版本）</strong>：若用 softmax 输出 + 交叉熵，则</p>
+<div class="eq"><div class="escroll">
+$$
+\frac{\partial R}{\partial\beta_{0k}}=-\sum_{i=1}^N y_{ik}+\sum_{i=1}^N f_k(x_i)
+$$
+</div></div>
+<p>由 $\sum_k y_{ik}=1=\sum_k f_k(x_i)$，对 $k$ 求和得 $\sum_k\partial R/\partial\beta_{0k}=0$。所以<strong>输出层截距的梯度之和恒为零</strong>：给 $\beta_{0k}$ 加上同一个常数（$k$ 任意）不改变 $R$，由 11.3.1 的 softmax 平移不变性直接得到。这也是一个一维的连续对称群 $SO(1)$。</p>
+<p>综上，权重空间的对称群至少包含 $S_M$（$M!\ge6!$ 个元素的离散群）和上面的平移群。<strong>初值必须打破它们</strong>：原文的做法是取「零附近的随机值」（标准化输入后 $[-0.7,+0.7]$ 上的均匀分布）。$S_M$ 被随机性打破；平移群在交叉熵下天然无害（梯度已在零和子空间内，数值上只会慢一点）。</p>
+<p><strong>代价</strong>：正因为对称性被打乱，不同初值得到不同的局部极小（§11.5.5），所以必须多次随机初值。</p></div>
+<h3 id="s-11-5-2" class="anchored"><span class="num">11.5.2</span> 过拟合与权重衰减</h3>
+<p>网络往往权重太多，在 $R$ 的全局极小点处过拟合。早期发展中，早期停止规则被有意或无意地用来避免过拟合：只训一小会儿，在接近全局极小之前就停。由于权重从高度正则化（近线性）的解出发，效果就是把最终模型收缩向线性模型。验证集有助于决定何时停，因为期望验证误差开始上升。</p>
+<p>更显式的正则化方法是<strong>权重衰减</strong>，它类似于线性模型的岭回归（第 3 章 §3.4.1）。在误差函数上加惩罚项 $R(\theta)+\lambda J(\theta)$，其中</p>
+<div class="eq"><div class="escroll">
+$$
+J(\theta)=\sum_{k=1}^K\sum_{m=1}^M\beta_{km}^2+\sum_{m=1}^M\sum_{\ell=1}^p\alpha_{m\ell}^2
+$$
+</div><span class="tag">(11.16)</span></div>
+<p>$\lambda\ge0$ 是调节参数。$\lambda$ 越大权重越被压向零，通常用交叉验证估计 $\lambda$。惩罚的效果就是在梯度表达式 (11.13) 中简单地加上 $2\beta_{km}$ 与 $2\alpha_{m\ell}$。另一种惩罚是</p>
+<div class="eq long"><div class="escroll">
+$$
+J(\theta)=\sum_{k=1}^K\sum_{m=1}^M\frac{\beta_{km}^2}{1+\beta_{km}^2}+\sum_{m=1}^M\sum_{\ell=1}^p\frac{\alpha_{m\ell}^2}{1+\alpha_{m\ell}^2}
+$$
+</div><span class="tag">(11.17)</span></div>
+<p>称为<strong>权重消除惩罚</strong>。它比 (11.16) 更强地收缩小权重。</p>
+<div class="aside"><p class="hd">推导</p><p>(11.16) 的约束形式与拉格朗日形式等价（KKT）</p>
+<p>岭回归里「加惩罚」与「加约束」等价（第 3 章 (3.41) 起）。这里给完整论证，网络情形逐字成立。</p>
+<p><strong>第一步</strong>：把惩罚形式写成「带参数的形式」。目标</p>
+<div class="eq"><div class="escroll">
+$$
+F(\theta,\lambda)=R(\theta)+\lambda J(\theta),\qquad \lambda\ge0
+$$
+</div></div>
+<p>与「约束形式」</p>
+<div class="eq"><div class="escroll">
+$$
+G(t):=\min_\theta R(\theta)\quad \text{s.t.}\quad J(\theta)\le t
+$$
+</div></div>
+<p>的关系是：<strong>存在 $\lambda^\star\ge0$、$t^\star$ 使得 $F$ 在 $\theta^\star$ 取极小且 $J(\theta^\star)=t^\star$</strong>，反之亦然（约束非活跃时对应 $\lambda^\star=0$）。</p>
+<p><strong>第二步</strong>：写出拉格朗日函数（预备知识 O1）</p>
+<div class="eq"><div class="escroll">
+$$
+L(\theta,\lambda)=R(\theta)+\lambda\big[J(\theta)-t\big],\qquad \lambda\ge0
+$$
+</div></div>
+<p><strong>第三步</strong>：KKT 四个条件（预备知识 O2）对 $\theta^\star,\lambda^\star$：</p>
+<ul><li>原始可行：$J(\theta^\star)\le t$</li><li>对偶可行：$\lambda^\star\ge0$</li><li>互补松弛：$\lambda^\star\,[J(\theta^\star)-t]=0$</li><li>平稳性：$\nabla R(\theta^\star)+\lambda^\star\nabla J(\theta^\star)=0$</li></ul>
+<p>平稳性方程正是 $\theta^\star$ 在 $F(\cdot,\lambda^\star)$ 下的极小条件（一阶条件，因为 $R+\lambda J$ 是 $C^1$）。所以 $\theta^\star$ 是惩罚形式的极小点。$\blacksquare$</p>
+<p><strong>第四步（本题特有的两条校验）</strong>：</p>
+<ol><li><em>互补松弛给出「$t$ 松 → $\lambda$ 大」的单调对应</em>。因为 $J$ 是严格凸的二次函数，$R(\theta^\star)+\lambda J(\theta^\star)$ 对 $\lambda$ 严格单调递增（$\lambda$ 增大必然使极小点的 $J$ 值减小），故 $t\mapsto\lambda^\star$ 是单调双射，$t^\star\to\infty\Leftrightarrow\lambda^\star\to0$（无约束极限），$t^\star\to0\Leftrightarrow\lambda^\star\to\infty$（常数模型）。</li><li><em>约束形式确实非空</em>：$t&gt;0$ 时 $\theta=0$ 给出 $J=0\le t$，可行。$t=0$ 时只有 $\theta=0$ 可行（因 $J$ 是平方和），对应<strong>纯常数模型</strong>。</li></ol>
+<p>对本问题 $J(\theta)=\sum\beta_{km}^2+\sum\alpha_{m\ell}^2$，故 $\nabla J$ 的分量是 $(\partial J/\partial\beta_{km})=2\beta_{km}$、$(\partial J/\partial\alpha_{m\ell})=2\alpha_{m\ell}$，这与原文说的「在 (11.13) 里加上 $2\beta_{km}$ 和 $2\alpha_{m\ell}$」逐字对应。$\blacksquare$</p>
+<p><strong>坑</strong>：$J$ <strong>不含</strong>偏置 $\beta_{0k},\alpha_{0m}$。这不是笔误：截距不受收缩恰好保留了「纯常数预测」这个端点（对应 $t\to0$），也与 §11.3.1 的平移对称群一致。</p></div>
+<div class="aside warn"><p class="hd">坑</p><p>权重衰减<strong>不是</strong> $\ell_1$ 惩罚，所以不会产生精确零——(11.16) 的解每个分量都非零。(11.17) 也不是 $\ell_1$，只是让小权重更快趋零；真正的稀疏选择要靠第 3 章的 lasso。原文的措辞「shrink smaller weights more than (11.16)」应理解为「更偏向性地收缩小权重」。</p></div>
+<p>图 11.4 给出十个隐藏单元的网络在第 2 章混合数据上的训练结果：上面板无权重衰减，下面板有——权重衰减明显改善了预测。图 11.5 是训练所得权重的热图（Hinton 图）：权重衰减在<strong>两层</strong>都抑制了权重，最终权重较均匀地分布在十个隐藏单元上。</p>
+<h3 id="s-11-5-3" class="anchored"><span class="num">11.5.3</span> 输入的标度</h3>
+<p>输入的标度决定底层权重的有效标度，因此对最终解的质量影响很大。一开始最好把所有输入标准化到均值 0、标准差 1。这保证所有输入在正则化过程中被同等对待，也使得随机初值有一个合理的取值范围。标准化输入后，通常取 $[-0.7,+0.7]$ 上的随机均匀权重。</p>
+<div class="aside key"><p class="hd">结果 · 为什么「等标度」在权重衰减下是必需的</p><p>惩罚项是 $\sum_m\sum_\ell\alpha_{m\ell}^2$（权重<strong>的</strong>平方和），不是 $\sum_{m,\ell}(\alpha_{m\ell}x_{i\ell})^2$（<strong>贡献</strong>的平方和）。若 $x_j$ 的标准差是 $s_j$，则第 $j$ 个输入单位对输出的边际贡献正比于 $\alpha_{mj}s_j$，而它在惩罚里的代价正比于 $\alpha_{mj}^2$。因此隐式地，<strong>输入 $j$ 被赋予的有效正则化强度是 $\lambda/s_j^2$</strong>（可由 §11.4.3 的方差公式复核：$\mathrm{Var}(\partial R_i/\partial\alpha_{mj})/N\propto\|x_i\|^2$ 的第 $j$ 分量 $\propto s_j^2$）。所以 $s_j$ 大的输入收缩得少、$s_j$ 小的收缩得多——除非 $s_j$ 全相等，否则「等权对待」不成立。$\blacksquare$</p></div>
+<h3 id="s-11-5-4" class="anchored"><span class="num">11.5.4</span> 隐藏单元数与隐藏层数</h3>
+<p>一般来说，隐藏单元<strong>多比少好</strong>。太少可能没有足够灵活性捕捉数据中的非线性；太多时，只要正则化得当，多余权重可以被收缩向零。典型范围是 5 到 100，且随输入数与训练样本数增加。最常见的做法是放相当多的单元，然后用正则化训练；也有人用交叉验证估计最优个数，但如果交叉验证已经用来估计正则化参数，这一步就没必要了。隐藏层数由背景知识与实验决定。每一层提取输入的特征，多层隐藏层允许构造不同分辨率层次上的层级特征（§11.7 给了例子）。</p>
+<h3 id="多个极小-s-11-5-5-2" class="anchored"><span class="num">11.5.5</span> 多个极小 {#s-11.5-5}</h3>
+<p>误差函数 $R(\theta)$ 是非凸的，有许多局部极小。因此最终解相当依赖起始权重的选择。至少要试若干随机起始配置，并选（带惩罚）误差最低的解。更好的做法可能是<strong>对一组网络的预测取平均</strong>（Ripley, 1996）。这比平均权重更可取，因为模型的非线性意味着「平均出来的解」可能相当差。另一条路是 <strong>bagging</strong>：对随机扰动后的训练数据训练网络并平均其预测（第 8 章）。</p>
+<div class="aside"><p class="hd">推导 · 非凸性的一个可算来源：条件问题的非凸</p><p>把梯度写成 (11.14)：$\partial R_i/\partial\beta_{km}=\delta_{ki}z_{mi}$，$\partial R_i/\partial\alpha_{m\ell}=s_{mi}x_{i\ell}$，其中 $z_{mi}=\sigma(u_{mi})$、$s_{mi}=\sigma'(u_{mi})\sum_k\beta_{km}\delta_{ki}$。</p>
+<p>若先固定输出层（$\beta$，以及当前的 $\delta$），把隐藏层看作<strong>条件问题</strong>（backfitting 的思路，第 9 章），则 $R$ 关于 $(\alpha_0,\alpha_1,\dots,\alpha_M)$ 的形式是</p>
+<div class="eq long"><div class="escroll">
+$$
+R(\alpha)=\sum_i\sum_k\big(y_{ik}-\beta_{0k}-\textstyle\sum_m\beta_{km}\sigma(\alpha_{0m}+\alpha_m^\top x_i)\big)^2
+$$
+</div></div>
+<p>对 $\alpha_{0m}$ 求二阶导：</p>
+<div class="eq long"><div class="escroll">
+$$
+\frac{\partial^2R}{\partial\alpha_{0m}^2}=\sum_{i,k}\delta_{ik}^2\,\sigma''(u_{mi}),\qquad \sigma''(v)=\sigma'(v)(1-2\sigma(v))
+$$
+</div></div>
+<p>于是 $\partial^2R/\partial\alpha_{0m}^2$ 的符号随 $u_{mi}$ 在 $\sigma$ 的拐点哪一侧而定（$u&lt;0$ 时 $\sigma''&lt;0$）。<strong>所以 $R$ 在隐藏层参数上不是凸的</strong>。$\blacksquare$</p>
+<p>一个更简单的可验证结论：$s_{mi}$ 中含 $\sum_k\beta_{km}\delta_{ki}$，而 $\delta_{ki}$ 本身含 $z_{mi}$，两者都是 $\sigma$ 的函数；写成矩阵就是 $\nabla^2_{\alpha\alpha}R=J^\top\mathrm{diag}(r)\,G\,J$，其中 $J$ 是 $z$ 对 $\alpha$ 的雅可比，$G$ 是 $g'$ 对应的对角块——$G$ 的对角元可正可负，故 $\nabla^2_{\alpha\alpha}R$ 不定。<strong>结论：后向传播只有梯度信息可用，这是原理性的，不是实现问题。</strong></p>
+<p>这也说明为什么 §11.4.4 的零空间讨论和本节的多初值讨论是同一件事的两面：<strong>不可识别方向（零曲率）</strong> 与 <strong>多局部极小</strong> 都来自同一个非线性。</p></div>
+<p><a class="src" href="../esl/ch11-neural-networks.html#s-11-5">原文 §11.5</a></p>
+<hr>
+<h2 id="s-11-6" class="anchored"><span class="num">11.6</span> 示例：模拟数据</h2>
+<p>我们从两个加性误差模型 $Y=f(X)+\varepsilon$ 生成数据：</p>
+<ul><li><strong>Sigmoid 之和</strong>：$Y=\sigma(a_1^\top X)+\sigma(a_2^\top X)+\varepsilon_1$</li><li><strong>径向</strong>：$Y=\prod_{m=1}^{10}\phi(X_m)+\varepsilon_2$</li></ul>
+<p>$X^\top=(X_1,\dots,X_p)$，每个 $X_j$ 是标准高斯变量，第一个模型 $p=2$，第二个 $p=10$。Sigmoid 模型取 $a_1=(3,3)$，$a_2=(3,-3)$；径向模型取 $\phi(t)=(2\pi)^{-1/2}\exp(-t^2/2)$。$\varepsilon_1,\varepsilon_2$ 都是高斯误差，方差取成使信噪比为</p>
+<div class="eq long"><div class="escroll">
+$$
+\frac{\mathrm{Var}(f(X))}{\mathrm{Var}(\varepsilon)}=\frac{\mathrm{Var}\big(E[Y\mid X]\big)}{\mathrm{Var}\big(Y-E[Y\mid X]\big)}
+$$
+</div><span class="tag">(11.18)</span></div>
+<p>在两个模型中都等于 4。训练样本 100，测试样本 10 000。用带权重衰减、隐藏单元数各异的网络拟合，记录 10 组随机初值下的平均测试误差 $E_{\text{Test}}\big[(Y-\hat f(X))^2\big]$。</p>
+<div class="aside key"><p class="hd">结果 · (11.18) 右边为什么就是信噪比</p><p>左边由全方差公式（预备知识 P2）$\mathrm{Var}(Y)=\mathrm{Var}(E[Y\mid X])+\mathrm{Var}(Y-E[Y\mid X])$ 直接得到：$Y=f(X)+\varepsilon$、$E[Y\mid X]=f(X)$，故 $\mathrm{Var}(f(X))=\mathrm{Var}(E[Y\mid X])$，$\mathrm{Var}(\varepsilon)=\mathrm{Var}(Y-E[Y\mid X])$。所以 (11.18) 两边是同一个数，只是左边按「信号/噪声」、右边按「可解释/不可解释」排列。$\blacksquare$</p></div>
+<p>图 11.6 给出测试误差。零隐藏单元模型即线性最小二乘回归。神经网络非常适合「Sigmoid 之和」模型，两单元模型确实最好，误差接近 Bayes 率（平方误差回归的 Bayes 率就是误差方差；图中报告的是相对 Bayes 误差的测试误差）。但隐藏单元增多后<strong>过拟合很快出现</strong>，有些起始权重的表现还不如线性模型。即使两个隐藏单元，10 组起始权重中也有两组结果不优于线性模型，印证了多初值的重要性。</p>
+<p>径向函数对网络来说是最难的一类：它是球对称的，没有优先方向。图 11.6 右panel 显示这种情况表现很差，测试误差远高于 Bayes 误差（注意纵轴刻度与左panel 不同）。事实上，由于一个常数拟合（比如样本均值）在 SNR $=4$ 时能达到相对误差 5，神经网络的表现甚至越来越不如均值。</p>
+<p>本例用了固定的权重衰减参数 0.0005，代表温和的正则化。图 11.6 左panel 提示隐藏单元越多需要越强的正则化。图 11.7 对「Sigmoid 之和」重做实验：左panel 无权重衰减，右panel 用 $\lambda=0.1$。无衰减时单元越多过拟合越严重；$\lambda=0.1$ 对所有单元数都给出好结果，且单元增多时看不出过拟合。图 11.8 对十单元网络在宽范围内扫权重衰减参数，最优值约为 0.1。</p>
+<p>总结：有两个自由参数要选——权重衰减 $\lambda$ 与隐藏单元数 $M$。策略上可以固定其中一个在「最不受约束」的值（$\lambda=0$、$M=10$），保证模型足够丰富，再用交叉验证选另一个。图 11.7 左panel 与图 11.8 对比说明测试误差对权重衰减参数不太敏感，所以<strong>优先交叉验证 $\lambda$</strong>。</p>
+<p><a class="src" href="../esl/ch11-neural-networks.html#s-11-6">原文 §11.6</a></p>
+<hr>
+<h2 id="s-11-7" class="anchored"><span class="num">11.7</span> 示例：ZIP 码数据</h2>
+<p>字符识别任务：手写数字分类。图像是 USPS 自动扫描的信封上的手写数字，已做过倾斜与尺寸归一化，得到 $16\times16$ 的灰度图（Le Cun et al., 1990）。这 256 个像素值作为神经网络分类器的输入。</p>
+<p>一个「黑箱」神经网络并不特别适合这种模式识别任务，部分原因是像素表示缺少某种不变性（例如图像的小旋转）。早期神经网络尝试的错误率在 4.5% 左右。这里展示的先驱工作通过<strong>手工设计</strong>网络克服这些缺陷（Le Cun, 1989），最终达到当时的最好水平。样本刻意取得不多：训练集 320 个，测试集 160 个（由手绘数字经随机水平平移生成）。</p>
+<p>拟合了五个网络：</p>
+<div class="tscroll-x"><table class="fx"><thead><tr><th>网络</th><th>结构</th><th>连接数</th><th>权重数</th><th>正确率</th></tr></thead><tbody><tr><td>Net-1</td><td>单层（无隐藏层）</td><td>2570</td><td>2570</td><td>80.0%</td></tr><tr><td>Net-2</td><td>两层，12 个全连接隐藏单元</td><td>3214</td><td>3214</td><td>87.0%</td></tr><tr><td>Net-3</td><td>两层，局部连接</td><td>1226</td><td>1226</td><td>88.5%</td></tr><tr><td>Net-4</td><td>两层，局部连接 + 权重共享</td><td>2266</td><td>1132</td><td>94.0%</td></tr><tr><td>Net-5</td><td>两层，局部连接 + 两级权重共享</td><td>5194</td><td>1060</td><td>98.4%</td></tr></tbody></table></div>
+<p>Net-1 有 256 个输入（每像素一个）与 10 个输出单元（数字 0–9），$\hat f_k(x)$ 是图像 $x$ 属于第 $k$ 类的估计概率。Net-2 是单个隐藏层、12 个隐藏单元的网络。所有网络的<strong>训练集误差都是 0%</strong>，因为每个情形下参数都多于训练观测。各网络测试误差随 epoch 的演化见图 11.11：线性网络（Net-1）很快开始过拟合，其余网络的测试表现依次收敛到明显更好的水平。</p>
+<p>后面三个网络引入对网络的<strong>约束</strong>，允许更复杂的连接结构但参数更少：</p>
+<ul><li><strong>Net-3 局部连接</strong>：每个隐藏单元只连到下面一层的一小块。第一隐藏层（$8\times8$ 阵列）中每个单元取输入层的一个 $3\times3$ 小块；相距一个单元的两个单元的感受野重叠一行或一列，故相距两个像素。第二隐藏层输入来自 $5\times5$ 小块，单元间距 2。其余连接的权重置零。局部连接让每个单元负责提取下面一层的<strong>局部特征</strong>，并大幅减少权重总数。Net-3 的隐藏单元比 Net-2 多得多，但连接数（1226 对 3214）与权重数都少，性能却相当。</li><li><strong>Net-4 权重共享</strong>：单个 $8\times8$ 特征图内所有单元<strong>共享同一组九个权重</strong>（但各自有自己的偏置参数）。这迫使图像不同位置的同类特征由同一个线性泛函计算，因此有时称为<strong>卷积网络</strong>。误差函数 $R$ 对共享权重的梯度是 $R$ 对该权值控制的每条连接梯度的<strong>和</strong>。</li><li><strong>Net-5</strong>：第二隐藏层有四个 $4\times4$ 特征图，每个单元连到下面一层的 $5\times5$ 局部小块，权重在每个特征图内共享。</li></ul>
+<div class="aside key"><p class="hd">结果 · 权重共享对梯度公式 (11.14) 的修改</p><p>设权重 $\alpha_{m\ell}$ 被集合 $\mathcal{C}\subseteq\{1,\dots,N\}$ 中的样本共享，且所有共享单元的激活参数<strong>相同</strong>（否则损失梯度还要加一项）。由链式法则，$\sum_{m,\ell}$ 的作用被 $\sum_{i\in\mathcal{C}}$ 代替：</p>
+<div class="eq long"><div class="escroll">
+$$
+\frac{\partial R}{\partial\alpha_{m\ell}}=\sum_{i\in\mathcal{C}}\frac{\partial R_i}{\partial\alpha_{m\ell}}=\sum_{i\in\mathcal{C}}s_{mi}x_{i\ell}
+$$
+</div></div>
+<p>与 (11.14) 相比，唯一的差别是<strong>求和范围</strong>。这解释了为什么共享权重能当作正则化用：它是把 $R$ 上相同方向的多个梯度<strong>平均</strong>（在 (11.14) 的框架下相当于对 $s_{mi}x_{i\ell}$ 取平均），按 §11.4.3 的方差公式，方差按 $|\mathcal{C}|^{-1}$ 缩小。$\blacksquare$</p></div>
+<p>Net-5 表现最好，错误率只有 1.6%，而「vanilla」网络 Net-2 是 13%。Net-5 的巧妙设计（手写风格的特征应当在一个数字的多个位置出现）背后是大量实验。这个例子也表明神经网络不是完全自动的工具——像所有统计模型一样，<strong>领域知识应当并且可以用来改进性能</strong>。</p>
+<p>这一网络后来被切线距离方法（Simard et al., 1993，§13.3.3）超过，后者显式地编码了自然的仿射不变性。写此书时，标准 NIST 数据库（60 000 训练、10 000 测试）上的最好错误率是：切线距离 + 1 近邻 1.1%；9 阶多项式 SVM 0.8%；LeNet-5（更复杂的卷积网络）0.8%；提升的 LeNet-4 0.7%。Le Cun et al. (1998) 报告错误率估计的标准误为 0.1%，这基于 $N=10\,000$、$p\approx0.01$ 的二项平均（见预备知识 P1），意味着相差 0.1–0.2% 以内的错误率在统计上等价。现实里标准误还更高，因为测试数据已被隐含地用于调参。</p>
+<p><a class="src" href="../esl/ch11-neural-networks.html#s-11-7">原文 §11.7</a></p>
+<hr>
+<h2 id="s-11-8" class="anchored"><span class="num">11.8</span> 讨论与贝叶斯神经网络</h2>
+<p>投影寻踪回归与神经网络都对输入的线性组合（「派生特征」）取非线性函数。这是一种非常强大、非常一般的方法，在许多问题上可与最好的学习方法竞争。</p>
+<p>这些工具在高信噪比、目标是不解释只预测的场合尤其有效。在目标是描述生成数据的物理过程、以及各个输入的作用时，效果较差：每个输入以非线性方式进入模型的许多地方。有些作者（Hinton, 1989）把估计出的权重画成每个隐藏单元的图，来理解该单元提取的特征。这受限于参数向量 $\alpha_m$，$m=1,\dots,M$ 的<strong>不可识别性</strong>：常常存在另一组解，其 $\alpha_m$ 张成与训练所得相同的线性空间，预测值也大致相同。有些作者建议对这些权重做主成分分析来寻找可解释的解。</p>
+<div class="aside warn"><p class="hd">坑</p><p>与 §11.5.1 的结论对照——不可识别性来自<strong>连续</strong>的线性变换（$\alpha_m$ 张成的子空间不变），而多重极小来自<strong>不连续</strong>的置换。这些是两类不同的病，都不能靠「更多训练数据」治好（前者是模型类的性质，后者是需要多次初始化 + 平均的问题）。</p></div>
+<p>与 CART、MARS 这类方法不同，神经网络是实值参数的<strong>光滑函数</strong>。这便利了这些模型的贝叶斯推断开发。下一节讨论一个成功的贝叶斯实现。</p>
+<h3 id="s-11-8-1" class="anchored"><span class="num">11.8.1</span> 贝叶斯公式与后验预测</h3>
+<p>给定训练数据 $X_{tr},y_{tr}$，假设带参数 $\theta$ 的抽样模型。Neal & Zhang (2006) 用两层隐藏层的神经网络，输出节点是二元结果的类概率 $\Pr(Y\mid X,\theta)$。给定先验分布 $\Pr(\theta)$，参数的后验分布为</p>
+<div class="eq long"><div class="escroll">
+$$
+\Pr(\theta\mid X_{tr},y_{tr})=\frac{\Pr(\theta)\Pr(y_{tr}\mid X_{tr},\theta)}{\displaystyle\int\Pr(\theta)\Pr(y_{tr}\mid X_{tr},\theta)\,d\theta}
+$$
+</div><span class="tag">(11.19)</span></div>
+<p>对测试样本的标签 $Y_{new}$，预测分布是</p>
+<div class="eq long"><div class="escroll">
+$$
+\Pr(Y_{new}\mid X_{new},X_{tr},y_{tr})=\int\Pr(Y_{new}\mid X_{new},\theta)\,\Pr(\theta\mid X_{tr},y_{tr})\,d\theta
+$$
+</div><span class="tag">(11.20)</span></div>
+<p>（参见 (8.24)）。由于 (11.20) 里的积分不可解，需要用复杂的 MCMC 方法从后验采样。生成几百个 $\theta$ 值，用它们的简单平均来估计这个积分。Neal & Zhang 用弥散高斯先验，具体方法叫<strong>混合蒙特卡洛</strong>，可能对成功很重要：它引入一个辅助动量向量并实现哈密顿动力学（势函数即目标密度），以避免随机游走行为——候选点能跨更大的步长在样本空间移动，彼此相关性更低，因而更快收敛到目标分布。</p>
+<div class="aside"><p class="hd">推导 · (11.20) 的两步积分展开（可复核）</p><p>插入 (11.19)：$\displaystyle\Pr(Y_{new}\mid X_{new},X_{tr},y_{tr})=\int\Pr(Y_{new}\mid X_{new},\theta)\frac{\Pr(\theta)\Pr(y_{tr}\mid X_{tr},\theta)}{\int\Pr(\theta)\Pr(y_{tr}\mid X_{tr},\theta)d\theta}\,d\theta$。</p>
+<p>若假设 $Y_{new}$ 在给定 $\theta$ 与 $y_{tr}$ 后条件独立于 $\theta$ 的具体形状之外的信息（即 $Y_{new}\perp\theta\mid X_{new},y_{tr}$），分子积分就是分母积分乘以 $\int\Pr(Y_{new}\mid X_{new},\theta)\Pr(\theta)\Pr(y_{tr}\mid X_{tr},\theta)d\theta$（条件独立性允许把 $y_{tr}$ 的似然提到 $\theta$ 积分内），两项相消即得 (11.20)。$\blacksquare$</p>
+<p>一句话总结：(11.19) 是贝叶斯公式的分母，(11.20) 是在<strong>参数</strong>上做边缘化（对参数积分），而不是在数据上。两者相除定义了「模型平均」，这正是下面 (11.21) 的 $w_\ell=1/L$ 情形所近似的对象。</p></div>
+<p>他们还试过几种特征预处理：单变量 $t$ 检验筛选；以及<strong>自动相关性判定</strong>（ARD）——第 $j$ 个特征到第一隐藏层各单元的权重共享一个共同先验方差 $\sigma_j^2$，先验均值为零；后验集中在小值处的特征被剔除。</p>
+<p>这种方法成功的三个可能原因：特征选择与预处理、网络模型、模型的 MCMC 贝叶斯推断。按 Neal & Zhang 的说法，特征筛选纯粹是为计算效率（MCMC 在特征多时很慢），<strong>不需要</strong>用它来避免过拟合，后验平均 (11.20) 自动处理这一点。</p>
+<p>作者的观点是：现代贝叶斯方法的力量不在于把先验当真（没人相信高维复杂神经网络的先验是对的），而在于它给出了<strong>高效采样模型空间中相关部分</strong>的方式，然后平均高概率模型的预测。</p>
+<h3 id="s-11-8-2" class="anchored"><span class="num">11.8.2</span> 贝叶斯、bagging 与 boosting 的统一形式</h3>
+<p>Bagging 与 boosting 是非贝叶斯过程，与贝叶斯模型的 MCMC 有相似之处：贝叶斯方法固定数据、按当前的后验估计扰动参数；bagging 以 i.i.d. 方式扰动数据再重估参数，最后对不同 bagging 样本的模型预测取简单平均；boosting 类似 bagging，但拟合一个对各基学习器模型<strong>相加</strong>的模型，用非 i.i.d. 样本来学。这些模型都可写成</p>
+<div class="eq"><div class="escroll">
+$$
+\hat f(x_{new})=\sum_{\ell=1}^L w_\ell\,E\big(Y_{new}\mid x_{new},\hat\theta_\ell\big)
+$$
+</div><span class="tag">(11.21)</span></div>
+<p>其中 $\hat\theta_\ell$ 是一大堆模型参数。</p>
+<div class="tscroll-x"><table class="fx"><thead><tr><th>方法</th><th>$w_\ell$</th><th>$\hat\theta_\ell$</th></tr></thead><tbody><tr><td>贝叶斯网络</td><td>$1/L$</td><td>从后验 $\Pr(\theta\mid X_{tr},y_{tr})$ 采样</td></tr><tr><td>bagging</td><td>$1/L$</td><td>在自助重抽样的训练数据上重估</td></tr><tr><td>boosting</td><td>全为 1</td><td>非随机的顺序选择，不断改进拟合</td></tr></tbody></table></div>
+<div class="aside warn"><p class="hd">坑</p><p>(11.21) 里对贝叶斯方法取 $w_\ell=1/L$ 只是<strong>近似</strong>——真正的后验均值是 (11.20) 的连续积分，$\frac1L\sum_\ell\Pr(Y_{new}\mid X_{new},\theta_\ell)$ 是它的蒙特卡洛估计（Nodal & Zhang 正是这么做的）。这个近似要求从后验抽出的 $\theta_\ell$ 之间近似独立同分布，而 MCMC 的样本是相关的（混合蒙特卡洛的作用之一就是降低相关性）。</p></div>
+<p><a class="src" href="../esl/ch11-neural-networks.html#s-11-9">原文 §11.9</a></p>
+<hr>
+<h2 id="s-11-9" class="anchored"><span class="num">11.9</span> 计算量</h2>
+<p>有 $N$ 个观测、$p$ 个预测变量、$M$ 个隐藏单元、$L$ 个训练 epoch，一次神经网络拟合通常需要 $O(NpML)$ 次运算。</p>
+<div class="tscroll-x"><table class="fx"><thead><tr><th>方法</th><th>一次迭代的代价</th><th>关键量</th></tr></thead><tbody><tr><td>后向传播（批量）</td><td>$O(N\,[M(p+1)+K(M+1)])$</td><td>一次前向 + 一次后向扫描</td></tr><tr><td>后向传播（在线/SGD）</td><td>$O(M(p+1)+K(M+1))$</td><td>只驻留梯度向量（预备知识 N3）</td></tr><tr><td>牛顿法</td><td>$O(q^3)$，$q=M(p+1)+K(M+1)$</td><td>海森的 $q\times q$ 分解</td></tr><tr><td>共轭梯度</td><td>$O(N\cdot q)$ 每步、$q$ 步</td><td>只需 $O(q)$ 额外存储</td></tr></tbody></table></div>
+<p>这解释了为什么 SGD 的优势主要在 $p$ 极大时的<strong>内存</strong>：它只需驻留权重与梯度两个 $q$ 维向量，而批学习要驻留 $N\times M$ 的激活矩阵 $Z$（§11.4.4 里它是海森 $\beta$-块 $=2ZZ^\top$ 的来源）。</p>
+<hr>
+<p><a class="src" href="index.html">返回封面</a></p>
+</main>
+<nav class="chapnav"><div class="inner">
+<a class="prev" href="m10.html"><span class="lbl">← 上一章</span><span class="nm">第 10 章 提升法与加性树</span></a>
+<a class="next" href="m12.html"><span class="lbl">下一章 →</span><span class="nm">第 12 章 支持向量机与柔性判别</span></a>
+</div></nav>
+</body>
+</html>

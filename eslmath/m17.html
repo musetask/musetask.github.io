@@ -1,0 +1,920 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Gibbs 分布与配分函数、Hammersley–Clifford 定理、高斯 MRF 与精度矩阵（条件高斯、分块逆、零元素对应无边）、截断似然的回归式算法与 graphical lasso、Ising 模型与 score 方程、EM 插补、伪似然与环状信念传播">
+<title>无向图模型 · Undirected Graphical Models · ESL 数学推导</title>
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/style.css">
+<script defer src="../assets/katex/katex.min.js"></script>
+<script defer src="../assets/katex/auto-render.min.js"></script>
+<script defer src="assets/app.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="bar">
+  <button class="icon" id="themeToggle" type="button" aria-label="切换深色模式">&#9681;</button>
+  <a class="title" href="index.html">ESL 数学推导</a>
+  <a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<h1 id="s-17" class="ch anchored"><span class="num">17</span> 无向图模型</h1>
+<p>无向图模型（undirected graphical models，也叫 Markov 随机域、Markov 网络）做的事情只有一件：把一个 $p$ 维联合分布写成<strong>若干小块的乘积</strong>。小块越小，需要估计的参数越少，需要枚举的组合越少。整章的技术都是「怎么写乘积」和「怎么把小块的量攒成联合量」。</p>
+<p>本章的行文线索是：先把「乘积分解」这件事本身讲清楚（§17.1–§17.2），然后分两路把势函数具体化——连续变量用高斯（§17.3），离散变量用 Ising（§17.4）——最后是原书没有单列成节但极其重要的两块内容：<strong>伪似然</strong>与<strong>环状信念传播</strong>（§17.5）。原书的 numbered 公式从 (17.1) 到 (17.46)，本章全部推导。</p>
+<p><a class="src" href="../esl/ch17-undirected-graphical-models.html#s-17-2">原文 §17.2</a></p>
+<hr>
+<h2 id="s-17-1" class="anchored"><span class="num">17.1</span> 引言：Gibbs 分布与配分函数</h2>
+<p><strong>问题</strong>：给定图 $\mathcal{G}=(V,E)$ 与一个正密度 $f$，什么时候它能被写成「每个极大团上放一个势函数」的乘积形式？这个乘积形式的配分函数是什么？为什么这件事值得做？</p>
+<p>先说「为什么值得做」。因为在乘积形式下，所有计算都变成<strong>局部归一化问题</strong>。要算 $p(x_A)$（$A\subseteq V$），只需要把不含 $A$ 的坐标积掉；而在乘积形式下，含 $A$ 的团贡献完归一化因子之后，剩下的部分可以直接用 $f$ 的边缘密度替换。这是第 14 章 EM 也要用到的技巧。</p>
+<h3 id="团-势函数与配分函数-2" class="anchored"><span class="num">17.1.1</span> 团、势函数与配分函数</h3>
+<div class="aside basis"><p class="hd">基础知识 · 团（clique）</p><p>$V$ 的一个子集 $C$ 称为<strong>团</strong>，若 $C$ 中任意两点之间都有边。极大团是不能再加入顶点而仍保持团的团（极大不等于最大，前者按包含关系定义，后者按点数定义；后者总是极大团的一个特例）。</p>
+<p>记 $\mathcal{C}$ 为 $\mathcal{G}$ 的极大团集合。连续情形下 $C$ 的取值空间写作 $x_C$。</p>
+<p><strong>Markov 随机域的 Gibbs 分解</strong>：若存在<strong>非负</strong>函数 $\psi_C$，$C\in\mathcal{C}$，使</p>
+<div class="eq"><div class="escroll">
+$$
+f(x)=\frac{1}{Z}\prod_{C\in\mathcal{C}}\psi_C(x_C)
+$$
+</div></div>
+<p>则称 $(f,\mathcal{G})$ 为一个 Markov 随机场。$Z$ 是常数，故也称<strong>配分函数</strong>。</p>
+<p>势函数 $\psi_C$ 一般不是密度函数，它们只是「亲和度（affinity）」：只影响形状，不负责归一化。</p></div>
+<div class="aside basis"><p class="hd">基础知识 · 连续与离散的配分函数</p><p>离散情形（$x_i$ 取有限集合）：</p>
+<div class="eq"><div class="escroll">
+$$
+Z=\sum_{x\in\mathcal{X}}\prod_{C\in\mathcal{C}}\psi_C(x_C)
+$$
+</div></div>
+<p>连续情形（$\psi_C$ 可积）：</p>
+<div class="eq"><div class="escroll">
+$$
+Z=\int_{\mathcal{X}}\prod_{C\in\mathcal{C}}\psi_C(x_C)\,dx
+$$
+</div></div>
+<p>离散公式能一字不差地复用到连续情形，只是把 $\sum$ 换成 $\int$、把计数测度换成 Lebesgue 测度。下面统一写成 $Z=\sum_{\text{all }x}$。</p></div>
+<p>原书把这个分解写成了两个编号公式，因为「分解」和「配分函数」在后面每一节都要单独用：</p>
+<div class="eq"><div class="escroll">
+$$
+f(x)=\frac{1}{Z}\prod_{C\in\mathcal{C}}\psi_C(x_C)
+$$
+</div><span class="tag">(17.3)</span></div>
+<div class="eq"><div class="escroll">
+$$
+Z=\sum_{x}\prod_{C\in\mathcal{C}}\psi_C(x_C)
+$$
+</div><span class="tag">(17.4)</span></div>
+<p>推导：（17.4）就是「密度积分为 1」这一条要求。取 (17.3) 两边的积分，</p>
+<div class="eq"><div class="escroll">
+$$
+1=\int f(x)dx=\frac{1}{Z}\int\prod_C\psi_C(x_C)dx
+$$
+</div></div>
+<p>所以 $Z$ 必须等于分母那个积分；反过来给定任意一组 $\psi_C$，只要 $Z&lt;\infty$ 且 $\psi_C\ge0$，(17.3) 就确实是一个密度（验证非负性、验证积分为 1）。</p>
+<h3 id="gibbs-分解-markov-独立性-hammersley-clifford-2" class="anchored"><span class="num">17.1.2</span> Gibbs 分解 ↔ Markov 独立性：Hammersley–Clifford</h3>
+<p>这一步是本章的地基。它说的是：<strong>「没有边 ⟹ 条件独立」和「能写成团的势函数乘积」是同一件事的两面</strong>（前提是分布严格为正）。</p>
+<div class="aside basis"><p class="hd">基础知识</p><p>Hammersley–Clifford 定理（就地补）</p>
+<p>设 $f$ 是<strong>严格正</strong>的联合密度（$f(x)&gt;0$ 对一切 $x$），$\mathcal{G}$ 无向。则下面三条等价：</p>
+<ol><li>（pairwise Markov）$X_i\perp X_j\mid X_{V\setminus\{i,j\}}$ 对一切<strong>非相邻</strong>的 $(i,j)$；</li><li>（global Markov）若 $A,B$ 是不相交子集，$C$ 分离它们，则 $A\perp B\mid C$；</li><li>（Gibbs 分解）存在 $\psi_C\ge0$ 使 (17.3) 成立。</li></ol>
+<p>「$C$ 分离 $A$ 与 $B$」：删掉 $C$ 后 $A$ 与 $B$ 落在不同的连通分支里。</p>
+<p>正性不是装饰：若 $f(x_A)&gt;0$ 有零点，$A$ 的边缘分布可能有零点，链式分解里对应的条件密度就可能不存在，1 与 3 之间断裂。</p></div>
+<p><strong>方向 3 $\Rightarrow$ 1（Gibbs 推出 pairwise 独立）——完整代数。</strong></p>
+<p>这是唯一可以逐步验算的方向，值得写细。设 $i,j$ 不相邻，$X_{-ij}$ 表示其余坐标。观察关键事实：<strong>任何极大团 $C$ 不可能同时含 $i$ 和 $j$</strong>（否则 $i,j$ 相邻）。于是 $C$ 恰好落入三类之一：</p>
+<div class="eq"><div class="escroll">
+$$
+\prod_{C\in\mathcal{C}}\psi_C(x_C)=A(x_i)\,B(x_j)\,C_0(x_{-ij})
+$$
+</div></div>
+<p>其中三段乘积分别是</p>
+<div class="eq long"><div class="escroll">
+$$
+A(x_i)=\prod_{C:\,i\in C,\ j\notin C}\psi_C\big(x_C\big),\qquad
+B(x_j)=\prod_{C:\,j\in C,\ i\notin C}\psi_C\big(x_C\big)
+$$
+</div></div>
+<p>以及不含 $i,j$ 的团之积。这里用了两件事：每个 $C$ 只依赖 $x_C$，而 $C\ni i, C\ni j\Rightarrow x_C\in\{x_i\}\cup x_{-ij}$。要进一步说明 $A$ 真的可以写成「$x_i$ 的函数」乘「$x_{-ij}$ 的函数」：设 $\mathcal{C}_i=\{C:i\in C,j\notin C\}$，则</p>
+<div class="eq long"><div class="escroll">
+$$
+A(x)=A_1(x_i)\cdot A_2(x_{-ij}),\qquad
+A_1(x_i)=\prod_{C\in\mathcal{C}_i}\psi_C\big(x_C\big)\ \text{中所有含 }x_i\text{ 的坐标抽出来},\ ...
+$$
+</div></div>
+<p>更直接的写法：把每个 $C\in\mathcal{C}_i$ 唯一地写成 $x_C=\{x_i\}\cup D_C$，$D_C\subseteq x_{-ij}$。记 $\psi_{C}(\{x_i\},x_{D_C})$ 为 $\psi_C$ 在那组取值上的值，则<strong>逐因子</strong>地把它拆成「只依赖 $x_i$ 的部分」乘「只依赖 $x_{-ij}$ 的部分」（这是可行的，因为 $x_i$ 与 $x_{D_C}$ 是不同的坐标；一步高斯积分的做法）：</p>
+<div class="eq verylong"><div class="escroll">
+$$
+A(x)=\prod_{C\in\mathcal{C}_i}\psi_C\big(\{x_i\},x_{D_C}\big)
+=\underbrace{\prod_{C\in\mathcal{C}_i}\int\psi_C\big(\{x_i\},x_{D_C}\big)\,dx_{D_C}}_{\text{只依赖 }x_i}=:a(x_i)\ \cdot\ \underbrace{\prod_{C\in\mathcal{C}_i}\frac{\psi_C(\{x_i\},x_{D_C})}{\int\psi_C\,dx_{D_C}}}_{\text{只依赖 }x_{-ij}}=:a'(x_{-ij})
+$$
+</div></div>
+<p>同理 $B(x)=b(x_j)b'(x_{-ij})$，$C_0(x)=c(x_{-ij})$。所以</p>
+<div class="eq long"><div class="escroll">
+$$
+f(x_i,x_j,x_{-ij})=\frac{1}{Z}a(x_i)a'(x_{-ij})b(x_j)b'(x_{-ij})c(x_{-ij})
+=\frac{a(x_i)b(x_j)}{Z\big[a'(x_{-ij})b'(x_{-ij})c(x_{-ij})\big]}\,f(x_{-ij})
+$$
+</div></div>
+<p>括号里那一整块<strong>只依赖 $x_{-ij}$</strong>，而 $a(x_i)b(x_j)$ 对 $(i,j)$ 分离可乘。这正是「条件分布因子化」，即 $f(x_i,x_j\mid x_{-ij})=a(x_i)b(x_j)f(x_{-ij})$，所以 $X_i\perp X_j\mid X_{-ij}$。（离散情形把 $f$ 换成分布质量、因子 $1/Z$ 换成形如 $1/\Pr(X_{-ij}=x_{-ij})$，论证逐字相同；正性保证分母不为零。）</p>
+<p><strong>方向 1 $\Rightarrow$ 3（Markov 独立推出 Gibbs 分解）——构造。</strong></p>
+<p>这个方向不能像上面那样「代代数」，因为结论是<strong>存在性</strong>。但构造本身可以写得很具体，用的是<strong>链式法则</strong>（记 $A\perp B\mid$ 空表示把 $A$ 从链里删掉）：</p>
+<div class="eq"><div class="escroll">
+$$
+p(x)=\prod_{i=1}^{p}p\big(x_i\mid x_{1:i-1}\big)
+$$
+</div></div>
+<p>第一步：把每个条件密度「缩」到邻居上。因为 pairwise Markov 性反复应用（联合独立 $\Rightarrow$ 条件独立，见预备知识 P2 的塔性质），</p>
+<div class="eq"><div class="escroll">
+$$
+p\big(x_i\mid x_{1:i-1}\big)=p\big(x_i\mid x_{N(i)}\cap\{1,\dots,i-1\}\big)
+$$
+</div></div>
+<p>（用「对已在条件里的邻居，条件集合是它的超集时等价于取交」的收缩形式，$\S17.2.1$ 有证明。）</p>
+<p>第二步：对 $x_i$ 求边缘时，它与「还没出现的邻居」之间的关系被消元掉。设 $C_i=\{i\}\cup\{j&gt;i:\ j\in N(i)\}$，则把上面第 $i$ 项再往前推一步可得</p>
+<div class="eq long"><div class="escroll">
+$$
+p(x_i\mid x_{1:i-1})=\frac{p(x_{C_i}\mid x_{S_i})}{p(x_{C_i\setminus i}\mid x_{S_i})},\qquad S_i=C_i\setminus i
+$$
+</div></div>
+<p>（分子分母都只依赖 $C_i$ 与其外侧的分隔集。）这样每个因子都成了一对「团上的条件密度」与「团减掉一个顶点上的条件密度」之商。第三步：把这些商<strong>沿团的部分序相乘</strong>，同一层的分母恰好与下一层的分子约掉——因为极大团 $C$ 若被包含在更大的团 $C'$ 里，则 $S_C\subseteq S_{C'}$ 且条件密度的嵌套性（链式法则）保证约分成立。剩下的就是每个极大团出现一次：</p>
+<div class="eq long"><div class="escroll">
+$$
+p(x)=\prod_{C\in\mathcal{C}}\psi_C(x_C)\cdot \underbrace{\Big[\text{与 }x\text{ 有关的常数}\Big]}_{=1/p(x)\ \text{的归一化}}
+$$
+</div></div>
+<p>写成标准形式：$\psi_C(x_C)=p(x_C\mid x_{S_C})/\prod_{D\subsetneq C,\ D\in\mathcal{C}}p(x_D\mid x_{S_D})$，其中 $S_C=\bigcup_{i\in C}N(i)$；右端只依赖 $x_C$（$S_C$ 的取值被条件掉了）。正性保证每个分母都不为零——<strong>这就是「正性假设」的用处所在</strong>。离散情形把积分换成对 $x_{D_C}$ 的求和，论证一字不差。</p>
+<div class="aside warn"><p class="hd">坑</p><p>(a) 势函数<strong>不唯一</strong>：任何 $\psi_C\to\psi_C\,c_C$（$c_C&gt;0$ 与 $x_C$ 无关）都给出同一个分布。所以「参数 $\theta_{jk}$」只在选定一套参数化后才有意义。(b) 「$f$ 有 Gibbs 分解」<strong>推不出</strong>「图 $\mathcal{G}$ 是由 $f$ 唯一决定的」：同 (17.5)，一个完全图可以同时表示二阶依赖和三阶依赖。(c) 正性不能省：离散情形若 $f$ 有零点，Hammersley–Clifford 的 1$\Rightarrow$3 可能失败（这正是 Ising/伪似然文献里要额外假设的原因）。(d) 上面的约分论证依赖「极大团构成的集合在团图上有层次」——这在有环图上不平凡，但可由联合树（§17.5.2）提供；书上没有展开这一步。</p></div>
+<p><a class="src" href="../esl/ch17-undirected-graphical-models.html#s-17-2">原文 §17.2</a></p>
+<hr>
+<h2 id="s-17-2" class="anchored"><span class="num">17.2</span> Markov 图及其性质</h2>
+<p><strong>问题</strong>：既然「无边 ⟹ 条件独立」和「团的乘积」等价，那么一个图<strong>断言</strong>了哪些条件独立？这些断言之间一致吗？原书用两个编号公式把它们写清楚。</p>
+<h3 id="pairwise-与-global-2" class="anchored"><span class="num">17.2.1</span> pairwise 与 global</h3>
+<div class="eq"><div class="escroll">
+$$
+\text{没有边连接 }X\text{ 和 }Y\quad\Longleftrightarrow\quad X\perp Y\mid\text{rest}
+$$
+</div><span class="tag">(17.1)</span></div>
+<div class="eq"><div class="escroll">
+$$
+\text{若 }C\text{ 分离 }A\text{ 和 }B,\text{ 则 }A\perp B\mid C
+$$
+</div><span class="tag">(17.2)</span></div>
+<p>(17.1) 叫 pairwise Markov 性，(17.2) 叫 global Markov 性。原文强调：在正分布下二者与 Gibbs 分解三者等价（就是 §17.1.2 的 Hammersley–Clifford）。所以实用推论是「从简单的 pairwise 关系推断 global 关系」。</p>
+<p><strong>推导 · pairwise $\Rightarrow$ global（逐步版）。</strong></p>
+<p>设 $C$ 分离 $A$ 与 $B$，$R=V\setminus(A\cup B\cup C)$。把 $A$ 的顶点按「删掉 $C$ 后到 $B$ 的距离由小到大」排序，记 $A=\{a_1,\dots,a_m\}$，于是</p>
+<div class="eq"><div class="escroll">
+$$
+N(a_1)\setminus\{a_1\}\subseteq A\cup C,\qquad N(a_i)\setminus\{a_i\}\subseteq A\cup C\ \text{对所有 }i
+$$
+</div></div>
+<p>即 $A$ 中任一顶点的邻居都不在 $B\cup R$ 里。用链式法则沿这个顺序展开：</p>
+<div class="eq long"><div class="escroll">
+$$
+f(x_A\mid x_B,x_C,x_R)=\prod_{i=1}^{m}f\big(x_{a_i}\mid x_{S_i}\big),\qquad
+S_i=\{a_1,\dots,a_{i-1}\}\cup B\cup C\cup R
+$$
+</div></div>
+<p>（$S_i$ = 已经展开掉的 $A$ 顶点 ∪ 全部其它顶点，这是链式法则的标准形式。）现在做关键一步：<strong>Markov 性质的「收缩」形式</strong>。对任何顶点 $a$ 与任何集合 $T$ 都有</p>
+<div class="eq"><div class="escroll">
+$$
+f(x_a\mid x_T)=f\big(x_a\mid x_{T\cap N(a)}\big)
+$$
+</div></div>
+<p>因为 $x_a$ 与所有不在 $\{a\}\cup N(a)$ 里的变量由 (17.1) 给出的独立性——严格说这是把 (17.1) 的二元条件独立反复用「联合独立 ⟹ 条件独立」的传递性（见预备知识 P2 的塔性质）得到的。把它用到上式：$S_i\cap N(a_i)\subseteq A\cup C$，故</p>
+<div class="eq"><div class="escroll">
+$$
+f\big(x_{a_i}\mid x_{S_i}\big)=f\big(x_{a_i}\mid x_{A\cup C}\big)
+$$
+</div></div>
+<p>注意右边对所有 $i$ 都一样。于是</p>
+<div class="eq verylong"><div class="escroll">
+$$
+f(x_A\mid x_B,x_C,x_R)=\prod_{i=1}^{m}f\big(x_{a_i}\mid x_{A\cup C}\big)
+=\underbrace{\prod_{i=1}^{m}f\big(x_{a_i}\mid x_{A\cup C}\big)}_{=:h(x_A,x_C)}\cdot\underbrace{\prod_{i=1}^{m}f\big(x_{S_{i-1}}\mid x_{A\cup C}\big)}_{=:q(x_B,x_C,x_R)}
+$$
+</div></div>
+<p>第二步用链式法则反向：$f(x_A\mid x_{A\cup C})/f(x_{A\cup C}\mid x_{B\cup C\cup R})=\prod_i f(x_{a_i}\mid x_{A\cup C})$，所以</p>
+<div class="eq"><div class="escroll">
+$$
+f(x_A,x_B,x_C,x_R)=\big[q(x_B,x_C,x_R)\cdot f(x_{B\cup C\cup R}\mid x_C)\big]\cdot h(x_A,x_C)
+$$
+</div></div>
+<p>整个式子分解成「只依赖 $(x_B,x_C,x_R)$ 的部分」乘「只依赖 $(x_A,x_C)$ 的部分」，即 $A\perp B\mid C$。</p>
+<div class="aside key"><p class="hd">结果</p><p>图上的「分离」是一个纯粹的组合概念，而它对应着一条概率论断。图越稀疏，可断言的独立关系越多，计算量越小——这就是稀疏图在基因组学（本章开头的 flow-cytometry 数据，$p=11$ 个蛋白、$N=7466$ 个细胞）里受欢迎的原因。</p></div>
+<h3 id="完全图不唯一地指定高阶依赖-2" class="anchored"><span class="num">17.2.2</span> 完全图不唯一地指定高阶依赖</h3>
+<div class="eq"><div class="escroll">
+$$
+f^{(2)}(x,y,z)=\frac{1}{Z_1}\psi(x,y)\psi(x,z)\psi(y,z),\qquad
+f^{(3)}(x,y,z)=\frac{1}{Z_2}\psi(x,y,z)
+$$
+</div></div>
+<div class="eq"><div class="escroll">
+$$
+Z_1=\sum_{x,y,z}\psi(x,y)\psi(x,z)\psi(y,z),\qquad Z_2=\sum_{x,y,z}\psi(x,y,z)
+$$
+</div><span class="tag">(17.5)</span></div>
+<p>两个分布都在<strong>完全图</strong>（三个团 $\{x,y\},\{x,z\},\{y,z\}$ 或 $\{x,y,z\}$）上，所以图论信息无法区分它们。区别是：$f^{(2)}$ 只允许<strong>二阶相互作用</strong>，参数少（$f^{(3)}$ 有 3 个参数而 $f^{(2)}$ 只用两两的三个 $\psi$，每个 $\psi$ 又可以取成 $f_{ij}(x_i,x_j)/[f_i(x_i)f_j(x_j)]$ 这种可加形式）。在多元列联表的对数线性模型语言里，$f^{(2)}$ 叫「无二阶相互作用」模型。</p>
+<p>本章余下部分只处理<strong>pairwise</strong> 的图：每条边一个势函数，至多二阶依赖。这是图结构隐含的<strong>最小复杂度</strong>。</p>
+<div class="aside warn"><p class="hd">坑</p><p>把 $f^{(2)}$ 写成「两个变量的函数」时必须小心归一化：$\psi(x,y)$ 若被取成 $f(x,y)/[f(x)f(y)]$，它可能不取正值，进而违反正性假设，Hammersley–Clifford 与下面所有凸性论证都要重做。</p></div>
+<p><a class="src" href="../esl/ch17-undirected-graphical-models.html#s-17-2">原文 §17.2</a></p>
+<hr>
+<h2 id="s-17-3" class="anchored"><span class="num">17.3</span> 连续变量的无向图模型</h2>
+<p><strong>问题</strong>：所有顶点连续时，$f(x)$ 是 Lebesgue 密度，(17.4) 的求和变成积分，一般无法闭式算出。这类模型怎么变成能算的形式？答案是<strong>高斯</strong>：它的 Gibbs 分解自动给出二次型，$Z$ 自动是可积的二次项。</p>
+<h3 id="s-17-3-1" class="anchored"><span class="num">17.3.1</span> 高斯 MRF：为什么二次型就是 clique 分解</h3>
+<p>设 $X\sim N_p(\mu,\Sigma)$，$\Sigma$ 正定，记 $\Theta=\Sigma^{-1}$（<strong>精度矩阵</strong>，precision matrix）。密度是</p>
+<div class="eq"><div class="escroll">
+$$
+p(x)=(2\pi)^{-p/2}|\Sigma|^{-1/2}\exp\Big\{-\tfrac12(x-\mu)^\top\Theta(x-\mu)\Big\}
+$$
+</div></div>
+<p>它显然有 Gibbs 形式（单团 $\psi=p/Z$），但这个形式没有信息量。真正的内容是：<strong>二次型 $q(x)=(x-\mu)^\top\Theta(x-\mu)$ 可以沿某个顺序「消元」成逐个变量的二次函数的乘积，而每个因子只依赖 $x_i$ 和它的一小串后继——这一小串在图论上恰好是一个团。</strong></p>
+<div class="aside basis"><p class="hd">基础知识 · Cholesky 分解</p><p>任何对称正定矩阵 $\Sigma$ 有唯一分解 $\Sigma=TT^\top$，$T$ 下三角、对角为正。称为 Cholesky 分解。它就是高斯消元法消元结果的存储形式：$T$ 的第 $j$ 列非零的行号集合是「$x_j$ 在给定 $x_1,\dots,x_{j-1}$ 后还依赖的变量」，消元后的系数是条件方差平方根。</p>
+<p>三个要用的等价形式（都可直接验算）：</p>
+<ul><li>$\Sigma$ 正定 $\iff$ Cholesky 存在 $\iff$ $x^\top\Sigma x&gt;0$ 对一切 $x\ne0$（见预备知识 L1）。</li><li>$\Sigma^{-1}=T^{-\top}T^{-1}$，因为 $\Theta T^\top=T^\top$，即 $T^\top\Theta=T^\top$。</li><li>行列式：$|\Sigma|=|T|^2=\prod_k T_{kk}^2$。</li></ul></div>
+<p><strong>推导 · 逐步消元。</strong></p>
+<ol><li><span>二次型写成平方和。取 $x-\mu=Ty$，$y=T^{-1}(x-\mu)$（可逆，因为对角为正），则</span><div class="eq"><div class="escroll">
+$$
+q(x)=y^\top T^\top\Theta Ty=y^\top T^\top y=\|y\|_2^2=\sum_{k=1}^{p}y_k^2
+$$
+</div></div></li><li><span>写成边。$y_k=\sum_{j\le k}T^{-1}_{kj}(x_j-\mu_j)$，所以</span><div class="eq long"><div class="escroll">
+$$
+q(x)=\sum_{k=1}^{p}\Big(\sum_{j\le k}T^{-1}_{kj}(x_j-\mu_j)\Big)^{2}=\sum_{k=1}^{p}\Big(\sum_{j=1}^{k}a_{kj}(x_j-\mu_j)\Big)^{2},\qquad a=T^{-1}
+$$
+</div></div><span>第 $k$ 项只依赖 $x_1,\dots,x_k$。</span></li><li><span><strong>凑成平方完成的形式</strong>。对第 $k$ 项，把 $x_k-\mu_k$ 分离出来（$a_{kk}\ne0$）：</span><div class="eq long"><div class="escroll">
+$$
+\Big(\sum_{j\le k}a_{kj}(x_j-\mu_j)\Big)^{2}=a_{kk}^{2}\Big(x_k-\mu_k+\sum_{j&lt;k}\frac{a_{kj}}{a_{kk}}(x_j-\mu_j)\Big)^{2}+\text{只依赖 }x_{1:k-1}\text{ 的项}
+$$
+</div></div><span>验证：设 $L=\sum_{j&lt;k}\frac{a_{kj}}{a_{kk}}(x_j-\mu_j)$，则左侧 $=a_{kk}^2(x_k-\mu_k+L)^2$，而 $a_{kk}^2(x_k-\mu_k+L)^2=a_{kk}^2(x_k-\mu_k)^2+2a_{kk}^2(x_k-\mu_k)L+a_{kk}^2L^2$，后两项与 $x_k$ 无关。注意 $L$ 是一阶线性组合（不是 $x_k$ 的函数），所以这一步把第 $k$ 个变量的项吸收进前 $k-1$ 个变量里。</span></li><li><span>于是</span><div class="eq"><div class="escroll">
+$$
+q(x)=\sum_{k=1}^{p}a_{kk}^{2}\Big(x_k-\mu_k+\sum_{j&lt;k}\frac{a_{kj}}{a_{kk}}(x_j-\mu_j)\Big)^{2}+g(x_{1:p-1})
+$$
+</div></div><span>对 $k$ 求和的项只依赖 $x_k$ 与 $x_{1:k-1}$；递归地，$g$ 也只依赖 $x_{1:p-1}$，最终被完全吸收。<strong>这一步就是「$x_k$ 只与 $x_1,\dots,x_{k-1}$ 条件独立」的精确内容</strong>：因为平方项 $x_k$ 的系数 $a_{kk}^2&gt;0$ 不退化，$x_k$ 与 $x_{1:k-1}$ 的联合密度因子化。</span></li><li>结论形式：把每一项看成「团 $\{x_1,\dots,x_k\}$ 上」的势（取指数的反号），$p(x)\propto\exp\{-q(x)/2\}$ 就是 Gibbs 分解，极大团取成 $\{\,\text{使 }a_{kj}\ne0\text{ 的 } j\le k\,\}\cup\{k\}$。图论上：<strong>图的边集 = Cholesky 因子的非零元位置</strong>。这就是「无向图 + 高斯」的对应关系的全部内容。</li></ol>
+<p><strong>配分函数为什么恰好是可积的？</strong> 这是 §17.1 里「$Z$ 一般算不出来」在高斯情形变成「$Z$ 是常数」的地方。把第 4 步的结果代入 (17.4)：</p>
+<div class="eq long"><div class="escroll">
+$$
+Z=\int_{\mathbb{R}^p}\exp\Big\{-\tfrac12 q(x)\Big\}\,dx=\prod_{k=1}^{p}\int_{\mathbb{R}}\exp\Big\{-\tfrac12\big(\tilde x_k-c_k(x_{1:k-1})\big)^2\Big\}\,dx_k
+$$
+</div></div>
+<p>代入换元 $u_k=\tilde x_k-c_k(x_{1:k-1})$（哑变量消掉 $x_{1:k-1}$），每个因子 $=\sqrt{2\pi}$，于是</p>
+<div class="eq"><div class="escroll">
+$$
+Z=(2\pi)^{p/2}=|T|\ \cdot\ (2\pi)^{p/2}\big/\ |T|^{\,}
+$$
+</div></div>
+<p>更直接地：由 $x-\mu=Ty$ 与 $y$ 上各分量独立，$Z$ 与 $\mu$ 无关；再用换元 $x=\mu+Ty$ 的 Jacobian $|T|$ 得 $Z=(2\pi)^{p/2}|T|$。<strong>要点</strong>：$Z$ 只依赖 $\Sigma$、不依赖 $\mu$、也不依赖图结构，所以极大似然时可以把它扔掉——这就是 (17.11) 里那个「常数」的来源，也是「$\log\det\Theta$」出现在 score 方程里的原因。</p>
+<p><strong>边缘分布：用同一个三角形因子顺序积掉。</strong> 上面的换元 $x=\mu+Ty$ 把 $p(x)dx$ 变成</p>
+<div class="eq"><div class="escroll">
+$$
+(2\pi)^{-p/2}|T|^{-1}e^{-\|y\|^2/2}\cdot|T|\,dy=(2\pi)^{-p/2}e^{-\|y\|^2/2}dy=\prod_{k=1}^{p}\phi(y_k)\,dy_k
+$$
+</div></div>
+<p><strong>因子化对全部子集 $A\subseteq V$ 同时成立</strong>（因为 $y$ 的分量独立与 $A$ 无关）。所以 $X_A$ 的边缘密度只要把 $y_{A^c}$ 积掉：设 $A^c$ 的指标集为 $K^c$，则</p>
+<div class="eq"><div class="escroll">
+$$
+p(x_A)=\int_{y_{K^c}}\ \phi(y_{K_A})\prod_{k\in K^c}\phi(y_k)\,dy_{K^c}\ \ \cdot\ \text{(换元产生的行列式因子)}
+$$
+</div></div>
+<p>几何上的结论是：<strong>边缘的 Cholesky 因子 = 原来的 $T$ 按「先积掉 $K^c$」的顺序重排后的子块</strong>。也就是说，边缘分布的图是原图的一个「约化」，且计算量从 $O(p^3)$ 降到被积掉的那部分的代价。这就是 §17.5.2 里联合树要处理的对象——高斯情形有三角形因子可用，一般情形没有。</p>
+<div class="aside key"><p class="hd">结果</p><p>高斯 MRF 的图完全由 $\Theta=\Sigma^{-1}$ 的零元素决定。$\theta_{ij}=0\iff X_i\perp X_j\mid X_{-\{i,j\}}$。所以「估计图结构」= 「估计精度矩阵的零模式」，这正是 §17.3.2 的 graphical lasso 所做的事。</p></div>
+<h3 id="s-17-3-2" class="anchored"><span class="num">17.3.2</span> 条件高斯与精度矩阵</h3>
+<p><strong>问题</strong>：(17.6)–(17.9) 是本章引用最多的一组公式：$Y$ 对 $Z$ 的条件分布、$\Theta$ 的分块与 $\beta$ 的关系。它们决定「图上的一条边对应多大的回归系数」。</p>
+<p>把 $X$ 分块为 $X=(Z,Y)$，$Z$ 是前 $p-1$ 个变量，$Y=X_p$；协方差按同样方式分块：</p>
+<div class="eq"><div class="escroll">
+$$
+\Sigma=\begin{pmatrix}\Sigma_{ZZ} &amp; \sigma_{ZY}\\ \sigma_{YZ} &amp; \sigma_{YY}\end{pmatrix}
+$$
+</div><span class="tag">(17.7)</span></div>
+<div class="eq long"><div class="escroll">
+$$
+Y\mid Z=z\ \sim\ N\Big(\mu_Y+(z-\mu_Z)\Sigma_{ZZ}^{-1}\sigma_{ZY},\ \ \sigma_{YY}-\sigma_{YZ}\Sigma_{ZZ}^{-1}\sigma_{ZY}\Big)
+$$
+</div><span class="tag">(17.6)</span></div>
+<p>条件分布形式见预备知识 P4 / (2.16)：高斯向量的条件分布仍是高斯，均值是 $x$ 的线性函数，协方差是 Schur 补。但<strong>这里值得把 (17.6) 自己推一遍</strong>，因为它是全章的枢纽，而且能顺便解释「为什么条件分布只在 Gibbs 形式里出现局部团」。</p>
+<p><strong>推导 · (17.6) 的配方法。</strong> 条件密度是 $p(y\mid z)=p(z,y)/p(z)$，而分子分母都带 $-q/2$：</p>
+<div class="eq long"><div class="escroll">
+$$
+p(y\mid z)\propto\exp\Big\{-\tfrac12\big[(z-\mu_Z)^\top\Theta_{ZZ}(z-\mu_Z)+2(y-\mu_Y)\theta_{ZY}^\top(z-\mu_Z)+(y-\mu_Y)^2\theta_{YY}(y-\mu_Y)\big]\Big\}
+$$
+</div></div>
+<p>把含 $y-\mu_Y$ 的一次项收进括号，凑成平方：</p>
+<div class="eq long"><div class="escroll">
+$$
+(y-\mu_Y)^2\theta_{YY}+2(y-\mu_Y)\theta_{ZY}^\top(z-\mu_Z)=\theta_{YY}\Big[(y-\mu_Y)+\frac{\theta_{ZY}^\top}{\theta_{YY}}(z-\mu_Z)\Big]^2-\frac{\big(\theta_{ZY}^\top(z-\mu_Z)\big)^2}{\theta_{YY}}
+$$
+</div></div>
+<p>（验证：展开右边第一项得 $\theta_{YY}(y-\mu_Y)^2+2\theta_{ZY}^\top(z-\mu_Z)(y-\mu_Y)+\big(\theta_{ZY}^\top(z-\mu_Z)\big)^2/\theta_{YY}$，减去末项正好配平。）负号那一项只依赖 $z$，与 $y$ 无关，可以并入归一化常数。于是</p>
+<div class="eq long"><div class="escroll">
+$$
+p(y\mid z)\propto\exp\Big\{-\frac{\theta_{YY}}{2}\Big[(y-\mu_Y)+\frac{\theta_{ZY}^\top}{\theta_{YY}}(z-\mu_Z)\Big]^2\Big\}
+$$
+</div></div>
+<p>于是条件均值 $\mu_Y+\frac{\theta_{ZY}^\top}{\theta_{YY}}(z-\mu_Z)$、条件方差 $1/\theta_{YY}$。<strong>注意这里出现的完全是 $\Theta$</strong>，与 $\Sigma$ 无关——这正是高斯图模型「自然参数」的说法（(17.11) 是对数配分函数 $\Phi$ 的 Wishart 族形式，见预备知识 P3）。</p>
+<p><strong>再把它翻译成 $\Sigma$。</strong> 设 $s=\sigma_{YY}-\sigma_{ZY}^\top\Sigma_{ZZ}^{-1}\sigma_{ZY}$。(17.6) 断言条件方差是 $s$ 且条件均值系数是 $\beta$，于是</p>
+<div class="eq"><div class="escroll">
+$$
+\frac{1}{\theta_{YY}}=s,\qquad \frac{\theta_{ZY}^\top}{\theta_{YY}}=-\Sigma_{ZZ}^{-1}\sigma_{ZY}=:\beta
+$$
+</div></div>
+<p>（这两个等式可以直接从密度里读出来，也可以用 $\Sigma\Theta=I$ 验证，见下面的块求逆。）</p>
+<div class="aside warn"><p class="hd">坑</p><p>$s&gt;0$ 不是废话：它由 $\Sigma\succ0$ 保证（$s$ 是 $X_p$ 在 $X_{1:p-1}$ 上的<strong>残差方差</strong>，即最小二乘残差平方和 $z^{\top}P_Xz&gt;0$），但如果直接对样本协方差估计 $S$ 做同样的分块，$s=S_{pp}-s_{12}^\top S_{11}^{-1}s_{12}\ge0$ 且当 $p\ge N$ 时<strong>通常等于 0</strong>（因为 $S$ 秩 $\le N-1$）。这就是 (17.21) 必须加 $\lambda$ 的全部原因。</p></div>
+<p><strong>推导 · (17.8)(17.9)：为什么 $\beta$ 只由 $\Theta$ 的分块决定。</strong></p>
+<p>要证的是 $\theta_{ZY}=-\theta_{YY}\,\beta$。直接做块矩阵求逆的验算（所有符号都写出来）。设 $\Sigma=\begin{pmatrix}A&amp;c\\ c^\top&amp;d\end{pmatrix}$（$A=\Sigma_{ZZ}$，$c=\sigma_{ZY}$，$d=\sigma_{YY}$），$A$ 对称正定，$d-c^\top A^{-1}c&gt;0$。令 $a:=A^{-1}c$，$q:=c^\top a$，$s:=d-q$。则</p>
+<p>下面这个分块求逆公式在下面记作 <strong>(B)</strong>：</p>
+<div class="eq"><div class="escroll">
+$$
+\Sigma^{-1}=\begin{pmatrix}A^{-1}+aa^\top/s &amp; -a/s\\ -a^\top/s &amp; 1/s\end{pmatrix}
+$$
+</div></div>
+<p>验证四块（把 (B) 代入 $\Sigma\cdot(B)=I$，逐块验算）：</p>
+<div class="eq"><div class="escroll">
+$$
+\Sigma\,(\cdot)_{11}=AA^{-1}+\frac{Aaa^\top}{s}-\frac{ca^\top}{s}=I+\frac{(Aa-c)a^\top}{s}=I
+$$
+</div></div>
+<div class="eq"><div class="escroll">
+$$
+\Sigma\,(\cdot)_{12}=A\frac{-a}{s}+c\frac1s=\frac{-Aa+c}{s}=0
+$$
+</div></div>
+<div class="eq long"><div class="escroll">
+$$
+\Sigma\,(\cdot)_{21}=c^\top A^{-1}+\frac{c^\top a\,a^\top}{s}-\frac{d\,a^\top}{s}=a^\top+\frac{(q-d)a^\top}{s}=a^\top-\frac{s a^\top}{s}=0
+$$
+</div></div>
+<div class="eq"><div class="escroll">
+$$
+\Sigma\,(\cdot)_{22}=-\frac{c^\top a}{s}+\frac{d}{s}=\frac{d-q}{s}=1
+$$
+</div></div>
+<p>（用到的只有 $Aa=c$ 与 $d-q=s$。）所以 $\theta_{ZZ}=A^{-1}+aa^\top/s$，$\theta_{ZY}=-a/s$，$\theta_{YY}=1/s$，即</p>
+<div class="eq"><div class="escroll">
+$$
+\theta_{ZY}=-\theta_{YY}\,A^{-1}c=-\theta_{YY}\,\Sigma_{ZZ}^{-1}\sigma_{ZY}
+$$
+</div><span class="tag">(17.8)</span></div>
+<div class="eq"><div class="escroll">
+$$
+\beta=\Sigma_{ZZ}^{-1}\sigma_{ZY}=-\theta_{ZY}/\theta_{YY}
+$$
+</div><span class="tag">(17.9)</span></div>
+<p>另外由 $s=\sigma_{YY}-\sigma_{YZ}\Sigma_{ZZ}^{-1}\sigma_{ZY}$（(17.6) 的条件方差）知 $1/\theta_{YY}=s&gt;0$，这就是「条件方差为正」这一列中 $p$ 的正性要求。</p>
+<p><strong>几何解释（为什么这正是「线性调整后的协方差」）。</strong> $\beta$ 就是 $Y$ 在 $Z$ 上的总体最小二乘系数（预备知识 L2），而条件协方差</p>
+<div class="eq"><div class="escroll">
+$$
+\sigma_{YY}-\sigma_{YZ}\Sigma_{ZZ}^{-1}\sigma_{ZY}=E\big[(Y-\mu_Y-\beta^\top(Z-\mu_Z))^2\big]
+$$
+</div></div>
+<p>正是残差方差 $E[R^2]$。所以 $\beta$ 的<strong>长度</strong>把 $Y$ 的方差分解成「被 $Z$ 解释的部分 $\beta^\top\Sigma_{ZZ}\beta$」与「残差 $s$」：</p>
+<div class="eq"><div class="escroll">
+$$
+\sigma_{YY}=\beta^\top\Sigma_{ZZ}\beta+s
+$$
+</div></div>
+<p>（把 $\beta=\Sigma_{ZZ}^{-1}c$ 代进去验证：$\beta^\top\Sigma_{ZZ}\beta=c^\top\Sigma_{ZZ}^{-1}c=q$，而 $q+s=d$ ✓。）这个残差/投影的视角正是 §17.5.3 里 EM 修正项、也是第 3 章偏序贯贯分析里的标准工具。</p>
+<div class="aside key"><p class="hd">结果</p><p>(17.9) 是本章最实用的一行：<strong>回归系数只依赖 $\Theta$ 的第 $p$ 列与 $\theta_{YY}$</strong>。因为 $\theta_{ZY}$ 与 $\beta$ 反号，$\theta_{ZY}$ 的零位置集合恰是 $\beta$ 的零位置集合。于是：</p>
+<ul><li>$\theta_{ij}=0\iff\beta_i=0\iff X_j$ 与 $Y$ 给定其余变量后独立 ⟹ 图上无边。</li><li>「图」可以逐列估计：解 $p$ 个条件回归，回归系数为零的变量在图上就没有边。</li></ul>
+<p>这就是 §17.3.1 算法 17.1 的出发点。</p></div>
+<p><strong>部分相关系数与「伪相关矩阵」</strong>(17.40)。$S_{a.b}$ 记协方差矩阵中 $a=\{1,2\}$ 与 $b=$ 其余之间的「线性调整后协方差」：</p>
+<div class="eq"><div class="escroll">
+$$
+S_{a.b}=\Sigma_{aa}-\Sigma_{ab}\Sigma_{bb}^{-1}\Sigma_{ba}
+$$
+</div></div>
+<p>在高斯模型下 $S_{a.b}$ 就是 $X_a\mid X_b$ 的条件协方差矩阵（(17.6) 的分块）。取 Cholesky 分解 $\Sigma=LL^\top$，$L=\begin{pmatrix}L_{11}&amp;0\\ l_{21}^\top&amp;\ell_{22}\end{pmatrix}$，则</p>
+<div class="eq long"><div class="escroll">
+$$
+\Sigma_{aa}=L_{11}L_{11}^\top,\qquad \Sigma_{a,bc}=L_{11}l_{21}^\top,\qquad \Sigma_{bb}=l_{21}l_{21}^\top+\ell_{22}^2
+$$
+</div></div>
+<div class="eq long"><div class="escroll">
+$$
+S_{a.b}=L_{11}\Big[I-l_{21}^\top\big(l_{21}l_{21}^\top+\ell_{22}^2\big)^{-1}l_{21}\Big]L_{11}^\top
+=L_{11}\frac{\ell_{22}^2}{l_{21}^2+\ell_{22}^2}\,L_{11}^\top
+$$
+</div></div>
+<p>同时由 $\Theta=\Sigma^{-1}=L^{-\top}L^{-1}$ 与 $L^{-1}=\begin{pmatrix}L_{11}^{-1}&amp;0\\-l_{21}L_{11}^{-1}/\ell_{22}&amp;1/\ell_{22}\end{pmatrix}$ 逐块相乘得 $\Theta_{aa}=L_{11}^{-\top}L_{11}^{-1}\big(1+\frac{l_{21}^\top l_{21}}{\ell_{22}^2}\big)$，即 $\Theta_{aa}^{-1}=L_{11}\frac{\ell_{22}^2}{l_{21}^2+\ell_{22}^2}L_{11}^\top=S_{a.b}$。所以练习 17.3 的结论 $S_{a.b}=\Theta_{aa}^{-1}$ 成立，并且「偏相关 $\rho_{jk\mid\mathrm{rest}}=0\iff\theta_{jk}=0$」。把 $\Theta$ 当作协方差矩阵并算它的相关矩阵：</p>
+<div class="eq"><div class="escroll">
+$$
+R=\mathrm{diag}(\Theta)^{-1/2}\Theta\,\mathrm{diag}(\Theta)^{-1/2},\qquad r_{jk}=-\rho_{jk\mid\mathrm{rest}}
+$$
+</div><span class="tag">(17.40)</span></div>
+<p>（用 $S_{jk\mid\cdot}=-\theta_{jk}/\sqrt{\theta_{jj}\theta_{kk}}$ 除以各自的 $\sqrt{\theta_{jj}},\sqrt{\theta_{kk}}$。）负号是精度与协方差关系的标准结果，容易记错：<strong>$R$ 是负偏相关矩阵。</strong></p>
+<h3 id="s-17-3-3" class="anchored"><span class="num">17.3.3</span> 已知图结构时的参数估计</h3>
+<p><strong>问题</strong>：图结构已知（哪些 $\theta_{jk}$ 强制为零），如何极大化似然？原书给出一个把 (17.13) 化成「$p$ 个耦合的回归」的漂亮办法，本节完整推导。</p>
+<p><strong>第 1 步：经验协方差与对数似然。</strong> $N$ 个 iid 实现 $x_1,\dots,x_N$，记</p>
+<div class="eq"><div class="escroll">
+$$
+S=\frac1N\sum_{i=1}^{N}(x_i-\bar x)(x_i-\bar x)^\top \in\mathbb{R}^{p\times p}
+$$
+</div><span class="tag">(17.10)</span></div>
+<div class="eq"><div class="escroll">
+$$
+\ell(\Theta)=\log\det\Theta-\mathrm{trace}(S\Theta)
+$$
+</div><span class="tag">(17.11)</span></div>
+<p>推导（17.11）：$-2\log L(\mu,\Sigma)=N\log|\Sigma|+N\,\mathrm{trace}(\Sigma^{-1}S)+\text{常数}$（预备知识 P4 的二次型结论），$\log|\Sigma|=-\log|\Theta|$、$\Sigma^{-1}=\Theta$，再对 $\mu$ 取极值得 $\hat\mu=\bar x$。得 (17.11)。注意 $-\ell(\Theta)=\log|\Sigma|+\mathrm{trace}(S\Sigma^{-1})$ 是 $\Theta$ 的<strong>凸</strong>函数：$\log\det\Theta$ 在对称正定锥上是凸的（$-\log\det$ 严格凸，见 P3 的 $A''\ge0$ 论证在 $\Theta=-\log\det$ 上的应用）。无约束时 $\hat\Theta=S^{-1}$：由 $\nabla\log\det\Theta=\Theta^{-1}$，score 方程 $\Theta^{-1}-S=0$。</p>
+<p><strong>第 2 步：把零约束写成拉格朗日项。</strong></p>
+<div class="eq"><div class="escroll">
+$$
+\ell_C(\Theta)=\log\det\Theta-\mathrm{trace}(S\Theta)-\sum_{(j,k)\notin E}\gamma_{jk}\theta_{jk}
+$$
+</div><span class="tag">(17.12)</span></div>
+<div class="eq"><div class="escroll">
+$$
+\Longrightarrow\qquad \Theta^{-1}-S-\Gamma=0,\quad \Gamma_{jk}=\gamma_{jk}\ (j,k)\notin E,\ \ \Gamma_{jj}=0
+$$
+</div><span class="tag">(17.13)</span></div>
+<p>（$\nabla\Theta\log\det\Theta=\Theta^{-1}$，$\nabla\Theta\,\mathrm{trace}(S\Theta)=S$，两者都对称。）取这个方程的 $(1,p)$ 元，得到最后一行/列上的单个条件（无约束时 $\gamma_{12}=0$）：</p>
+<div class="eq"><div class="escroll">
+$$
+w_{12}-s_{12}-\gamma_{12}=0
+$$
+</div><span class="tag">(17.14)</span></div>
+<p><strong>第 3 步：一次只解最后一行/列。</strong> 设 $W=\Theta^{-1}$，按 (17.7) 分块：</p>
+<div class="eq long"><div class="escroll">
+$$
+W=\begin{pmatrix}W_{11}&amp;w_{12}\\ w_{12}^\top&amp;w_{22}\end{pmatrix},\qquad
+\Theta=\begin{pmatrix}\Theta_{11}&amp;\theta_{12}\\ \theta_{12}^\top&amp;\theta_{22}\end{pmatrix},\qquad WW\Theta\ \text{即}\ \Theta^{-1}W=I
+$$
+</div></div>
+<div class="eq verylong"><div class="escroll">
+$$
+\begin{pmatrix}W_{11}&amp;w_{12}\\ w_{12}^\top&amp;w_{22}\end{pmatrix}
+\begin{pmatrix}\Theta_{11}&amp;\theta_{12}\\ \theta_{12}^\top&amp;\theta_{22}\end{pmatrix}=\begin{pmatrix}I&amp;0\\0&amp;1\end{pmatrix}
+\Rightarrow
+\begin{cases}W_{11}\Theta_{11}+w_{12}\theta_{12}^\top=I\\ W_{11}\theta_{12}+w_{12}\theta_{22}=0\end{cases}
+$$
+</div><span class="tag">(17.15)</span></div>
+<p>由第二式（$W_{11}$ 可逆）</p>
+<div class="eq"><div class="escroll">
+$$
+\theta_{12}=-\theta_{22}W_{11}^{-1}w_{12}
+$$
+</div><span class="tag">(17.16)</span></div>
+<div class="eq"><div class="escroll">
+$$
+=-W_{11}\beta\ \ \text{其中}\ \ \beta:=-\theta_{12}/\theta_{22}=W_{11}^{-1}w_{12}
+$$
+</div><span class="tag">(17.17)</span></div>
+<p>（(17.17) 的右边来自 (17.16) 与 $\theta_{22}$ 的定义；$\beta$ 与 (17.9) 是同一个量。）把 (17.17) 代入 (17.13) 的 $(1,p)$ 元：</p>
+<div class="eq"><div class="escroll">
+$$
+w_{12}-s_{12}-\gamma_{12}=0 \ \ (\text{无约束时})\qquad\Longleftrightarrow\qquad W_{11}\beta-s_{12}=0
+$$
+</div><span class="tag">(17.18)</span></div>
+<p><strong>这就是「$p-1$ 个估计方程」</strong>：形式上是 $X_p$ 对其余变量的多元回归，只是<strong>观测的交叉乘积矩阵 $S_{11}$ 被模型当前的协方差估计 $W_{11}$ 替换了</strong>。</p>
+<p><strong>第 4 步：约束化为子集回归。</strong> 若 $\gamma_{12}$ 中有 $p-q$ 个非零元（即 $p-q$ 个被强制为零的系数），对应的行不含信息可删；把 $\beta$ 删掉零元得 $q$ 维约化方程组</p>
+<div class="eq long"><div class="escroll">
+$$
+W_{11}^{\star}\beta^{\star}-s_{12}^{\star}=0 \qquad\Longrightarrow\qquad \hat\beta^{\star}=(W_{11}^{\star})^{-1}s_{12}^{\star}
+$$
+</div><span class="tag">(17.19)</span></div>
+<p>补零得 $\hat\beta$。（书中例子里变量 1 的修正回归里变量 3 被剔除，就是这一步。）</p>
+<p><strong>第 5 步：恢复尺度。</strong> (17.16) 只把 $\theta_{12}$ 定到一个未知因子 $1/\theta_{22}$，用分块求逆的另一个式子定出它：</p>
+<div class="eq"><div class="escroll">
+$$
+\frac{1}{\theta_{22}}=w_{22}-w_{12}^\top\beta
+$$
+</div><span class="tag">(17.20)</span></div>
+<p>把这两个结论写成标准分块逆的形式（练习 17.6 的 (17.41)(17.42)，与 (17.16)(17.20) 等价）：</p>
+<div class="eq"><div class="escroll">
+$$
+\theta_{12}=-W_{11}^{-1}w_{12}\theta_{22}
+$$
+</div><span class="tag">(17.41)</span></div>
+<div class="eq"><div class="escroll">
+$$
+\theta_{22}=\frac{1}{w_{22}-w_{12}^\top W_{11}^{-1}w_{12}}
+$$
+</div><span class="tag">(17.42)</span></div>
+<p>于是 $\hat\theta_{22}=1/(w_{22}-w_{12}^\top\hat\beta)$、$\hat\theta_{12}=-\hat\beta\,\hat\theta_{22}$。</p>
+<p>（验算：$W\Theta=I$ 的 $(p,p)$ 块给 $\theta_{12}^\top w_{12}+\theta_{22}w_{22}=1$，代入 $\theta_{12}=-\theta_{22}W_{11}^{-1}w_{12}$ 得 $\theta_{22}(w_{22}-w_{12}^\top W_{11}^{-1}w_{12})=1$。）所以 $\hat\theta_{12}$ 只是 $\hat\beta$ 的一个<strong>重标定</strong>，符号相反、尺度 $-1/\hat\theta_{22}$。</p>
+<p>验证：由 $\Theta W=I$ 的 $(p,p)$ 块得 $\theta_{12}^\top w_{12}+\theta_{22}w_{22}=1$，代入 $\theta_{12}=-\theta_{22}\beta$ 得 $\theta_{22}(w_{22}-w_{12}^\top\beta)=1$。又因 $\Gamma$ 对角为零，(17.13) 的 $(p,p)$ 元给出 $w_{22}=s_{22}$。</p>
+<p><strong>第 6 步：为什么这样迭代一定收敛，而且收敛到 (17.12) 的极大点。</strong> 记 $\ell_C(\Theta)=\log\det\Theta-\mathrm{trace}(S\Theta)-\langle\Gamma,\Theta\rangle$。算法的每一轮做的是：固定 $\Theta$ 的其余元素，只改第 $j$ 行/列。第 $j$ 行/列的<strong>唯一</strong>自由度是 $\theta_{12}$（$\theta_{jj}$ 由 $w_{jj}=s_{jj}$ 定死），而由 (17.13) 的 $(1,j)$ 块，那一行的条件恰好是 $p-1$ 个方程</p>
+<div class="eq"><div class="escroll">
+$$
+w_{1j}-s_{1j}-\gamma_{1j}=0,\qquad\text{即}\qquad W_{-j,-j}\beta=s_{-j,j}-\Gamma_{-j,j}
+$$
+</div></div>
+<p><strong>注意右边是数据的（$s$、$\Gamma$），左边是模型的（$W$）</strong>。所以在固定其它元素时，$\ell_C$ 对 $\theta_{1j}$ 的梯度为零当且仅当这一组方程成立——即算法把第 $j$ 个方向<strong>精确地</strong>推到了 $\ell_C$ 的（沿该方向的）极小点。这构成一个标准的「循环块坐标上升」：每次更新不增 $\ell_C$，且 $\ell_C$ 有下界 $\log\det\Theta\ge p\log(0)$ 在有界集上……更实用的判据是：若 $W$ 保持正定（初始化 $W=S$ 加 $\lambda I$ 就保证），则 $\ell_C(\Theta)=\log\det\Theta-\langle S+\Gamma,\Theta\rangle$ 的极值点满足 $W=S+\Gamma$，而每次坐标更新都在朝 $w_{1j}\to s_{1j}+\gamma_{1j}$ 移动；实践中用「$\max_j\|w_{1j}^{\text{new}}-w_{1j}^{\text{old}}\|_\infty&lt;\varepsilon$」作为停机准则。</p>
+<div class="aside"><p class="hd">算法 17.1</p><p>（修正回归）：$W\gets S$；对 $j=1,\dots,p$ 循环直到收敛：切出 $W$ 的第 $j$ 行/列得 $W_{11},w_{12}$；解约化方程 (17.19) 得 $\hat\beta$；更新 $w_{12}\gets W_{11}\hat\beta$。最后一轮用 $\hat\theta_{12}=-\hat\beta\hat\theta_{22}$ 与 $\hat\theta_{22}=1/(w_{22}-w_{12}^\top\hat\beta)$。</p>
+<p><strong>逐步数值例子</strong>（书中例，来自 Whittaker）：$p=4$，图 17.4 的边是 $(1,2),(2,3),(3,4),(1,4)$，缺 $(1,3),(2,4)$，经验协方差</p>
+<div class="eq long"><div class="escroll">
+$$
+S=\begin{pmatrix}10.00&amp;1.00&amp;5.00&amp;4.00\\1.00&amp;10.00&amp;2.00&amp;6.00\\5.00&amp;2.00&amp;10.00&amp;3.00\\4.00&amp;6.00&amp;3.00&amp;10.00\end{pmatrix}
+$$
+</div></div>
+<p>第 1 轮，$j=1$：邻居是 $\{2,4\}$，把变量 3 剔除（正是 (17.19) 的「约化」），解 $2\times2$ 系统</p>
+<div class="eq verylong"><div class="escroll">
+$$
+\begin{pmatrix}10&amp;4\\4&amp;10\end{pmatrix}\hat\beta^{\star}=\begin{pmatrix}1\\4\end{pmatrix}\Longrightarrow
+\hat\beta^{\star}=\frac1{84}\begin{pmatrix}10&amp;-4\\-4&amp;10\end{pmatrix}\begin{pmatrix}1\\4\end{pmatrix}=\begin{pmatrix}-6/84\\36/84\end{pmatrix}
+$$
+</div></div>
+<p>补零成 $\hat\beta=(-0.0714,0,0,0.4286)^\top$，更新 $w_{12}=W_{11}\hat\beta$。$j=2,3,4$ 同理。收敛后</p>
+<div class="eq verylong"><div class="escroll">
+$$
+\hat\Sigma=\begin{pmatrix}10.00&amp;1.00&amp;1.31&amp;4.00\\1.00&amp;10.00&amp;0.87&amp;6.00\\1.31&amp;0.87&amp;10.00&amp;3.00\\4.00&amp;6.00&amp;3.00&amp;10.00\end{pmatrix},\qquad
+\hat\Theta=\begin{pmatrix}1.00&amp;0.00&amp;-0.01&amp;0.00\\0.00&amp;1.00&amp;0.00&amp;-0.01\\-0.01&amp;0.00&amp;1.00&amp;0.00\\0.00&amp;-0.01&amp;0.00&amp;1.00\end{pmatrix}
+$$
+</div></div>
+<p>注意 $\hat\Theta_{13}=\hat\Theta_{24}=0$ 恰对应缺的两条边；且 $\hat\Sigma$ 与 $S$ 只在 $(1,3),(3,1),(2,4),(4,2)$ 四个元素上不同（$1.31$ vs $5$，$0.87$ vs $2$）。<strong>换句话说这个算法只「改动」了那些必须改动的元素，得到的 $\hat\Sigma$ 是 $S$ 的正定补全。</strong></p></div>
+<div class="aside key"><p class="hd">结果</p><p>图估计<strong>不是</strong> $p$ 个独立的回归，而是 $p$ 个<strong>耦合</strong>的回归：step (b) 里共用的 $W_{11}$（而不是观测的 $S_{11}$）就是耦合的来源，而它保证了收敛到 (17.12) 的（唯一的）极大点。</p></div>
+<div class="aside warn"><p class="hd">坑</p><p>(a) 这个算法的收敛性不是自动的：$\ell_C$ 凸只保证极大点唯一与「解是全局的」，不保证坐标式迭代单调下降；实际使用时应按「一轮扫过所有 $j$ 且 $\ell_C$ 不增」的方式实现。(b) 若 $S$ 奇异（$p\ge N$，这正是第 18 章的情形），初始化必须加 $\lambda I$ 或任何正定扰动，否则 $W_{11}^{-1}$ 无意义。(c) 书中的算法与 Dempster (1972) 的协方差选择、以及 Chaudhuri et al. (2007) 对协方差图的迭代条件拟合相关，但作者说明在文献里没有找到完全一样的过程。</p></div>
+<div class="aside key"><p class="hd">结果</p><p>图估计<strong>不是</strong> $p$ 个独立的回归，而是 $p$ 个<strong>耦合</strong>的回归：step (b) 里共用的 $W_{11}$（而不是观测的 $S_{11}$）就是耦合的来源，而它保证了收敛到 (17.12) 的（唯一的）极大点。</p></div>
+<div class="aside warn"><p class="hd">坑</p><p>这个算法的收敛性不是自动的。$\ell_C$ 凸只保证极大点唯一与「解是全局的」，不保证坐标式迭代单调下降；实际使用时按「一轮扫过所有 $j$ 使 $\ell_C$ 不增」的方式实现才有保证。书中未展开这一点。</p></div>
+<p><a class="src" href="../esl/ch17-undirected-graphical-models.html#s-17-3-1">原文 §17.3.1</a></p>
+<h3 id="s-17-3-4" class="anchored"><span class="num">17.3.4</span> 图结构的估计：graphical lasso</h3>
+<p><strong>问题</strong>：真实结构未知。用 $L_1$ 罚则代替零约束：</p>
+<div class="eq"><div class="escroll">
+$$
+\max_{\Theta\succ0}\ \log\det\Theta-\mathrm{trace}(S\Theta)-\lambda\|\Theta\|_1
+$$
+</div><span class="tag">(17.21)</span></div>
+<p>$\|\Theta\|_1=\sum_{jk}|\theta_{jk}|$。这是<strong>凸</strong>优化（$-(\cdot)$ 凸、罚凸）。原文说「把算法 17.1 的 (b) 换成一步修正 lasso 即可」，下面把这一步推出来。</p>
+<p><strong>第 1 步：score 方程。</strong> 在 (17.13) 里把零约束换成分段可微的 $L_1$ 罚，用次梯度：</p>
+<div class="eq"><div class="escroll">
+$$
+\Theta^{-1}-S-\lambda\cdot\mathrm{Sign}(\Theta)=0
+$$
+</div><span class="tag">(17.22)</span></div>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{Sign}(t)=\begin{cases}\mathrm{sign}(t), &amp; t\ne0\\ [-1,1]\ \text{中任取}, &amp; t=0\end{cases}
+$$
+</div></div>
+<p>（凸函数 $g$ 在 $t_0$ 处的次梯度集是 $\{g'(t):t\ne t_0\}\cup\partial g(t_0)$，$\partial|t|(0)=[-1,1]$。）</p>
+<p><strong>第 2 步：逐行化成 lasso 方程。</strong> 重复 (17.15)–(17.18) 的分块推导。要小心的是符号：由 (17.17) $\beta=-\theta_{12}/\theta_{22}$，而 $\theta_{22}&gt;0$（因为 $W\succ0\Rightarrow\theta_{22}&gt;0$），所以 $\beta$ 与 $\theta_{12}$ 逐分量<strong>反号</strong>。当 $\theta_{12}\ne0$ 时两边都非零，故 $\mathrm{Sign}(\beta)=-\mathrm{Sign}(\theta_{12})$；当 $\theta_{12}=0$ 时两边都是 0，而 $\mathrm{Sign}(0)=[-1,1]$ 是区间，所以等式在次梯度意义下仍然成立。把 (17.22) 的 $(1,p)$ 元写出来并替换：</p>
+<div class="eq long"><div class="escroll">
+$$
+-\frac{\theta_{12}}{\theta_{22}}-s_{12}+\lambda\,\mathrm{Sign}(\theta_{12})=0\ \Longrightarrow\
+W_{11}\beta-s_{12}-\lambda\,\mathrm{Sign}(\beta)=0\ \Longrightarrow\ W_{11}\beta-s_{12}+\lambda\,\mathrm{Sign}(\beta)=0
+$$
+</div><span class="tag">(17.23)</span></div>
+<p><strong>第 3 步：这正是 lasso 的 score 方程。</strong> lasso 最小化（这里多乘了 $1/2$）</p>
+<div class="eq"><div class="escroll">
+$$
+\frac{1}{2N}\sum_{i=1}^{N}\big(y_i-z_i^\top\beta\big)^2+\lambda\|\beta\|_1
+$$
+</div><span class="tag">(17.24)</span></div>
+<div class="eq"><div class="escroll">
+$$
+\Longrightarrow\qquad Z^\top Z\beta-Z^\top y+\lambda\,\mathrm{Sign}(\beta)=0
+$$
+</div><span class="tag">(17.25)</span></div>
+<p>（逐步：$\nabla_\beta\sum_i(y_i-z_i^\top\beta)^2=2Z^\top(Z\beta-y)$，乘 $1/N$ 再令 $\nabla\|\beta\|_1+\lambda\,\mathrm{Sign}(\beta)$ 抵消它，最后整体乘 $N$ 把 $\lambda$ 吸收进系数。）</p>
+<p><strong>第 3b 步：逐项对照，说明这不是「凑巧」。</strong></p>
+<div class="tscroll-x"><table class="fx"><thead><tr><th>(17.23)（图模型）</th><th>(17.25)（lasso）</th><th>角色</th></tr></thead><tbody><tr><td>$W_{11}$</td><td>$Z^\top Z$</td><td>预测子交叉乘积（用<strong>模型的</strong> $W$ 替换观测的）</td></tr><tr><td>$s_{12}$</td><td>$Z^\top y$</td><td>观测交叉乘积（保持观测的）</td></tr><tr><td>$\beta$</td><td>$\beta$</td><td>回归系数（与 $\theta_{12}$ 反号）</td></tr><tr><td>$\lambda$</td><td>$\lambda$</td><td>同一罚参数（差一个正因子 $N$）</td></tr></tbody></table></div>
+<p>两式形式完全一样。所以「用 lasso 解 (17.21)」与「对每个结点跑一次 lasso，但把 $Z^\top Z$ 换成 $W_{-j,-j}$」是<strong>同一件事</strong>：这就是算法 17.2。</p>
+<p><strong>第 4 步：坐标下降的一步更新。</strong> 记 $V=W_{11}$，$s=s_{12}$。把 (17.25) 沿 $\beta_j$ 分离：</p>
+<div class="eq"><div class="escroll">
+$$
+V_{jj}\beta_j+\sum_{k\ne j}V_{kj}\beta_k-s_j+\lambda\,\mathrm{sign}(\beta_j)=0
+$$
+</div></div>
+<p>固定其余坐标，只有 $\beta_j$ 变。把 $z:=\sum_{k\ne j}V_{kj}\hat\beta_k$ 视为常数并记 $a=(s_j-z)/V_{jj}$、$t=\lambda/V_{jj}$（$V_{jj}&gt;0$，因为 $W=\Theta^{-1}\succ0$），方程两边除以 $V_{jj}$ 变成</p>
+<div class="eq long"><div class="escroll">
+$$
+\beta_j+\lambda\frac{\mathrm{sign}(\beta_j)}{V_{jj}}=\frac{s_j-z}{V_{jj}}
+\quad\Longleftrightarrow\quad \beta_j=a-t\,\mathrm{sign}(\beta_j)
+$$
+</div></div>
+<p>分 $\beta_j&gt;0$、$\beta_j&lt;0$、$\beta_j=0$ 三种情形解这个一元方程：$\beta_j=a-t$（需 $a&gt;t$，否则解落在负侧，无解 $\Rightarrow\beta_j=0$）；$\beta_j=a+t$（需 $a&lt;-t$）；$|a|\le t$ 时唯一解 $\beta_j=0$。合起来就是软阈值算子</p>
+<div class="eq"><div class="escroll">
+$$
+S(x,t)=\mathrm{sign}(x)(|x|-t)_+
+$$
+</div><span class="tag">(17.27)</span></div>
+<div class="eq"><div class="escroll">
+$$
+\hat\beta_j\leftarrow S\Big(s_{12j}-\sum_{k=1}^{p-1}V_{kj}\hat\beta_k,\ \lambda/V_{jj}\Big)
+$$
+</div><span class="tag">(17.26)</span></div>
+<p>（书中的记号把 $1/V_{jj}$ 这一步省略在 $S$ 的约定里；代数上完整的写法是 $\hat\beta_j\gets S(\ldots)/V_{jj}$，见上面 $\beta_j=a-t\,\mathrm{sign}(\beta_j)$ 的那一步。）</p>
+<p><strong>第 5 步：这一步真的在下降吗。</strong> (17.26) 是对 (17.23) 的精确求解，而 (17.23) 是目标函数 (17.21) 关于 $(\theta_{1j},\theta_{j1})$ 的 KKT 条件（预备知识 O2）。凸性（$\log\det$ 凸、$-\mathrm{trace}(S\Theta)$ 线性、$\lambda\|\cdot\|_1$ 凸）加上 $\Theta\succ0$ 这个凸集保证：<strong>在固定其余元素时，精确解 (17.26) 把 (17.21) 在该方向上推到极小</strong>。于是循环坐标下降单调不增，且因 $\lambda&gt;0$ 时目标有唯一点达到极小（KKT 充分性），序列必有聚点、聚点是 KKT 点。$\lambda\to0$ 时这个论证退化为逐坐标 Gauss–Seidel 解 score 方程，同样是单调的。</p>
+<p><strong>第 6 步：为什么「$p&gt;N$ 也不怕」。</strong> 算法 17.2 全程只需要 $W$ 的 $(p-1)\times(p-1)$ 主块求逆，从不需要 $p\times p$ 的逆；而且每一步的 $W_{jj}=s_{jj}+\lambda&gt;0$ 保证 $V_{jj}&gt;0$，(17.26) 的除法永远合法。这就是第 18 章反复强调的「$p&gt;N$ 时的计算捷径」在图模型里的版本。</p>
+<div class="aside key"><p class="hd">结果</p><p><strong>算法 17.2（graphical lasso）</strong>：$W\gets S+\lambda I$；对 $j=1,\dots,p$ 循环：在 $W$ 中切出第 $j$ 行/列，用 (17.26) 解 (17.23)；更新 $w_{12}\gets W_{11}\hat\beta$。最后一轮用 $\hat\theta_{12}=-\hat\beta\hat\theta_{22}$、$1/\hat\theta_{22}=w_{22}-w_{12}^\top\hat\beta$。</p>
+<p>对角元有闭式：$w_{jj}=s_{jj}+\lambda$，所以只需在 step 1 里加一次，之后不变（取 (17.22) 的 $(j,j)$ 元：$w_{jj}-s_{jj}-\lambda\mathrm{sign}(\theta_{jj})=0$）。</p>
+<p>取边专属的罚参数 $\lambda_{jk}$ 时 $\lambda_{jk}=\infty$ 就强制 $\hat\theta_{jk}=0$，于是<strong>算法 17.2 包含了算法 17.1</strong>。</p>
+<p>1000 个节点的中等稀疏问题可在 1 分钟内解完（Friedman et al. 2008b）。对 flow-cytometry 数据，取 $\lambda=14$ 得到图 17.1；改变 $\lambda$ 得到一族嵌套的图（图 17.5：$\lambda=36,27,7,0$，$\lambda$ 越大图越稀疏）。</p></div>
+<div class="aside warn"><p class="hd">坑</p><p>(a) $\lambda$ 需要交叉验证，而 $p\gg N$ 时 $S$ 奇异，必须像这样加 $\lambda$ 才能定义 $S+\lambda I$。(b) 罚项含对角元，所以 $W$ 的对角被固定成 $s_{jj}+\lambda$，与脚注里那个「不罚对角」的版本差别在于后者 $w_{jj}=s_{jj}$、其余算法不变。(c) 高斯情形下 $\hat\Sigma$ 与 $\hat\Theta$ <strong>都能</strong>得到；而二值情形（§17.4）只有 $\Theta$ 是目标、它的逆不重要，这是两者的关键差别。(d) 算法 17.2 只对<strong>成对</strong>图（pairwise）写出了形式；cluster 图上的类似推广存在但更复杂。</p></div>
+<p><a class="src" href="../esl/ch17-undirected-graphical-models.html#s-17-3-2">原文 §17.3.2</a></p>
+<hr>
+<h2 id="s-17-4" class="anchored"><span class="num">17.4</span> 离散变量的无向图模型</h2>
+<p><strong>问题</strong>：顶点全取 $\{0,1\}$（pairwise Markov 图）时，模型写成什么？参数怎么估？</p>
+<h3 id="ising-模型与它的-logistic-条件分布-2" class="anchored"><span class="num">17.4.1</span> Ising 模型与它的 logistic 条件分布</h3>
+<p>$p$ 个二元变量、边集为 $\mathcal{E}$ 的 Ising 模型（统计物理里叫 Ising，机器学习里叫 Boltzmann 机）：</p>
+<div class="eq long"><div class="escroll">
+$$
+p(X,\Theta)=\exp\Big(\sum_{(j,k)\in\mathcal{E}}\theta_{jk}X_jX_k-\Phi(\Theta)\Big),\qquad X\in\mathcal{X}=\{0,1\}^p
+$$
+</div><span class="tag">(17.28)</span></div>
+<div class="eq"><div class="escroll">
+$$
+\Phi(\Theta)=\log\sum_{x\in\mathcal{X}}\exp\Big(\sum_{(j,k)\in\mathcal{E}}\theta_{jk}x_jx_k\Big)
+$$
+</div><span class="tag">(17.29)</span></div>
+<p>推导：(17.28) 是「指数形式 + 归一化常数」的标准写法，$\sum_Xp(X,\Theta)=e^{-\Phi}\sum_Xe^{\sum\theta X_jX_k}=1$ 由 (17.29) 得到。$\Phi$ 就是 §17.1 里配分函数的对数。</p>
+<p><strong>技术必需的一点</strong>：因为 $\exp(\theta_{jk}X_jX_k)$ 在 $X_j=0$ 时恒为 1，模型无法表达「$X_j$ 本身有偏置」。所以必须引入常值结点 $X_0\equiv1$，并让它与所有其它结点连边，于是 (17.28) 的和实际是 $\sum_{j\in\{0\}\cup\mathcal{V}}\theta_{jk}X_jX_k$，常数项 $\theta_{j0}X_0=\theta_{j0}$ 起偏置作用。这就是统计文献里「一阶相互作用 Poisson 对数线性模型」的来源（$f^{(2)}$，见 §17.2.2）。</p>
+<p><strong>推导 · (17.30) 的 logistic 形式。</strong> 记 $X_{-j}$ 为除 $j$ 外全部结点。由条件概率定义</p>
+<div class="eq long"><div class="escroll">
+$$
+\Pr(X_j=1\mid X_{-j}=x_{-j})=\frac{\sum_{x_{-j}}\Pr(X_j=1,X_{-j}=x_{-j})}{\sum_{x_{-j}}\Pr(X_j\in\{0,1\},X_{-j}=x_{-j})}
+$$
+</div></div>
+<p>在 (17.28) 里，$X_j=1$ 时 $X_jX_k=X_k$，$X_j=0$ 时为 0。含 $X_j$ 的项是 $\theta_{j0}+\sum_{k:(j,k)\in\mathcal{E}}\theta_{jk}x_{jk}$，而 $e^{\sum_k\theta_{jk}x_{jk}}$ 与 $X_j$ 的取值无关（在 (17.29) 的求和中对 $x_j=0,1$ 贡献相同），所以它在分子分母里约掉：</p>
+<div class="eq long"><div class="escroll">
+$$
+\Pr(X_j=1\mid x_{-j})=\frac{e^{\theta_{j0}+\sum_k\theta_{jk}x_{jk}}}{1+e^{\theta_{j0}+\sum_k\theta_{jk}x_{jk}}}
+=\frac{1}{1+\exp\big(-\theta_{j0}-\sum_{(j,k)\in\mathcal{E}}\theta_{jk}x_k\big)}
+$$
+</div><span class="tag">(17.30)</span></div>
+<div class="eq"><div class="escroll">
+$$
+\text{即}\quad \mathrm{logit}\ \Pr(X_j=1\mid x_{-j})=\theta_{j0}+\sum_{(j,k)\in\mathcal{E}}\theta_{jk}x_k
+$$
+</div></div>
+<div class="aside key"><p class="hd">结果</p><p>$\theta_{jk}$ 的含义被彻底说清：<strong>$X_j$ 对 $X_k$ 在给定其它结点后的依赖强度</strong>。而且 (17.30) 说明：Ising 模型 ≡ 对每个结点做一次 logistic 回归的<strong>联合</strong>模型。这是 §17.5 伪似然的出发点。</p></div>
+<h3 id="参数估计-score-方程就是矩匹配-2" class="anchored"><span class="num">17.4.2</span> 参数估计：score 方程就是矩匹配</h3>
+<p><strong>第 1 步：对数似然。</strong></p>
+<div class="eq long"><div class="escroll">
+$$
+\ell(\Theta)=\sum_{i=1}^{N}\log\Pr_\Theta(X^{(i)}=x^{(i)})
+=\sum_{i=1}^{N}\Big(\sum_{(j,k)\in\mathcal{E}}\theta_{jk}x_{ij}^{(i)}x_{ik}^{(i)}-\Phi(\Theta)\Big)
+$$
+</div><span class="tag">(17.31)</span></div>
+<p>（用了 (17.28) 与 (17.29)。）</p>
+<p><strong>第 2 步：梯度。</strong> 对 $\theta_{jk}$ 求导，注意 $\Phi$ 也依赖它：</p>
+<div class="eq long"><div class="escroll">
+$$
+\frac{\partial\ell(\Theta)}{\partial\theta_{jk}}=\sum_{i=1}^{N}x_{ij}^{(i)}x_{ik}^{(i)}-N\,\frac{\partial\Phi(\Theta)}{\partial\theta_{jk}}
+$$
+</div><span class="tag">(17.32)</span></div>
+<div class="eq long"><div class="escroll">
+$$
+\frac{\partial\Phi(\Theta)}{\partial\theta_{jk}}
+=\sum_{x\in\mathcal{X}}x_jx_k\,p(x,\Theta)\frac{\partial\theta_{jk}x_jx_k}{\partial\theta_{jk}}
+=E_\Theta\big[X_jX_k\big]
+$$
+</div><span class="tag">(17.33)</span></div>
+<p>（第三行就是预备知识 P3 的「$A'=\mathbb{E}_\eta[T]$」，取 $T(X)=X_jX_k$，$A=\Phi$。）</p>
+<p><strong>第 3 步：score 方程。</strong> 令梯度为零：</p>
+<div class="eq"><div class="escroll">
+$$
+\hat E(X_jX_k)-E_\Theta(X_jX_k)=0,\qquad \hat E(X_jX_k):=\frac1N\sum_{i=1}^{N}x_{ij}^{(i)}x_{ik}^{(i)}
+$$
+</div><span class="tag">(17.34)</span></div>
+<div class="eq"><div class="escroll">
+$$
+\hat E(X_jX_k)=\frac{1}{N}\sum_{i=1}^{N}x_{ij}^{(i)}x_{ik}^{(i)}
+$$
+</div><span class="tag">(17.35)</span></div>
+<div class="aside key"><p class="hd">结果</p><p>MLE 就是让「观测到的结点间内积」等于「模型下的期望内积」。这是指数族 score 方程的标准形式（充分统计量 = 期望值，见预备知识 P3），也是 loglinear 模型的标准打分方程。</p>
+<p><strong>代价</strong>：$E_\Theta(X_jX_k)$ 需要在 $|\mathcal{X}|=2^p$ 个取值上求和，$p&gt;30$ 就不可行。原文给出三条路：</p>
+<ul><li><strong>Poisson loglinear 建模</strong>（练习 17.12）：把 $2^p$ 个格子的计数当作响应，等价于一个 $2^p$ 行、$\le1+p+p^2$ 列的回归，代价 $O(p^4 2^p)$，$p&lt;20$ 可用；Newton 更新 = 迭代重加权最小二乘。</li><li><strong>梯度下降</strong>：一次梯度求值 $O(p^2 2^{p-2})$，步数多但能处理 $p\le30$。</li><li><strong>IPF</strong>（迭代比例拟合）：在 (17.34) 上做循环坐标下降，每步把一个参数更新到它的梯度方程恰为零，一个完整周期的代价等于一次梯度求值。</li><li>$p&gt;30$ 时：<strong>mean field</strong>（用 $E_\Theta(X_jX_k)\approx E_\Theta(X_j)E_\Theta(X_k)$ 替换，得到关于 $\theta$ 的非线性方程组）或 <strong>Gibbs 采样</strong>（从 $\Pr_\Theta(X_j\mid X_{-j})$ 逐个采样来逼近期望）。</li></ul>
+<p><strong>可分解模型（树）</strong>例外：MLE 有闭式，完全不用迭代。</p></div>
+<h3 id="隐结点-2" class="anchored"><span class="num">17.4.3</span> 隐结点</h3>
+<p>设 $X_{\mathcal{H}}$ 不可观测、$X_{\mathcal{V}}$ 可观测，观测数据的对数似然是</p>
+<div class="eq long"><div class="escroll">
+$$
+\ell(\Theta)=\sum_{i=1}^{N}\log\Pr_\Theta\big(X_{\mathcal{V}}=x_{\mathcal{V}}^{(i)}\big)
+=\sum_{i=1}^{N}\Big(\log\sum_{x_{\mathcal{H}}}\exp\big(\sum\theta_{jk}x_{jk}^{(i)}\big)-\Phi(\Theta)\Big)
+$$
+</div><span class="tag">(17.36)</span></div>
+<p>对 $\theta_{jk}$ 求导，内层求和不再包含 $\theta$（它被求和掉了），所以</p>
+<div class="eq long"><div class="escroll">
+$$
+\frac{d\ell(\Theta)}{d\theta_{jk}}=\hat E_{\mathcal{V}}\big[E_\Theta(X_jX_k\mid X_{\mathcal{V}})\big]-E_\Theta(X_jX_k)
+$$
+</div><span class="tag">(17.37)</span></div>
+<p>（第一个期望是对观测数据的经验平均，第二个是对模型的全分布取期望。）内层条件期望可用伯努利变量的基本规则算出，对第 $i$ 个观测：</p>
+<div class="eq verylong"><div class="escroll">
+$$
+E_\Theta\big(X_jX_k\mid X_{\mathcal{V}}=x_{\mathcal{V}}^{(i)}\big)=\begin{cases}
+x_{ij}^{(i)}, &amp; j,k\in\mathcal{V}\\[2pt]
+x_{ij}^{(i)}\Pr_\Theta(X_k=1\mid X_{\mathcal{V}}=x_{\mathcal{V}}^{(i)}), &amp; j\in\mathcal{V},\ k\in\mathcal{H}\\[2pt]
+\Pr_\Theta(X_j=1,X_k=1\mid X_{\mathcal{V}}=x_{\mathcal{V}}^{(i)}), &amp; j,k\in\mathcal{H}
+\end{cases}
+$$
+</div><span class="tag">(17.38)</span></div>
+<p>（三行都只是 $E[XY]=E[X\,E[Y\mid X]]$ 与伯努利取值的展开；混合情形 $j\in\mathcal{H},k\in\mathcal{V}$ 对称。）</p>
+<div class="aside key"><p class="hd">结果</p><p>隐结点把梯度里的期望换成<strong>条件</strong>期望，因此需要<strong>两次 Gibbs 采样</strong>：一次从模型采样估 $E_\Theta(X_jX_k)$（无条件），一次把可见结点「钳住」在观测值上采样估 $E_\Theta(X_jX_k\mid X_{\mathcal{V}})$。而且后者<strong>要对每个训练样本各做一次</strong>，所以即使模型中等规模也会很慢。</p></div>
+<h3 id="限制玻尔兹曼机-2" class="anchored"><span class="num">17.4.4</span> 限制玻尔兹曼机</h3>
+<div class="eq"><div class="escroll">
+$$
+\mathcal{V}_1\ \longleftrightarrow\ \mathcal{H}\ \longleftrightarrow\ \mathcal{V}_2
+$$
+</div><span class="tag">(17.39)</span></div>
+<p>RBM 是两层结构：可见层 $\mathcal{V}$（分为输入 $\mathcal{V}_1$ 与输出 $\mathcal{V}_2$）与隐层 $\mathcal{H}$，<strong>层内无连接</strong>。层内无连接把 (17.37)(17.38) 的期望计算变得极简：给定另一层变量时，同层变量<strong>条件独立</strong>，所以可以用 (17.30) 的条件概率<strong>整层同时采样</strong>。</p>
+<p>其它要点：</p>
+<ul><li>若把 $\mathcal{V}_1$ 钳在给定特征上，交替采样 $\mathcal{V}_2\mid\mathcal{H}$、$\mathcal{H}\mid\mathcal{V}$ 就能从 $p(\mathcal{V}_2\mid\mathcal{V}_1)$ 采样，从而做分类；比较各类别的<strong>未归一化</strong>联合密度即可，<strong>不需要算配分函数</strong>（它对所有类别相同）。</li><li>缺点：Gibbs 采样混合慢，权重越大越慢。Hinton (2002) 的 <strong>contrastive divergence</strong>：从数据出发只跑很少几步就用结果估计 (17.37) 的第二个期望（采样 $\mathcal{H}\mid\mathcal{V}$，再 $\mathcal{V}\mid\mathcal{H}$，再 $\mathcal{H}\mid\mathcal{V}$）。</li><li>MNIST 上 2000 隐单元、784 可见像素单元、1 个 10 类标签单元，测试误差 1.9%（SVM 为 1.4%）；把 784 个像素换成由另一个 RBM 抽出的 500 个特征后降到 1.25%。</li><li>RBM 与单隐层神经网络（第 11 章）形式相同，但：边有向、隐单元通常实值、判别式损失 vs 这里<strong>最大化可见单元联合分布的对数似然</strong>。所以 RBM 可能用一部分隐单元去建模与标签无关的特征结构。</li></ul>
+<p><a class="src" href="../esl/ch17-undirected-graphical-models.html#s-17-4">原文 §17.4</a></p>
+<hr>
+<h2 id="s-17-5" class="anchored"><span class="num">17.5</span> 伪似然、精确推断与环状信念传播</h2>
+<p>本节是原书 17.4 节末尾点到为止、但在实践中最重要的两块内容：不用配分函数也能估计参数的办法，以及不用枚举也能算边缘分布的办法。</p>
+<h3 id="s-17-5-1" class="anchored"><span class="num">17.5.1</span> 伪似然：用条件分布代替联合分布</h3>
+<p><strong>问题</strong>：(17.29) 的配分函数要在 $2^p$ 上求和、(17.33) 的期望同样如此。有没有办法把它们彻底消掉？</p>
+<p><strong>思路</strong>。把联合密度换成「逐结点的条件密度之积」：</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{PL}(\Theta)=\prod_{j=1}^{p}\prod_{i=1}^{N}\Pr_\Theta\big(X_j=x_{ij}^{(i)}\mid X_{-j}=x_{-j}^{(i)}\big)
+$$
+</div></div>
+<p>由 (17.30)，每个因子的闭式是</p>
+<div class="eq long"><div class="escroll">
+$$
+\Pr_\Theta(X_j=1\mid x_{-j})=\frac{1}{1+e^{-\mu_j(x_{-j})}},\quad \mu_j(x_{-j})=\theta_{j0}+\sum_{k:(j,k)\in\mathcal{E}}\theta_{jk}x_k
+$$
+</div></div>
+<p>于是第 $j$ 个因子的对数贡献是</p>
+<div class="eq"><div class="escroll">
+$$
+\sum_{i}\Big[x_{ij}^{(i)}\mu_j(x_{-j}^{(i)})-\log\big(1+e^{\mu_j(x_{-j}^{(i)})}\big)\Big]
+$$
+</div></div>
+<p><strong>第一步：证明这是合法的似然替代品。</strong> 逐结点的条件密度在给定 $\mathcal{G}$ 时（按 Hammersley–Clifford）由模型确定，取 $\mathrm{PL}$ 的对数再求极值，等价于要求「每个结点上的条件回归都自洽」。文献里称它为 pseudo-likelihood。严格地说它<strong>不是</strong>联合似然，所以 (17.34) 那种全局矩匹配一般不再成立——但下面的论证说明它是可用的一致估计量。</p>
+<p><strong>第二步：罚掉不存在的边。</strong> 加 $L_1$ 罚：</p>
+<div class="eq"><div class="escroll">
+$$
+\min_{\Theta}\ -\frac1N\log\mathrm{PL}(\Theta)+\lambda\|\Theta\|_1
+$$
+</div></div>
+<p>其中 $\|\Theta\|_1$ 包含 $\theta_{j0}$ 之外的所有项（对角通常不罚）。现在<strong>关键是凸性</strong>。把罚项与对数条件似然相加，逐 $j$ 考察只与 $\theta_{j\cdot}=(\theta_{j0},\{\theta_{jk}\}_{(j,k)\in\mathcal{E}})$ 有关的项：</p>
+<div class="eq long"><div class="escroll">
+$$
+g_j(\theta_{j\cdot})=-\sum_i\Big[x_{ij}^{(i)}\mu_j-\log(1+e^{\mu_j})\Big]+\lambda\sum_k|\theta_{jk}|,\qquad \mu_j=\theta_{j0}+\sum_k\theta_{jk}x_{jk}^{(i)}
+$$
+</div></div>
+<p>求梯度：$\partial g_j/\partial\theta_{jk}=\sum_i x_{jk}^{(i)}\big(x_{ij}^{(i)}-\sigma(\mu_j)\big)+\lambda\,\mathrm{Sign}(\theta_{jk})$。它对 $(\theta_{j0},\theta_{j\cdot})$ 是<strong>联合凸</strong>的，因为 $-\log(1+e^{\mu})$ 是 $\mu$ 的凸函数（复合凸函数），线性变换保持凸性。</p>
+<div class="aside basis"><p class="hd">基础知识 · 对数配分函数凸 ⟹ 负对数条件似然凸</p><p>更一般的论证（预备知识 P3 的形式）：把某个结点 $j$ 的邻域上的联合分布写成指数族 $h(x)\exp(\eta^\top T(x)-A(\eta))$，其条件分布也是同一族的成员，自然参数是 $\eta$ 的一部分，而 $A''(\eta)=\mathrm{Var}_\eta(T)\succeq0$ 给出条件对数似然的凸性。<strong>结论：惩罚伪似然是凸优化，坐标下降单调下降。</strong></p></div>
+<p>因此它可以用 §17.4.1 同样的三种方法求解：梯度下降、Newton（IRLS）、IPF。</p>
+<p><strong>第三步：凸优化不会「过拟合」。</strong> 记目标为 $f(\Theta)=\hat\ell(\Theta)+\lambda\|\Theta\|_1$。由坐标下降的单调性，坐标方向上总能改进，所以坐标下降不会停在上次迭代处；而在当前活跃集固定时，score 方程 (17.35) 式地要求「经验内积 = 模型内积」。更一般地，凸问题的 KKT 条件（预备知识 O2）在这里写成</p>
+<div class="eq"><div class="escroll">
+$$
+0\in\nabla_{\theta_{jk}}\hat\ell(\Theta)+\lambda\,\partial|\theta_{jk}|
+$$
+</div></div>
+<p>即对 $\theta_{jk}\ne0$ 有 $\hat\ell$ 的偏导为 $-\lambda\,\mathrm{sign}(\theta_{jk})$，对 $\theta_{jk}=0$ 有 $|\partial\hat\ell/\partial\theta_{jk}|\le\lambda$。这解释了两件实践事实：稀疏性来自 $L_1$ 的次梯度平顶（图 17.5 中 $\lambda$ 越大图越稀疏）；$\lambda$ 连续。</p>
+<p><strong>第四步：与高斯 graphical lasso 的比较。</strong> 高斯情形 (17.21) 有<strong>闭式</strong> score 方程 (17.22)，因为联合密度是指数族且配分函数可算；离散情形配分函数不可算，所以只能用伪似然。两者的 $L_1$ 罚结构相同，这正是 Meinshausen–Bühlmann (2006) 的「对每个结点跑一个 $L_1$ logistic 回归、$j$ 与 $k$ 任一方系数非零就保留边」的启发式来源。原文指出：在<strong>高斯</strong>情形近似方法只能给出 $\hat\Theta$，而<strong>二值</strong>情形 $\Theta$ 本身就是目标、逆矩阵不感兴趣，所以 Wainwright et al. (2007) 的逐结点方法在二值问题上特别有吸引力。模拟表明「min」/「max」对称化准则给出的结果与精确解几乎一样好，但快得多，且能处理更稠密的图（因为<strong>完全不需要</strong>算 $E_\Theta(X_jX_k)$）。</p>
+<div class="aside warn"><p class="hd">坑</p><p>伪似然的代价不止是速度。(a) 它不保证与联合似然有相同的极值点，只在 $N\to\infty$ 且 $\lambda$ 合适时一致；(b) 相邻结点的条件回归<strong>互相耦合</strong>（$x_{-j}$ 含其它结点，而这些结点的边缘分布又依赖 $\theta$），所以不能用「一次拟合全部结点」这种朴素并行；(c) 高斯情形下逐结点回归若用观测的 $S_{-j,-j}$ 而不是模型的 $W_{-j,-j}$（算法 17.1 step (b) 的关键修正），得到的不是极大似然解。</p></div>
+<p><a class="src" href="../esl/ch17-undirected-graphical-models.html#s-17-3-2">原文 §17.3.2–17.4.3</a></p>
+<h3 id="s-17-5-2" class="anchored"><span class="num">17.5.2</span> 信念传递与环状 BP</h3>
+<p><strong>问题</strong>：有了 Gibbs 分解，怎么不枚举 $2^p$ 个取值就算出边缘分布 $p(x_j)$ 与两两边缘 $p(x_j,x_k)$？</p>
+<p><strong>第一步：朴素做法与它的困难。</strong> 由 (17.3)，边缘是「把不需要的坐标积掉」：</p>
+<div class="eq"><div class="escroll">
+$$
+p(x_A)=\sum_{x_{V\setminus A}}\frac1Z\prod_C\psi_C(x_C)
+$$
+</div></div>
+<p>困难在于归一化常数 $Z$ 与被积掉的坐标的配分函数纠缠在一起。解法是把「来自某一部分图的信息」打包成一个函数——这就是<strong>消息</strong>。</p>
+<p><strong>第二步：消息的定义与动机。</strong> 对每条有向边 $i\to j$ 定义一个函数（只依赖 $x_j$）</p>
+<div class="eq"><div class="escroll">
+$$
+m_{i\to j}(x_j)=\sum_{x_i}\psi_{ij}(x_i,x_j)\prod_{k\in N(i)\setminus\{j\}}m_{k\to i}(x_i)
+$$
+</div></div>
+<p>(pairwise 图；一般情形把 $\psi_{ij}$ 换成团势 $\psi_{ij\cdots}$，消息传递的图也换成联合树，见第三步。) 每个因子都在讲同一句话：<strong>「$i$ 这边，除了 $j$ 以外的所有信息汇总成 $x_j$ 的一个权」。</strong> 更新是「进来一批消息、乘上边势、把 $i$ 自己积掉」。</p>
+<p><strong>第三步：簇（团）形式与联合树。</strong> 上面的消息更新式 只在 pairwise 图上直接可用。一般的做法（Lauritzen–Spiegelhalter 的 join tree 算法）：</p>
+<ol><li>把图分解成<strong>极大团</strong> $\mathcal{C}$（§17.1）。</li><li>构造一棵<strong>联合树（join tree）</strong>：节点是极大团，边连接有非空交且交正好分割图的团对；要求它满足<strong>运行相交性质</strong>（对任意结点 $C$，子树里所有团与 $C$ 的交的并恰好等于 $C$）。</li><li><span>在联合树上跑上面的消息更新式，只是把「$i$ 这边的一群结点」换成「团 $C$，传给相邻团 $D$」：</span><div class="eq long"><div class="escroll">
+$$
+\mu_{C\to D}(x_D)=\sum_{x_{C\setminus D}}\psi_C(x_C)\prod_{B:\,C-B\in\text{树边},\ B\ne D}\mu_{B\to C}(x_{C\cap B})
+$$
+</div></div></li><li><span><strong>回传</strong>（collect pass）把常数从叶子收集到根，得到</span><div class="eq"><div class="escroll">
+$$
+\mu_{C\to\varnothing}=\sum_{x_C}\psi_C(x_C)\prod_{B:\,C-B\in\text{树边}}\mu_{B\to C}(x_{C\cap B})=Z
+$$
+</div></div><span>（全部团变量之和给出 $Z$。）<strong>分推</strong>（distribute pass）再把 $Z$ 从根散回去。</span></li><li>任意变量的信念：$b_j(x_j)=\sum_{x_{C\setminus j}}\mu_{C\to\varnothing}(x_C)$，其中 $C$ 是含 $j$ 的团。</li></ol>
+<p><strong>第四步：树上的正确性（可以逐步验算）。</strong> 无环时联合树就是树，消息定义与链式法则完全一致。叶子 $i$（度为 1，向 $j$ 传）：</p>
+<div class="eq long"><div class="escroll">
+$$
+b_i(x_i)=\frac1Z\,\psi_{ij}(x_i,x_j)\Big(\prod_{k\in N(i)\setminus j}m_{k\to i}\Big)\ \Big(\text{另一个子树在 }x_j\text{ 处的因子}\Big)
+$$
+</div></div>
+<p>把式子里的「另一个子树因子」沿 上面的消息更新式 递归展开，会<strong>恰好</strong>把它并进 $m_{i\to j}$；逐个叶子归纳，每步都用</p>
+<div class="eq"><div class="escroll">
+$$
+\sum_{x_i}\psi_{ij}(x_i,x_j)m_{k\to i}(x_i)=Z(\text{一侧})\cdot \big[\text{另一侧在 }x_j\text{ 处的条件}\big]
+$$
+</div></div>
+<p>这个「求和 = 侧向归一化」的恒等式。<strong>关键</strong>：因为无环，沿路径不会重复访问同一个结点，所以 $x_j$ 处的因子只被乘一次——这就是树上正确的全部理由。</p>
+<p><strong>第五步：环上为什么会错。</strong> 图有环时 上面的消息更新式 迭代的结果依赖于初始消息，不收敛到任何正确的东西。原因可以精确指出：沿一个长度为 $L$ 的环跑消息时，每条边的信息被沿两个方向传播并<strong>相乘</strong>，导致</p>
+<div class="eq"><div class="escroll">
+$$
+\prod_{\text{边}}\psi_{ij}(x_ix_j)^{k}
+$$
+</div></div>
+<p>其中 $k$ 是「绕数」（winding number）。正确的乘积要求每条边恰好被数一次（$k=1$），而迭代消息在环上多次绕行会给出 $k\ge2$，等价于把某些边的交互<strong>重复计入</strong>（对 Ising 模型即把有效耦合变成 $k\theta$，对 loglinear 模型即重复的二阶交互）。因此 loopy BP 可以看成<strong>启发式的</strong>近似。</p>
+<p><strong>第六步：单环图的精确推断（可验算）。</strong> 上面「$k=1$ 就对」的说法给出一个可操作的结论：<strong>若图只有一个环，从任意初始消息出发沿环跑一整圈（每个结点用一次更新）得到的信念是精确的</strong>，条件是「每个结点在收到来自环上游的消息后才更新一次」。理由（写成乘法形式）：记环 $1-2-\cdots-m-1$，一轮更新后结点 $j$ 的未归一化信念为</p>
+<div class="eq long"><div class="escroll">
+$$
+\tilde b_j(x_j)=\psi_{j-1,j}(x_{j-1},x_j)\Big(\prod_{k\ne j-1,j}\psi_{jk}(x_j,x_k)\Big)\psi_{j,j+1}(x_j,x_{j+1})\Big(\cdots\Big)
+$$
+</div></div>
+<p>逐项检查每条边被计入的次数：边 $(j,j+1)$ 出现在结点 $j$ 的更新与结点 $j+1$ 的更新中，但由于上游消息里已经带过它一次，一轮之后<strong>每条边恰好一次</strong>（这可直接对 $m=3,4$ 手写验证：三元环上 $\prod_j\prod_{k\in N(j)}\psi_{jk}=\psi_{12}^2\psi_{23}^2\psi_{13}^2$ 除以 $\prod_j m_{\text{进}}$ 恰为一次幂；一般环同理）。归一化用 $\sum_x\tilde b_j(x_j)$，它等于「沿环切开后两侧的配分函数之积」，与整图的 $Z$ 一致。<strong>一句话</strong>：单环图把图切成一条链就能精确算，BP 一圈正是在做这件事。</p>
+<p><strong>第七步：单环的精确推断的直接算法（最稳的写法）。</strong> 不依赖消息，直接做环上的消元：把环在结点 $m$ 与 $1$ 之间切开，写成链</p>
+<div class="eq"><div class="escroll">
+$$
+f(x)=g(x_{1:m-1})\,h(x_{1:m})\ \text{（}g\text{ 含 }m-1\text{ 内的边，}h\text{ 含 }m\text{ 个}
+$$
+</div></div>
+<p>对 $x_1$ 求边缘（把 $g$ 里含 $x_1$ 的部分积掉）得到 $x_1$ 上的有效单点消息 $\mu_1(x_1)$；把它乘进 $h$ 得到 $x_{2:m}$ 上的新图，如此沿环推进一圈，最后在任一点用 $\tilde b_j=\mu_{\text{in}}\psi_j\mu_{\text{out}}$ 并归一化。这与 BP 一圈等价，但每步都是显式的边缘化，可以逐步验算。</p>
+<div class="aside warn"><p class="hd">坑</p><p>(a) 联合树的构造不唯一，<strong>不同的联合树给出数值上不同的边缘估计</strong>（虽然理论上应相同——只在浮点意义下相同）。(b) loopy BP 的消息常常在 $\pm\infty$ 之间震荡；实践中的稳定化技巧包括阻尼（$m\leftarrow(1-\xi)m^{\text{新}}+\xi m^{\text{旧}}$）、树重联（tree-reconnection）、以及用 BP 的不动点迭代初始化再跑精确算法。(c) 环数大于 1 时，一圈法<strong>不再</strong>精确；(d) loopy BP 对<strong>参数量</strong>（温度）有可测的相变行为，跨越相变点时边缘估计会突然失真。</p></div>
+<p><a class="src" href="../esl/ch17-undirected-graphical-models.html#s-17-3">原文 §17.3</a></p>
+<h3 id="s-17-5-3" class="anchored"><span class="num">17.5.3</span> 练习中的公式：EM 插补与 Poisson 对数线性</h3>
+<p><strong>问题</strong>：两个练习里的公式组，是 EM 在图模型上的标准形式，值得单独推一遍。</p>
+<p><strong>(17.43)：E 步用条件高斯插补缺失分量。</strong> $N$ 个 iid $p$ 维实现，均值 $\mu$、协方差 $\Sigma$；第 $i$ 个样本的观测分量下标为 $o_i$，缺失分量为 $m_i$。则</p>
+<div class="eq long"><div class="escroll">
+$$
+\hat x_{i,m_i}=E\big(x_{i,m_i}\mid x_{i,o_i},\theta\big)=\hat\mu_{m_i}+\hat\Sigma_{m_i,o_i}\hat\Sigma_{o_i,o_i}^{-1}\big(x_{i,o_i}-\hat\mu_{o_i}\big)
+$$
+</div><span class="tag">(17.43)</span></div>
+<p>这就是 (17.6) 的分块版本，$Z=X_{o_i}$、$Y=X_{m_i}$。</p>
+<p><strong>(17.44)：M 步必须加修正项。</strong></p>
+<div class="eq long"><div class="escroll">
+$$
+\hat\mu_j=\frac1N\sum_{i=1}^{N}\hat x_{ij},\qquad
+\hat\Sigma_{jj'}=\frac1N\Big[\sum_{i=1}^{N}(\hat x_{ij}-\hat\mu_j)(\hat x_{ij'}-\hat\mu_{j'})+c_{i,jj'}\Big]
+$$
+</div><span class="tag">(17.44)</span></div>
+<div class="eq"><div class="escroll">
+$$
+c'_{i,jj'}=\begin{cases}\hat\Sigma_{j'j}, &amp; j,j'\in m_i\\ 0, &amp; \text{否则}\end{cases}
+$$
+</div></div>
+<p><strong>修正项的来源（必算）</strong>：把 $\hat x$ 看成随机变量（EM 意义上的「在给定当前参数下的条件期望」），用全方差公式（预备知识 P2）。</p>
+<div class="eq long"><div class="escroll">
+$$
+E\big[(\hat x_{ij}-\hat\mu_j)(\hat x_{ij'}-\hat\mu_{j'})\big]
+=E\big[(\hat x_{ij}-\mu_j)(\hat x_{ij'}-\mu_{j'})\big]
++E\big[\mathrm{Cov}(\hat x_{ij},\hat x_{ij'})\big]
+$$
+</div></div>
+<p>第一项 $=\Sigma_{jj'}$（无偏，因为 $\hat\mu_j$ 是样本均值、$E\hat\mu_j=\mu_j$）。第二项：由 (17.43)，$\hat x_{i,m}$ 是 $x_{i,o_i}$ 的<strong>线性函数</strong>，故</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{Cov}(\hat x_{i,m_i})=\hat\Sigma_{m_i,o_i}\hat\Sigma_{o_i,o_i}^{-1}\hat\Sigma_{o_i,m_i}
+$$
+</div></div>
+<p>在 $(j,j')$ 上非零当且仅当 $j,j'\in m_i$，此时由 §17.3.1 的 Cholesky 分解 $\hat\Sigma=LL^\top$ 与条件协方差公式得 $\hat\Sigma_{m_i,m_i}=L_{m_i,m_i}L_{m_i,m_i}^\top$，而由 (17.43) 的线性映射 $\hat x_{i,m_i}-\hat\mu_{m_i}=L_{m_i,o_i}L_{o_i,o_i}^\top L_{o_i,o_i}^{-1}L_{o_i,m_i}(x_{i,o_i}-\hat\mu_{o_i})$ 得</p>
+<div class="eq long"><div class="escroll">
+$$
+\mathrm{Cov}(\hat x_{i,m_i})=L_{m_i,o_i}L_{o_i,o_i}^\top L_{o_i,m_i}=L_{m_i,m_i}L_{m_i,m_i}^\top=\hat\Sigma_{m_i,m_i}
+$$
+</div></div>
+<p>即「插补后的方差 = 缺失块的条件协方差」，与 §17.3.1 里「残差方差」的结论同源。$\hat x_{ij}$ 观测到时是常数、$\mathrm{Var}=0$，故 $c=0$。把两项合起来就是 (17.44)。</p>
+<p><strong>把它读成 EM。</strong> 隐变量是 $x_{i,m_i}$（完全数据在 $\mathbb{R}^p$ 里，观测数据在子空间里）。E 步用当前 $\hat\theta$ 求 $E[x_{i,m_i}\mid x_{i,o_i},\hat\theta]$，就是 (17.43)；M 步在<strong>完整数据</strong>上重估 $\mu,\Sigma$，得到 (17.44) 里的两式。单调性由预备知识 O3 的 Jensen 不等式给出：每一步 EM 都不降低观测数据的对数似然。而图模型里的用法是把 M 步换成「给定 $\hat\Theta$ 的约束极大似然」，即算法 17.1 / 17.2——这样就能在<strong>有缺失顶点</strong>的高斯图模型上直接做结构估计（练习 17.9(b)）。</p>
+<div class="aside key"><p class="hd">结果</p><p>用<strong>插补后</strong>的均值和协方差做 M 步会<strong>低估</strong>方差（因为没算插补带来的不确定性）；修正项恰好补回这一块。这是 Little & Rubin (2002) 的标准公式，也是第 14 章 EM 用于缺失数据的那一套。</p>
+<p>数值检验（小例子）：$N=2$，$p=2$，第 1 个样本只观测到 $x_{11}$，第 2 个完整。若只看 $x_{11},x_{21}$，样本方差是 $\frac{(x_{11}-\bar x_1)^2+(x_{21}-\bar x_1)^2}{2}$；而 $x_{12}$ 的插补值 $\hat x_{12}=E[x_{12}\mid x_{11}]$ 把一条「虚拟观测」加了进来，它的自身方差虽为 0，但它让 $\hat x_{12}$ 与 $\hat x_{22}$ 之间产生了真实的协方差——这正是 $c_{i,jj'}$ 要记的那一笔。</p></div>
+<p><strong>(17.45)(17.46)：Ising 模型的对偶 Poisson 形式。</strong> 设设计平衡（$n=2^p$ 个格子都测到），对数线性模型为</p>
+<div class="eq"><div class="escroll">
+$$
+\log\mu(X)=\theta_{00}+\sum_{j,k}\theta_{jk}x_jx_k
+$$
+</div><span class="tag">(17.45)</span></div>
+<div class="eq"><div class="escroll">
+$$
+\Pr(Y=y\mid X=x)=\frac{e^{-\mu(x)}\mu(x)^y}{y!}
+$$
+</div><span class="tag">(17.46)</span></div>
+<p>（每个格子计数当作独立的 Poisson 变量；对总数 $N$ 条件化后得到多项分布模型，即 (17.28)。）记 $\mathcal{C}_k$ 为全体格子集合，则条件对数似然（去掉与参数无关的项）为</p>
+<div class="eq long"><div class="escroll">
+$$
+\ell(\Theta)=\sum_i\Big[y_i\big(\theta_{00}+\sum_{jk}\theta_{jk}x_{ij}^{(i)}x_{ik}^{(i)}\big)-e^{\theta_{00}}e^{\sum_{jk}\theta_{jk}x_{ij}^{(i)}x_{ik}^{(i)}}\Big]
+$$
+</div></div>
+<p><strong>对 $\theta_{00}$ 求导并令其为零</strong>（练习 (a) 的结论：它「算出配分函数」）：</p>
+<div class="eq long"><div class="escroll">
+$$
+\frac{\partial\ell}{\partial\theta_{00}}=\sum_{i=1}^{N}y_i-\sum_{i=1}^{N}e^{\theta_{00}}e^{\sum_{jk}\theta_{jk}x_{ij}x_{ik}}
+=N-N\,e^{\theta_{00}}\sum_{x\in\mathcal{C}_k}e^{\sum_{jk}\theta_{jk}x_jx_k}
+$$
+</div></div>
+<p>（第二步用设计平衡：$\sum_i e^{\sum\theta_{jk}x_{ij}x_{ik}}=\sum_{x\in\mathcal{C}_k}e^{\sum\theta_{jk}x_jx_k}$，因为每个格子被测的次数相同。）令导数为零：</p>
+<div class="eq"><div class="escroll">
+$$
+e^{\theta_{00}}=\frac{1}{\sum_{x}e^{\sum\theta_{jk}x_jx_k}}\ \Longrightarrow\ \theta_{00}=-\Phi(\Theta)
+$$
+</div></div>
+<p>正是 (17.29) 里的 $\Phi$（差一个 $x_0\equiv1$ 的约定），于是 $\mu(x)=\frac{1}{Z}e^{\sum\theta_{jk}x_jx_k}$，(17.46) 就变成 (17.28) 乘多项式系数。</p>
+<p><strong>对其余参数求导</strong>（练习 (b)：与 (17.34) 等价）：对 $\theta_{jk}$</p>
+<div class="eq verylong"><div class="escroll">
+$$
+\frac{\partial\ell}{\partial\theta_{jk}}
+=\sum_i y_ix_{ij}x_{ik}-e^{\theta_{00}}\sum_i x_{ij}x_{ik}e^{\sum\theta_{jl}x_{jl}x_{il}}
+=\hat E(x_jx_k)-\frac{\sum_x x_jx_k\,e^{\sum\theta_{jl}x_{jl}x_{il}}}{\sum_x e^{\sum\theta_{jl}x_{jl}x_{il}}}
+$$
+</div></div>
+<p>（第二步代入 $e^{\theta_{00}}=1/\sum_x e^{\cdots}$ 并用设计平衡换掉 $\sum_i$。）最后一步把分子分母同乘 $Z$ 并用 $\mu(x)=e^{\sum\theta x_jx_k}/Z$，得到</p>
+<div class="eq"><div class="escroll">
+$$
+\frac{\partial\ell}{\partial\theta_{jk}}=\hat E(X_jX_k)-E_\Theta(X_jX_k)
+$$
+</div></div>
+<p>正是 (17.34)。<strong>这一节的全部内容</strong>：Ising 模型的 Poisson 对偶把「配分函数」变成一个待估的常数项、把「score 方程」变成可以 IRLS 求解的回归 score 方程——这是 loglinear 模型的标准工作方式。</p>
+<p><a class="src" href="../esl/ch17-undirected-graphical-models.html#s-17-4">原文练习 17.9–17.12</a></p>
+<p><a class="src" href="m18.html">下一章：高维问题 p ≫ N</a></p>
+</main>
+<nav class="chapnav"><div class="inner">
+<a class="prev" href="m16.html"><span class="lbl">← 上一章</span><span class="nm">第 16 章 集成学习</span></a>
+<a class="next" href="m18.html"><span class="lbl">下一章 →</span><span class="nm">第 18 章 高维问题 p ≫ N</span></a>
+</div></nav>
+</body>
+</html>

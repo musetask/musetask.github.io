@@ -1,0 +1,1229 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="对角线性判别分析与最近收缩质心、二次与 L1 正则化的线性分类器、内积核与配对距离、监督主成分回归、多重检验与 FDR 的贝叶斯解释">
+<title>高维问题 p ≫ N · High-Dimensional Problems, p &gt;&gt; N · ESL 数学推导</title>
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/style.css">
+<script defer src="../assets/katex/katex.min.js"></script>
+<script defer src="../assets/katex/auto-render.min.js"></script>
+<script defer src="assets/app.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="bar">
+  <button class="icon" id="themeToggle" type="button" aria-label="切换深色模式">&#9681;</button>
+  <a class="title" href="index.html">ESL 数学推导</a>
+  <a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<h1 id="s-18" class="ch anchored"><span class="num">18</span> 高维问题 p ≫ N</h1>
+<p>当特征数 $p$ 远大于样本数 $N$ 时，样本落在 $p$ 维空间的超薄区域里，「方差」「距离」「共线性」全部失效。本章给出四类对策：</p>
+<ul><li><strong>§18.2–18.4 正则化的线性分类器</strong>：先假设协方差矩阵是对角的（等价于特征近似独立），把 $p$ 个参数的问题降成 $K-1$ 个；再允许二次项（弹性惩罚）；再换成 $\ell_1$ 惩罚（lasso，自动选特征）。</li><li><strong>§18.5 特征不可得时</strong>：字符串核与内积核 —— 当特征本身无法数值化时，直接在配对对象上定义内积。</li><li><strong>§18.6 监督主成分回归</strong>：把 $N\gg1$ 时「找前 $M$ 个主成分再回归」的流程反过来，用监督方式构造投影。</li><li><strong>§18.7 多重检验</strong>：$p$ 个假设同时检验时，错误发现率 FDR 是比族系误差率更合适的指标；SAM 与 pFDR 是两个可操作的阈值规则。</li></ul>
+<p>数学工具集中在：正则化与二次型（预备知识 C2/L1）、KKT 与对偶（O1/O2）、Gram 矩阵与半正定分解（L3）、Bayes 后验与二项模型（P3/P5）。</p>
+<h2 id="s-18-1" class="anchored"><span class="num">18.1</span> 引言</h2>
+<p>本章处理一类在基因组学、蛋白质组学里变得常见的问题：特征数 $p$ 远大于样本数 $N$，写作 $p\gg N$。第 2 章已经算过，高维单位球里的点几乎全挤在半径 $\sqrt p$ 附近，最近邻距离的相对散布趋于零，「最近邻」因此失去判别力；第 14 章的中位半径判别器就是为此设计的补救。本章从「为什么 $N&gt;p$ 时代的教科书方法会崩」开始，给出两类对策：一类用<strong>结构假设</strong>（特征近似独立 → 对角 LDA、§18.2）压掉参数个数，另一类用<strong>惩罚</strong>（$L_2$ 二次正则化 §18.3、$L_1$ 正则化 §18.4）压掉估计方差。</p>
+<p><a class="src" href="../esl/ch18-high-dimensional-problems-p-n.html#s-18-1">原文 §18.1</a></p>
+<p>原文用一个小模拟来说明「少拟合反而更好」。生成 $N=100$ 个样本，$p$ 个两两相关系数 0.2 的标准高斯特征，响应按线性模型生成</p>
+<div class="eq"><div class="escroll">
+$$
+Y_i=\beta_0+\sum_{j=1}^p X_{ij}\beta_j+\varepsilon_i,\qquad \varepsilon_i\sim N(0,\sigma^2)\
+$$
+</div><span class="tag">(18.1)</span></div>
+<p>系数 $\beta_j$ 也取标准正态，于是「显著的」单变量系数个数随 $p$ 增长（$p=20,100,1000$ 时分别约为 9、33、331）。在这个数据上拟合岭回归（见第 3 章 §3.4.1），$p=20$ 时最优 $\lambda=0.001$（平均自由度 20），$p=100$ 时 $\lambda=100$（35），$p=1000$ 时 $\lambda=1000$（43）。用 $t_j=\hat\beta_j/\widehat{\mathrm{se}}[\hat\beta_j]$ 衡量信号强度，三个情形下 $|t_j|$ 的中位数分别是 2.0、0.6、0.2，超过 2 的个数是 9.8、1.2、0.0。</p>
+<p><strong>结果</strong> 这个「自由度」对比是全章的钥匙：$p$ 越大，能被数据分辨出来的系数越少，于是必须收缩得越狠。岭回归在 $p&lt;N$ 时能利用特征间的相关结构（$\lambda$ 小即好），$p\gg N$ 时样本里根本没有足够信息去估那么大的协方差矩阵，必须重度正则化。本章后面所有的 $\lambda$、$\Delta$、$\gamma$，本质上都在回答同一个问题：<strong>这个方向上到底有多少自由度可用</strong>。</p>
+<h2 id="s-18-2" class="anchored"><span class="num">18.2</span> 对角线性判别分析与最近收缩质心</h2>
+<p>例子是 SRBCT 基因表达数据：$p=2308$ 个基因（列）、$N=63$ 个样本（行），每个表达值是 log 比值 $\log(R/G)$；样本分四类（BL、EWS、NB、RMS），另有 20 个测试样本。</p>
+<p><a class="src" href="../esl/ch18-high-dimensional-problems-p-n.html#s-18-2">原文 §18.2</a></p>
+<p>$p\gg N$ 时不能做完整 LDA（类内协方差矩阵秩最多 $N-1$，必奇异）。最简单的正则化是假设类内协方差矩阵<strong>是对角的</strong>，即类内特征近似独立。这个假设在现实中很少严格成立，但 $p\gg N$ 时根本没有数据去估那些依赖关系，独立性把参数个数从 $O(Kp^2)$ 降到 $O(Kp)$，往往换来有效且可解释的分类器。</p>
+<h3 id="s-18-2-1" class="anchored"><span class="num">18.2.1</span> 对角 LDA 的判别分数与分类规则</h3>
+<div class="aside basis"><p class="hd">基础知识 · 二次型与展开（见预备知识 L1、C2）</p><p>$x^\top x=\sum_jx_j^2$；$(x-a)^\top D(x-a)=\sum_jd_j(x_j-a_j)^2$。展开技巧：把含 $k$ 的项与不含 $k$ 的项分开，含 $k$ 的一次项要靠 $2x^\top xa$ 收集，二次项 $a^\top a$ 对固定的 $x$ 是<strong>逐类常数</strong>。</p></div>
+<p>在类内协方差为 $\mathrm{diag}(s_1^2,\dots,s_p^2)$、各类共享同一协方差的前提下，类 $k$ 的判别分数为</p>
+<div class="eq"><div class="escroll">
+$$
+\delta_k(x)=-\sum_{j=1}^p\frac{\bigl(x_j^{\star}-\bar x_{kj}\bigr)^2}{s_j^2}+\log\pi_k
+$$
+</div><span class="tag">(18.2)</span></div>
+<p>其中 $s_j$ 是第 $j$ 个基因的合并类内标准差，$\bar x_{kj}=\sum_{i\in C_k}x_{ij}/N_k$ 是类 $C_k$ 中该基因的均值，$\bar x_k=(\bar x_{k1},\dots,\bar x_{kp})^\top$ 叫类 $C_k$ 的<strong>质心</strong>，$\pi_k$ 是类先验（$\sum_{k=1}^K\pi_k=1$）。第一项是 $x^{\star}$ 到第 $k$ 个质心的（负）标准化平方距离，第二项是先验修正。分类规则就是取分数最大的类</p>
+<div class="eq"><div class="escroll">
+$$
+\hat g(x^{\star})=\ell\quad \text{使得}\quad \delta_\ell(x^{\star})=\max_{k=1}^K\delta_k(x^{\star})
+$$
+</div><span class="tag">(18.3)</span></div>
+<p><strong>推导：为什么判别分数是线性的。</strong> 把平方逐项展开成三部分：</p>
+<div class="eq long"><div class="escroll">
+$$
+\sum_{j=1}^p\frac{\bigl(x_j^{\star}-\bar x_{kj}\bigr)^2}{s_j^2}=\sum_{j=1}^p\frac{(x_j^{\star})^2}{s_j^2}-2\sum_{j=1}^p\frac{x_j^{\star}\bar x_{kj}}{s_j^2}+\sum_{j=1}^p\frac{\bar x_{kj}^2}{s_j^2}
+$$
+</div></div>
+<p>第一项 $\sum_j(x_j^{\star})^2/s_j^2$ 与 $k$ 无关（同一个 $x^{\star}$），可以丢掉。第三项 $\sum_j\bar x_{kj}^2/s_j^2=\lVert\tilde x_k\rVert^2$ 是<strong>逐类常数</strong>（$\tilde x_k=(\bar x_{k1}/s_1,\dots,\bar x_{kp}/s_p)^\top$），不能丢，但它是常数。第二项是关于 $x^{\star}$ 的线性函数，于是</p>
+<div class="eq long"><div class="escroll">
+$$
+\delta_k(x^{\star})=2\sum_{j=1}^p\frac{x_j^{\star}\bar x_{kj}}{s_j^2}-\sum_{j=1}^p\frac{\bar x_{kj}^2}{s_j^2}+\log\pi_k=2x^{\star\top}\tilde x_k-\lVert\tilde x_k\rVert^2+\log\pi_k
+$$
+</div></div>
+<p><strong>结果</strong> (18.2) 展开后就是一个<strong>线性判别式</strong>，系数向量是标准化质心 $\tilde x_k$，阈值是 $\lVert\tilde x_k\rVert^2/2$ 加上先验项。类 $k$ 与类 $\ell$ 的判别边界由 $\delta_k(x^{\star})=\delta_\ell(x^{\star})$ 给出：</p>
+<div class="eq long"><div class="escroll">
+$$
+x^{\star\top}(\tilde x_k-\tilde x_\ell)=\frac{\lVert\tilde x_k\rVert^2-\lVert\tilde x_\ell\rVert^2}{2}+\frac12\log\frac{\pi_\ell}{\pi_k}
+$$
+</div></div>
+<p>即一个垂直于标准化质心之差的超平面；先验不等时它不再平分两个质心，而是朝先验小的一侧平移。</p>
+<h3 id="s-18-2-2" class="anchored"><span class="num">18.2.2</span> 与最近类中心（欧氏距离）的等价性</h3>
+<p><strong>推导。</strong> 令 $z_j^{\star}=x_j^{\star}/s_j$、$\tilde x_{kj}=\bar x_{kj}/s_j$，即在标准化坐标中记 $z^{\star}=(z_1^{\star},\dots,z_p^{\star})^\top$。则</p>
+<div class="eq long"><div class="escroll">
+$$
+\sum_{j=1}^p\frac{\bigl(x_j^{\star}-\bar x_{kj}\bigr)^2}{s_j^2}=\sum_{j=1}^p\bigl(z_j^{\star}-\tilde x_{kj}\bigr)^2=\lVert z^{\star}-\tilde x_k\rVert^2
+$$
+</div></div>
+<p>所以「标准化平方距离最小 $\Leftrightarrow$ 标准化坐标中欧氏距离最近 $\Leftrightarrow$ 欧氏最近类中心」。若再假设 $s_1=\dots=s_p=s$，则 $\tilde x_k=\bar x_k/s$，距离 $\lVert z^{\star}-\tilde x_k\rVert^2=\frac1{s^2}\lVert x^{\star}-\bar x_k\rVert^2$，同一个正数缩放不改变 argmin，于是<strong>完全退化为原始坐标中的欧氏最近类中心（NCC）</strong>。</p>
+<div class="aside warn"><p class="hd">坑</p><p>「等价于最近类中心」只在先验相等（或先验项被吸收）时严格成立。若 $\pi_k$ 不等，(18.2) 与 NCC 的差别是判别平面被 $\frac12\log(\pi_\ell/\pi_k)$ 平移；这时它就是第 6 章的<strong>朴素贝叶斯</strong>（各类独立同方差的多元正态，naive Bayes），而不是纯几何最近邻。</p></div>
+<p>这个分类器在高维下常常很有效（Bickel and Levina, 2004 称之为「独立性规则」，并证明它常在高维问题中胜过标准 LDA）。SRBCT 数据上它对 20 个测试样本错了 5 个。缺点是<strong>用了全部 $p$ 个特征</strong>，无法解释。下面的收缩正是为了自动丢掉特征。</p>
+<h3 id="s-18-2-3" class="anchored"><span class="num">18.2.3</span> 标准化对比量：把质心偏差换算成 z 分数</h3>
+<p>要做收缩，先要把质心偏差放到「噪声尺度」上度量。第 $j$ 个基因、类 $k$ 与全体均值的对比量标准化为</p>
+<div class="eq"><div class="escroll">
+$$
+d_{kj}=\frac{\bar x_{kj}-\bar x_j}{m_k\,(s_j+s_0)},\qquad m_k^2=\frac{1}{N_k}-\frac1N
+$$
+</div><span class="tag">(18.4)</span></div>
+<p>$\bar x_j=\sum_{i=1}^Nx_{ij}/N$ 是总体均值，$s_0&gt;0$ 是一个小常数（通常取 $s_j$ 的中位数）。</p>
+<p><strong>推导：分子里的方差为什么是 $m_k^2\sigma^2$。</strong> 在类内方差为常数 $\sigma^2=s_j^2$ 的正态假设下，$\bar x_{kj}$ 与 $\bar x_j$ 的协方差不能忽略：</p>
+<div class="eq verylong"><div class="escroll">
+$$
+\mathrm{Var}(\bar x_{kj}-\bar x_j)=\mathrm{Var}(\bar x_{kj})+\mathrm{Var}(\bar x_j)-2\mathrm{Cov}(\bar x_{kj},\bar x_j)=\frac{\sigma^2}{N_k}+\frac{\sigma^2}{N}-2\frac{\sigma^2}{N}=\sigma^2\Big(\frac1{N_k}-\frac1N\Big)=m_k^2\sigma^2
+$$
+</div></div>
+<p>其中 $\mathrm{Cov}(\bar x_{kj},\bar x_j)=\mathrm{Cov}\big(\frac1{N_k}\sum_{i\in C_k}x_{ij},\frac1N\sum_{i=1}^Nx_{ij}\big)=\frac{|C_k|}{N_kN}\sigma^2=\frac{\sigma^2}{N}$。所以对比量的标准差是 $m_k\sigma_j$，除以它就得到近似 $z$ 分数——这正是 $m_k$ 这个因子的来源。$s_0$ 的作用是防止 $\bar x_{kj}-\bar x_j$ 因表达式数值接近零（log 比值可能接近 0）而产生虚假的大 $d_{kj}$。</p>
+<h3 id="s-18-2-4" class="anchored"><span class="num">18.2.4</span> 软阈值收缩：NSC 的核心</h3>
+<p>把 $d_{kj}$ 朝零做<strong>软阈值</strong>（图 18.2 的橙色曲线）：</p>
+<div class="eq"><div class="escroll">
+$$
+d_{kj}^{\prime}=\operatorname{sign}(d_{kj})\bigl(\lvert d_{kj}\rvert-\Delta\bigr)_+
+$$
+</div><span class="tag">(18.5)</span></div>
+<p>$(u)_+=\max(u,0)$。也可换成<strong>硬阈值</strong>（自动变量选择的更朴素版本）：</p>
+<div class="eq"><div class="escroll">
+$$
+d_{kj}^{\prime}=d_{kj}\cdot\mathbb{I}\bigl(\lvert d_{kj}\rvert\ge\Delta\bigr)
+$$
+</div><span class="tag">(18.6)</span></div>
+<p>$\Delta$ 是待定参数（例子里用 10 折交叉验证选，取到 $\Delta=4.34$，选出 43 个基因）。每个 $d_{kj}$ 的绝对值减少 $\Delta$（过零则归零）。</p>
+<p><strong>核心推导：软阈值是「平方误差 + $L_1$ 惩罚」的极小点。</strong> 这一步是 NSC 的全部理论内容（原文指向练习 18.2：把 (18.7) 看成类均值的 lasso 型估计）。</p>
+<p><em>第 1 步：写出估计问题。</em> 对固定的 $(k,j)$，要估的量是类均值与总体均值之差 $\theta_{kj}=\mu_{kj}-\mu_j$。取目标函数</p>
+<div class="eq"><div class="escroll">
+$$
+\Psi_{kj}(\theta)=\sum_{i\in C_k}\bigl(x_{ij}-\mu_j-\theta\bigr)^2+2\lambda_{kj}\lvert\theta\rvert
+$$
+</div></div>
+<p><em>第 2 步：解一维问题。</em> $\Psi$ 是凸的（凸二次 + 凸惩罚），逐段求导。设 $u=\bar x_{kj}-\bar x_j$，注意 $\sum_{i\in C_k}(x_{ij}-\mu_j-\theta)^2$ 关于 $\theta$ 的导数是 $-2\sum_{i\in C_k}(x_{ij}-\mu_j-\theta)=-2(N_ku-N_k\theta)$。于是</p>
+<div class="eq verylong"><div class="escroll">
+$$
+\frac{\partial\Psi}{\partial\theta}=\begin{cases} -2N_k(u-\theta)+2\lambda_{kj}=0, &amp; \theta&gt;0 \\[2pt] -2N_k(u-\theta)-2\lambda_{kj}=0, &amp; \theta&lt;0 \\[2pt] \text{满足 } \lvert -2N_ku\rvert\le 2\lambda_{kj}, &amp; \theta=0\end{cases}
+$$
+</div></div>
+<p>第一行给出 $\theta=u-\lambda_{kj}/N_k$，第二行给出 $\theta=u+\lambda_{kj}/N_k$，第三行要求 $\lvert u\rvert\le\lambda_{kj}/N_k$。三行合起来就是</p>
+<div class="eq"><div class="escroll">
+$$
+\hat\theta_{kj}=\operatorname{sign}(u)\bigl(\lvert u\rvert-\lambda_{kj}/N_k\bigr)_+
+$$
+</div></div>
+<p>即<strong>把观测值 $u$ 朝零减一个固定的量</strong>——正是软阈值。</p>
+<p><em>第 3 步：换算回 $d$ 的单位。</em> 由第 2 步的结果 $\hat\theta_{kj}=u-\lambda_{kj}\operatorname{sign}(u)\mathbb{I}(\lvert u\rvert&gt;\lambda_{kj})$，两边同除以 $m_k(s_j+s_0)\approx m_ks_j$，得</p>
+<div class="eq verylong"><div class="escroll">
+$$
+\hat d_{kj}=d_{kj}-\frac{\lambda_{kj}}{N_km_ks_j}\operatorname{sign}(d_{kj})\mathbb{I}\bigl(\lvert d_{kj}\rvert&gt;\tfrac{\lambda_{kj}}{N_km_ks_j}\bigr)=\operatorname{sign}(d_{kj})\bigl(\lvert d_{kj}\rvert-\Delta_{kj}\bigr)_+,
+\quad \Delta_{kj}:=\frac{\lambda_{kj}}{N_km_ks_j}
+$$
+</div></div>
+<p><strong>结果</strong> 软阈值 (18.5) 就是「平方风险 + $L_1$ 惩罚」的最优解，阈值 $\Delta$ 与惩罚参数 $\lambda$ 只差一个正的比例因子 $1/(N_km_ks_j)$。所以 NSC 是一个<strong>逐坐标独立的 lasso</strong>：$L_1$ 惩罚在这里不是用来「选变量」的装饰，而是从最小化风险直接推出来的收缩形式。</p>
+<p><strong>推导：为什么用软阈值而不是硬阈值。</strong> 同样的思路换成 0-1 惩罚：$\Psi^{\prime}(\theta)=\sum_{i\in C_k}(x_{ij}-\mu_j-\theta)^2+\lambda\mathbb{I}(\theta\ne0)$。在 $\theta\ne0$ 区间内极小点是 $\theta=u$，代价为 $\lambda$；在 $\theta=0$ 处代价为 $u^2$。所以解为</p>
+<div class="eq verylong"><div class="escroll">
+$$
+\hat\theta_{kj}=\begin{cases} u, &amp; \lvert u\rvert^2&gt;\lambda \\ 0, &amp; \lvert u\rvert^2\le\lambda\end{cases}\ \Longleftrightarrow\ d_{kj}^{\prime}=d_{kj}\mathbb{I}\bigl(\lvert d_{kj}\rvert\ge\Delta\bigr),\quad \Delta=\sqrt{\lambda}/(m_ks_j)
+$$
+</div></div>
+<p>比较两式：硬阈值是「不满足就整段扔掉」，软阈值是「所有坐标都减一点」。软阈值连续、在 0 处斜率跳变但函数连续（图 18.2），所以原文偏好软阈值：它同时降方差（每个坐标都朝 0 拉一点）和做变量选择（$|d|$ 小的归零），而且不产生阈值附近的硬边界。</p>
+<div class="aside warn"><p class="hd">坑</p><p>软阈值的偏差是<strong>有偏的</strong>：$\hat d_{kj}$ 在 $d_{kj}$ 很小时不是「无偏地保留」而是「过度收缩到接近 0」。这与 lasso 一样，用偏差换方差。若某个弱但确定的信号恰好被切到 0，NSC 没有任何补救机制——这是它与 §18.4 里 elastic net 的重要差别（后者用 $L_2$ 项把相关特征拉住，避免整组归零）。</p></div>
+<h3 id="s-18-2-5" class="anchored"><span class="num">18.2.5</span> 反变换回质心与类概率</h3>
+<p>把标准化变换反过来，得到收缩后的质心：</p>
+<div class="eq"><div class="escroll">
+$$
+\bar x_{kj}^{\prime}=\bar x_j+m_k(s_j+s_0)\,d_{kj}^{\prime}
+$$
+</div><span class="tag">(18.7)</span></div>
+<p>代入 $d_{kj}^{\prime}$（用软阈值）就是 $\bar x_{kj}^{\prime}=\bar x_j+m_ks_j\,\operatorname{sign}(d_{kj})(\lvert d_{kj}\rvert-\Delta)_+$（忽略 $s_0$ 的一次修正），即<strong>质心朝总体均值收缩</strong>；用硬阈值时是「要么原样、要么完全等于总体均值 $\bar x_j$」。在 (18.2) 里用 $\bar x_{kj}^{\prime}$ 替换 $\bar x_{kj}$ 即得 NSC 分类器。</p>
+<p>判别分数还能给出类概率估计：</p>
+<div class="eq"><div class="escroll">
+$$
+\hat p_k(x^{\star})=\frac{\exp\{\delta_k(x^{\star})\}}{\sum_{\ell=1}^K\exp\{\delta_\ell(x^{\star})\}}
+$$
+</div><span class="tag">(18.8)</span></div>
+<p><strong>推导：为什么 (18.8) 就是后验概率。</strong> 高斯类密度 $f_k(x)=|2\pi\Sigma_k|^{-1/2}\exp\{-\tfrac12(x-\mu_k)^\top\Sigma_k^{-1}(x-\mu_k)\}$，贝叶斯公式给 $\Pr(G=k\mid x)\propto\pi_kf_k(x)$。对角 LDA 的 $\delta_k$ 就是 $\log\pi_kf_k(x)$（差一个与 $k$ 无关的常数），所以</p>
+<div class="eq long"><div class="escroll">
+$$
+\Pr(G=k\mid x)=\frac{\pi_kf_k(x)}{\sum_\ell\pi_\ell f_\ell(x)}=\frac{e^{\delta_k(x)}}{\sum_\ell e^{\delta_\ell(x)}}
+$$
+</div></div>
+<p>即 (18.8)。<strong>结果</strong> 它是 softmax 形式，可以用来给分类结果排序，或在最大概率低于阈值时<strong>拒判</strong>（不给出分类），在高维小样本里这是很实用的操作。</p>
+<p><strong>结果</strong> 只有对<strong>至少一个类</strong>满足 $d_{kj}^{\prime}\ne0$ 的基因参与分类，绝大多数基因被丢掉。SRBCT 数据里 2308 个基因只剩 43 个（图 18.3 的热图），$\Delta$ 在一段很宽的范围内都能给出 0 个测试错误（图 18.4 上图；不收缩时错 5/20）。注意 Fan and Fan (2008) 从理论上证明了：在 $p\gg N$ 的对角 LDA 里<strong>必须</strong>做某种形式的变量选择，否则误差会随 $p$ 发散。</p>
+<h2 id="s-18-3" class="anchored"><span class="num">18.3</span> 带二次正则化的线性分类器</h2>
+<p>这一节换成另一组数据：144 个病人、14 种癌症类型、16063 个基因，另有 54 个测试病人。每位病人的数据先标准化到均值 0、方差 1。下表是八种方法的比较（$\lambda$ 由交叉验证选）：</p>
+<div class="tscroll-x"><table class="fx"><thead><tr><th>方法</th><th>CV 错分（SE）</th><th>测试错分</th><th>用的基因数</th></tr></thead><tbody><tr><td>最近收缩质心</td><td>35 (5.0)</td><td>17</td><td>6 520</td></tr><tr><td>$L_2$ 惩罚判别分析</td><td>25 (4.1)</td><td>12</td><td>16 063</td></tr><tr><td>支持向量分类器</td><td>26 (4.2)</td><td>14</td><td>16 063</td></tr><tr><td>lasso 回归（one vs all）</td><td>30.7 (1.8)</td><td>12.5</td><td>1 429</td></tr><tr><td>$k$ 近邻</td><td>41 (4.6)</td><td>26</td><td>16 063</td></tr><tr><td>$L_2$ 惩罚多项逻辑回归</td><td>26 (4.2)</td><td>15</td><td>16 063</td></tr><tr><td>$L_1$ 惩罚多项逻辑回归</td><td>17 (2.8)</td><td>13</td><td>269</td></tr><tr><td>elastic net 惩罚多项回归</td><td>22 (3.7)</td><td>11.8</td><td>384</td></tr></tbody></table></div>
+<p><a class="src" href="../esl/ch18-high-dimensional-problems-p-n.html#s-18-3">原文 §18.3</a></p>
+<p>表里最刺眼的一点：方法 2、3、6（三种二次正则化方法）<strong>用了全部 16063 个基因</strong>，而 $N=144$。这是 $L_2$ 惩罚的本质——它只缩小系数，不把任何系数压到 0。</p>
+<h3 id="s-18-3-1" class="anchored"><span class="num">18.3.1</span> 正则化判别分析 (RDA)</h3>
+<p>线性判别分析需要求逆一个 $p\times p$ 的类内协方差矩阵；$p\gg N$ 时它秩最多 $N&lt;p$，必然奇异。RDA 的做法是把这个估计<strong>朝它自己的对角</strong>收缩：</p>
+<div class="eq"><div class="escroll">
+$$
+\hat\Sigma(\gamma)=\gamma\hat\Sigma+(1-\gamma)\mathrm{diag}(\hat\Sigma),\qquad \gamma\in[0,1]
+$$
+</div><span class="tag">(18.9)</span></div>
+<p><strong>核心推导：$\gamma$ 的插值性质与偏差–方差的连续调节。</strong></p>
+<p><em>第 1 步：两个端点。</em> $\gamma=0$ 时 $\hat\Sigma(0)=\mathrm{diag}(\hat\Sigma)$，这正是 §18.2 的对角 LDA，也就是「不收缩版本的最近收缩质心」；$\gamma=1$ 时 $\hat\Sigma(1)=\hat\Sigma$，$p\le N-1$ 时就是标准 LDA。</p>
+<p><em>第 2 步：正定性。</em> $\hat\Sigma$ 对称半正定（是 $X_c^\top X_c$ 的形式，$X_c$ 为中心化数据矩阵），$\mathrm{diag}(\hat\Sigma)$ 在所有 $s_j&gt;0$ 时正定。所以</p>
+<div class="eq long"><div class="escroll">
+$$
+\hat\Sigma(\gamma)=\mathrm{diag}(\hat\Sigma)+\gamma\bigl(\hat\Sigma-\mathrm{diag}(\hat\Sigma)\bigr)\succ0\quad(\gamma&gt;0)
+$$
+</div></div>
+<p>凸组合的半正定性（预备知识 L1）保证任意 $\gamma&gt;0$ 都可逆：$\hat\Sigma$ 的零特征值被抬到 $(1-\gamma)$ 倍的对角元上，最小特征值至少 $\gamma\min_j s_j^2&gt;0$。这就是 RDA 解决奇异性的全部机制。</p>
+<p><em>第 3 步：把「$L_2$ 惩罚」与 $\gamma$ 挂钩。</em> 若把收缩目标换成标量矩阵 $\bar\sigma^2I$（$\bar\sigma^2$ 是合并方差的标量版本），则</p>
+<div class="eq verylong"><div class="escroll">
+$$
+\bigl[\gamma\hat\Sigma+(1-\gamma)\bar\sigma^2I\bigr]^{-1}=\frac1{\bar\sigma^2}\Bigl[\tfrac{1}{\bar\sigma^2}\hat\Sigma+\tfrac{1-\gamma}{\gamma}I\Bigr]^{-1}=\frac1{\bar\sigma^2}\Bigl[\tfrac{1}{\bar\sigma^2}\hat\Sigma+\lambda I\Bigr]^{-1}
+$$
+</div></div>
+<p>即 $\lambda=\bar\sigma^2(1-\gamma)/\gamma$，也就是 $\gamma=\bar\sigma^2/(\bar\sigma^2+\lambda)$。<strong>结果</strong> $\gamma$ 与岭惩罚参数 $\lambda$ 是一一对应的：$\gamma\to0\Leftrightarrow\lambda\to\infty$（退化成欧氏最近类中心），$\gamma\to1\Leftrightarrow\lambda\to0$（回到 LDA）。(18.9) 用对角作目标是比标量更精细的选择（每个特征按自己的尺度收缩），原文说它「很像」岭回归把总协方差往对角（标量）矩阵收缩，这句话在标量目标下是<strong>严格等价</strong>的。</p>
+<p><em>第 4 步：偏差–方差公式。</em> 把 LDA 看成对类别指示变量做最小二乘回归（见第 12 章 (12.57) 的最优评分表示），$\hat\beta(\lambda)=(X^\top X+\lambda I_p)^{-1}X^\top y$。设 $Z=X^\top X$、噪声 $e\sim N(0,\sigma^2I_N)$，则 $\hat\beta=(Z+\lambda I)^{-1}(Z\beta+X^\top e)$：</p>
+<div class="eq"><div class="escroll">
+$$
+E[\hat\beta]-\beta=\bigl[(Z+\lambda I)^{-1}Z-I\bigr]\beta=-\lambda(Z+\lambda I)^{-1}\beta
+$$
+</div></div>
+<div class="eq long"><div class="escroll">
+$$
+\text{偏差}^2=\lambda^2\beta^\top(Z+\lambda I)^{-2}\beta,\qquad \mathrm{tr}\bigl(\mathrm{Var}(\hat\beta)\bigr)=\sigma^2\sum_{j=1}^p\frac{z_j}{(z_j+\lambda)^2}
+$$
+</div></div>
+<p>方差那一行的推导用了两个恒等式：$(Z+\lambda I)^{-1}Z=I-\lambda(Z+\lambda I)^{-1}$，以及 $\mathrm{tr}(Z+\lambda I)^{-1}=\sum_j(z_j+\lambda)^{-1}$（$z_j$ 是 $Z$ 的特征值）。把 $Z$ 谱分解后，风险为</p>
+<div class="eq long"><div class="escroll">
+$$
+R(\lambda)=\sum_{j=1}^p\frac{\lambda^2\beta_j^2}{(z_j+\lambda)^2}+\sigma^2\sum_{j=1}^p\frac{z_j}{(z_j+\lambda)^2}
+$$
+</div></div>
+<p>逐项求导（设 $\beta_j$ 是 $\beta$ 在 $Z$ 的特征基下的坐标）：</p>
+<div class="eq long"><div class="escroll">
+$$
+\frac{\mathrm dR}{\mathrm d\lambda}=2\sum_{j=1}^p\frac{z_j\bigl(\lambda\beta_j^2-\sigma^2\bigr)}{(z_j+\lambda)^3}
+$$
+</div></div>
+<p><strong>结果</strong>（a）$z_j=0$ 的方向（$p-N$ 个不可辨识方向）对方差的贡献是 $0$，但偏差贡献是 $\lambda^2\beta_j^2/\lambda^2=\beta_j^2$，即被<strong>完全收缩到 0</strong>——这是免费的。（b）$z_j$ 大的方向（噪声大的方向）方差贡献 $\sigma^2z_j/(z_j+\lambda)^2$ 迅速衰减。（c）若所有 $z_j=z$，求导式退化为 $\frac{2z}{(z+\lambda)^3}\bigl(\lambda\lVert\beta\rVert^2-p\sigma^2\bigr)=0$，最优解显式为 $\hat\lambda=p\sigma^2/\lVert\beta\rVert^2$；$p=1$ 时就是熟知的 $\hat\lambda=\sigma^2/\hat\beta^2$。这三条合起来就是「$p\gg N$ 时必须重度收缩」的定量理由，也是 (18.9) 里 $\gamma$ 由交叉验证选的依据（表 18.1 第 2 行，所有 $\gamma\in(0.002,0.550)$ 都给出相同的 CV 与测试误差）。</p>
+<div class="aside warn"><p class="hd">坑</p><p>(18.9) 收缩的是<strong>协方差矩阵</strong>，类中心本身没有收缩；Guo et al. (2006) 讨论了把两者一起收缩的进一步版本。另外注意 RDA 与 NSC 的对应只在 $\gamma=0$ 处成立：NSC 是<strong>逐坐标</strong>做 $L_1$ 型收缩，RDA 是对<strong>矩阵整体</strong>做 $L_2$ 型收缩，NSC 会产生精确零而 RDA 不会。</p></div>
+<h3 id="s-18-3-2" class="anchored"><span class="num">18.3.2</span> 带二次正则化的逻辑回归</h3>
+<p>用对称形式的多类逻辑模型（第 4 章 (4.17)）：</p>
+<div class="eq long"><div class="escroll">
+$$
+\Pr(G=k\mid X=x)=\frac{\exp\bigl(\beta_{k0}+x^\top\beta_k\bigr)}{\sum_{\ell=1}^K\exp\bigl(\beta_{\ell0}+x^\top\beta_\ell\bigr)},\qquad k=1,\dots,K
+$$
+</div><span class="tag">(18.10)</span></div>
+<p>有 $K$ 个 log-odds 系数向量 $\beta_1,\dots,\beta_K$。用二次惩罚最大化惩罚化的对数似然：</p>
+<div class="eq long"><div class="escroll">
+$$
+\bigl(\{\hat\beta_{k0},\hat\beta_k\}_{k=1}^K\bigr)=\arg\max_{\{\beta_{k0},\beta_k\}}\left\{\sum_{i=1}^N\sum_{k=1}^K\log\Pr(g_i\mid x_i)-\frac{\lambda}{2}\sum_{k=1}^K\lVert\beta_k\rVert_2^2\right\}
+$$
+</div><span class="tag">(18.11)</span></div>
+<p><strong>推导：二次惩罚自动解决了参数化的冗余。</strong> 对 $\beta_k$ 求梯度（记 $P_{ik}=\Pr(g_i=k\mid x_i)$、$y_{ik}=\mathbb{I}(g_i=k)$）：</p>
+<div class="eq long"><div class="escroll">
+$$
+\frac{\partial}{\partial\beta_k}\sum_i\sum_k\log P_{ik}=X^\top\bigl(P_k-y_k\bigr),\qquad \frac{\partial}{\partial\beta_k}\Bigl(-\tfrac{\lambda}{2}\sum_k\lVert\beta_k\rVert^2\Bigr)=-\lambda\beta_k
+$$
+</div></div>
+<p>KKT（预备知识 O2）给出 $X^\top(P_k-y_k)=\lambda\hat\beta_k$。把 $k=1,\dots,K$ 的 $K$ 个等式相加：</p>
+<div class="eq"><div class="escroll">
+$$
+\lambda\sum_{k=1}^K\hat\beta_k=X^\top\Bigl(\sum_kP_k-\sum_ky_k\Bigr)=X^\top(\mathbf 1_N-\mathbf 1_N)=\mathbf 0
+$$
+</div></div>
+<p><strong>结果</strong> $\sum_{k=1}^K\hat\beta_k=\mathbf 0$，即每个坐标上 $K$ 个系数之和被强制为零（原练习 18.3）。这自动消掉了「同时给所有 $\beta_k$ 加同一个向量」造成的不可辨识。注意常数项 $\beta_{k0}$ <strong>不</strong>惩罚（否则也会被压成 0，模型失去截距）。</p>
+<p><strong>推导：$\lambda$ 小时它逼近 LDA 方向。</strong> 在等先验、无截距的简化下，$P_{ik}$ 在 $\beta\approx0$ 附近一阶展开为 $P_{ik}\approx\frac1K+\frac1Kx_i^\top\beta_k$。代入 KKT：</p>
+<div class="eq long"><div class="escroll">
+$$
+\lambda\hat\beta_k=\sum_i\Big(\frac1K+\frac1Kx_i^\top\hat\beta_k-y_{ik}\Bigr)x_i=\frac1KX^\top X\hat\beta_k-X^\top y_k
+$$
+</div></div>
+<p>（用了 $\sum_ix_i=\mathbf0$ 与中心化），即 $\bigl(\frac1KX^\top X-\lambda I\bigr)\hat\beta_k=X^\top y_k$，而 $X^\top y_k=\sum_{i\in C_k}x_i-N\bar x=N(\bar x_k-\bar x)$。<strong>结果</strong></p>
+<div class="eq"><div class="escroll">
+$$
+\hat\beta_k=\Bigl(\tfrac1K X^\top X-\lambda I\Bigr)^{-1}N(\bar x_k-\bar x)
+$$
+</div></div>
+<p>小 $\lambda$ 时 $\hat\beta_k\propto\bar x_k-\bar x$，正是 LDA 的判别方向；惩罚沿着 $X^\top X$ 的奇异方向收缩。<strong>坑</strong> 这个「$L_2$ 惩罚逻辑回归 $=$ 沿奇异方向收缩的 LDA」只在 $\beta$ 很小（一阶近似有效）时成立；$\lambda\to0$ 且数据可分时系数发散，需要重标化（Rosset et al., 2004a：$\lambda\to0$ 时重标化的解收敛到最大间隔分类器，即 §12.2 的 SVM）。表 18.1 第 6 行就是这个模型（15 个测试错误，用满 16063 个基因）。问题凸，可以用 Newton 法或 Friedman et al. (2010) 的路径算法。</p>
+<h3 id="s-18-3-3" class="anchored"><span class="num">18.3.3</span> 支持向量分类器</h3>
+<p>二类 SVM 见第 12 章。$p&gt;N$ 时它格外有吸引力：除非不同类有完全相同的特征向量，$N$ 个点在 $p$ 维空间里几乎总是<strong>严格可分</strong>的，所以不需任何正则化也能找到间隔最大的分离超平面。有点反直觉的是，当 $p\gg N$ 时<strong>未正则化</strong>的 SVM 常常和最好的正则化版本一样好——过拟合在这里似乎不是问题，部分原因是错分损失对样本的移动不敏感。</p>
+<p><strong>推导：对偶为什么与 $p$ 无关。</strong> 软间隔原始问题（$C$ 是「正则化」参数）与拉格朗日函数</p>
+<div class="eq long"><div class="escroll">
+$$
+\min_{\beta,\xi}\ \frac12\lVert\beta\rVert^2+C\sum_{i=1}^N\xi_i\ \ \text{s.t.}\ \ g_i(\beta^\top x_i+\beta_0)\ge1-\xi_i,\ \xi_i\ge0
+$$
+</div></div>
+<div class="eq long"><div class="escroll">
+$$
+L=\tfrac12\lVert\beta\rVert^2+C\sum_i\xi_i-\sum_i\alpha_i\bigl[g_i(\beta^\top x_i+\beta_0)-1+\xi_i\bigr]-\sum_i\mu_i\xi_i
+$$
+</div></div>
+<p>对 $\beta,\beta_0,\xi$ 求导并令零：$\beta=\sum_i\alpha_ig_ix_i$，$\sum_i\alpha_ig_i=0$，$\alpha_i\bigl[g_i(\beta^\top x_i+\beta_0)-1+\xi_i\bigr]=0$，$0\le\alpha_i\le C$。代回得对偶</p>
+<div class="eq long"><div class="escroll">
+$$
+\max_{\alpha}\ \sum_{i=1}^N\alpha_i-\frac12\sum_{i=1}^N\sum_{j=1}^N\alpha_i\alpha_jg_ig_j\,\underbrace{x_i^\top x_j}_{(XX^\top)_{ij}},\quad 0\le\alpha_i\le C,\ \sum_i\alpha_ig_i=0
+$$
+</div></div>
+<p><strong>结果</strong> 对偶里只有 $N$ 个变量 $\alpha_i$ 和 $N\times N$ 的 Gram 矩阵 $XX^\top$，<strong>自由度的个数与 $p$ 无关</strong>；解出来以后</p>
+<div class="eq"><div class="escroll">
+$$
+\hat g(x)=\hat\beta_0+\sum_{i\in\text{SV}}\hat\alpha_ig_i\,x_i^\top x
+$$
+</div></div>
+<p>的预测代价是 $O(\lvert\text{SV}\rvert\cdot p)$，训练代价是 $O(\lvert\text{SV}\rvert^2)$（Gram 矩阵本身 $O(pN^2)$ 算出一次）。这就是它比 $L_2$ 惩罚判别分析更实用的技术原因：后者必须显式处理 $p\times p$ 的 $\hat\Sigma$（除非用 §18.3.5 的捷径）。表 18.1 第 3 行测试错 14，且误差对 $C$ 的选择不敏感（$C&gt;0.001$ 都可以）；由于 $p&gt;N$ 可分，取 $C=\infty$ 即可让超平面完美分开训练数据。</p>
+<p>$K&gt;2$ 的推广：一对多（ova）与一对一（ovo）。ovo 要算全部 $\binom K2$ 个二类分类器，测试点归为「赢得最多对局」的类；ova 算 $K$ 个二类分类器，取置信度（到超平面的有符号距离）最高的类。Vapnik (1998)、Weston and Watkins (1999) 提出了更复杂的多类判别准则。Tibshirani and Hastie (2007) 的<strong>间隔树</strong>把 SVM 排成二叉树，像 CART 一样做层次化分类。</p>
+<h3 id="s-18-3-4" class="anchored"><span class="num">18.3.4</span> 特征选择</h3>
+<p>$p$ 大时特征选择不只是科学要求，还是必要的。RDA、逻辑回归、SVM <strong>都不自动做</strong>特征选择，因为它们用的都是二次惩罚：所有特征都有非零权重。原文提到的临时办法是<strong>递归特征消减（RFE）</strong>（Guyon et al., 2002）：从权重最小的特征开始逐个删掉并重新拟合。</p>
+<p><strong>结果</strong> 在这个例子里 RFE 失败了——Ramaswamy et al. (2001) 报告 SVM 的准确率随基因数从 16063 开始减少就下降，而训练样本只有 144 个。原文对这个反常行为没有解释。这是「高维下特征未必多余」的一个警示：$p$ 大并不意味着每个坐标都是噪声，$L_2$ 惩罚把所有坐标按比例缩小反而是安全的。</p>
+<p><strong>结果</strong> 三种方法都可以用核改成非线性判别边界（§18.3 末段）。动机本是提高复杂度，但 $p\gg N$ 时模型已经足够复杂，过拟合始终是危险；即便如此，径向核在这些高维问题上<strong>有时</strong>反而更好——因为径向核会压低相距很远的点之间的内积，从而对离群点更稳健，而高维里「离群点很多」是常态。不过表 18.1 里给 SVM 加径向核反而更差。</p>
+<h3 id="s-18-3-5" class="anchored"><span class="num">18.3.5</span> $p\gg N$ 时的计算捷径</h3>
+<p>这一小节的技术适用于<strong>任何</strong>「参数线性 + 系数二次惩罚」的方法，包括本节三种以及带二次正则化的神经网络（§11.5.2）。几何直觉：三维空间里两点总在一条直线上，$p$ 维空间里 $N$ 个点落在一个 $(N-1)$ 维仿射子空间里——所以 $p$ 维的问题其实只有 $N$ 个自由度。</p>
+<p><a class="src" href="../esl/ch18-high-dimensional-problems-p-n.html#s-18-3-5">原文 §18.3.5</a></p>
+<p><strong>第 1 步：SVD 分解。</strong> 数据矩阵 $X$ 是 $N\times p$，作奇异值分解</p>
+<div class="eq long"><div class="escroll">
+$$
+X=UDV^\top,\qquad U\ \text{是}\ N\times N\ \text{正交},\ V\ \text{是}\ p\times N\ \text{列正交},\ D=\mathrm{diag}(d_1,\dots,d_N),\ d_1\ge\dots\ge d_N\ge0
+$$
+</div><span class="tag">(18.12)</span></div>
+<div class="aside basis"><p class="hd">基础知识 · SVD 与秩（见预备知识 L3）</p><p>$X^\top X=VD^2V^\top$，$XX^\top=UD^2U^\top$：<strong>两者非零特征值完全相同</strong>（都是 $d_j^2$），特征向量分别是 $V$ 与 $U$ 的列。这条「同一个谱的两种看法」是本小节全部结论的来源。Eckart–Young：$\lVert X-X_r\rVert_F^2=\sum_{j&gt;r}d_j^2$ 是所有秩 $\le r$ 逼近中的最小值。</p></div>
+<p><strong>第 2 步：换一个小矩阵。</strong> 记 $R=UD$（$N\times N$，行记为 $r_i^\top$），则</p>
+<div class="eq"><div class="escroll">
+$$
+X=RDV^\top=RV^\top,\qquad R=XV
+$$
+</div><span class="tag">(18.13)</span></div>
+<p>（第二式验证：$XV=UDV^\top V=UD=R$，因为 $V^\top V=I_N$。）关键的两个恒等式随之而来：</p>
+<div class="eq"><div class="escroll">
+$$
+R^\top R=D^2U^\top UD=D^2,\qquad R^\top=UD^\top
+$$
+</div></div>
+<p>即 $R$ 的列<strong>两两正交</strong>，第 $j$ 列的范数是 $d_j$。</p>
+<p><strong>第 3 步：岭回归解的形式变换。</strong> 岭回归的显式解为</p>
+<div class="eq"><div class="escroll">
+$$
+\hat\beta=\bigl(X^\top X+\lambda I_p\bigr)^{-1}X^\top y
+$$
+</div><span class="tag">(18.14)</span></div>
+<p>用第 1 步的 $X^\top X=VD^2V^\top$，注意到</p>
+<div class="eq"><div class="escroll">
+$$
+\bigl(VD^2V^\top+\lambda I_p\bigr)V=V\bigl(D^2V^\top V+\lambda I_N\bigr)=V\bigl(D^2+\lambda I_N\bigr)
+$$
+</div></div>
+<p>（第一步用 $V^\top V=I_N$），所以 $\bigl(X^\top X+\lambda I_p\bigr)^{-1}V=V(D^2+\lambda I_N)^{-1}$。再代 $X^\top y=VDU^\top y$：</p>
+<div class="eq"><div class="escroll">
+$$
+\hat\beta=V\bigl(D^2+\lambda I_N\bigr)^{-1}DU^\top y=V\bigl(R^\top R+\lambda I_N\bigr)^{-1}R^\top y
+$$
+</div><span class="tag">(18.15)</span></div>
+<p><strong>结果</strong> (18.14) 与 (18.15) 是<strong>同一个向量</strong>：$\hat\beta=V\hat\theta$，其中 $\hat\theta$ 是只用 $N$ 个「观测」$(r_i,y_i)$ 做的岭回归估计——每个「预测变量」$r_i$ 其实是一个 $N$ 维向量，共 $N$ 个预测变量。拟合值也完全一致：由 (18.13) 的第 $i$ 行读出 $x_i^\top=r_i^\top V^\top$，所以</p>
+<div class="eq long"><div class="escroll">
+$$
+x_i^\top\beta=r_i^\top V^\top V\theta=r_i^\top\theta,\qquad \lVert\beta\rVert^2=\theta^\top V^\top V\theta=\lVert\theta\rVert^2
+$$
+</div></div>
+<p>后一个等式是关键：<strong>二次惩罚在旋转 $V$ 下不变，线性模型的拟合值在旋转下等变</strong>，所以损失函数值与惩罚值都逐项相等，不只是极小点相同。代价从 $O(p^3)$（对 $p\times p$ 的 $X^\top X$ 求逆）降到 $O(pN^2)$。</p>
+<p><strong>第 4 步：一般定理。</strong> 对任何「线性模型 + 二次惩罚」的问题，设 $f^\star(r_i)=\theta_0+r_i^\top\theta$，$r_i$ 如 (18.13)，考虑下面<strong>一对</strong>优化问题：</p>
+<div class="eq long"><div class="escroll">
+$$
+(\hat\beta_0,\hat\beta)=\arg\min_{\beta_0,\beta\in\mathbb{R}^p}\ \sum_{i=1}^N L\bigl(y_i,\beta_0+x_i^\top\beta\bigr)+\frac{\lambda}{2}\lVert\beta\rVert_2^2
+$$
+</div><span class="tag">(18.16)</span></div>
+<div class="eq long"><div class="escroll">
+$$
+(\hat\theta_0,\hat\theta)=\arg\min_{\theta_0,\theta\in\mathbb{R}^N}\ \sum_{i=1}^N L\bigl(y_i,\theta_0+r_i^\top\theta\bigr)+\frac{\lambda}{2}\lVert\theta\rVert_2^2
+$$
+</div><span class="tag">(18.17)</span></div>
+<p><strong>则</strong> $\hat\beta_0=\hat\theta_0$ 且 $\hat\beta=V\hat\theta$。</p>
+<p><strong>推导。</strong> 把 (18.16) 的目标限制在 $\{\beta=Vu:\ u\in\mathbb{R}^N\}$ 这个子空间上（当 $p&gt;N$ 时 $\mathrm{col}(X)\subseteq\mathrm{row}(V)$，最优解必在这个子空间里），令 $\theta=u$。逐项用第 3 步的两个恒等式：</p>
+<div class="eq long"><div class="escroll">
+$$
+\sum_iL(y_i,\beta_0+x_i^\top\beta)=\sum_iL(y_i,\beta_0+r_i^\top u)\ \ (\text{完全相等}),\qquad \lVert Vu\rVert_2^2=\lVert u\rVert_2^2
+$$
+</div></div>
+<p>所以子空间上的限制问题<strong>逐点等于</strong> (18.17)，即 (18.17) 在 (18.16) 上取到相同的极小值；又因为 (18.16) 凸，极小点唯一，故 $\hat\beta=V\hat\theta$、截距相同。$\blacksquare$</p>
+<p><strong>结果</strong> 这个定理说：把 $p$ 个向量 $x_i$ 换成 $N$ 个向量 $r_i$ 做同样的惩罚拟合，再乘一次矩阵变回去。几何上我们把特征旋转到一个坐标系，使前 $N$ 个坐标之后全为零；旋转是允许的，因为二次惩罚在旋转下不变、线性模型是等变的。它适用于本节所有方法、正则化逻辑回归、LDA（练习 18.6）、SVM、带二次正则化的神经网络。$\lambda$ 通常由交叉验证选，但只需在原数据上构造一次 $R$，之后每一折 CV 都直接用它做数据（练习 18.12）。SVM 的<strong>核技巧</strong>（§12.3.7）用的是同一个降维思想：$N\times N$ 的 Gram 矩阵 $K=XX^\top=UD^2U^\top$，与 $R$ 携带完全相同的信息（练习 18.13 用 $K$ 的 SVD 拟合带岭惩罚的逻辑回归）。</p>
+<div class="aside warn"><p class="hd">坑</p><p>这条捷径<strong>不适用于 lasso</strong>：$\lVert Vu\rVert_1=\lVert u\rVert_1$ 不成立。$V$ 的旋转把 $L_1$ 球变成一个平行多面体，稀疏解不在 $\{Vu\}$ 里，所以 §18.4 的方法必须直接用坐标下降。</p></div>
+<h2 id="s-18-4" class="anchored"><span class="num">18.4</span> 带 L1 正则化的线性分类器</h2>
+<p>§18.3 的方法都用 $L_2$ 惩罚，所有估计系数都非零，因此<strong>不做</strong>特征选择（表 18.1 第 2、3、6 行用满 16063 个基因）。本节换成 $L_1$ 惩罚，得到自动的特征选择。</p>
+<p><strong>lasso 与 $p&gt;N$ 下的稀疏性</strong></p>
+<p>回顾第 3 章 §3.4.2 的 lasso，写成 Lagrange 形式（3.52）：</p>
+<div class="eq long"><div class="escroll">
+$$
+\min_{\beta_0,\beta_1,\dots,\beta_p}\ \sum_{i=1}^N\Bigl(y_i-\beta_0-\sum_{j=1}^p x_{ij}\beta_j\Bigr)^2+\lambda\sum_{j=1}^p\lvert\beta_j\rvert
+$$
+</div><span class="tag">(18.18)</span></div>
+<p>$L_1$ 惩罚的后果是：当 $\lambda$ 足够大时，一部分 $\hat\beta_j$ <strong>精确等于零</strong>。§3.8.1 的 LARS 算法能高效算出所有 $\lambda$ 的 lasso 解。关键的一条（Rosset and Zhu, 2007 等，由凸对偶得到）：</p>
+<div class="aside key"><p class="hd">结果</p><p>当 $p&gt;N$ 时，对<strong>任意</strong> $\lambda$，lasso 解的非零系数个数至多为 $N$；$\lambda\to0$ 时 lasso 精确拟合训练数据。</p>
+<p>推导思路：KKT 给出 $\mathbf 0\in\partial\ell(\hat\beta)+\lambda\partial\lVert\beta\rVert_1$，其中 $\ell$ 是光滑的，所以存在向量 $z$ 使 $\nabla\ell(\hat\beta)+\lambda s=z$，$s\in\partial\lVert\hat\beta\rVert_1$。这说明 $\hat\beta\in\mathrm{row}(X)$，而 $\dim\mathrm{row}(X)=N$；再由 $L_1$ 球面（一个多面体）与 $N$ 维子空间的交至多 $N$ 个顶点，得非零坐标数 $\le N$。这就是 lasso 提供「（严重）形式的特征选择」的机制。</p></div>
+<p>把响应编码成 $\pm1$ 并对预测取阈值（通常 0），lasso 回归就变成二类分类器；多类可用 §18.3.3 的 ova / ovo（表 18.1 第 4 行，ova，测试错 12.5，选 1429 个基因）。</p>
+<p><strong>分类 lasso：用 $L_1$ 惩罚逻辑回归</strong></p>
+<p>更自然的做法是用 lasso 惩罚去正则化逻辑回归。文献里有多个实现，包括类似 LARS 的路径算法（Park and Hastie, 2007）；因为路径分段光滑但<strong>非线性</strong>，精确方法比 LARS 慢、$p$ 大时不太可行。Friedman et al. (2010) 给出很快的算法：用 §18.3.2 的对称多项逻辑模型 (18.10)，写出惩罚化的对数似然准则</p>
+<div class="eq long"><div class="escroll">
+$$
+\min_{\{\beta_{jk}\}}\ \sum_{i=1}^N\sum_{k=1}^K\sum_{j=1}^p\max\Bigl\{\log\Pr(g_i=k\mid x_i)-\lambda\lvert\beta_{kj}\rvert\Bigr\}
+$$
+</div><span class="tag">(18.19)</span></div>
+<p>（对比 (18.11) 的 $L_2$ 版本：那里是 $-\frac\lambda2\sum_k\lVert\beta_k\rVert_2^2$，逐坐标取平方；这里逐坐标取绝对值。）原文把惩罚写在 $\max$ 括号里，这是文献常用的 min–max 写法：恒等式 $\max\{a,b\}=\tfrac12\bigl(a+b+\lvert a-b\rvert\bigr)$ 表明它等于「似然项与惩罚项取较大者」在每个坐标上的和。下面按与它对齐的标准形式「$\sum_i\sum_k\log\Pr(g_i=k\mid x_i)-\lambda\sum_k\sum_j\lvert\beta_{kj}\rvert$」做推导，两者的阈值规则完全一样（见第 3 步）。</p>
+<p>Friedman et al. 的算法在一串预先选定的 $\lambda$ 上用<strong>循环坐标下降</strong>（§3.8.6）算精确解，利用两个事实：$p\gg N$ 时解稀疏；相邻 $\lambda$ 的解很相似。表 18.1 第 7 行是它（自动特征选择选了 269 个基因），测试错 13。Genkin et al. (2007) 虽然用贝叶斯观点表述，实际算的也是这个惩罚化极大似然问题的后验众数。</p>
+<p><strong>核心推导：$L_1$ 的阈值规则怎么来的。</strong> 坐标下降每次只更新一个坐标。固定其余坐标，记 $z_k=\sum_{j'\ne j}\beta_{kj'}x_{ij'}$，要解的一维问题是</p>
+<div class="eq long"><div class="escroll">
+$$
+\min_{b}\ \sum_{i=1}^N\sum_{k=1}^K\Bigl[\log\Pr(g_i=k\mid x_i)\ \text{（其中 }\beta_{kj}\ \text{换为 } b)\Bigr]+\lambda\lvert b\rvert
+$$
+</div></div>
+<p><em>第 1 步：求导并分离符号。</em> 对 $b&gt;0$，一阶条件是 $\partial\ell/\partial b=-\lambda$；对 $b&lt;0$ 是 $\partial\ell/\partial b=+\lambda$；在 $b=0$ 处要求 $\lvert\partial\ell/\partial b\rvert\le\lambda$（次梯度条件，预备知识 O2）。</p>
+<p><em>第 2 步：定义偏相关得分。</em> 记 $r_j=\bigl(-\partial\ell/\partial\beta_j\bigr)\big|_{\beta_j=0}$，即「置零其余坐标时，把 $\beta_j$ 推向正方向会损失多少」。逻辑模型里可以显式算出</p>
+<div class="eq"><div class="escroll">
+$$
+r_j=\sum_{i=1}^N\sum_{k=1}^K\Bigl[P_{ik}-y_{ik}\Bigr]\,x_{ij}\Big|_{b=0}
+$$
+</div></div>
+<p><em>第 3 步：$L_2$ vs $L_1$ 的对比。</em> 若惩罚是 $\frac\lambda2b^2$，一阶条件 $-\ell'(b)=\lambda b$ 给出 $\hat b=r_j/\lambda$——<strong>永远非零</strong>（除非 $r_j=0$）。若惩罚是 $\lambda\lvert b\rvert$，一阶条件 $-\ell'(b)=\lambda\operatorname{sign}(b)$ 给出 $\hat b=\operatorname{sign}(r_j)(\lvert r_j\rvert-\lambda)_+$——<strong>$\lvert r_j\rvert\le\lambda$ 时精确为 0</strong>。</p>
+<p><strong>结果</strong> $L_1$ 惩罚的阈值规则来自「一阶条件 + 次梯度条件」这一步：非零条件是 $\lvert r_j\rvert&gt;\lambda$，零值条件是 $\lvert r_j\rvert\le\lambda$，两者的分界就是软阈值。这与 §18.2 里 NSC 的软阈值是同一个数学结构（那里是从「平方误差 $+\lambda\lvert\beta\rvert$」的一维极小点推出来的），区别只在 $r_j$ 是「系数梯度」而不是「标准化后的样本均值」。</p>
+<p><em>第 4 步：路径。</em> (18.19) 里的 $\lambda$ 扫描给出一条系数路径。图 18.5 的左图是白血病数据（Golub et al., 1999）上二类 lasso 逻辑回归的路径：7129 个基因、38 个样本（27 个 ALL、11 个 AML），另有 34 个测试样本（20、14）。数据线性可分，所以 $\lambda=0$ 处解不唯一（练习 18.11），且 $\lambda$ 很小时解退化，所以路径在拟合概率趋近 0 和 1 处被截断；左图有 19 个非零系数。$\lambda\to0$ 是合适的极限，对应测试集 3/34 个错分（图 18.6；右图用二项偏差度量，更平滑）。小样本使这些曲线有相当大的抽样波动。$p\gg N$ 时所有正则化逻辑回归的极限系数都发散，所以实际软件会显式或隐式设 $\lambda&gt;0$ 的下界；不过<strong>重标化</strong>后的系数收敛，可以看作线性最优分离超平面的有趣替代品。</p>
+<p><strong>Elastic net：$L_1$ 与 $L_2$ 的折中</strong></p>
+<p>基因组应用里变量之间常强相关（基因倾向于在分子通路上协同作用）。lasso 惩罚对一组强相关变量中「选哪个」相当无所谓（练习 3.28），而岭惩罚倾向于把相关变量的系数<strong>拉向彼此</strong>（练习 3.29）。<strong>elastic net</strong> 惩罚（Zou and Hastie, 2005）是折中：</p>
+<div class="eq"><div class="escroll">
+$$
+\lambda\sum_{j=1}^p\Bigl\{\alpha\lvert\beta_j\rvert+\tfrac{(1-\alpha)}{2}\beta_j^2\Bigr\}
+$$
+</div><span class="tag">(18.20)</span></div>
+<p>第二项鼓励高度相关的特征被<strong>平均</strong>，第一项在这些被平均的特征上鼓励稀疏解。于是多项逻辑回归问题变成</p>
+<div class="eq long"><div class="escroll">
+$$
+\min_{\{\beta_{jk}\}}\ \sum_{i=1}^N\sum_{k=1}^K\sum_{j=1}^p\max\Bigl\{\log\Pr(g_i=k\mid x_i)-\lambda\bigl[\alpha\lvert\beta_{kj}\rvert+\tfrac{(1-\alpha)}{2}\beta_{kj}^2\bigr]\Bigr\}
+$$
+</div><span class="tag">(18.21)</span></div>
+<p><strong>推导：elastic net 的 KKT 阈值规则。</strong> 对坐标 $\beta_{kj}$ 求导（非零处），把二次项的 $-2\times\frac12$ 与一阶条件合并：</p>
+<div class="eq long"><div class="escroll">
+$$
+\frac{\partial\ell}{\partial\beta_{kj}}+\lambda(1-\alpha)\beta_{kj}+\lambda\alpha\,\operatorname{sign}(\beta_{kj})=0
+$$
+</div></div>
+<p>设 $r_{kj}=-\partial\ell/\partial\beta_{kj}$，整理成不动点形式 $\beta_{kj}=\operatorname{sign}(r_{kj})\cdot g(\lvert r_{kj}\rvert)$，其中</p>
+<div class="eq long"><div class="escroll">
+$$
+\hat\beta_{kj}=\operatorname{sign}(r_{kj})\Bigl(\frac{\lvert r_{kj}\rvert}{\lambda(1-\alpha)}-\frac{\alpha}{1-\alpha}\Bigr)_+
+$$
+</div></div>
+<p><strong>结果</strong> elastic net 就是「<strong>带偏移的软阈值</strong>」：阈值是 $\lambda\alpha/(1-\alpha)$ 而不是 $\lambda$，收缩强度是 $1/(1-\alpha)$ 而不是 1。$\alpha=1$ 退化为 lasso（图 18.5 左图，19 个非零系数），$\alpha=0$ 退化为岭（图 18.5 右图 $\alpha=0.8$，39 个非零系数、量级更小——这正是「平均效应」的体现）。$\lambda\to0$ 的重标化极限：$\alpha=0$ 时与 SVM 的最大间隔解重合但<strong>选中全部 7129 个基因</strong>，$\alpha=1$ 时与一个 $L_1$ 分离超平面（Rosset et al., 2004a）重合且<strong>至多 38 个基因</strong>；$\alpha$ 从 1 减小，分离超平面里的基因单调增多。表 18.1 第 8 行用 $\alpha\in[0.05,1]$（20 个值）与 $\log$ 尺度上 100 个 $\lambda$ 做二维交叉验证，最小 CV 误差在 $\alpha\in[0.75,0.80]$。</p>
+<h3 id="s-18-4-1" class="anchored"><span class="num">18.4.1</span> 应用：蛋白质质谱</h3>
+<p>蛋白质质谱用来分析血液里的蛋白质，可用于诊断疾病。样本 $i$ 观测到许多飞行时间 $t_j$ 上的强度 $x_{ij}$；飞行时间与蛋白质的质荷比 $m/z$ 有已知关系，所以谱图上某个 $t_j$ 处出现一个峰，就说明存在有对应质量与电荷的蛋白质。</p>
+<p><a class="src" href="../esl/ch18-high-dimensional-problems-p-n.html#s-18-4-1">原文 §18.4.1</a></p>
+<p>数据取自 Adam et al. (2003)：健康人与前列腺癌患者的平均谱（图 18.7）。总共 16898 个 $m/z$ 取值点，范围 2000 到 40000；完整数据集有 157 个健康人与 167 个癌症病人，目标是找出区分两组的 $m/z$ 点。这是一个<strong>函数型数据</strong>的例子：预测变量可以看作 $m/z$ 的函数。数据先标准化（基线扣除与归一化），并限制在 $m/z$ 2000–40000 之间，然后同时用 NSC 与 lasso 回归：</p>
+<div class="tscroll-x"><table class="fx"><thead><tr><th>方法</th><th>测试错分 / 108</th><th>用的点数</th></tr></thead><tbody><tr><td>最近收缩质心</td><td>34</td><td>459</td></tr><tr><td>lasso</td><td>22</td><td>113</td></tr><tr><td>lasso on peaks</td><td>28</td><td>35</td></tr></tbody></table></div>
+<p><strong>结果</strong> 拟合得更紧的 lasso 测试错分明显更低（22 对 34），但<strong>可能不给科学上有用的解</strong>：理想的质谱应把样本分解成其组成蛋白质，这些蛋白质应表现为谱图上的峰。lasso 不对峰做任何特殊处理，所以不难理解只有一部分非零权重落在峰附近。另外，同一蛋白质在不同谱图上的峰可能落在略有不同的 $m/z$ 值上，要识别公共峰就需要样本间的 $m/z$ <strong>扭曲对齐（warping）</strong>。</p>
+<p>原文的补救办法：先用标准峰提取算法对每条谱提峰，217 条训练谱共得 5178 个峰；把峰的<strong>位置</strong>沿 $\log(m/z)$ 轴做层次聚类，在高度 $\log(0.005)$ 处水平切树，对每个簇取峰位置平均，得到 728 个公共峰及其峰心。再判断每个公共峰在每条谱里是否存在、峰高多少（不存在则记 0），得到一个 $217\times728$ 的峰高矩阵，用它做 lasso 回归，测试谱同样按这 728 个峰打分。</p>
+<p><strong>结果</strong> 最后一行（lasso on peaks：28 个错分、35 个峰）不如直接对原始谱做 lasso，但对生物学家更有用：给出 35 个待研究的峰位置。反过来它也提示「峰与峰之间的位置差」可能含有判别信息，而第 2 行的 lasso 位置本身也值得进一步检查。</p>
+<h3 id="s-18-4-2" class="anchored"><span class="num">18.4.2</span> 函数型数据的 fused lasso</h3>
+<p>上例的特征有天然顺序（由 $m/z$ 决定）。更一般地，函数型特征 $x_i(t)$ 按某个指标变量 $t$ 排序。本书已经讨论过几种利用这种结构的方法：把 $x_i(t)$ 用样条、小波或 Fourier 基展开，用基系数作预测变量再做回归（§5.3）；或者反过来用这些基表示<strong>系数</strong>（§12.6 的惩罚化判别分析，显式控制系数的平滑度）。这些方法的共同点是<strong>均匀地</strong>平滑系数。</p>
+<p><a class="src" href="../esl/ch18-high-dimensional-problems-p-n.html#s-18-4-2">原文 §18.4.2</a></p>
+<p>fused lasso（Tibshirani et al., 2005）是更自适应的做法：修改 lasso 惩罚，使它显式利用特征的有序性。</p>
+<div class="eq long"><div class="escroll">
+$$
+\min_{\beta_0,\beta_1,\dots,\beta_p}\ \sum_{i=1}^N\Bigl(y_i-\beta_0-\sum_{j=1}^p x_{ij}\beta_j\Bigr)^2+\lambda_1\sum_{j=1}^p\lvert\beta_j\rvert+\lambda_2\sum_{j=1}^{p-1}\lvert\beta_{j+1}-\beta_j\rvert
+$$
+</div><span class="tag">(18.22)</span></div>
+<p><strong>结果</strong> 这个准则的每一项都是凸函数，故极小点存在且唯一（只要 $X$ 列满秩，平方损失项已严格凸，$L_1$ 与差分惩罚都不破坏这一性质）。第一项惩罚鼓励稀疏，第二项鼓励在指标 $j$ 上平滑——它是 $\beta$ 的<strong>总变差</strong> $\mathrm{TV}(\beta)$。</p>
+<p>若底层指标 $t$ 不等距（值 $t_j$），(18.22) 的差分惩罚应换成除以差值的<strong>差商</strong>形式：</p>
+<div class="eq"><div class="escroll">
+$$
+\lambda_2\sum_{j=1}^{p-1}\frac{\lvert\beta_{j+1}-\beta_j\rvert}{\lvert t_{j+1}-t_j\rvert}
+$$
+</div><span class="tag">(18.23)</span></div>
+<p>即级数的每一项都有一个「惩罚修正因子」，使惩罚对 $t$ 的间距不敏感。</p>
+<p><strong>核心推导：差分惩罚为什么强制系数分段常数。</strong> 看坐标 $\beta_j$（$1&lt;j&lt;p$）的一阶条件。记 $\mathcal L(\beta)=\sum_i(y_i-\beta_0-x_i^\top\beta)^2$，记 $s_j\in\{-1,0,1\}$ 为 $\partial\lvert\beta_j\rvert/\partial\beta_j$ 的取值（$\beta_j=0$ 时取 0），$u_j,v_j\in\{-1,0,1\}$ 分别来自相邻两个差分项，则</p>
+<div class="eq"><div class="escroll">
+$$
+0=\frac{\partial\mathcal L}{\partial\beta_j}+\lambda_1 s_j+\lambda_2\bigl(u_j-v_j\bigr)
+$$
+</div></div>
+<p><em>第 1 步：平台内部的相消。</em> 若 $\beta_{j-1}=\beta_j=\beta_{j+1}$，两个差分项对 $\beta_j$ 的贡献是 $+1$ 与 $-1$（同取 $\operatorname{sign}(\beta_j-\beta_{j-1})$），互相抵消，于是 KKT 退化为「$\ell_1$ 项的一阶条件」</p>
+<div class="eq long"><div class="escroll">
+$$
+\frac{\partial\mathcal L}{\partial\beta_j}=\frac{\partial}{\partial\beta_j}\Bigl(\sum_i(y_i-\beta_0-x_i^\top\beta)^2\Bigr)=-2\sum_i\hat r_ix_{ij}=-\lambda_1s_j
+$$
+</div></div>
+<p>其中 $\hat r_i=y_i-\hat\beta_0-x_i^\top\hat\beta$ 是残差。</p>
+<p><em>第 2 步：一般 $X$ 下的结论。</em> 在整个平台上 $s_j$ 是常数（$\beta_j$ 同号），所以 $\sum_i\hat r_ix_{ij}$ 在平台上取同一个值。这是关于<strong>残差</strong>的条件，不直接说 $\hat\beta$ 逐坐标相等——对一般设计矩阵只能说「同一平台上各坐标的残差加权预测和相同」。</p>
+<p><em>第 3 步：$X=I$ 时结论变强。</em> 若 $x_i=e_i$，则 $\sum_i\hat r_ix_{ij}=\hat r_j$，上式直接给出 $\hat r_j=-\lambda_1s_j/2$，即</p>
+<div class="eq"><div class="escroll">
+$$
+\hat\beta_j=\hat\beta_0+y_j-\frac{\lambda_1}{2}
+$$
+</div></div>
+<p><strong>结果</strong> 在 $X=I_N$ 的情形下，<strong>同一平台上所有坐标都等于同一个值 $y_j-\lambda_1/2$ 的公共常数</strong>：$\hat\beta_j=\hat\beta_0+\bar y-\lambda_1/2$，其中 $\bar y=\sum_iy_i/N$（因为 $\sum_j\hat\beta_j$ 的约束与 $\lambda_1$ 项共同作用）。平台高度与平台长度无关，只有平台的位置（在哪里断开）由 $\lambda_2$ 决定。这就是「分段常数」的严格来源：$\lambda_1$ 项钉死平台高度，$\lambda_2$ 项决定平台边界。</p>
+<p>更直观的三个特例：$\lambda_1=0$ 时只剩 $\lambda_2$，解是分段的<strong>线性</strong>（TV 去噪）；$\lambda_2=0$ 时退化为普通 lasso（无平台约束）；$\lambda_1,\lambda_2\to\infty$ 时整条谱压成同一个常数。</p>
+<p><strong>特例：fused lasso 信号逼近器。</strong> 当预测变量矩阵是单位矩阵 $X=I_N$（$N\times N$）时，fused lasso 退化成用来逼近序列 $\{y_i\}_{i=1}^N$ 的<strong>信号逼近器</strong>：</p>
+<div class="eq long"><div class="escroll">
+$$
+\min_{\beta_0,\beta_1,\dots,\beta_N}\ \sum_{i=1}^N\bigl(y_i-\beta_0-\beta_i\bigr)^2+\lambda_1\sum_{i=1}^N\lvert\beta_i\rvert+\lambda_2\sum_{i=1}^{N-1}\lvert\beta_{i+1}-\beta_i\rvert
+$$
+</div><span class="tag">(18.24)</span></div>
+<p><strong>推导：$\lambda$ 路径的结构。</strong> 把 (18.24) 的 KKT 写成差分 $\gamma_j=\hat\beta_{j+1}-\hat\beta_j$ 的形式：若 $\lvert\gamma_j\rvert&lt;\lambda_2$，两个差分项相消，$\hat\beta_j$ 被钉在平台上；若 $\lvert\gamma_j\rvert&gt;\lambda_2$，该位置的次梯度可以取 $\pm1$，允许跳变，代价是 $\lambda_2\lvert\gamma_j\rvert$。于是「是否跳变」由 $\lambda_2\lvert\gamma_j\rvert$ 与平方损失在这一步的收益 $\bigl(y_{j+1}-y_j\bigr)^2/2$ 相比决定。固定 $\lambda_2$ 让 $\lambda_1$ 变化时，平台的高度随 $\lambda_1/2$ 线性移动，只有当某个 $\lvert\gamma_j\rvert$ 越过 $\lambda_2$ 时平台的<strong>边界</strong>才改变。<strong>结果</strong> 解关于 $\lambda_1$ 是分段线性的，只在有限的若干「节点」处改变分段结构——这与回归 lasso 解关于 $\lambda$ 分段线性的结论平行（§3.4.2）。</p>
+<p>图 18.8 是 Tibshirani and Wang (2007) 的例子：CGH 阵列数据，测量肿瘤样本中每个基因拷贝数与正常样本之比的近似 $\log_2$ 值，横轴是基因的染色体位置。癌细胞里基因常被扩增或缺失，而<strong>这些事件倾向于出现在连续区域里</strong>，所以平滑后的信号估计（深红色）里显著非零的区域可以用来定位基因的扩增与缺失。<strong>结果</strong> 这正是 fused lasso 的用武之地：$\lambda_2$ 抑制噪声级抖动，$\lambda_1$ 把无关区域压到 0。还有二维版本：参数排成像素网格，对左、右、上、下四个方向的差分都加惩罚，可用于去噪或图像分类，Friedman et al. (2007) 为一维和二维 fused lasso 给出了快速的广义坐标下降算法。</p>
+<h2 id="s-18-5" class="anchored"><span class="num">18.5</span> 特征不可得时的分类</h2>
+<p>前四节的全部机器都是「给每个变量一个数」：对角 LDA 假设协方差矩阵对角，因而 $\Sigma^{-1}$ 的第 $j$ 个对角元可以单独算；二次正则化把 $XX^\top$ 的 $N$ 个特征值当作全部信息；lasso 要的是 $x_j^\top r$，仍然是「第 $j$ 个变量」的量。本节换一套思路：<strong>当 $p$ 维数值特征根本拿不到时，只要求出一对对象之间的相似度</strong>，其余全部从相似度里推出来。</p>
+<p>两种可用的原始输入：</p>
+<ul><li><strong>内积矩阵</strong>：只能算出 $\langle x_i,x_{i'}\rangle$（典型情形是文本的词袋表示、基因组序列）。</li><li><strong>配对距离矩阵</strong>：只能算出 $\lVert x_i-x_{i'}\rVert_2$（典型情形是蛋白质序列、形状距离）。</li></ul>
+<p>两类输入可以互相转换，转换之后 §18.3–18.4 的大部分机器都能用。核心事实只有一句：<strong>$p$ 维向量的内积矩阵（Gram 矩阵）是 $N\times N$ 的，与 $p$ 无关</strong>；任何只需要 Gram 矩阵的方法都可以在 $p=10^6$ 的情况下计算。本节要做的全部工作就是逐个验证哪些方法满足这个「只用 Gram」的要求。</p>
+<p><a class="src" href="../esl/ch18-high-dimensional-problems-p-n.html#s-18-5">原文 §18.5</a></p>
+<div class="aside basis"><p class="hd">基础知识 · Gram 矩阵与核</p><p>设 $X\in\mathbb{R}^{N\times p}$，第 $i$ 行是 $x_i^\top$。Gram 矩阵 $K=XX^\top\in\mathbb{R}^{N\times N}$，元 $K_{ii'}=\langle x_i,x_{i'}\rangle$。</p>
+<ul><li>$K$ <strong>对称半正定</strong>：$x^\top Kx=\lVert X^\top x\rVert_2^2\ge0$。</li><li>$\mathrm{rank}(K)=\mathrm{rank}(X)$（见预备知识 L1、L3）。</li><li><strong>存在性</strong>：$K$ 半正定 $\iff$ 存在 $C$ 使 $K=C^\top C$（预备知识 L1 的正定性等价说法）。所以任何半正的 $N\times N$ 矩阵都<strong>是某个 $\mathbb{R}^p$ 里 $N$ 个点的 Gram 矩阵</strong>。这就是「核技巧」的全部合法性来源：半正定性保证了 $p$ 维向量的存在性，于是可以只算 $N\times N$。</li><li>$XX^\top$ 与 $X^\top X$ 的非零特征值相同（预备知识 L3 的 SVD 推导：$X=UDV^\top\Rightarrow XX^\top=UD^2U^\top$，$X^\top X=VD^2V^\top$）。</li></ul></div>
+<h3 id="s-18-5-1" class="anchored"><span class="num">18.5.1</span> 例：字符串核与蛋白质分类</h3>
+<p><strong>问题：给两个氨基酸字符串算一个相似度，并说明它为什么能驱动一个 $20^4=160000$ 维空间里的 SVM。</strong> 对应 (18.25)(18.26)。</p>
+<p>蛋白质是氨基酸的字符串，长度在 75 到 160 之间，每个位置是 20 种氨基酸之一。既然每个位置只有 20 种取值，最自然的想法是<strong>把字符串当成长度 $p$ 的 $\{0,1\}^{20}$ 向量</strong>：第 $j$ 位是「该位置出现了氨基酸 $j$」的指示向量</p>
+<div class="eq"><div class="escroll">
+$$
+X_j=\big(I(t_j=\text{A}),\,I(t_j=\text{C}),\,\dots,\,I(t_j=\text{V})\big)\in\{0,1\}^{20},\qquad j=1,\dots,p
+$$
+</div></div>
+<div class="aside warn"><p class="hd">坑</p><p>这个编码把「顺序」完全丢掉了。序列 <code>ACGT</code> 与 <code>GTCA</code> 的编码逐位相同，$\lVert x-x'\rVert_2=0$，但它们显然不是同一个分子。欧氏距离在这里没有任何生物学含义，所以「用现成的 $p$ 维分类器」的路线第一步就断了。</p>
+<p>补救办法不能是「加一个特征把顺序编码回来」——那需要 $20^p$ 个特征。唯一可行的办法是：<strong>放弃 $p$ 维空间的坐标，直接在对象之间定义相似度</strong>。</p></div>
+<p><strong>做法：数「共有子串」。</strong> 把长度为 $p$ 的字符串 $x$ 的特征映射定义为</p>
+<div class="eq long"><div class="escroll">
+$$
+\Phi_m(x)=\big\{\varphi_a(x)\big\}_{a\in\mathcal{A}_m},\qquad \varphi_a(x)=\#\{\text{子串 } a \text{ 在 } x \text{ 中出现的次数}\}
+$$
+</div><span class="tag">(18.25)</span></div>
+<p>其中 $\mathcal{A}_m$ 是全部长度为 $m$ 的氨基酸串组成的集合，$|\mathcal{A}_m|=20^m$。于是 $\Phi_m(x)$ 是一 $\mathbb{R}^{20^m}$ 的<strong>计数向量</strong>，而它同时把顺序编码进了特征名里：特征「LQE 出现几次」只有在顺序一致时才有贡献。</p>
+<p>两串的内积定义为特征映射的内积：</p>
+<div class="eq"><div class="escroll">
+$$
+K_m(x_1,x_2)=\Big\langle\Phi_m(x_1),\ \Phi_m(x_2)\Big\rangle
+$$
+</div><span class="tag">(18.26)</span></div>
+<div class="aside"><p class="hd">推导</p><p>(18.26) 可以完全展开，这是理解核方法的关键一步：</p>
+<div class="eq long"><div class="escroll">
+$$
+\sum_{a\in\mathcal{A}_m}\varphi_a(x_1)\,\varphi_a(x_2)=\sum_{a\in\mathcal{A}_m}\Big(\sum_{r=1}^{p-m+1}I(x_{1,r:r+m-1}=a)\Big)\Big(\sum_{s=1}^{p-m+1}I(x_{2,s:s+m-1}=a)\Big)
+$$
+</div></div>
+<p>$=\sum_{r=1}^{p-m+1}\sum_{s=1}^{p-m+1}\sum_{a\in\mathcal{A}_m}I(x_{1,r}=a)I(x_{2,s}=a)$（把两个求和交换、$a$ 求和只留下共同的那些 $a$）</p>
+<p>$=\sum_{r=1}^{p-m+1}\sum_{s=1}^{p-m+1}\mathbf 1\big(x_{1,r:r+m-1}=x_{2,s:s+m-1}\big)$</p>
+<p>= 两个字符串中<strong>相同长度-$m$ 子串的配对个数</strong>。</p>
+<p>每一项都是 0/1 且只依赖位置对 $(r,s)$，所以 $K_m(x_1,x_2)$ 是 $p^2$ 个 0/1 指示的平均：$K_m(x_1,x_2)=\frac{1}{(p-m+1)^2}\sum_{r,s}(\text{共有子串指示})$。这就是「共有位置数」的严格含义。</p></div>
+<div class="aside key"><p class="hd">结果</p><p>(18.26) 定义的是 $N\times N$ 的<strong>字符串核矩阵</strong> $K_m=[K_m(x_i,x_{i'})]_{i,i'=1}^N$，与 $p$ 和 $20^m$ 都无关。理论上它可以用树结构在 $O(\mathrm{poly}(N,p))$ 内算出而不构造 $\Phi_m$（Leslie et al., 2004）。数值上 $m=3$ 时 $\Phi_3$ 已是 8000 维，$m=4$ 时是 160000 维，而 $N=1708$（负类 1663、正类 45）——<strong>$p=160000\gg N$，但要算的只是 $1708\times1708$ 的矩阵</strong>。用 $K_m$ 驱动 SVM（对偶问题只含 $N$ 个 $\alpha_i$，见预备知识 O1）在 160000 维空间里求最大间隔，得到图 18.9 的 ROC（面积 0.84）。</p>
+<p>为什么这与谱方法是同一件事：$K_m$ 半正定（它是 $\Phi_m(X^\top)^\top\Phi_m(X^\top)$，见预备知识 L1 的 $K=C^\top C$），所以它的特征分解 $K_m=U\Lambda U^\top$ 给出 $\Phi_m(X^\top)^\top=U\Lambda^{1/2}$。也就是说，<strong>在 160000 维特征空间里的任何线性算法，都可以写成「投影到这 $N=1708$ 个基向量上」的 $N$ 维算法</strong>。核 PCA（§14.5.4）就是这一句的直接使用。</p></div>
+<h3 id="s-18-5-2" class="anchored"><span class="num">18.5.2</span> 用内积核与配对距离做分类</h3>
+<p><strong>问题：哪些分类器可以只用内积矩阵 $K=XX^\top$ 计算？</strong> 对应 (18.27)(18.28)，本节的核心。</p>
+<p><a class="src" href="../esl/ch18-high-dimensional-problems-p-n.html#s-18-5-2">原文 §18.5.2</a></p>
+<div class="aside basis"><p class="hd">基础知识 · 双线性型的展开</p><p>$\langle a-b,c\rangle=\langle a,c\rangle-\langle b,c\rangle$，对任意三个向量成立（分配律）。因此距离可以写成内积的组合。</p></div>
+<h4 id="第一步-内积-to-距离-18-27-2" class="anchored">第一步：内积 $\to$ 距离 (18.27)</h4>
+<p>$k$ 近邻（§13.3）只需要<strong>配对距离</strong>，不需要特征。展开：</p>
+<div class="eq long"><div class="escroll">
+$$
+\lVert x_i-x_{i'}\rVert_2^2=\sum_{j=1}^p(x_{ij}-x_{i'j})^2=\sum_{j=1}^p x_{ij}^2-2\sum_{j=1}^p x_{ij}x_{i'j}+\sum_{j=1}^p x_{i'j}^2=\langle x_i,x_i\rangle+\langle x_{i'},x_{i'}\rangle-2\langle x_i,x_{i'}\rangle
+$$
+</div><span class="tag">(18.27)</span></div>
+<div class="aside"><p class="hd">推导 · 逐步说清「哪一步用了什么」：</p><ol><li>第一个等号：欧氏范数的定义（L1），$\lVert v\rVert_2^2=\sum_jv_j^2$，这里 $v=x_i-x_{i'}$。</li><li>第二个等号：平方的分配律 $(a-b)^2=a^2-2ab+b^2$，<strong>逐项</strong>作用在 $\sum_j$ 内部。</li><li>第三个等号：$\sum_jx_{ij}^2=\lVert x_i\rVert_2^2=\langle x_i,x_i\rangle$（对角元，$\lVert v\rVert_2^2=\langle v,v\rangle$）；$\sum_jx_{ij}x_{i'j}=x_i^\top x_{i'}=\langle x_i,x_{i'}\rangle$。</li></ol>
+<p>所以 $K_{ii}$ 给出 $\lVert x_i\rVert_2^2$，$K_{ii'}$ 给出内积，(18.27) 把三者组合成距离。<strong>验证</strong>：令 $i'=i$ 则右边 $=\lVert x_i\rVert^2+\lVert x_i\rVert^2-2\lVert x_i\rVert^2=0$ ✓；令 $i'=0$（原点）则 $=\lVert x_i\rVert^2$，而左边 $=\lVert x_i\rVert^2$ ✓。</p></div>
+<div class="aside key"><p class="hd">结果</p><p>(18.27) 说明：<strong>整个 $N\times N$ Gram 矩阵恰好是 $k$ 近邻所需的全部信息</strong>。所以 1-NN、距离加权的 1-NN（图 18.9 的蓝线）、最近中位点（medoid）、$k$-medoids 聚类（§14.3.10）在 $p=10^6$ 时都能算，工作量 $O(N^2)$。</p></div>
+<h4 id="第二步-内积-to-类中心距离-18-28-2" class="anchored">第二步：内积 $\to$ 类中心距离 (18.28)</h4>
+<p>最近类中心分类器要的是 $\lVert x_0-\bar x_k\rVert_2$，其中 $\bar x_k=\frac{1}{N_k}\sum_{i\in C_k}x_i$。逐步展开：</p>
+<div class="eq verylong"><div class="escroll">
+$$
+\begin{aligned}
+\Big\lVert x_0-\bar x_k\Big\rVert_2^2
+&amp;=\Big\langle x_0-\bar x_k,\ x_0-\bar x_k\Big\rangle\\
+&amp;=\langle x_0,x_0\rangle-2\langle x_0,\bar x_k\rangle+\lVert\bar x_k\rVert_2^2\\
+&amp;=\langle x_0,x_0\rangle-\frac{2}{N_k}\sum_{i\in C_k}\langle x_0,x_i\rangle+\frac{1}{N_k^2}\sum_{i,i'\in C_k}\langle x_i,x_{i'}\rangle
+\end{aligned}
+$$
+</div></div>
+<p>每一步的依据：第 2 行是双线性型对 $\langle a-b,a-b\rangle$ 的展开（$\langle a,a\rangle-2\langle a,b\rangle+\langle b,b\rangle$，用对称性 $\langle\bar x_k,x_0\rangle=\langle x_0,\bar x_k\rangle$）；第 3 行代入 $\bar x_k=\frac{1}{N_k}\sum_{i\in C_k}x_i$，并把双线性型当双线性形式展开两次。特别地最后一项</p>
+<div class="eq long"><div class="escroll">
+$$
+\frac{1}{N_k^2}\sum_{i,i'\in C_k}\langle x_i,x_{i'}\rangle=\frac{1}{N_k^2}\Big(\sum_{i\in C_k}x_i\Big)^\top\Big(\sum_{i'\in C_k}x_{i'}\Big)=\Big\lVert\frac{1}{N_k}\sum_{i\in C_k}x_i\Big\rVert_2^2=\lVert\bar x_k\rVert_2^2
+$$
+</div></div>
+<p>即它是 Gram 矩阵里 $C_k\times C_k$ 方块的总和。把上面三行按类汇总，得到 (18.28) 印出的分组形式：</p>
+<div class="eq verylong"><div class="escroll">
+$$
+2\sum_{k=1}^{K}\frac{1}{N_k}\sum_{i\in C_k}\Big\lVert x_0-\bar x_k\Big\rVert_2^2=\Big\langle x_0,x_0\Big\rangle+\sum_{k=1}^{K}\frac{2}{KN_k}\sum_{i\in C_k}\Big\langle x_0,x_i\Big\rangle+\sum_{k=1}^{K}\frac{2}{KN_k^2}\sum_{i,i'\in C_k}\Big\langle x_i,x_{i'}\Big\rangle
+$$
+</div><span class="tag">(18.28)</span></div>
+<div class="aside key"><p class="hd">结果</p><p>(18.28) 是本节的核心结论。逐项读它的三个加项：</p>
+<div class="tscroll-x"><table class="fx"><thead><tr><th>项</th><th>需要什么</th><th>出现次数</th></tr></thead><tbody><tr><td>$\langle x_0,x_0\rangle$</td><td>Gram 的 $(0,0)$ 元</td><td>1</td></tr><tr><td>$\langle x_0,x_i\rangle$</td><td>Gram 的第 0 行/列</td><td>$O(N)$</td></tr><tr><td>$\langle x_i,x_{i'}\rangle$</td><td>Gram 的方块</td><td>$O(N^2)$</td></tr></tbody></table></div>
+<p><strong>没有一项含「第 $j$ 个变量」。</strong> 所以最近类中心分类、$K$-means（质心更新只需 Gram）、判别分析（§18.2 的对角 LDA 也可核化，见 Exercise 12.10）、带二次正则化的逻辑与多项式回归（§12.3.3）在 $p$ 任意大时都能算——总代价只是 $N\times N$ 的存储与 $O(N^2)$ 的运算。</p>
+<p>进一步，最近收缩质心（NSC，§18.2）<strong>不能</strong>这样算，因为它的阈值 $\hat\beta_j$ 是逐变量的量，必须访问 $x_{ij}$。</p></div>
+<div class="aside warn"><p class="hd">坑</p><p>(18.28) 印出的分组方式里，第一项 $\langle x_0,x_0\rangle$ 只出现一次，而后两项带系数 2（或等价地带上 $1/K$），这是把 $\sum_k$ 归一化成「类平均」时 $K$ 与 2 的归一化系数被吸收的结果。若要自己核对，只需检查上面的三行展开：三类项分别只依赖 Gram 的对角元、第 0 行、以及方块，任何归一化方式都不会引入新信息。</p>
+<p>另一个坑：$\bar x_k$ 是<strong>均值</strong>。若对象本身没有「平均」这个概念（如蛋白质），medoid（类内到其它点平均距离最小的<strong>观测本身</strong>）才是可用的替代量。它只需要距离矩阵，天然「只用 Gram」；但它在文摘实验里表现极差（§18.5.3 表 18.3 的 0.65），因为 medoid 的方差远大于均值。</p></div>
+<h4 id="第三步-距离-to-内积-配对距离做分类-2" class="anchored">第三步：距离 $\to$ 内积（配对距离做分类）</h4>
+<p>若手里只有配对<strong>平方</strong>距离</p>
+<div class="eq"><div class="escroll">
+$$
+\Delta^2_{ii'}=\lVert x_i-x_{i'}\rVert_2^2
+$$
+</div><span class="tag">(18.29)</span></div>
+<p>先把距离变成「负二倍」的半矩阵 $B$：$B_{ii'}=-\Delta^2_{ii'}/2$，再做<strong>双重中心化</strong></p>
+<div class="eq"><div class="escroll">
+$$
+\tilde K=(I-M)B(I-M),\qquad M=\frac{1}{N}\mathbf{1}\mathbf{1}^\top
+$$
+</div><span class="tag">(18.31)</span></div>
+<p>关键是验证 $\tilde K$ 确实等于中心化后的内积。记</p>
+<div class="eq long"><div class="escroll">
+$$
+r_i=\sum_{j=1}^N\Delta^2_{ij}\ (\text{第 } i\text{ 行和}),\qquad r=\sum_{i=1}^N r_i,\qquad d=\sum_{i=1}^N\Delta^2_{ii}\ (\text{对角和})
+$$
+</div></div>
+<p>由 (18.27) 反解出内积：$\langle x_i,x_j\rangle=\frac12\big(\Delta^2_{ii}+\Delta^2_{jj}-\Delta^2_{ij}\big)$。再用 $\bar x=\frac1N\sum_i x_i$：</p>
+<ul><li>$\displaystyle \langle x_i,\bar x\rangle=\frac1N\sum_{j=1}^N\langle x_i,x_j\rangle=\frac{1}{2N}\Big(N\Delta^2_{ii}+d-r_i\Big)$ （用 $\sum_j\Delta^2_{jj}=d$）</li><li>$\displaystyle \lVert\bar x\rVert_2^2=\frac{1}{N^2}\sum_{i,i'}\langle x_i,x_{i'}\rangle=\frac{1}{2N^2}\big(Nd+Nd-r\big)=\frac{d}{N}-\frac{r}{2N^2}$</li></ul>
+<p>于是</p>
+<div class="eq verylong"><div class="escroll">
+$$
+\Big\langle x_i-\bar x,\ x_{i'}-\bar x\Big\rangle=\langle x_i,x_{i'}\rangle-\langle x_i,\bar x\rangle-\langle\bar x,x_{i'}\rangle+\lVert\bar x\rVert_2^2=-\frac12\Delta^2_{ii'}+\frac{r_i+r_{i'}}{2N}-\frac{d}{N}+\frac{r}{2N^2}
+$$
+</div><span class="tag">(18.30)</span></div>
+<p>验证（小例）：$N=2$，$x_1=0$，$x_2=e_1$。则 $\Delta^2_{12}=1$，$r_1=r_2=1$，$r=2$，$d=1$。右边 $=\frac{-1}{2}+\frac{2}{4}-\frac12+\frac{2}{8}=-\frac14$。而 $\bar x=\frac12e_1$，直接算 $\langle-\frac12e_1,\frac12e_1\rangle=-\frac14$ ✓。</p>
+<p>现在直接算 (18.31) 的元。$(M)_{ij}=1/N$、$(\mathbf 1^\top B)_i=\sum_lB_{il}=-\frac12\sum_l\Delta^2_{il}=-\frac{r_i}{2}$、$(MB)_{ij}=\frac1N(\mathbf 1^\top B)_j=-\frac{r_j}{2N}$、$(BM)_{ij}=-\frac{r_i}{2N}$、$(MBM)_{ij}=\frac1{N^2}\sum_{a,b}B_{ab}=\frac1{N^2}\cdot\frac12(2Nd-r)=\frac dN-\frac{r}{2N^2}$。合起来</p>
+<div class="eq long"><div class="escroll">
+$$
+\tilde K_{ij}=B_{ij}-(MB)_{ij}-(BM)_{ij}+(MBM)_{ij}=-\frac12\Delta^2_{ij}+\frac{r_i+r_j}{2N}-\frac dN+\frac{r}{2N^2}
+$$
+</div></div>
+<p>与 (18.30) 的右边<strong>逐项相同</strong>，故</p>
+<div class="eq long"><div class="escroll">
+$$
+\tilde K=\big[\langle x_i-\bar x,\ x_{i'}-\bar x\rangle\big]_{i,i'}=\tilde X\tilde X^\top,\qquad \tilde X=(I-M)X
+$$
+</div></div>
+<div class="aside key"><p class="hd">结果</p><p>「配对距离 $\to$ 中心化 Gram」的完整链条是 (18.29) $\to$ $B=\{-\Delta^2_{ii'}/2\}$ $\to$ (18.31) 双重中心化 $\to$ 得到 $\tilde X\tilde X^\top$。做完这一步，前三小节所有「只用 Gram」的分类器全部可用。</p>
+<p>主成分也可以这样算：$\tilde X=UDV^\top$ 则 $\tilde K=UD^2U^\top$，而 $\tilde X$ 的主成分变量矩阵是 $\tilde Z=\tilde X V=UD$。<strong>$U$ 从 $N\times N$ 的 $\tilde K$ 的特征分解得到</strong>，所以「找前几个主成分」在 $p\gg N$ 时是 $O(N^3)$ 的事（预备知识 L3）。若原始 $X$ 未中心化，先做 $\tilde X=(I-M)X$ 再算 $(I-M)K(I-M)$，这就是原文强调的「双重中心化核」。</p></div>
+<h4 id="第四步-核方法做不到什么-2" class="anchored">第四步：核方法做不到什么</h4>
+<p>原文明确列出三条限制，值得逐条对应到前面的公式：</p>
+<ul><li><strong>不能标准化变量</strong>。标准化要 $s_j=\sqrt{\frac{1}{N-p}\sum_i(x_{ij}-\bar x_j)^2}$，需要第 $j$ 列。Gram 矩阵里没有「第 $j$ 列」这个概念。</li><li><strong>不能评估单个变量的贡献</strong>。逐变量的 $t$ 检验、§18.2 的 NSC、以及任何带 lasso 惩罚的模型（§18.4）都要求访问 $x_{ij}$，因此无法核化。</li><li><strong>不能分离好变量与噪声变量</strong>。核方法让所有方向平等参与；若信噪比低（相关特征中真正相关的只占小部分），核方法通常不如做特征选择的方法。文摘实验（表 18.3）是这个限制的定量演示：最近类中心 0.29、1-NN 0.44、medoid 0.65，而做了逐变量标准化的 NSC 只有 0.17。</li></ul>
+<h3 id="s-18-5-3" class="anchored"><span class="num">18.5.3</span> 例：文摘分类</h3>
+<p><strong>问题：用配对方法能做词袋文本分类吗？效果差多少？</strong></p>
+<p>48 篇论文的摘要（Bradley Efron / Trevor Hastie 与 Rob Tibshirani / Jerome Friedman，各 16 篇），去掉引号、括号、特殊符号并全部转小写，删掉高频无信息词 <code>we</code>（否则会不公平地区分 HT 的摘要）。抽出全部 4492 个词，其中不重复词 $p=1310$，特征 $x_{ij}$ 是第 $j$ 个词在第 $i$ 篇摘要里出现的次数。这是标准的词袋表示——<strong>特征是存在的，而且就是词频向量</strong>，所以本例不涉及特征不可得，只涉及「用不用特征本身」。</p>
+<p>交叉验证结果（表 18.3，10 折）：</p>
+<div class="tscroll-x"><table class="fx"><thead><tr><th>方法</th><th>CV 误差 (SE)</th><th>是否需要原始 $X$</th></tr></thead><tbody><tr><td>最近收缩质心（NSC）</td><td>0.17 (0.05)</td><td>需要</td></tr><tr><td>SVM（线性核，无正则，ovo）</td><td>0.23 (0.06)</td><td>只需 Gram</td></tr><tr><td>最近 medoid</td><td>0.65 (0.07)</td><td>只需距离</td></tr><tr><td>1-NN</td><td>0.44 (0.07)</td><td>只需 Gram</td></tr><tr><td>最近类中心</td><td>0.29 (0.07)</td><td>只需 Gram</td></tr></tbody></table></div>
+<div class="aside"><p class="hd">推导</p><p>NSC 与最近类中心的关系（这是本例的数学要点）。记 $s_j$ 为特征 $j$ 的类内合并标准差，$s_0$ 为 $s_1,\dots,s_p$ 的中位数。NSC 用</p>
+<div class="eq long"><div class="escroll">
+$$
+\hat\beta_j^{\star}=\big(1-\frac{s_0^2}{s_j^2}\big)_+\cdot\frac{\bar x_{kj}-\sum_{k'}\bar x_{k'j}}{\sqrt{(1-1/K)s_j^2+s_0^2}}
+$$
+</div></div>
+<p>作为标准化类间均值；收缩量 $\big(1-s_0^2/s_j^2\big)_+$ 是<strong>逐变量</strong>的函数，所以 NSC 必须访问 $x_{ij}$。</p>
+<p>当 $s_0\to 0$（本例 10 折 CV 选出的正是「不收缩」，即保留全部特征）时，收缩因子 $\to1$，分类分数退化为</p>
+<div class="eq long"><div class="escroll">
+$$
+\frac{\bar x_{kj}}{\lVert\bar x_{\star j}\rVert_2},\qquad \bar x_{\star j}=\sqrt{\frac{1}{K}\sum_{k=1}^K\bar x_{kj}^2}
+$$
+</div></div>
+<p>即<strong>把每个变量按类中心长度 $s_j^{\rm cent}=\sqrt{\sum_k\bar x_{kj}^2}$ 标准化后再判别</strong>。判别规则 $\arg\min_k\sum_j(x_{0j}-\bar x_{kj})^2/s_j^2$ 只用到 $x_{0j}/s_j$，等价于在标准化后的坐标里做最近类中心。</p></div>
+<div class="aside key"><p class="hd">结果</p><p>表 18.3 的三行对比把「核方法的能力边界」讲清楚了：</p>
+<ul><li>最近类中心（0.29）用球面度量，假设所有特征单位相同。词频里各词尺度差异极大（有的词出现几百次，有的一次也没有），球面度量因此次优。</li><li>NSC（0.17）即使不收缩，也因为上面的逐变量标准化而胜出。<strong>这 0.12 的差距完全来自标准化，也就是「访问原始特征」这件事。</strong></li><li>SVM（0.23）处在中间：它估计特征的一个线性组合 $\beta=\sum_j\beta_jx_j$，对未标准化的特征有一定抵抗力，但它的对偶只用 Gram，所以拿不到标准化的好处。</li><li>medoid（0.65）最差：$N=16$ 且 $p=1310$，类中心的方差已经很大，medoid 的方差更大。原文的解释是「小样本 + 高维」。</li></ul></div>
+<div class="aside warn"><p class="hd">坑</p><p>三个字「我们」被删掉才能公平比较，否则 HT 的摘要会因为高频使用 <code>we</code> 而被识别出来。这类看似随意的预处理在这个玩具例子里直接决定结论，说明<strong>用词频做分类时标准化/停用词表不是可选项</strong>。</p>
+<p>另一个坑：表 18.3 的 NSC 一行在交叉验证里「选了不收缩」，但这只说明在这 $p=1310$ 的规模上收缩没帮助；原文补充说特征数降到 500 左右时精度损失不大，所以「不收缩」不等于「1300 个特征都有用」。</p></div>
+<h2 id="s-18-6" class="anchored"><span class="num">18.6</span> 高维回归：监督主成分</h2>
+<p>本节要给出一个「$p\gg N$ 时也能用的回归」构造。背景是标准 PCA 回归的两步法：先在 $X$ 的 $N$ 维行空间里找前 $m$ 个主成分 $Z=XV_m$，再对 $y$ 回归。但普通 PCA 找的是<strong>方差大</strong>的方向，不保证与响应相关；图 18.14 右下角显示，在淋巴瘤数据上第一个普通主成分与生存时间几乎不相关。监督主成分的做法是：<strong>先用一元回归筛掉不相关的特征，再只在这批特征上做 PCA</strong>。</p>
+<p>算法 18.1 的三个步骤：</p>
+<ol><li>对每个特征单独做标准化的一元回归，取系数（生存分析里换成 Cox 模型的 score 统计量）。</li><li>对每个阈值 $\theta_1&lt;\theta_2&lt;\dots&lt;\theta_K$：(2a) 取 $|\hat\beta_j|&gt;\theta$ 的特征构成 $\tilde X$，算它的前 $m$ 个主成分；(2b) 用这些主成分建回归模型预测响应。</li><li>用交叉验证选 $\theta$ 与 $m$。</li></ol>
+<p>数据：弥漫大 B 细胞淋巴瘤（DLBCL）240 例，$p=7399$ 个基因，160 例训练 / 80 例测试；响应是生存时间，部分右删失。CV 选出的 Cox score 阈值是 3.53，对应 27 个基因。</p>
+<p><a class="src" href="../esl/ch18-high-dimensional-problems-p-n.html#s-18-6">原文 §18.6</a></p>
+<h3 id="s-18-6-0" class="anchored"><span class="num">18.6.0</span> 回归模型与监督投影</h3>
+<p><strong>问题：把「找与 $y$ 相关的大方差方向」写成公式，并说明它的误差阶。</strong> 对应 (18.32)–(18.37)。</p>
+<h4 id="步骤-1-潜变量模型-18-32-18-33-2" class="anchored">步骤 1：潜变量模型 (18.32)(18.33)</h4>
+<p>设有一个潜在变量 $U$（图 18.13 的「细胞类型」的连续版本）与响应、两组特征：</p>
+<div class="eq"><div class="escroll">
+$$
+Y=\beta_0+\beta_1U+\varepsilon
+$$
+</div><span class="tag">(18.32)</span></div>
+<div class="eq"><div class="escroll">
+$$
+X_j=\alpha_{0j}+\alpha_{1j}U+\varepsilon_j,\qquad j\in\mathcal{P}
+$$
+</div><span class="tag">(18.33)</span></div>
+<p>其中 $\mathcal{P}$ 是「通路」（真正相关的特征）集合，其余 $X_k\ (k\notin\mathcal{P})$ 与 $U$ 独立。误差 $\varepsilon$、$\varepsilon_j$ 均值为零且与各自模型中的其它随机变量独立。</p>
+<div class="aside key"><p class="hd">结果</p><p>(18.32)(18.33) 说的是：<strong>$Y$ 不直接依赖任何 $X_j$，它与所有 $X_j$（$j\in\mathcal P$）都是同一个潜在因子 $U$ 的函数</strong>。这是一个单成分因子模型（§14.7）的特例，$U$ 就是「细胞类型」的连续版本。</p>
+<p>这一步是整个方法的设计依据：既然目标是预测 $Y$，就先找出「能反映 $U$」的方向。算法 18.1 的三步因此各自有了一个明确的数学角色：</p>
+<div class="tscroll-x"><table class="fx"><thead><tr><th>算法步骤</th><th>对应的模型成分</th></tr></thead><tbody><tr><td>步骤 1：逐特征一元回归系数</td><td>估计集合 $\mathcal P$（平均而言只有 $\alpha_{1j}\ne0$ 时系数才非零）</td></tr><tr><td>步骤 2a：$X_{\mathcal P}$ 的第一主成分</td><td>估计潜在因子 $U$（$\varepsilon_j$ 等方差高斯时它是单因子模型的极大似然估计）</td></tr><tr><td>步骤 2b：回归</td><td>估计 (18.32) 中的 $\beta_1$</td></tr></tbody></table></div></div>
+<h4 id="步骤-2-一元系数与监督投影-18-34-2" class="anchored">步骤 2：一元系数与监督投影 (18.34)</h4>
+<p>先把所有变量标准化（中心化、方差归一），记 $y\in\mathbb{R}^N$ 为中心化响应列，$x_j\in\mathbb{R}^N$ 为中心化的第 $j$ 个特征列。<strong>单个特征 $j$ 的 OLS 斜率</strong>可逐步算出：</p>
+<div class="eq long"><div class="escroll">
+$$
+\tilde\beta_j=\frac{x_j^\top(x_j^\top y)}{x_j^\top x_j}\cdot\frac{1}{x_j^\top x_j}=\frac{\langle y,x_j\rangle}{\lVert x_j\rVert_2^2}
+$$
+</div></div>
+<p>推导：把 $x_j$ 与 $y$ 都中心化后，一元回归的正规方程是 $x_j^\top(y-\tilde\beta_jx_j)=0$，解得 $\tilde\beta_j=\frac{x_j^\top y}{x_j^\top x_j}$（预备知识 L2）。若所有特征标准化到 $\lVert x_j\rVert_2^2=N$，则 $\tilde\beta_j=\frac1N\langle y,x_j\rangle$，<strong>所有特征的 OLS 系数都正比于同一组内积 $\langle y,x_j\rangle$</strong>。</p>
+<p>偏最小二乘（PLS，§3.5.2）的第一潜变量正是把这一组权重用上：</p>
+<div class="eq"><div class="escroll">
+$$
+z=\sum_{j\in\mathcal{P}}\langle y,x_j\rangle\, x_j
+$$
+</div><span class="tag">(18.34)</span></div>
+<p>即 $z=X_{\mathcal P}(X_{\mathcal P}^\top y)$：把「$y$ 与每个特征的协方差」当作载荷，对特征取线性组合。算法 18.1 步骤 1 的筛选阈值 $\theta$ 就作用在 $|\tilde\beta_j|\propto|\langle y,x_j\rangle|$ 上。</p>
+<h4 id="步骤-3-监督主成分方向-18-35-2" class="anchored">步骤 3：监督主成分方向 (18.35)</h4>
+<p>监督主成分不用 (18.34) 的权重，而用「自洽」的权重。设 $d$ 是 $X_{\mathcal P}$ 的<strong>首奇异值</strong>，$\hat u$ 是其左奇异向量（第一主成分方向），则</p>
+<div class="eq"><div class="escroll">
+$$
+\hat u=\frac{1}{d^{2}}\sum_{j\in\mathcal{P}}\langle \hat u,x_j\rangle x_j
+$$
+</div><span class="tag">(18.35)</span></div>
+<div class="aside"><p class="hd">推导</p><p>(18.35) 就是主成分的定义式，逐步核验。设 $S=X_{\mathcal P}\in\mathbb{R}^{N\times p_1}$，$p_1=|\mathcal P|$。第一主成分方向 $\hat u$（$\lVert\hat u\rVert_2=1$）是 Rayleigh 商</p>
+<div class="eq long"><div class="escroll">
+$$
+\max_{\lVert u\rVert_2=1}\ \frac{u^\top S^\top S u}{u^\top u}=\max_{\lVert u\rVert_2=1}\sum_{j\in\mathcal{P}}\langle u,x_j\rangle^2
+$$
+</div></div>
+<p>的最大值点（预备知识 L1 的二次型极值：对固定 $u$，$u^\top(S^\top S)u=\sum_j\langle u,x_j\rangle^2$）。一阶条件：在约束切空间 $\lVert u\rVert_2=1$ 上梯度为 0，即存在 $\lambda$ 使</p>
+<div class="eq"><div class="escroll">
+$$
+2S^\top Su-2\lambda u=0\ \Rightarrow\ S^\top Su=\lambda u
+$$
+</div></div>
+<p>$\lambda$ 就是 $S^\top S=VSVS^\top$（$S=UDV^\top$，预备知识 L3）的首特征值，即 $d^2$。写成矩阵形式 $S^\top S\hat u=d^2\hat u$，再逐列展开：$(S^\top S)_{:j}=S^\top x_j$，而 $\hat u$ 的第 $i$ 个分量为</p>
+<div class="eq long"><div class="escroll">
+$$
+d^2\hat u_i=\big(S^\top S\hat u\big)_i=\sum_{j\in\mathcal P}\langle \hat u,x_j\rangle (x_j)_i=\left(\sum_{j\in\mathcal P}\langle\hat u,x_j\rangle x_j\right)_i
+$$
+</div></div>
+<p>两边对所有 $i$ 取值即得 (18.35)。<strong>验证</strong>：若所有 $\langle\hat u,x_j\rangle$ 同号非零，把 (18.35) 与 $\hat u$ 作内积得 $d^2=\sum_j\langle\hat u,x_j\rangle^2$，正是 Rayleigh 商的函数值 ✓。</p></div>
+<div class="aside key"><p class="hd">结果</p><p>(18.34) 与 (18.35) 的对比就是 PLS 与监督主成分的全部差别：</p>
+<ul><li>(18.34) 的权重来自<strong>单一向量 $y$</strong>：$\langle y,x_j\rangle$。噪声 $\varepsilon_j$ 对权重贡献 $\langle y,\varepsilon_j\rangle$，与信号 $\alpha_{1j}\langle y,U\rangle$ 量级相当（都是 $O_p(\sqrt N)$），所以权重本身噪声大。</li><li>(18.35) 的权重来自<strong>数据自己的前主成分方向</strong>，而 $\hat u$ 由 $p_1$ 个特征共同决定；噪声 $\varepsilon_j$ 在方向上被平均掉。</li><li>(18.35) 是<strong>自洽</strong>方程：$\hat u$ 既是权重来源又是待求量，这正是它比 (18.34) 稳的原因。</li></ul></div>
+<h4 id="步骤-4-误差阶-18-36-2" class="anchored">步骤 4：误差阶 (18.36)</h4>
+<div class="eq"><div class="escroll">
+$$
+z=u+O_p(1),\qquad \hat u=u+O_p\Big(\sqrt{\tfrac{p_1}{N}}\Big)
+$$
+</div><span class="tag">(18.36)</span></div>
+<div class="aside"><p class="hd">推导</p><p>把噪声算出来。设 $U$ 已中心化且 $\lVert U\rVert_2^2=N$、$\mathrm{Var}(\varepsilon_j)=1$，$\alpha_1=(a_1,\dots,a_{p_1})$ 且 $\lVert a_1\rVert_2^2$ 固定（信号强度）。</p>
+<p><strong>先算 $\hat u$ 的噪声。</strong> 把 (18.35) 右端按 (18.33) 拆开（略去截距 $\alpha_{0j}$，因为已中心化）：</p>
+<div class="eq verylong"><div class="escroll">
+$$
+\frac{1}{d^2}\sum_{j\in\mathcal P}\langle \hat u,x_j\rangle x_j=\frac{1}{d^2}\sum_j \big(a_j\langle\hat u,U\rangle+\langle\hat u,\varepsilon_j\rangle\big)x_j=\frac{1}{d^2}\sum_j a_j\langle\hat u,U\rangle x_j+\frac{1}{d^2}\sum_j\langle\hat u,\varepsilon_j\rangle x_j
+$$
+</div></div>
+<p>噪声项记 $\eta=\frac{1}{d^2}\sum_j\langle\hat u,\varepsilon_j\rangle x_j$。取 $\hat u\approx u$（下一步验证这自洽），则 $\langle u,\varepsilon_j\rangle=\sum_{i=1}^N u_i\varepsilon_{ij}$ 是 $N$ 个独立零均值项之和，量级 $O_p(1)$。于是</p>
+<div class="eq verylong"><div class="escroll">
+$$
+\lVert\eta\rVert_2^2=\frac{1}{d^4}\sum_{j,l}\langle u,\varepsilon_j\rangle\langle u,\varepsilon_l\rangle\langle x_j,x_l\rangle\approx\frac{1}{d^4}\sum_{j,l}\langle u,\varepsilon_j\rangle\langle u,\varepsilon_l\rangle\,a_ja_l
+$$
+</div></div>
+<p>换成 $j,l$ 的和再换成 $\sum_{j,l}$ 的两重和：用 $\sum_j a_j\langle u,\varepsilon_j\rangle$ 与 $E[\langle u,\varepsilon_j\rangle\langle u,\varepsilon_l\rangle]=\delta_{jl}$，得</p>
+<div class="eq long"><div class="escroll">
+$$
+\lVert\eta\rVert_2^2\approx\frac{1}{d^4}\cdot\big(\sum_j a_j\langle u,\varepsilon_j\rangle\big)^2\approx\frac{1}{d^4}\cdot\lVert a_1\rVert_2^2\,p_1=O_p\Big(\frac{p_1}{d^4}\Big)
+$$
+</div></div>
+<p>而 $d^2=\lVert S^\top u\rVert_2^2$ 的主项是 $N\lVert a_1\rVert_2^2$（$\sum_j a_jx_j=a_1^\top S\approx\lVert a_1\rVert_2^2U$，长度平方 $\approx N\lVert a_1\rVert_2^4$），故 $d^2\sim N$，$d^4\sim N^2$。代入得</p>
+<div class="eq"><div class="escroll">
+$$
+\lVert\eta\rVert_2=O_p\Big(\frac{\sqrt{p_1}}{N}\Big)=O_p\Big(\sqrt{\frac{p_1}{N}}\Big)
+$$
+</div></div>
+<p><strong>这正是 (18.36) 第二项。</strong> 因 $p_1/N\to0$，它趋于 0，$\hat u$ 对 $U$ <strong>一致</strong>（supervised PC 的关键性质：普通首主成分会被大量噪声特征污染，不一致）。</p>
+<p><strong>再算 $z$ 的噪声。</strong> $\langle y,x_j\rangle=a_j\langle y,U\rangle+\langle y,\varepsilon_j\rangle$，其中 $\langle y,U\rangle=\beta_1\lVert U\rVert_2^2+\langle\varepsilon,U\rangle=O_p(N^{1/2})$，$\langle y,\varepsilon_j\rangle=\sum_i y_i\varepsilon_{ij}=O_p(N^{1/2})$。把 $z$ 除以 $N$（即与 $U$ 同量级）来比较：</p>
+<div class="eq long"><div class="escroll">
+$$
+\frac{1}{N}\sum_j a_j\langle y,U\rangle x_j\ \big|_{\text{沿 }U\text{ 的分量}}=\frac{\langle y,U\rangle^2\lVert a_1\rVert_2^2}{N}=O_p(1)\cdot\lVert a_1\rVert_2^2
+$$
+</div></div>
+<p>而噪声方向的分量是 $O_p(\sqrt{p_1/N})$ 的同一量——与 $\hat u$ 同阶。差别在于：$\hat u$ 的噪声被 $p_1$ 个特征平均掉（衰减 $\sqrt{p_1/N}$），而 $z$ 的权重只被<strong>一个</strong> $y$ 决定，噪声 $\langle y,\varepsilon_j\rangle$ 与信号 $\langle y,U\rangle$ 同为 $O_p(\sqrt N)$，权重里的信噪比只有 $O_p(1)$，因此在 $u$ 的归一化单位下 (18.36) 记为 $O_p(1)$。</p></div>
+<div class="aside warn"><p class="hd">坑</p><p>(18.36) 的两个 $O_p$ 必须在<strong>同一个归一化</strong>下比较，且 $p_1/N\to0$ 是 (18.36) 第二项趋于零的前提。若 $p_1\asymp N$（阈值放得很松），$\sqrt{p_1/N}\asymp1$，监督主成分的优势消失；若 $p_1\gg N$，它甚至比普通主成分更差。图 18.16 中监督主成分与阈值 PLS 的误差在特征数很大时一起变差，正是这个原因。</p>
+<p>另一处：式子里的 $\langle y,U\rangle$ 用到 $U$ 不可观测，严谨做法是用 (18.33) 的线性预测量 $\hat u$ 代替，这一步的合法性由「$p_1/N\to0$ 下 $\hat u$ 一致」提供。</p></div>
+<h4 id="步骤-5-模拟数据生成模型-18-37-2" class="anchored">步骤 5：模拟数据生成模型 (18.37)</h4>
+<p>原文的对比实验 ($N=100$，$p=5000$；100 次重复) 用如下模型：</p>
+<div class="eq verylong"><div class="escroll">
+$$
+x_{ij}=\begin{cases}3+\varepsilon_{ij}, &amp; j=1,\dots,50\ \text{且}\ i\le50\\ 4+\varepsilon_{ij}, &amp; j=1,\dots,50\ \text{且}\ i&gt;50\\ 1.5+\varepsilon_{ij}, &amp; j=51,\dots,250,\ (1\le i\le25\ \text{或}\ 51\le i\le75)\\ 5.5+\varepsilon_{ij}, &amp; j=51,\dots,250,\ (26\le i\le50\ \text{或}\ 76\le i\le100)\\ \varepsilon_{ij}, &amp; j=251,\dots,5000\end{cases} \qquad y_i=2\cdot\frac{1}{50}\sum_{j=1}^{50}x_{ij}+\varepsilon_i
+$$
+</div><span class="tag">(18.37)</span></div>
+<p>其中 $\varepsilon_{ij},\varepsilon_i$ 独立、均值 0、标准差分别为 1 与 1.5。</p>
+<div class="aside key"><p class="hd">结果 · 这个模型的三个部分分别对应三种失败模式：</p><ul><li>前 50 个基因：两组均值差 1，且与 $y$ 相关 → 监督主成分与阈值 PLS 能筛出来，lasso 也还行。</li><li>第 51–250 个基因：两组均值差 4（<strong>方差更大、逐变量信号更强</strong>），但按 25/50/75 的模式与 $y$ <strong>不相关</strong> → 这一段专门惩罚「只看单个变量」的方法。它是阈值筛选（步骤 1）能成功的原因：逐变量系数小。</li><li>第 251–5000 个基因：纯噪声。普通 PCA 与 PLS 都因为 $p\gg N$ 被这段污染（图 18.16 最右端两点误差最大），而监督主成分的阈值把它们先扔掉了。</li></ul></div>
+<h3 id="s-18-6-1" class="anchored"><span class="num">18.6.1</span> 与潜变量模型的联系</h3>
+<p><a class="src" href="../esl/ch18-high-dimensional-problems-p-n.html#s-18-6-1">原文 §18.6.1</a></p>
+<p>把 (18.32)(18.33) 当作真模型，逐步算出三步算法在估计什么。</p>
+<ol><li><span><strong>步骤 1 估计 $\mathcal P$。</strong> 特征 $j$ 的总体一元回归系数（标准化后）是</span><div class="eq long"><div class="escroll">
+$$
+\rho_j=\mathrm{Cov}(x_j,y)=\alpha_{1j}\beta_1\mathrm{Var}(U)+\alpha_{1j}\mathrm{Cov}(U,\varepsilon)+\mathrm{Cov}(\varepsilon_j,y)=\alpha_{1j}\beta_1\mathrm{Var}(U)
+$$
+</div></div><span>推导：$x_j=\alpha_{0j}+\alpha_{1j}U+\varepsilon_j$ 与 $y=\beta_0+\beta_1U+\varepsilon$ 的协方差只由<strong>共同的</strong> $U$ 项产生（其余项按假设与另一侧独立）。所以 $\rho_j=0\iff\alpha_{1j}=0$（设 $\beta_1\ne0$、$\mathrm{Var}(U)&gt;0$），步骤 1 的阈值在平均意义上恢复 $\mathcal P$。</span></li><li><strong>步骤 2a 估计 $U$。</strong> 在「$\varepsilon_j$ 独立、等方差、高斯」的假设下，$X_{\mathcal P}$ 的第一主成分方向是单因子模型的极大似然估计：其载荷 $\hat a_j=\langle\hat u,x_j\rangle$ 正是 (18.35)，而因子得分就是 $\hat u$ 本身。 > <strong>坑</strong> · 这一步依赖<strong>等方差高斯</strong>。若 $\mathrm{Var}(\varepsilon_j)=\sigma_j^2$ 差异大，普通主成分按加权范数 $\|A\hat u\|^2=\sum_j\sigma_j^2\hat a_j^2$ 最大化，会偏向噪声大的特征；此时应该先用 §18.2 的逐变量标准化把 $s_j$ 消掉（这也正是 §18.5.3 文摘例子里 NSC 赢的原因）。</li><li><strong>步骤 2b 估计 $\beta_1$。</strong> 把 $\hat u$ 当单一预测量做一元回归，$\hat\beta_1=\langle y,\hat u\rangle/\lVert\hat u\rVert_2^2$。</li></ol>
+<div class="aside key"><p class="hd">结果</p><p>监督主成分 = 「<strong>筛选 + 因子分析 + 回归</strong>」的三步组合。一致性来自 (18.36) 的 $O_p(\sqrt{p_1/N})\to0$：只要 $p_1/N\to0$ 且 $p_1$ 随 $p$ 增长，$\hat u\to u$，而普通首主成分会被 $p-p_1$ 个噪声特征污染，因此<strong>不一致</strong>。这就是原文说「$p$ 与 $p_1$ 都增长、但 $p_1$ 相对 $p$ 很小时监督主成分一致，而普通主成分可能不一致」的证明思路。</p>
+<p>延伸：若步骤 1 的阈值留下很多特征，需要一份「稀疏近似」以便解释——那就是下一小节的预条件。</p></div>
+<h3 id="s-18-6-2" class="anchored"><span class="num">18.6.2</span> 与偏最小二乘的关系</h3>
+<p><a class="src" href="../esl/ch18-high-dimensional-problems-p-n.html#s-18-6-2">原文 §18.6.2</a></p>
+<p>PLS（§3.5.2）与监督主成分的差别是<strong>要不要扔掉噪声特征</strong>：PLS 用 (18.34) 的权重 $\langle y,x_j\rangle$ 给每个特征一个权重（噪声特征权重小但非零），所以 $p\gg N$ 时大量噪声特征仍会污染预测。「阈值 PLS」= 先按步骤 1、2a 筛特征，再对筛出的特征做 PLS。图 18.16 显示阈值 PLS 与监督主成分接近，但监督主成分在整段范围内误差更低。</p>
+<p><strong>PLS 的白化视角（把两者的差别放到同一个公式里）。</strong> PLS 第一成分的构造等价于：先把 $X_{\mathcal P}$ 白化，再在其中挑与 $y$ 最相关的方向。取 $X_{\mathcal P}$ 的 SVD $S=UDV^\top$（$V$ 是右奇异向量，列方向即「特征组合」）。</p>
+<ul><li>PLS 的权重 $w=(V^\top X^\top y)$，方向 $z=\sum_j\langle y,x_j\rangle x_j=S X^\top y$，即在<strong>原始坐标</strong>里用 $y$ 的投影。</li><li>监督主成分的权重 $w_{\star}=V_1$，即 $S^\top S$ 的首特征向量。</li></ul>
+<p>关键差别：$V_1$ 是 $S^\top S$ 的最大特征方向，$V^\top X^\top y$ 用的是 $y$ 直接给出的方向。两者只有在 $y\approx a_1^\top S$（即 $y$ 恰好沿主成分）时才一致。</p>
+<div class="aside"><p class="hd">推导 · 用 PLS 的对偶形式看更清楚：PLS 求解的是</p><div class="eq long"><div class="escroll">
+$$
+\max_w\ \frac{(y^\top Xw)^2}{\lVert Xw\rVert_2^2}\quad(\text{标准化后等价于 } \max_w \frac{\langle y,Xw\rangle^2}{\lVert Xw\rVert_2^2})
+$$
+</div></div>
+<p>一阶条件：$\frac{\partial}{\partial w}\left[(X^\top y)^\top w\big/\lVert Xw\rVert^2-\lambda\right]=0$ 给出 $X^\top y=\lambda S^\top Sw$，即</p>
+<div class="eq long"><div class="escroll">
+$$
+w=\frac{1}{\lambda}(S^\top S)^{-1}S^\top y=\frac{1}{\lambda}VSVS^\top X^\top y\ \text{的 $V$ 部分}=\frac1\lambda V^\top X^\top y
+$$
+</div></div>
+<p>（用 $S^\top S=VSVS^\top$，预备知识 L3）。代回 (18.34)：$z=Sw=\frac1\lambda\,S VV^\top X^\top y=\frac1\lambda SX^\top y$，与定义一致 ✓。</p>
+<p>现在看 $w$ 里各分量的信噪比：$w\propto V^\top X^\top y=V(UU^\top+D\,\frac{1}{?}V^\top X^\top y)$。用 $X=UDV^\top$，$X^\top y=VDU^\top y$，故 $V^\top X^\top y=VDU^\top y$，第 $r$ 个分量为 $d_r (U^\top y)_r$。第 $r$ 个分量的信噪比由 $d_r$ 决定，而 $d_r^2$ 在 $p\gg N$ 时前几个很大、后面迅速衰减——所以 PLS 实际上把权重集中在前几个主成分上（这正是「PLS 降维」），<strong>但它没有把噪声特征显式剔除，只是给了它们小权重</strong>。</p></div>
+<div class="aside warn"><p class="hd">坑</p><p>上面这一步「前几个 $d_r$ 大、后面小」正是 PLS 的问题所在：当噪声特征数 $\gg N$ 时，$X^\top X$ 的特征向量本身已被噪声污染，前几个方向不一定对应信号。监督主成分先用逐变量阈值剔除，再在剩下的 $p_1$ 个特征里找第一主成分——<strong>筛选与降序两件事分开做</strong>。(18.36) 的 $O_p(\sqrt{p_1/N})$ 与 $O_p(1)$ 之差就是这个「分开做」的定量回报。</p>
+<p>图 18.16 的最右端（普通主成分、PLS、阈值 PLS、监督主成分都用全部 5000 个基因）就是不做筛选的版本，四者误差都大。</p></div>
+<h3 id="s-18-6-3" class="anchored"><span class="num">18.6.3</span> 特征选择的预条件</h3>
+<p><a class="src" href="../esl/ch18-high-dimensional-problems-p-n.html#s-18-6-3">原文 §18.6.3</a></p>
+<p><strong>问题：能不能兼得监督主成分的低误差与 lasso 的稀疏性？</strong></p>
+<p>监督主成分的缺点：即使步骤 1 的阈值筛掉了很多特征，留下的那批里<strong>高度相关的特征会一起被选中</strong>（相关特征在第一主成分上的载荷必然接近），因此 $\hat u$ 往往是几百个基因的组合，没有稀疏性、难以解释。lasso（§18.4、§3.4.2）用 $\ell_1$ 惩罚自动稀疏，但直接用 lasso 会被大量噪声特征带偏——图 18.17 的绿线在远少于 50 个特征时就开始过拟合（lasso 的路径在 100 个特征处自截断，$N=100$）。</p>
+<p><strong>预条件（Paul et al., 2008）的做法</strong>：先用监督主成分对<strong>训练集</strong>算出预测值 $\hat y_i$（阈值由 CV 定），然后把 $\hat y$ 当作 lasso 的<strong>响应变量</strong>，而 lasso 仍用<strong>全部</strong> $p$ 个特征：</p>
+<div class="eq long"><div class="escroll">
+$$
+\hat\beta^{\rm pre}=\arg\min_{\beta}\ \frac{1}{2N}\Big\lVert\hat y-X\beta\Big\rVert_2^2+\lambda\lVert\beta\rVert_1
+$$
+</div></div>
+<div class="aside key"><p class="hd">结果</p><p>为什么这能起作用：$X$ 的行空间是 $N$ 维的，第一主成分方向 $\hat u$ 只占一维。把响应换成 $\hat y$ 相当于先把响应投影到这个「已知有用」的一维方向上，$\hat y$ 里不再含与 $X$ 无关的响应噪声（$\hat y$ 是 $X$ 的线性函数）。于是 lasso 面对的是一个<strong>信噪比已被提高</strong>的回归问题，过拟合的起点被推后；等价的说法是 $\hat y$ 落在 $\mathrm{col}(X_{\mathcal P})$ 里，lasso 的最优解会自然偏向这一块。</p>
+<p>图 18.17（$N=100$，$p=5000$）给出对照：普通 lasso（绿）在约 100 个特征处自截断（$N$ 的限制，§18.4）；监督主成分（橙）在 50 个特征处误差最低，而 50 正是模型里真实的信号特征数；预条件 lasso（紫）用约 25 个特征就达到与监督主成分相当的误差。</p>
+<p>实践提示：预条件 lasso 的 $\lambda$ 通常按「简约性」这类主观标准选，而不是按 CV 最优——因为响应已被去噪，CV 会倾向于选过大的模型。</p></div>
+<div class="aside warn"><p class="hd">坑</p><p>预条件必须<strong>只用训练集</strong>算 $\hat y$。若用全数据算 $\hat y_i$，第 $i$ 个样本的响应里含它自己的贡献，等于把噪声回灌，$X$ 与 $\hat y$ 之间会出现人为相关，交叉验证结果偏乐观。原文没有强调这一点，但它是这类「把预测值当响应」的做法（也叫 stacked generalization）的通用陷阱。</p></div>
+<hr>
+<h2 id="s-18-7" class="anchored"><span class="num">18.7</span> 特征评估与多重检验问题</h2>
+<p>本章前半的四个小节都在做<strong>预测</strong>；本节转向<strong>推断</strong>：判断 $M$ 个特征里哪些真的有信号。这是传统的多重假设检验问题，因此从这一节起原文用 $M$ 代替 $p$ 表示特征数（避免与 $p$ 值混淆）。</p>
+<p>引例是辐射敏感性微阵列数据（Rieger et al., 2004）：$M=12625$ 个基因，58 个样本（44 个正常反应，14 个严重反应）。目标不再是预测某个病人有没有癌症，而是<strong>找出表达量在两组之间不同的基因</strong>——评估单个特征的重要性，且不用任何多元预测模型。</p>
+<p><a class="src" href="../esl/ch18-high-dimensional-problems-p-n.html#s-18-7">原文 §18.7</a></p>
+<h3 id="s-18-7-0" class="anchored"><span class="num">18.7.0</span> 从 $t$ 统计量到多重检验</h3>
+<h4 id="逐基因的-t-统计量-18-38-18-39-2" class="anchored">逐基因的 $t$ 统计量 (18.38)(18.39)</h4>
+<p>对每个基因 $j$ 构造两样本 $t$ 统计量。记 $C_\ell$ 为第 $\ell$ 组样本下标集合（$|C_1|=N_1=44$，$|C_2|=N_2=14$），$\bar x_{\ell j}=\frac{1}{N_\ell}\sum_{i\in C_\ell}x_{ij}$：</p>
+<div class="eq"><div class="escroll">
+$$
+t_j=\frac{\bar x_{2j}-\bar x_{1j}}{s e_j}
+$$
+</div><span class="tag">(18.38)</span></div>
+<div class="eq long"><div class="escroll">
+$$
+s e_j=\hat\sigma_j\sqrt{\tfrac{1}{N_1}+\tfrac{1}{N_2}},\qquad \hat\sigma_j^2=\frac{1}{N_1+N_2-2}\left(\sum_{i\in C_1}(x_{ij}-\bar x_{1j})^2+\sum_{i\in C_2}(x_{ij}-\bar x_{2j})^2\right)
+$$
+</div><span class="tag">(18.39)</span></div>
+<div class="aside"><p class="hd">推导</p><p>(18.39) 的两个部分来源完全不同，必须分开算。</p>
+<p><strong>（a）根号里的部分</strong>来自均值的方差。设两组各有独立同方差误差 $\sigma_j^2$，则</p>
+<div class="eq long"><div class="escroll">
+$$
+\mathrm{Var}\big(\bar x_{1j}-\bar x_{2j}\big)=\mathrm{Var}(\bar x_{1j})+\mathrm{Var}(\bar x_{2j})=\frac{\sigma_j^2}{N_1}+\frac{\sigma_j^2}{N_2}
+$$
+</div></div>
+<p>推导：$\bar x_{1j}=\frac{1}{N_1}\sum_{i\in C_1}x_{ij}$，故 $\mathrm{Var}(\bar x_{1j})=\frac{1}{N_1^2}\sum_{i\in C_1}\sigma_j^2=\frac{\sigma_j^2}{N_1}$（用了方差可加性与独立同分布，预备知识 P1）。而 $\bar x_{1j}$ 只由 $C_1$ 的样本组成、$\bar x_{2j}$ 只由 $C_2$ 组成，两组样本独立，故交叉项协方差为 0，$\mathrm{Var}(A-B)=\mathrm{Var}(A)+\mathrm{Var}(B)-2\mathrm{Cov}(A,B)=\mathrm{Var}(A)+\mathrm{Var}(B)$。标准化分母因此是 $\sigma_j\sqrt{1/N_1+1/N_2}$。</p>
+<p><strong>（b）$\hat\sigma_j^2$</strong> 是 $\sigma_j^2$ 的无偏估计，用<strong>合并组内平方和</strong>：$SS=\sum_{i\in C_1}(x_{ij}-\bar x_{1j})^2+\sum_{i\in C_2}(x_{ij}-\bar x_{2j})^2$。抽掉两个均值各消耗 1 个自由度，故自由度 $N_1+N_2-2$，即 (18.39) 的分母 $N_1+N_2-2$。</p>
+<p><strong>（c）检验的精确分布。</strong> 在 $H_{0j}$（两组均值相等）下 $t_j\sim t_{N_1+N_2-2}$（预备知识 P4：分子正态、分母为 $\sigma_j$ 的 $\chi^2_{\nu}/\nu$）。所以逐个检验的 $p$ 值可以直接查 $t$ 分布表，无需任何假设。</p></div>
+<h4 id="逐个-5-水平会造成什么-2" class="anchored">逐个 5% 水平会造成什么</h4>
+<p>实际数据里 12625 个 $t_j$ 全部落在 $[-4.7,5.0]$，其中 1189 个满足 $\lvert t_j\rvert\ge2$。逐个按 5% 水平判定时：</p>
+<div class="eq long"><div class="escroll">
+$$
+\#\{\text{假阳性}\}\ \overset{d}{=}\ \mathrm{Bin}\big(M,\alpha\big),\qquad E\big[12625\times0.05\big]=631.3,\qquad \mathrm{SD}=\sqrt{12625\times0.05\times0.95}=\sqrt{599.7}\approx24.5
+$$
+</div></div>
+<p>（这个 Bin 分布只在「各基因独立」下成立，原文明确说基因显然不独立，但这给出了一个下限性的对照。）观测到的 1189 比 631 高出 22 个标准差。</p>
+<div class="aside warn"><p class="hd">坑</p><p>上面这个对照容易被读反。631 是「<strong>期望的</strong>假阳性数」，1189 是「<strong>全部的</strong>显著基因数」。两者不等价：1189 里既有真阳性也有假阳性，数量本身无法区分。原文的论证方式是「即使分组与基因完全无关也会有 631 个」——它说明的是<strong>逐个 5% 的阈值在大 $M$ 下完全不可用</strong>，而不是说数据里的信号很强。</p></div>
+<h4 id="置换-p-值-18-40-18-41-2" class="anchored">置换 $p$ 值 (18.40)(18.41)</h4>
+<p>理论 $t$ 分布依赖正态性（且 (18.39) 是逐基因独立的估计）。更稳妥的做法是<strong>置换</strong>：把 58 个样本的标签随机重排，重算 $t$ 统计量，记 $t^k_j$ 为第 $k$ 次置换下基因 $j$ 的值。单个基因的置换 $p$ 值：</p>
+<div class="eq"><div class="escroll">
+$$
+p_j=\frac{1}{K}\sum_{k=1}^{K}I\big(\lvert t^k_j\rvert&gt;\lvert t_j\rvert\big)
+$$
+</div><span class="tag">(18.40)</span></div>
+<p>利用「所有基因都在同一把尺子上测量」这一事实，可以把<strong>全部 $M$ 个基因</strong>的置换统计值汇总成一个零分布：</p>
+<div class="eq"><div class="escroll">
+$$
+p_j=\frac{1}{MK}\sum_{j'=1}^{M}\sum_{k=1}^{K}I\big(\lvert t^k_{j'}\rvert&gt;\lvert t_j\rvert\big)
+$$
+</div><span class="tag">(18.41)</span></div>
+<div class="aside key"><p class="hd">结果</p><p>(18.41) 相对 (18.40) 的两个好处：</p>
+<ol><li><strong>分辨率更细</strong>。(18.40) 的分母是 $K$（本例 $K=1000$），可分辨的最小 $p$ 值是 $1/1000=0.001$；(18.41) 的分母是 $MK=1000\times12625$，可分辨到 $8\times10^{-8}$。这正是本例里 $p_{(11)}=0.00012$ 能被算出来的原因——若用 (18.40)，1/1000 的粗度会让排序在 $p=0.001$ 附近饱和。</li><li><strong>不依赖分布假设</strong>。置换零分布对任意单变量分布都有效，只要在标签置换下误差分布保持不变（交换性）。基因表达经对数变换后大致正态，但也有例外；置换法绕开这个问题。</li></ol>
+<p>$\binom{58}{14}\approx10^{13}$ 种置换无法枚举，实际只抽 $K=1000$ 次随机置换（图 18.18 的蓝色直方图就是这 1000 次汇总的零分布）。</p></div>
+<p>要检验的假设族是</p>
+<div class="eq"><div class="escroll">
+$$
+H_{0j}:\ \text{治疗对基因 }j\text{ 无作用}\qquad \text{对比}\qquad H_{1j}:\ \text{治疗对基因 }j\text{ 有作用}
+$$
+</div><span class="tag">(18.42)</span></div>
+<p>逐个在水平 $\alpha$ 拒绝（$p_j&lt;\alpha$）时，第一类错误率就是 $\alpha$：$\Pr(A_j)=\alpha$，$A_j$ 是「$H_{0j}$ 被错误拒绝」的事件。</p>
+<div class="aside basis"><p class="hd">基础知识 · 两种总体误差率（表 18.5）</p><div class="tscroll-x"><table class="fx"><thead><tr><th></th><th>未显著</th><th>显著</th><th>合计</th></tr></thead><tbody><tr><td>$H_0$ 为真</td><td>$U$</td><td>$V$</td><td>$M_0$</td></tr><tr><td>$H_0$ 为假</td><td>$T$</td><td>$S$</td><td>$M_1$</td></tr><tr><td>合计</td><td>$M-R$</td><td>$R$</td><td>$M$</td></tr></tbody></table></div>
+<ul><li><strong>族系误差率</strong> $\mathrm{FWER}=\Pr(V\ge1)=\Pr\big(\cup_{j=1}^M A_j\big)$：至少犯一次错。</li><li>第一类错误率 $=\frac{E[V]}{M_0}$；第二类错误率 $=\frac{E[T]}{M_1}$；功效 $=1-\frac{E[T]}{M_1}$。</li></ul></div>
+<h4 id="fwer-在-m-大时为什么不可用-2" class="anchored">FWER 在 $M$ 大时为什么不可用</h4>
+<p>若 $M$ 个检验独立且各自水平 $\alpha$，由独立性（概率乘法）：</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{FWER}=\Pr\Big(\bigcup_{j=1}^M A_j\Big)=1-\Pr\Big(\bigcap_{j=1}^M A_j^c\Big)=1-(1-\alpha)^M
+$$
+</div></div>
+<p>$M=12625$、$\alpha=0.05$ 时这几乎等于 1。若检验正相依（$\Pr(A_j\mid A_k)&gt;\Pr(A_j)$，基因数据里很常见），FWER 略小于它但仍随 $M$ 趋于 1。</p>
+<p>Bonferroni 校正把每个检验压到 $\alpha/M$。由并集上界（Boole 不等式，<strong>任意相依结构都成立</strong>）：</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{FWER}=\Pr\Big(\bigcup_{j=1}^M A_j\Big)\le\sum_{j=1}^M\Pr(A_j)=M\cdot\frac{\alpha}{M}=\alpha
+$$
+</div></div>
+<p><strong>代价是极其保守</strong>：$M=12625$ 时阈值 $0.05/12625=3.96\times10^{-6}$，而 12625 个基因里最小 $p$ 值约 $8\times10^{-5}$——<strong>一个基因也检不出来</strong>。</p>
+<div class="aside key"><p class="hd">结果</p><p>关键观察：Bonferroni 强行让 $E[V]=\alpha M_0\le\alpha M$ <strong>与 $M$ 无关</strong>。问题不在于假阳性太多（631 个相对于 12625 完全可以接受），而在于我们要求「一个都不许错」。<strong>只要允许「报出的基因里有 15% 是错的」，$M$ 增大带来的功效损失就被抵消。</strong> 这就是 FDR 的立足点。</p></div>
+<div class="aside"><p class="hd">衔接</p><p>§18.7.1 以后（(18.43)–(18.54)：FDR 的定义、BH 规则的证明、SAM、pFDR 的后验解释）由分片 <code>18c-multipletesting.md</code> 承担；本节到此为止，只把多重检验的问题背景与逐特征 cutoff 的失败原因讲完。</p></div>
+<h2 id="s-18-7-1" class="anchored"><span class="num">18.7.1</span> 错误发现率</h2>
+<p>上一节（<a class="src" href="../esl/ch18-high-dimensional-problems-p-n.html#s-18-7">原文 §18.7</a> 前半）已经交代了逐基因的 $t$ 统计量 (18.38)、合并标准误 (18.39)、置换 $p$ 值 (18.40)(18.41) 以及假设族 $H_{0j}$ 对比 $H_{1j}$ (18.42)，并算出「$M=12625$ 个检验、每个在 $\alpha=0.05$ 水平上做」时族系误差率 FWER $\approx1-(1-\alpha)^M\approx1$，Bonferroni 校正则把阈值压到 $0.05/12625=3.96\times10^{-6}$ 从而一个基因也检不出来。本节解决这个两难：换一个<strong>整体误差指标</strong>，使「允许报出 $R$ 个基因、其中错 $\alpha$ 份」成为可接受的目标。</p>
+<h3 id="定义与-为什么是比例-2" class="anchored">定义与「为什么是比例」</h3>
+<p>设 $V$ 是被错误拒绝（假发现）的个数，$R$ 是全部被拒绝（发现）的个数。$R$ 是<strong>随机</strong>的：数据好的时候它大，数据差的时候它小。所以「错误比例」必须写成</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{FDR}=E\left[\frac{V}{R}\right]\qquad \text{约定 } R=0 \text{ 时 } V/R=0
+$$
+</div><span class="tag">(18.43)</span></div>
+<p>对<u>被叫显著的那 $R$ 个基因</u>取期望（在产生数据的那次重复试验的意义上取）。</p>
+<div class="aside basis"><p class="hd">基础知识 · 四条要反复用的概率工具</p><ul><li><strong>（预备知识 P5）</strong> $p$ 值：$p_j$ 在 $H_{0j}$ 为真时满足 $\Pr(p_j\le c)\le c$；若精确均匀则等号成立。等价的 $t$ 统计量表述是「在水平 $c$ 上拒绝」，对偶的「每检验水平」是 $\alpha=F_0(|T|\ge c)$。</li><li><strong>（预备知识 P2）</strong> 全期望公式 $E[X\mid g]=E[E[X\mid g']]$（对任意划分 $g'$）与条件期望的线性性 $E[\sum_j f_j]=\sum_j E[f_j]$。</li><li><strong>（预备知识 P4）</strong> $t$、$\chi^2$、$F$ 的抽样分布：$t$ 统计量 (18.38) 在正态总体下精确服从 $t_{N_1+N_2-2}$；置换零分布 (18.40)(18.41) 是它不依赖正态性的替代品。</li><li><strong>（预备知识 P1）</strong> 大数定律 / 依概率收敛：$M$ 个 i.i.d. 分量之和的相对波动以 $1/\sqrt{M}$ 衰减，这正是后文把 $\hat\pi_0$ 的估计误差说成 $O_p(M^{-1/2})$ 的依据。</li></ul></div>
+<h4 id="推导-fwer-与-fdr-的量级对比-为什么必须换指标-2" class="anchored">推导 · FWER 与 FDR 的量级对比（为什么必须换指标）</h4>
+<ol><li><span><strong>FWER 随 $M$ 线性爆炸。</strong> 独立时 $M_0$ 个真零假设各自以水平 $\alpha$ 被错误拒绝，$V\sim\mathrm{Binomial}(M_0,\alpha)$，故</span><div class="eq"><div class="escroll">
+$$
+\mathrm{FWER}=\Pr(V\ge1)=1-(1-\alpha)^{M_0}\approx M_0\alpha\ \ (\text{小 }\alpha)
+$$
+</div></div><span>Bonferroni 就是把这一个乘积里的 $M_0$ 强行设成 $M$，代价是功效全丢。</span></li><li><span><strong>FDR 在同一水平 $\alpha$ 上只差一个 $\pi_0$ 因子。</strong> 由条件期望的线性性，对 $M_0$ 个真零假设逐个求和：</span><div class="eq long"><div class="escroll">
+$$
+E[V]=\sum_{j=1}^{M}\Pr(H_{0j}\text{ 真且被拒})=\sum_{j\in\mathcal N}\Pr(p_j\le c)=M_0\,F_0(c)\ \text{（精确均匀时）}=M_0\alpha
+$$
+</div></div><span>而 $E[R]=\sum_{j=1}^M\Pr(p_j\le c)\ \ge\ M_0\alpha$。于是</span><div class="eq long"><div class="escroll">
+$$
+\mathrm{FDR}\ \overset{(18.47)}{\approx}\ \frac{E[V]}{E[R]}\ \le\ \frac{M_0\alpha}{E[R]}\ =\ \alpha\,\frac{M_0}{E[R]}\ \le\ \alpha\frac{M_0}{M}=\pi_0\alpha
+$$
+</div></div><span>（最后一步用 $E[R]\le M$，且 $\pi_0=M_0/M$）。<strong>注意分母 $E[R]$ 随 $M$ 一起长</strong>：允许假阳性的「预算」$\alpha R$ 与报出的基因数成正比，而 FWER 要求预算 $\le\alpha$ 恒定。</span></li><li><strong>两个量的比。</strong> 同一目标 $\alpha$ 下，$\mathrm{FWER}\approx M_0\alpha$ 而 $\mathrm{FDR}\approx\pi_0\alpha=M_0\alpha/M$，比值 $\approx M$。$M=12625$ 时，若每个检验都在 5% 水平上做，FWER 已经饱和到 1，而「报出的基因里 5% 是错的」这个目标始终可达（只要真有信号让 $E[R]$ 长大）。</li><li><strong>最坏情形：全部零假设都为真。</strong> 此时 $V\equiv R$，所以无论怎么调截断点，$\mathrm{FDR}\equiv1$（报出的每一个都是错的，确实如此），而 $\mathrm{FWER}=1-(1-\alpha)^M\to1$ 是<strong>渐近</strong>地趋于 1。区别在于 FDR 给出的是<strong>恒定可比</strong>的刻度：全零时任何阈值都给 1，一旦有信号就会下降；FWER 在全零时已经饱和，无法区分「略多一点信号」和「全错」。</li></ol>
+<div class="aside key"><p class="hd">结果</p><p>FDR 把「一个都不许错」（FWER）换成「十个里错一个」（FDR）。基因数据里 $\alpha$ 取到 0.15 完全合理——报 11 个基因里错 1.5 个，对探索性研究是划算的。</p></div>
+<h3 id="benjamini-hochberg-步骤与它的证明-2" class="anchored">Benjamini–Hochberg 步骤与它的证明</h3>
+<p>记排好序的 $p$ 值为 $p_{(1)}\le p_{(2)}\le\cdots\le p_{(M)}$。BH 规则（Algorithm 18.2）：取</p>
+<div class="eq"><div class="escroll">
+$$
+L=\max\Big\{j:\ p_{(j)}&lt;\alpha\cdot\frac{j}{M}\Big\},\qquad \text{然后拒绝一切 } p_j\le p_{(L)}
+$$
+</div><span class="tag">(18.44)</span></div>
+<p>即在「$p$ 值对 $j$ 作图 + 斜率 $\alpha/M$ 的直线」的下方找<strong>最后一个</strong>落点。</p>
+<div class="aside"><p class="hd">推导</p><p><strong>先说清楚这一步哪里需要小心</strong>。BH 的结论 $\mathrm{FDR}\le\alpha$ 在原书里是直接给出的，但它的标准证明<strong>不能</strong>写成「把随机分母换成常数」或「$p_j$ 与 $p_{(L)}$ 独立」——这两条都是错的：</p>
+<ul><li>$L=\#\{p_j\le q\}$ 本身是<strong>随机变量</strong>（$q$ 由数据定），不能当成常数塞进 $\mathbb{E}[\,\cdot\,]$；</li><li>对任何<strong>落在前 $L$ 名之内</strong>的零假设，事件 $\{p_j\le p_{(L)}\}$ 是恒真的，所以 $p_j$ 与 $p_{(L)}$ <strong>必然不独立</strong>。</li></ul>
+<p>正确的做法是<strong>换一种表述</strong>：BH 的控制量不是 $\mathbb{E}[V/L]$，而是「前 $k$ 个发现里假发现的<strong>期望个数</strong>」。这一步把随机阈值固定成了 $p_{(k)}$，独立性才成立。</p>
+<p><strong>第 1 步：把控制目标换成期望假发现数。</strong> BH 要证的是：对任何 $k$（只要接受集非空）</p>
+<div class="eq"><div class="escroll">
+$$
+E[V_{(k)}]\le \alpha\,\frac{M_0}{M}\,k\ \le\ \alpha k \qquad\bigl(V_{(k)}=\text{前 }k\text{ 个里的假发现数}\bigr)
+$$
+</div></div>
+<p><strong>第 2 步：逐个零假设算它进前 $k$ 名的概率。</strong> $j\in\mathcal N$（$\mathcal N$ 是 $M_0$ 个真原假设）进入前 $k$ 名，当且仅当 $p_j\le p_{(k)}$。因为 $k$ 是<strong>事先固定</strong>的数，$p_{(k)}=\big(P_{(1)},\dots,P_{(k)}\big)$ 这一族与 $p_j$ 独立（独立性假设下，$p_{(k)}$ 只由原假设下的 p 值决定），所以</p>
+<div class="eq long"><div class="escroll">
+$$
+\Pr\big(j\in\text{前 }k\big)=E\big[\Pr\big(p_j\le p_{(k)}\mid p_{(k)}\big)\big]=E\big[F_0\big(p_{(k)}\big)\big]=E\big[p_{(k)}\big]
+$$
+</div></div>
+<p><strong>这是唯一用到独立性的地方</strong>，也正是它必须先「把 $k$ 固定」的原因。</p>
+<p><strong>第 3 步：用 $p$ 值的均匀性。</strong> $p_{(k)}\le\alpha k/M$（BH 的选取规则：取最大的 $k$ 满足它），于是</p>
+<div class="eq long"><div class="escroll">
+$$
+E\big[V_{(k)}\big]=\sum_{j\in\mathcal N}\Pr\big(j\in\text{前 }k\big)=M_0\,E\big[p_{(k)}\big]\le M_0\frac{\alpha k}{M}
+$$
+</div></div>
+<p><strong>第 4 步：回到 FDR。</strong> 接受集非空时 $\mathrm{FDR}=\mathbb{E}[V_{(k)}]/k$，故</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{FDR}\ \le\ \frac{M_0}{M}\,\alpha\ \le\ \alpha \qquad\blacksquare\
+$$
+</div><span class="tag">(18.45)</span></div>
+<p><strong>逐步可验</strong>：第 2 步把随机阈值换成<strong>事先固定的</strong> $p_{(k)}$（这一步同时用到了独立性）；第 3 步用 $p$ 值在原假设下服从$U(0,1)$；第 4 步用 $L=k$。</p></div>
+<p>第 1 步用常数 $L$ 替代随机分母，是「BH 是 FDR 意义下阈值固定」这一现象的根源：<strong>一旦选定了 $L$，截断点就是确定的 $p_{(L)}$，而 $p_{(L)}\le\alpha L/M$ 恰好保证「报 $L$ 个、错不超过 $\alpha L$」</strong>。把它写成局部形式（这是原书证明的核心）：对任何满足 $p_{(k)}\le\alpha k/M$ 的 $k$，</p>
+<div class="eq"><div class="escroll">
+$$
+E\big[V_k\big]\ \le\ M_0\,E\big[F_0(p_{(k)})\big]\ \le\ M_0\,\frac{\alpha k}{M}\ \le\ \alpha k
+$$
+</div></div>
+<p>即<strong>「前 $k$ 个发现里的假发现期望数不超过 $\alpha k$ 乘以零假设比例」</strong>——这就是为什么排序后「前 $k$ 个」这个说法在 FDR 意义下是自洽的。</p>
+<div class="aside warn"><p class="hd">坑</p><ul><li>证明第 2 步的独立性不可去。检验正相依时 BH 仍可能超调；稳健版本（Benjamini–Yekutieli）把阈值换成 $\alpha/\sum_{i=1}^M 1/i\approx\alpha/\log M$。</li><li>$\pi_0$ 因子是「向上偏」还是「向下偏」取决于估计：把 $M_0$ 当成 $M$ 会高估 FDR（保守），把 $M_0=0$ 代入则完全失控。</li></ul></div>
+<h3 id="直接可算的插入式估计-算法-18-3-2" class="anchored">直接可算的插入式估计：算法 18.3</h3>
+<p>BH 需要 $p$ 值；算法 18.3 完全不用 $p$ 值，直接在 $t$ 统计量上取截断点 $C$：</p>
+<div class="eq verylong"><div class="escroll">
+$$
+R_{\mathrm{obs}}(C)=\sum_{j=1}^{M}I\big(\lvert t_j\rvert&gt;C\big),\qquad
+\hat E[V](C)=\frac{1}{K}\sum_{k=1}^{K}\sum_{j'=1}^{M}I\big(\lvert t^k_{j'}\rvert&gt;C\big),\qquad
+\widehat{\mathrm{FDR}}(C)=\frac{\hat E[V](C)}{R_{\mathrm{obs}}(C)}
+$$
+</div><span class="tag">(18.46)</span></div>
+<p>数值例子（$C=4.101$）：$R_{\mathrm{obs}}=11$；1000 次置换里超过 $C$ 的值共 1518 个，即每次置换平均 $1518/1000=1.518$ 个；故 $\widehat{\mathrm{FDR}}=1.518/11\approx0.14$，与 $\alpha=0.15$ 相差来自离散性。</p>
+<div class="aside"><p class="hd">推导</p><p>为什么 $\hat E[V]$ 与 $E[V]$ 之间差一个 $M/M_0$，以及 BH 与插入式估计的等价</p>
+<ol><li><span><strong>两个分布不一样，这是关键。</strong> 对基因 $j$ 打乱标签后 $t^k_j$ 的分布是 $F_{0j}$（该基因的<strong>条件零分布</strong>：置换消灭了分组效应，只剩下噪声），而<strong>观测</strong>的 $t_j$ 的边缘分布是混合分布 $G_j=\pi_0F_{0j}+(1-\pi_0)F_{1j}$。所以</span><div class="eq long"><div class="escroll">
+$$
+E\big[\hat E[V](C)\big]=\frac{1}{K}\sum_{k=1}^{K}\sum_{j'=1}^{M}F_{0j'}(C)=M\bar F_0(C),\qquad \bar F_0=\frac1M\sum_{j=1}^{M}F_{0j}
+$$
+</div></div><span>而 $E[V(C)]=\sum_{j\in\mathcal N}F_{0j}(C)=M_0\bar F_0(C)$（若 $F_{0j}$ 齐次则等号直接成立，否则右侧是它的带符号平均）。相除得 $\hat E[V](C)$ 估计的是 $\frac{M}{M_0}E[V]$。</span></li><li><strong>分子分母同分布不等于 FDR 为 1。</strong> 注意 $E[R_{\mathrm{obs}}(C)]=\sum_j G_j(C)=\pi_0M\bar F_0(C)+(1-\pi_0)M\bar F_1(C)$，用的是<strong>混合</strong>分布；而 $M\bar F_0(C)$ 用的是<strong>纯零</strong>分布。$F_1$ 的尾巴比 $F_0$ 厚得多（例子里 11 个观测值 vs 1.5 个纯零值），两个数的差正是「真信号」的量。</li><li><span><strong>BH 与算法 18.3 等价（习题 18.17）。</strong> BH 的截断点 $c=\lvert T\rvert_{(L)}$ 是第 $L$ 大的 $\lvert t_j\rvert$，对应的合并置换 $p$ 值 (18.41) 为 $p_{(L)}=\#\{(k,j'):\lvert t^k_{j'}\rvert&gt;c\}/(MK)$。由 $L$ 的定义 $p_{(L)}\le\alpha L/M$，代入 (18.46)</span><div class="eq long"><div class="escroll">
+$$
+\widehat{\mathrm{FDR}}(c)=\frac{\frac{1}{K}\#\{(k,j'):\lvert t^k_{j'}\rvert&gt;c\}}{L}=\frac{M\,p_{(L)}}{L}\le\frac{M\cdot\alpha L/M}{L}=\alpha .
+$$
+</div></div><span>反过来，把截断点降到第 $L+1$ 大的 $\lvert t_j\rvert=\lvert T\rvert_{(L+1)}$：此时报出的基因占 $R/M=(L+1)/M$，对应的置换 $p$ 值恰是 $p_{(L+1)}$，故 $\widehat{\mathrm{FDR}}=p_{(L+1)}/\big((L+1)/M\big)$；由 $L$ 的<strong>最大性</strong> $p_{(L+1)}&gt;\alpha\frac{L+1}{M}$，得 $\widehat{\mathrm{FDR}}&gt;\alpha$。这就是习题 18.17(b)：跨过阈值的下一步立刻破坏 $\alpha$，所以 $L$ 是唯一自洽的选择。</span></li><li><strong>理论版与估计版对接。</strong> 由第 1 步，$\widehat{\mathrm{FDR}}\approx\frac{M}{M_0}\mathrm{FDR}$，故 $\mathrm{FDR}\approx\hat\pi_0\cdot\widehat{\mathrm{FDR}}$，其中 $\hat\pi_0=\hat M_0/M$。取 $\hat\pi_0=1$（即 $\hat M_0=M$）是最保守的向上偏估计；有了 $\pi_0$ 的估计，就能把 $\mathrm{FDR}$ 本身估得更准，并通过 (18.45) 反过来改进 BH 阈值。</li></ol></div>
+<h3 id="插入式估计所依赖的近似-2" class="anchored">插入式估计所依赖的近似</h3>
+<p>整个 (18.46) 只用到一步「期望之比代替期望之商」：</p>
+<div class="eq"><div class="escroll">
+$$
+E\left[\frac{V}{R}\right]\ \approx\ \frac{E[V]}{E[R]}
+$$
+</div><span class="tag">(18.47)</span></div>
+<div class="aside"><p class="hd">推导 · 什么时候这一步合法</p><ol><li><span><strong>精确的偏差项。</strong> 记 $\bar V=E[V]$、$\bar R=E[R]$，则两个「交叉项」正好抵消：</span><div class="eq long"><div class="escroll">
+$$
+E\left[\frac{V}{R}\right]-\frac{\bar V}{\bar R}=E\left[(V-\bar V)\left(\frac{1}{R}-\frac{1}{\bar R}\right)\right]
+$$
+</div></div><span>因为 $E[(V-\bar V)]\cdot E[1/R]=0$ 且 $E[(V-\bar V)]/\bar R=0$，两边都只剩这一个乘积项（此处默认 $R&gt;0$ 几乎必然；否则两式都要按 $\Pr(R&gt;0)$ 条件化）。</span></li><li><span><strong>Cauchy–Schwarz 给它一个上界</strong>：</span><div class="eq long"><div class="escroll">
+$$
+\left|E\left[\frac{V}{R}\right]-\frac{E[V]}{E[R]}\right|\ \le\ \sqrt{\mathrm{Var}(V)}\,\sqrt{\mathrm{Var}(1/R)}
+$$
+</div></div><span>所以只要 $R$ 集中（$\mathrm{Var}(R)=O(\bar R^2/M)$，由 $V,R$ 是 $O(M)$ 个 i.i.d. 分量之和，预备知识 P1），$1/R$ 也集中，偏差 $\to0$。</span></li><li><strong>具体到 $p\gg N$ 的基因实验</strong>：$R$ 是「$M$ 个基因里显著基因数」的估计，它本身是 $O(M)$ 规模的和，集中性来自 $M$ 而不是 $N$。所以插入式估计的误差量级是 $O_p(1/\sqrt{M})$；$M=12625$ 时约 $0.9\%$ 的相对误差，远小于 $\alpha$ 的选择本身带来的不确定性。</li><li><strong>一致性</strong>：$\widehat{\mathrm{FDR}}(C)$ 是 $\frac{M}{M_0}\mathrm{FDR}$ 的一致估计（Storey 2002），故 (18.47) 在 $K$ 与 $M$ 同时增大时是渐近成立的，不是渐近有偏。</li></ol></div>
+<div class="aside warn"><p class="hd">坑</p><p>$K$ 太小会让 (18.46) 的分子粗糙：$K=1000$ 时分子的标准差约为 $\sqrt{1.518}\approx1.2$，除以 $R_{\mathrm{obs}}=11$ 就是 0.11 的相对误差，恰好和要估的 0.14 同量级。所以图 18.20 里 SAM 要画出多个 $\Delta$ 的 $\widehat{\mathrm{FDR}}$ 曲线让人挑，而不是信一个点。</p></div>
+<h3 id="pi_0-的估计-2" class="anchored">$\pi_0$ 的估计</h3>
+<p>分母里的 $M/M_0$、以及 (18.45) 里的 $\pi_0$ 因子都要求知道「有多少个零假设是真的」。原书把它放进练习 18.19(c)，这里补上推导。置换零分布的中位数与四分位数是最自然的选择，因为<strong>零假设下 $t$ 分布对称，中心一半区间里几乎不含信号</strong>：</p>
+<div class="eq"><div class="escroll">
+$$
+\hat\pi_0=\frac{\#\{j:\ t_j\in(q_{.25},q_{.75})\}}{\tfrac12 M},\qquad
+\hat\pi_0\leftarrow\min(\hat\pi_0,1)
+$$
+</div></div>
+<div class="aside"><p class="hd">推导 · 分位数法为什么自洽</p><ol><li>记 $F_0,F_1$ 为条件零/备择分布的 cdf，$F=\pi_0F_0+(1-\pi_0)F_1$ 为经验分布（用 $t_j$ 估）。设零分布的中位数 $0$、四分位距 $2\sigma_0$（即 $F_0^{-1}(0.75)-F_0^{-1}(0.25)$），令 $\delta=\Phi(0.75)-\Phi(0.25)=0.5$ 对高斯。</li><li><span><strong>中心区间的质量分解</strong>（全概率公式）：</span><div class="eq long"><div class="escroll">
+$$
+F(q_{.75})-F(q_{.25})=\pi_0\big[F_0(q_{.75})-F_0(q_{.25})\big]+(1-\pi_0)\big[F_1(q_{.75})-F_1(q_{.25})\big]\ \ge\ \pi_0\cdot\delta
+$$
+</div></div><span>因为第二项非负。用经验分布估左端（经验四分位数差 $\approx0.5$，因 $t$ 大致对称），得 $\hat\pi_0\cdot0.5\lesssim0.5$，即 $\hat\pi_0\lesssim1$——<strong>这一步保证了不系统性高估</strong>。</span></li><li><strong>信号越少越准</strong>：若 $\#\{j:t_j\in(q_{.25},q_{.75})\}\approx\tfrac12M$（信号都跑到极端尾部），则 $\hat\pi_0\approx1$，正确。</li><li><strong>与 (18.47) 联动</strong>：把 $\hat\pi_0$ 乘到 $\widehat{\mathrm{FDR}}$ 上即得 $\mathrm{FDR}$ 的更好估计；若 $\hat\pi_0&lt;1$，还可以用关系 (18.45) 把有效水平放大——把「允许的 $M_0$ 个假阳性预算」从 $\alpha M$ 缩到 $\alpha M_0$，功效提高。</li><li><span><strong>更平滑的版本（Storey 2002）</strong>：取分位点 $q_\lambda$，令</span><div class="eq long"><div class="escroll">
+$$
+\hat\pi_0(\lambda)=\frac{\#\{j:\ t_j&gt;q_\lambda\}}{M(1-\lambda)},\qquad \hat\pi_0=\min_{0\le\lambda&lt;1}\hat\pi_0(\lambda)
+$$
+</div></div><span>理由同上：$F(1-\lambda)\ge\pi_0\lambda$。检验的逻辑是<strong>若 $\hat\pi_0(\lambda)&gt;1$ 说明这个 $\lambda$ 太小（分母被低估），该 $\lambda$ 不可信</strong>；对 $t$ 这类对称统计量 $\lambda=0.5$ 附近最稳，所以 (18.19(c) 用四分位数。</span></li></ol></div>
+<div class="aside key"><p class="hd">结果 · 三条可操作的规则对照</p><div class="tscroll-x"><table class="fx"><thead><tr><th>规则</th><th>控制什么</th><th>阈值</th><th>$M=12625,\ \alpha=0.05$ 时</th></tr></thead><tbody><tr><td>Bonferroni</td><td>$\mathrm{FWER}\le\alpha$</td><td>$p&lt;\alpha/M$</td><td>阈值 $4\times10^{-6}$，零发现</td></tr><tr><td>BH</td><td>$\mathrm{FDR}\le\pi_0\alpha$</td><td>$p_{(j)}&lt;\alpha j/M$</td><td>沿斜线取交点</td></tr><tr><td>SAM</td><td>$\widehat{\mathrm{FDR}}$（可调）</td><td>$\lvert t_{(j)}-\tilde t_{(j)}\rvert&gt;\Delta$</td><td>$\Delta=0.71$ 时 11 个发现</td></tr></tbody></table></div></div>
+<h2 id="s-18-7-2" class="anchored"><span class="num">18.7.2</span> 非对称截断点与 SAM</h2>
+<p>BH 只用 $\lvert t_j\rvert$，即对 $t_j$ 与 $-t_j$ 用同一个阈值。但很多生物学实验里差异表达基因几乎全是单向的（上调），此时把阈值对称化会白白丢掉功效。原书的做法（SAM）是让阈值随位置变化，见 <a class="src" href="../esl/ch18-high-dimensional-problems-p-n.html#s-18-7-2">原文 §18.7.2</a>。</p>
+<h3 id="置换零分布与两条期望曲线-2" class="anchored">置换零分布与两条期望曲线</h3>
+<p>SAM 图（图 18.20）的两个坐标都来自排序统计量。记 $t^k_j$ 为第 $k$ 次置换得到的统计量，$t^k_{(1)}\le\cdots\le t^k_{(M)}$ 为它在 $M$ 个基因上的顺序统计量，则</p>
+<div class="eq"><div class="escroll">
+$$
+t_{(1)}\le\cdots\le t_{(M)},\qquad \tilde t_{(j)}=\frac{1}{K}\sum_{k=1}^{K}t^k_{(j)}
+$$
+</div></div>
+<p>横坐标 $\tilde t_{(j)}$ 是<strong>零假设下第 $j$ 小的统计量的期望</strong>（原书图中的平均水平），纵坐标 $t_{(j)}$ 是观测值。</p>
+<div class="aside"><p class="hd">推导</p><p>置换零分布怎么造，以及它为什么保留了基因间的相关结构</p>
+<ol><li><strong>构造。</strong> 把 $N$ 个样本的分组标签 $\boldsymbol{g}=(g_1,\dots,g_N)\in\{0,1\}^N$ 随机重排 $K$ 次，第 $k$ 次得到 $\boldsymbol{g}^{(k)}$，用它重算 (18.38) 得到 $t^k_1,\dots,t^k_M$。零分布的 $K$ 个取值就是 $\lvert t^k_j\rvert$（逐基因版 (18.40)）或全部 $MK$ 个（合并版 (18.41)）。$K=1000$、从 $\binom{58}{14}\approx10^{13}$ 种置换中随机抽。</li><li><strong>为什么可以这样。</strong> 检验的零假设是「$Y_i$ 与 $\boldsymbol{x}_i$ 独立」。置换零假设 $g^{(k)}\perp\boldsymbol{x}$，是在保持 $\boldsymbol{x}$ 的分布结构的前提下构造的<strong>重抽样分布</strong>：$Y^{(k)}$ 的联合分布与 $Y$ 在零假设下给定 $\boldsymbol{x}$ 的条件分布同分布，所以 $t^k$ 的经验分布是 $t$ 在零假设下的（渐近）抽样分布，即 $p$ 值的精确替代。</li><li><strong>为什么真实信号与相关结构被保留。</strong> 置换只打乱<strong>标签</strong>，特征矩阵 $\boldsymbol{X}$ 一不动。基因之间的相关结构（$p\gg N$ 时必然存在的共线性）因此被<strong>完整保留</strong>——若换成「重抽样基因」或「假定独立」的 Bootstrap，这些结构就被破坏，而 $t$ 分布的近似恰恰是被它们破坏的。任何<strong>与标签无关</strong>的成分（均值平台、量纲、批次效应）都被吸收进零分布。反过来，打乱标签不会<strong>制造</strong>也不会<strong>消除</strong>信号，只是把「哪些基因真的有差异」这个信息从标签里抽掉，所以 $F_1$ 的厚尾在置换后消失——这正是 11 vs 1.5 的来源。最后，置换后 $t^k_j$ 的分布是 $F_{0j}$（该基因的条件零分布，见上节第 1 步），因为分组效应被消灭。</li><li><strong>精确性的极限。</strong> 置换检验是<strong>渐近</strong>精确的：小 $p$ 值处有限 $K$ 的分辨率只有 $1/K=10^{-3}$。例子里 $p_{(11)}=0.00012$ 已经小于 $1/1000$，所以这个 $p$ 值实际只能由 $K\ge10^4$ 才估得准，这也是 BH 在 $j=11$ 处被卡住的原因之一。</li><li><strong>横坐标的可算性。</strong> $\tilde t_{(j)}$ 是 $K$ 个顺序统计量的平均，故 $\mathrm{Var}(\tilde t_{(j)})=\frac1K\mathrm{Var}\big(t^k_{(j)}\big)$：$K$ 越大，零分布曲线越平滑，SAM 的截断点越稳定。</li></ol></div>
+<h3 id="与似然比检验的类比-及-sam-的规则-2" class="anchored">与似然比检验的类比，及 SAM 的规则</h3>
+<p>若在零假设下统计量的对数似然为 $\ell_0(t_j)$、备择下为 $\ell(t_j)$，似然比检验（预备知识 P3 指数族、P5）拒绝零假设当且仅当</p>
+<div class="eq"><div class="escroll">
+$$
+\ell(t_j)-\ell_0(t_j)&gt;\Delta
+$$
+</div><span class="tag">(18.48)</span></div>
+<p>由于 $\ell_0$ 与 $\ell$ 一般不对称，这个不等式在 $t_j$ 轴上给出的阈值对 $t_j$ 和 $-t_j$ <strong>不一样</strong>——非对称性不是人为规定的，而是似然比的自然结果。SAM 把这个想法照搬过来：</p>
+<div class="eq"><div class="escroll">
+$$
+\big\lvert t_{(j)}-\tilde t_{(j)}\big\rvert&gt;\Delta
+$$
+</div><span class="tag">(18.49)</span></div>
+<p>每个 $t_{(j)}$ 的阈值取决于它对应的零值 $\tilde t_{(j)}$。做法是：从原点往右移动，找<strong>基因第一次离开带宽 $\Delta$</strong> 的位置，该处的 $t_{(j)}$ 就是上截断点 $C_{\mathrm{hi}}$，它右边的全部基因判显著（图中标红）；同理找左下角的 $C_{\mathrm{low}}$。每个 $\Delta$ 给出上下两个截断点，$\widehat{\mathrm{FDR}}$ 按 (18.46) 照算；实际使用时扫一批 $\Delta$，画 $\Delta$–$\widehat{\mathrm{FDR}}$ 曲线再挑。例子里 $\Delta=0.71$ 给出 11 个显著基因，全部在右上角，左下角的点从不离开带，故 $C_{\mathrm{low}}=-\infty$：<strong>SAM 不强制对称</strong>。</p>
+<div class="aside"><p class="hd">推导</p><p>(18.49) 的零分布标度：$\widehat{\mathrm{FDR}}$ 大约等于 $\Delta$（单侧）</p>
+<ol><li>设全零假设成立，$t_1,\dots,t_M$ i.i.d. $F_0$，密度 $g$。大样本下 $t_{(j)}$ 与 $t^k_{(j)}$ 都集中在分位点附近：$t_{(j)}\approx F_0^{-1}\big(j/M\big)$（第 $j$ 小），而 $\tilde t_{(j)}$ 是 $K$ 个同分布顺序统计量的平均。</li><li><span>两者之差的方差 $\approx\frac{2}{K}\mathrm{Var}\big(t^k_{(j)}\big)$，在 $j$ 接近端点时很大、$j\approx M/2$ 时很小。为看清结构，<strong>固定 $j$、用正态近似</strong>：设 $t_{(j)}-\tilde t_{(j)}\approx N(\tilde t_{(j)},\,\tau_j^2)$，则</span><div class="eq"><div class="escroll">
+$$
+\Pr\big(t_{(j)}-\tilde t_{(j)}&gt;\Delta\big)\approx\Delta\,g\big(\tilde t_{(j)}\big)\qquad(\Delta\ll\tau_j)
+$$
+</div></div><span>因为 $\int_{\tilde t+\Delta}^\infty g = \int_{\tilde t+\Delta}^{\tilde t+\Delta+\tau}g + O(\tau^2)\approx\Delta g(\tilde t)$。</span></li><li><span>对 $j$ 求和（只取上侧，总发现数 $R=M-j_0+1$）：</span><div class="eq verylong"><div class="escroll">
+$$
+\hat E[V](C_{\mathrm{hi}})\approx\sum_{j=j_0}^{M}\Delta\,g\big(\tilde t_{(j)}\big)\approx\Delta\sum_{j=j_0}^{M}g\big(t_{(j)}\big)\approx\Delta\cdot\frac{R}{M}\cdot\underbrace{\sum_{j=1}^{M}g\big(t_{(j)}\big)}_{\approx\,M\int g\,du=M}=\Delta R
+$$
+</div></div><span>用了两个近似：$\sum_{j=1}^Mg(t_{(j)})\approx M\int g\,du=M$（顺序统计量密度和等于样本量的经典恒等式的离散版），以及尾部那 $R$ 个点各摊到 $\frac1M\int g=R/M$。</span></li><li><span>于是</span><div class="eq long"><div class="escroll">
+$$
+\widehat{\mathrm{FDR}}\big(\Delta\big)=\frac{\hat E[V]}{R}\ \approx\ \Delta \quad\text{（单侧）},\qquad \approx 2\Delta\quad\text{（同时用上下两侧）}
+$$
+</div></div><span><strong>这就是 $\Delta$ 的自然标度</strong>：想控制 $\widehat{\mathrm{FDR}}\approx\alpha$，就取 $\Delta\approx\alpha$。原书让人「主观地」在一批 $(\Delta,\widehat{\mathrm{FDR}})$ 里选，本质上是因为第 2 步的正态近似在端点处失效——那里的 $\tau_j$ 很大，尾部概率不再线性于 $\Delta$。</span></li><li><strong>自洽性检验</strong>：例子中 $\Delta=0.71$，若真有信号，则 $F_1$ 的厚尾让实际 $\widehat{\mathrm{FDR}}=0.14\ll\Delta$——说明<strong>实际 FDR 低于 $\Delta$ 正是「带外有点离开了零分布」的证据</strong>。这给出了选 $\Delta$ 的一个客观依据：找 $\widehat{\mathrm{FDR}}$ 曲线开始明显下沉的那个拐点。</li><li><strong>非对称性从哪来</strong>：$C_{\mathrm{hi}}$ 与 $C_{\mathrm{low}}$ 分别是「$F_0^{-1}$ 的哪一端 + $\Delta$」，而 $\tilde t_{(j)}$ 本身就是 $F_0$ 的分位点函数，对偏斜的 $F_0$ 它在两端不等距，于是两个截断点自动不对称。与 (18.48) 完全对应：$\ell-\ell_0$ 在 $t$ 轴上的等高点集一般不是关于 0 对称的。</li></ol></div>
+<div class="aside warn"><p class="hd">坑</p><ul><li>SAM 的 $\Delta$ 是<strong>统计量的单位</strong>（不是标准化的），所以换一批量纲不同的基因就必须重选 $\Delta$；BH 的阈值作用在 $p$ 值上，没有这个问题。</li><li>$C_{\mathrm{low}}=-\infty$ 这类「一侧完全不显著」的结果不是数值问题，而是 $\Delta$ 相对该侧零分布宽度太小的直接反映；此时应当只报告单侧结果，不要假装做了双侧检验。</li><li>$K$ 偏小时 $\tilde t_{(j)}$ 的抖动直接变成截断点的抖动：$\mathrm{sd}(\tilde t_{(j)})\propto1/\sqrt K$。图 18.20 里 $\Delta$ 很小的时候曲线很毛躁，就是这个原因。</li></ul></div>
+<h2 id="s-18-7-3" class="anchored"><span class="num">18.7.3</span> FDR 的贝叶斯解释</h2>
+<p>FDR 之所以难解释，是因为「$E[V/R]$」里的期望是对未知的 $t$ 分布取的。把 $t$ 看作一个两成分混合分布的抽样，$V/R$ 就有了后验概率的解释，见 <a class="src" href="../esl/ch18-high-dimensional-problems-p-n.html#s-18-7-3">原文 §18.7.3</a>。</p>
+<h3 id="正错误发现率-2" class="anchored">正错误发现率</h3>
+<p>(18.43) 在 $\Pr(R=0)&gt;0$ 时没有定义（分母可能为 0）。条件化掉这一情形得到<strong>正</strong>错误发现率：</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{pFDR}=E\left[\frac{V}{R}\,\Bigm|\,R&gt;0\right]
+$$
+</div><span class="tag">(18.50)</span></div>
+<p>「positive」指只估计「有阳性发现时」的错误率。这是唯一有干净贝叶斯解释的版本。</p>
+<h3 id="两成分混合模型-2" class="anchored">两成分混合模型</h3>
+<p>设对每个基因 $j$ 引入隐变量 $Z_j=0$（$H_{0j}$ 为真）与 $Z_j=1$（为假），并假设 $(t_j,Z_j)$ 两两 i.i.d.，条件分布为</p>
+<div class="eq"><div class="escroll">
+$$
+t_j\mid Z_j\ \sim\ (1-Z_j)\cdot F_0+Z_j\cdot F_1
+$$
+</div><span class="tag">(18.51)</span></div>
+<p>即 $t_j$ 来自 $F_0$ 还是 $F_1$ 由 $Z_j$ 决定。令 $\Pr(Z_j=0)=\pi_0$，由全概率公式得边缘分布</p>
+<div class="eq"><div class="escroll">
+$$
+t_j\ \sim\ \pi_0\cdot F_0+(1-\pi_0)\cdot F_1
+$$
+</div><span class="tag">(18.52)</span></div>
+<div class="aside"><p class="hd">推导</p><p>(18.52) 只是全概率公式，但它是后面一切的关键</p>
+<div class="eq"><div class="escroll">
+$$
+\Pr(t_j\le c)=\Pr(Z_j=0)\Pr(t_j\le c\mid Z_j=0)+\Pr(Z_j=1)\Pr(t_j\le c\mid Z_j=1)=\pi_0F_0(c)+(1-\pi_0)F_1(c)
+$$
+</div></div>
+<p>更一般的形式：$\pi_0f_0+(1-\pi_0)f_1$ 的<strong>混合密度</strong>。这个模型的可辨识性：只要 $F_0\ne F_1$，从 $t_j$ 的样本原则上可以同时估 $\pi_0,F_0,F_1$（但方差很大，所以实用中都退回去用 $\pi_0$ 的分位数估计）。</p></div>
+<h3 id="核心结果-pfdr-就是后验零概率-2" class="anchored">核心结果：pFDR 就是后验零概率</h3>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{pFDR}(\Gamma)=\Pr\big(Z_j=0\ \big|\ t_j\in\Gamma\big)
+$$
+</div><span class="tag">(18.53)</span></div>
+<p>即「已知这个检验拒绝了，它其实没被拒绝的后验概率」。</p>
+<div class="aside"><p class="hd">推导</p><p>(18.50) $\Rightarrow$ (18.53)：五步，每步都给出算式</p>
+<p>记 $q_\Gamma=\Pr(Z_j=0\mid t_j\in\Gamma)$（<strong>待证它就等于 $\mathrm{pFDR}$</strong>）。固定一个拒绝域 $\Gamma$（例子里 $\Gamma=(-\infty,-4.10)\cup(4.10,\infty)$），并记</p>
+<div class="eq long"><div class="escroll">
+$$
+R=\sum_{j=1}^{M}I(t_j\in\Gamma),\qquad V=\sum_{j=1}^{M}I(Z_j=0,\,t_j\in\Gamma),\qquad V_j=I(Z_j=0,\,t_j\in\Gamma)
+$$
+</div></div>
+<p>（故 $V=\sum_{j=1}^MV_j$）。<strong>唯一的假设</strong>是 (18.51) 的「各对 $(t_j,Z_j)$ i.i.d.」。</p>
+<p><strong>第 1 步（逐个 $j$ 拆开，纯代数）。</strong> $V=\sum_jV_j$，所以</p>
+<div class="eq"><div class="escroll">
+$$
+\frac VR=\frac{1}{R}\sum_{j=1}^{M}V_j=\frac{1}{M}\sum_{j=1}^{M}\frac{M\,V_j}{R}\qquad (R&gt;0)
+$$
+</div></div>
+<p>取条件期望，用条件期望的线性性（预备知识 P2）：</p>
+<div class="eq long"><div class="escroll">
+$$
+\mathrm{pFDR}=\mathbb E\left[\frac VR\,\Bigm|\,R&gt;0\right]=\frac{1}{M}\sum_{j=1}^{M}\mathbb E\left[\frac{M\,V_j}{R}\,\Bigm|\,R&gt;0\right] \qquad\text{(a)}
+$$
+</div></div>
+<p><strong>第 2 步（对 $R$ 条件化，$R$ 变成常数）。</strong> 由事件 $\{R=1,\dots,M\}$ 划分 $\{R&gt;0\}$，有</p>
+<div class="eq verylong"><div class="escroll">
+$$
+\mathbb E\left[\frac{M V_j}{R}\,\Bigm|\,R&gt;0\right]=\sum_{k=1}^{M}\mathbb E\left[\frac{M V_j}{R}\,\Bigm|\,R=k\right]\Pr(R=k\mid R&gt;0)=\sum_{k=1}^{M}\frac{M}{k}\mathbb E\left[V_j\,\Bigm|\,R=k\right]\Pr(R=k\mid R&gt;0) \qquad\text{(b)}
+$$
+</div></div>
+<p>第二个等号用了：给定 $R=k$ 时 $R$ 是常数，可以提出分母。</p>
+<p><strong>第 3 步（交换对称性：$M$ 个位置等权）。</strong> 给定 $R=k$，恰有 $k$ 个基因落在 $\Gamma$ 里，而 $(t_j,Z_j)$ i.i.d. 意味着这 $k$ 个位置在 $1,\dots,M$ 上<strong>可交换</strong>。因此每个位置的期望相等，而它们的和是 $V$：</p>
+<div class="eq long"><div class="escroll">
+$$
+\sum_{j=1}^{M}\mathbb E\left[V_j\,\Bigm|\,R=k\right]=\mathbb E\left[V\,\Bigm|\,R=k\right]\ \Rightarrow\ M\,\mathbb E\left[V_j\,\Bigm|\,R=k\right]=\mathbb E\left[V\,\Bigm|\,R=k\right] \qquad(\forall k) \qquad\text{(c)}
+$$
+</div></div>
+<p><strong>第 4 步（二项：给定 $R=k$ 时 $V\sim\mathrm{Binomial}(k,q_\Gamma)$）。</strong> 给定 $R=k$，被拒的 $k$ 个基因各自是零假设的概率都是同一个 $q_\Gamma$（i.i.d. 下的逐项后验），故</p>
+<div class="eq long"><div class="escroll">
+$$
+V\mid R=k\ \sim\ \mathrm{Binomial}\big(k,q_\Gamma\big),\qquad \mathbb E\left[V\,\Bigm|\,R=k\right]=k\,q_\Gamma \qquad\text{(d)}
+$$
+</div></div>
+<p>把 (c) 与 (d) 合起来代回 (b)：</p>
+<div class="eq long"><div class="escroll">
+$$
+\mathbb E\left[\frac{M V_j}{R}\,\Bigm|\,R&gt;0\right]=\sum_{k=1}^{M}\frac{M}{k}\cdot\frac{k\,q_\Gamma}{M}\Pr(R=k\mid R&gt;0)=q_\Gamma\sum_{k=1}^{M}\Pr(R=k\mid R&gt;0)=q_\Gamma \qquad\text{(e)}
+$$
+</div></div>
+<p><strong>$R$ 的整个分布被消掉了</strong>，只因为 $q_\Gamma$ 与 $k$ 无关。</p>
+<p><strong>第 5 步（收尾）。</strong> 代回 (a)：$\mathrm{pFDR}=\frac1M\sum_{j=1}^{M}q_\Gamma=q_\Gamma$。于是</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{pFDR}=\mathbb E\left[\frac{V}{R}\,\Bigm|\,R&gt;0\right]=\Pr\big(Z_j=0\mid t_j\in\Gamma\big),
+$$
+</div></div>
+<p>即 (18.53)。∎</p></div>
+<div class="aside key"><p class="hd">结果 · 为什么必须先条件掉 $R=0$</p><p>若目标改成 $\mathrm{FDR}=E[V/R]$（不条件化 $R=0$），第 2 步之后第 (b) 式里就多出一个 $1/k$：$\mathbb E[V_j/R\mid R=k]=\frac{1}{k}\mathbb E[V_j\mid R=k]=\frac{1}{k}\cdot\frac{kq_\Gamma}{M}=\frac{q_\Gamma}{k}$，对 $k$ 求和得不到常数，<strong>消不掉</strong>——这就是必须退回 (18.47)「期望之比」的根源。而 (18.50) 先把 $R=0$ 条件掉之后，每一项都塌成同一个 $q_\Gamma$，$\Pr(R&gt;0)$ 与 $R$ 的分布一并消失。这条推导就是原书习题 18.20（编号 (18.60)(18.61)），见下节。</p></div>
+<div class="aside key"><p class="hd">结果 · 后验形式（一步贝叶斯公式）</p><div class="eq long"><div class="escroll">
+$$
+q_\Gamma=\Pr(Z_j=0\mid t_j\in\Gamma)=\frac{\Pr(t_j\in\Gamma\mid Z_j=0)\Pr(Z_j=0)}{\Pr(t_j\in\Gamma)}=\frac{\pi_0 F_0(\Gamma)}{\pi_0 F_0(\Gamma)+(1-\pi_0)F_1(\Gamma)}
+$$
+</div></div>
+<p>对<strong>单点</strong>区间同样成立：$\Pr(Z_j=0\mid t_j=t_0)=\frac{\pi_0f_0(t_0)}{\pi_0f_0(t_0)+(1-\pi_0)f_1(t_0)}$。这给出两个完全可算的局部指标：</p>
+<ul><li><span><strong>局部错误发现率</strong>（Efron–Tibshirani 2002）：取 $\Gamma=\{t_0\}$ 的无穷小邻域，</span><div class="eq"><div class="escroll">
+$$
+\mathrm{localFDR}(t_0)=\Pr\big(Z_j=0\mid t_j=t_0\big)
+$$
+</div><span class="tag">(18.54)</span></div></li><li><strong>$q$ 值</strong>（Storey 2003）：使 $t_j$ 被拒的<strong>所有</strong>拒绝域中 FDR 的最小值。$\Gamma=\{\lvert T\rvert\ge2\}=\{-T\le-2\}\cup\{T\ge2\}$ 时，$t_j=5$ 的 $q$ 值小于 $t_j=2$ 的 $q$ 值，正如 $5$ 比 $2$ 更显著——FDR 是区域级指标、$q$ 值是基因级指标。</li></ul></div>
+<p>代入与 (18.45) 的对应：$F_0(\Gamma)$ 恰是「$\Gamma$ 的第一类错误率」，$\pi_0F_0(\Gamma)$ 是「总体里被错拒的比例」；$(1-\pi_0)F_1(\Gamma)$ 是「总体里被正确拒的比例」，见习题公式 (18.59)。</p>
+<div class="aside warn"><p class="hd">坑</p><ul><li>模型 (18.51) 假设 $t_j$ 之间<strong>独立</strong>，而基因表达数据恰恰高度相关（第 18.2 节的动机）。混合模型对 $F_0,F_1$ 的单变量描述仍然可用，但「独立」这一步在 pFDR $\to$ FDR 的换算里是通过 $R$ 的求和用到的。</li><li>$\Pr(R=0)&gt;0$ 时 (18.43) 无定义、(18.50) 才有定义；而 (18.45) 的界是给 (18.43) 的。两者混用会得到不同的常数。</li><li>$\pi_0$ 是<strong>单个基因</strong>为零假设的概率，与「$M_0$ 个零假设」不是同一个概念的比例化表达（虽然数值上 $\pi_0=M_0/M$）。用它做推断时必须记住每个基因的先验相同这一假设。</li></ul></div>
+<h2 id="s-18-exercises" class="anchored"><span class="num">18.8</span> 习题公式</h2>
+<p>本章习题（<a class="src" href="../esl/ch18-high-dimensional-problems-p-n.html#s-exercises-17">原文 Exercises</a>）里的编号公式集中在这里。多数只需 2–5 句说明 + 一两行推导。</p>
+<h3 id="习题-18-2-lasso-化到最近收缩质心-18-55-2" class="anchored">习题 18.2：lasso 化到最近收缩质心 (18.55)</h3>
+<p>原书习题公式，本手册给出其标准形式。朴素贝叶斯高斯模型 $x_{ij}\sim N(\mu_j+\mu_{jk},\sigma_j^2)$、$\sum_{k=1}^{K}\mu_{jk}=0$ 下的优化问题</p>
+<div class="eq long"><div class="escroll">
+$$
+\min_{\{\mu_j,\mu_{jk}\}}\ \sum_{j=1}^{p}\left\{2\sigma_j^2+\lambda\sum_{k=1}^{K}\frac{1}{N_k}\sum_{i\in C_k}\frac{\big(x_{ij}-\mu_j-\mu_{jk}\big)^2}{\hat\sigma_j^2}\right\}\qquad \hat\sigma_j=s_j
+$$
+</div><span class="tag">(18.55)</span></div>
+<p>（$\hat\sigma_j$ 是特征 $j$ 的类内合并标准差。）</p>
+<div class="aside"><p class="hd">推导 · 它就是最近收缩质心 (18.4)–(18.7)</p><ol><li><strong>拆开残差平方</strong>：$\frac{1}{N_k}\sum_{i\in C_k}(x_{ij}-\mu_j-\mu_{jk})^2=\frac{1}{N_k}\sum_{i\in C_k}(x_{ij}-\bar x_{kj})^2+(\bar x_{kj}-\mu_j-\mu_{jk})^2$。第一项只含数据。</li><li><strong>记 $y_{kj}=\bar x_{kj}-\bar x_j$</strong>（类中心相对总均值的偏离，约束 $\sum_k\mu_{jk}=0$ 保证总均值项被吸收）。第二项 $=\sum_k(y_{kj}-\mu_{jk})^2$，在约束 $\sum_km_k^2d_{kj}^2=1$（即 $\sum_k\theta_k^2=1$，$\theta_k=m_kd_{kj}$）下最小化，加上 $\ell_1$ 惩罚 $\lambda\sum_k|\theta_k|$。</li><li><span><strong>一阶条件</strong>：对 $\theta_k$ 求偏导得 $2(\theta_k-y_{kj})+\lambda\,\mathrm{sign}(\theta_k)-2\mu\theta_k=0$，即 $\theta_k=\dfrac{y_{kj}-\frac\lambda2\,\mathrm{sign}(\theta_k)}{1-\mu}$，其中 $\mu$ 是约束 $\sum_k\theta_k^2=1$ 的 Lagrange 乘子。把 $\frac{\lambda}{2(1-\mu)}$ 重新参数化为 $\tilde\lambda$（它只逐特征改变阈值大小），解就是<strong>逐特征软阈值</strong></span><div class="eq long"><div class="escroll">
+$$
+\theta_{kj}=\Big(1-\frac{\tilde\lambda}{2\lvert y_{kj}\rvert}\Big)_{+}y_{kj}\ \Rightarrow\ d_{kj}=\frac{1}{m_k}\Big(1-\frac{\tilde\lambda}{2\lvert y_{kj}\rvert}\Big)_{+}y_{kj}
+$$
+</div></div><span>其中 $1/s_j^2$ 只把 $\tilde\lambda$ 逐特征缩放，$2\sigma_j^2$ 只是常数（对 $\mu_j$ 求导给出 $\mu_j=\bar x_j$，与 (18.3) 的约束一致）。</span></li><li>与 (18.5)(18.6)(18.7) 对照：$m_k^2=1/N_k$（原书取 $1/(N_k-1)$），$s_0=0$（不收缩）。</li></ol></div>
+<h3 id="习题-18-7-b-岭回归的-svd-形式-18-56-2" class="anchored">习题 18.7(b)：岭回归的 SVD 形式 (18.56)</h3>
+<p>$X=UDV^\top=RV^\top$，$R=UD$ 是 $N\times N$ 非奇异阵，$V$ 是 $p\times N$ 列正交阵。则</p>
+<div class="eq"><div class="escroll">
+$$
+\hat\beta_\lambda=V\big(R^\top R+\lambda I\big)^{-1}R^\top y
+$$
+</div><span class="tag">(18.56)</span></div>
+<div class="aside"><p class="hd">推导</p><p>由 (18.14) 代 $X^\top X=VR^\top RV$、$X^\top y=VR^\top y$（这一步就是预备知识 L2：$y$ 在 $\mathrm{col}(X)=\mathrm{col}(V)$ 上的投影用 $V$ 作正交基最省）： $X^\top X+\lambda I=V\big(R^\top R+\lambda I\big)V^\top$（因为 $V^\top V=I_N$，故 $V\big(\cdot\big)V^\top$ 的作用与 $\big(\cdot\big)$ 一致，且它是对称的幂等嵌入）。代入并把 $V^\top V$ 夹在中间消掉：$\hat\beta_\lambda=V\big(R^\top R+\lambda I\big)^{-1}V^\top V R^\top y=V\big(R^\top R+\lambda I\big)^{-1}R^\top y$。$\lambda&gt;0$ 时括号内可逆（特征值 $\sigma_i^2+\lambda&gt;0$），$\lambda=0$ 时给出零残差的最小范数解 $VD^{-1}U^\top y$。</p>
+<p><strong>意义</strong>：$p\gg N$ 时只需做一次 $N\times N$ 的分解，10 折交叉验证（习题 18.12）就能复用它。</p></div>
+<h3 id="习题-18-14-a-1-nn-作为判别函数-18-57-2" class="anchored">习题 18.14(a)：1-NN 作为判别函数 (18.57)</h3>
+<div class="eq"><div class="escroll">
+$$
+\delta(x_0)=\log\frac{d_-(x_0)}{d_+(x_0)}
+$$
+</div><span class="tag">(18.57)</span></div>
+<p>$d_\pm(x_0)$ 是 $x_0$ 到 $\pm1$ 类训练样本的最短距离。</p>
+<div class="aside"><p class="hd">推导 · 后验比 = 先验比 × 密度比</p><p>$\hat\pi_+(x_0)=\frac{\hat\pi_+\hat f_+(x_0)}{\hat\pi_+\hat f_+(x_0)+\hat\pi_-\hat f_-(x_0)}$，判别函数取对数比 $\log\frac{\hat\pi_+\hat f_+}{\hat\pi_-\hat f_-}$。1-NN 的非参数密度估计给出 $\hat f_\pm(x_0)\propto\frac{1}{d_\pm(x_0)}$（倒距离核：最近邻越近，密度估计越大；题中给的归一化是 $\hat f_\pm(x_0)=N_\pm/d_\pm(x_0)$，其中 $N_\pm$ 与先验 $\hat\pi_\pm=N_\pm/N$ 一起约掉），因此</p>
+<div class="eq long"><div class="escroll">
+$$
+\delta(x_0)=\log\frac{\pi_+}{\pi_-}+\log\frac{\hat f_+(x_0)}{\hat f_-(x_0)}=\log\frac{\pi_+}{\pi_-}+\log\frac{d_-(x_0)}{d_+(x_0)}
+$$
+</div></div>
+<p>先验相等时就是 (18.57)；$d_+&lt;d_-$ 判 $+1$，与 1-NN 一致。(b) 只需在右边加上 $\log\frac{\pi_+}{\pi_-}$；(c) 把 $d$ 换成到第 $K$ 近邻的距离。</p></div>
+<h3 id="习题-18-15-新样本的核主成分坐标-18-58-2" class="anchored">习题 18.15：新样本的核主成分坐标 (18.58)</h3>
+<p>$(\mathbf I-M)\mathbf K(\mathbf I-M)=UD^2U^\top$、$\mathbf M=\mathbf 1\mathbf 1^\top/N$、$Z=UD^{-1}$，则新点 $x_0$ 的内积向量 $\mathbf k_0=\mathbf Xx_0$ 的（中心化）投影为</p>
+<div class="eq"><div class="escroll">
+$$
+z_0=D^{-1}U^\top(\mathbf I-M)\Big[\mathbf k_0-\mathbf K\frac{\mathbf 1}{N}\Big]
+$$
+</div><span class="tag">(18.58)</span></div>
+<div class="aside"><p class="hd">推导 · 逐项展开，每一项都能对上</p><ol><li>训练样本的主成分分数是对中心化内积矩阵做 $U^\top$ 投影再除以 $D$：$Z=U^\top(\mathbf I-M)\mathbf K\cdot D^{-1}$。新样本没有 $\mathbf M$ 的「行减去均值」这一步可用，因为它的行 $x_0$ 不在中心化训练集内。</li><li>中心化的 $\mathbf k_0$：$\tilde{\mathbf k}_0=(\mathbf I-M)\big[\mathbf k_0-\mathbf K\frac{\mathbf1}{N}\big]$。第一项 $(\mathbf I-M)\mathbf k_0=\mathbf k_0-\frac{\mathbf 1\mathbf 1^\top}{N}\mathbf k_0$ 是「新内积减去它在训练集上的平均值」；第二项 $-(\mathbf I-M)\mathbf K\frac{\mathbf1}N=-\big(\mathbf K\frac{\mathbf1}N-\frac{\mathbf1\mathbf1^\top\mathbf K}{N^2}N\big)$，即「训练内积的列均值中心化」，恰好与第一项同型。</li><li>验证均值一致性：若 $\mathbf k_0$ 本身是常数向量 $c\mathbf 1$（即新样本等于训练均值），则 $\mathbf k_0-\mathbf K\frac{\mathbf1}N=c\mathbf1-c\mathbf1=0$，故 $z_0=0$ —— 主成分分数平移到 0，符合「中心化」的定义。</li><li>维度：$U^\top$ 是 $N\times N$，$(\mathbf I-M)[\cdot]$ 是 $N$ 维向量，$D^{-1}$ 对角，输出 $N$ 维，与训练时的 $Z$ 一致。整个算法只用内积，可推广到任意核矩阵。</li></ol></div>
+<h3 id="习题-18-18-pfdr-的两类误差分解-18-59-2" class="anchored">习题 18.18：pFDR 的两类误差分解 (18.59)</h3>
+<div class="eq long"><div class="escroll">
+$$
+\mathrm{pFDR}=\frac{\pi_0\cdot\{\Gamma\text{ 的第一类错误率}\}}{\pi_0\cdot\{\Gamma\text{ 的第一类错误率}\}+\pi_1\cdot\{\Gamma\text{ 的功效}\}}
+$$
+</div><span class="tag">(18.59)</span></div>
+<p>其中 $\pi_1=1-\pi_0$。</p>
+<div class="aside"><p class="hd">推导 · 由 (18.53) 一步得到</p><p>$\Pr(Z=0\mid t\in\Gamma)=\frac{\Pr(t\in\Gamma\mid Z=0)\Pr(Z=0)}{\Pr(t\in\Gamma\mid Z=0)\Pr(Z=0)+\Pr(t\in\Gamma\mid Z=1)\Pr(Z=1)}$（贝叶斯公式；其渐近版本就是 $p$ 值，见预备知识 P5）。分子 $\pi_0F_0(\Gamma)$ 就是「第一类错误率 × 零假设比例」，分母第二项 $\pi_1F_1(\Gamma)$ 就是「功效 × 备择比例」。</p>
+<p><strong>可算性</strong>：只要能估出 $\pi_0$，再用同一批 $t$ 算两组比例，第一类错误率用置换零分布估、功效用观测分布估，就能把 pFDR 直接算出来。这是 $q$ 值的标准实现（R 包 <code>qvalue</code>）。</p>
+<p><strong>推论</strong>：把 $\Gamma$ 取遍所有包含 $t_0$ 的区间，最小值就是 $t_0$ 的 $q$ 值——「最小化 $q$ 值」等价于「最大化 (18.59) 的分式」，而分式在第一类错误率与功效之间做加权调和。</p></div>
+<h3 id="习题-18-20-证明-18-53-18-60-18-61-2" class="anchored">习题 18.20：证明 (18.53) (18.60)(18.61)</h3>
+<div class="eq long"><div class="escroll">
+$$
+\mathrm{pFDR}=\mathbb E\left[\frac{V}{R}\,\Bigm|\,R&gt;0\right]=\frac{1}{M}\sum_{j=1}^{M}\mathbb E\left[\frac{M\,I\{Z_j=0,\ t_j\in\Gamma\}}{R}\,\Bigm|\,R&gt;0\right]
+$$
+</div><span class="tag">(18.60)</span></div>
+<div class="eq long"><div class="escroll">
+$$
+=\sum_{k=1}^{M}\mathbb E\left[\frac{V}{R}\,\Bigm|\,R=k\right]\Pr(R=k\mid R&gt;0)=\sum_{k=1}^{M}q_\Gamma\,\Pr(R=k\mid R&gt;0)=q_\Gamma
+$$
+</div><span class="tag">(18.61)</span></div>
+<p>其中 $q_\Gamma=\Pr(Z_j=0\mid t_j\in\Gamma)$；两个等号分别来自全期望公式与「给定 $R=k$ 时 $V\sim\mathrm{Binomial}(k,q_\Gamma)$」。</p>
+<div class="aside"><p class="hd">推导 · (18.60) 只是恒等变形</p><p>$V=\sum_{j=1}^M V_j$，$V_j=I\{Z_j=0,\,t_j\in\Gamma\}$，故 $\frac VR=\frac1M\sum_j\frac{M V_j}{R}$；取条件期望（线性性，预备知识 P2）即得 (18.60)。注意分式里的 $R$ 在事件为空时无定义，所以每一项都隐含 $I(R&gt;0)$。</p>
+<p><strong>(18.61) 的两个等号</strong>：</p>
+<ul><li>第一个等号是全期望公式：$\mathbb E[\cdot\mid R&gt;0]=\sum_k\mathbb E[\cdot\mid R=k]\Pr(R=k\mid R&gt;0)$，事件 $\{R=1,\dots,M\}$ 划分了 $\{R&gt;0\}$。</li><li>关键一步（题中给的引理）：<strong>给定 $R=k$，$V\sim\mathrm{Binomial}\big(k,\ \Pr(H_j=0\mid T_j\in\Gamma)\big)$</strong>。理由：$R=k$ 意味着恰有 $k$ 个基因的 $t$ 落在 $\Gamma$ 里；由 (18.51) 的 i.i.d. 假设这 $k$ 个位置可交换，而它们每一个是零假设的后验概率都是同一个 $q_\Gamma$，故 $V\mid R=k$ 是 $k$ 次成功概率 $q_\Gamma$ 的伯努利之和。</li><li>于是每个 $k$ 上 $\mathbb E[V/R\mid R=k]=\frac1k\cdot k\,q_\Gamma=q_\Gamma$。代回 (18.61)：$\sum_k q_\Gamma\Pr(R=k\mid R&gt;0)=q_\Gamma\sum_k\Pr(R=k\mid R&gt;0)=q_\Gamma$。</li><li>$R$ 的分布被完全消掉，这就是 $\mathrm{pFDR}=\Pr(Z_j=0\mid t_j\in\Gamma)$ 的完整证明，即 (18.53)。</li></ul>
+<p><strong>为什么原书要引入 pFDR 而不是直接证 FDR</strong>：如果目标是 $E[V/R]$，第 2 步换不来 —— $R$ 出现在分母上，条件化到 $R=k$ 后分母是常数 $k$，$\frac1k\sum_k$ 无法消掉 $k$；只能退回 (18.47) 的期望之比近似。pFDR 把 $R=0$ 的情形条件掉之后，每一项都变成同一个数，才有闭式。</p></div>
+</main>
+<nav class="chapnav"><div class="inner">
+<a class="prev" href="m17.html"><span class="lbl">← 上一章</span><span class="nm">第 17 章 无向图模型</span></a>
+<a class="next" href="prereq.html"><span class="lbl">下一章 →</span><span class="nm">数学预备知识</span></a>
+</div></nav>
+</body>
+</html>

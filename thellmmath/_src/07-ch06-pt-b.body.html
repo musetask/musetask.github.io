@@ -1,0 +1,400 @@
+<h1><span class="chno">Chapter 6 · 2/2</span>第 6 章 · 预训练（2/2）</h1>
+<p class="lead">本页把"我要训一个 7B 模型"这句话翻译成账本：<strong>要烧多少 FLOPs（公式 6.9）</strong>、<strong>要跑多少天（6.10）</strong>、<strong>每张卡要装多少显存（6.11–6.15）</strong>。7 条编号公式全部来自原书 6.4.2–6.4.4 节，串起来是一条完整的工程估算链：算力 → 时间 → 显存 → 并行切分 → 重计算 → 单卡总量。外加三段补充推导：矩阵乘法的 FLOPs 计数（6.9 的地基）、ZeRO 三个阶段的显存阶梯（6.15 的第一项）、以及 3D 并行的通信量估算。</p>
+<p class="where"><b>原书位置</b>第 6 章 6.4.2 Estimation of Training Cost / 6.4.3 Training Time Estimation / 6.4.4 Training Memory Estimation　<a href="../thellm/12-6-model-pre-training.html#6-4-2-estimation-of-training-cost">对照原文</a>（技术背景见 <a href="../thellm/12-6-model-pre-training.html#6-3-scalable-training-techniques">6.3 节可扩展训练技术</a>）</p>
+
+<h2 id="toc-b">本页公式一览</h2>
+<table class="sym">
+<tr><th>编号</th><th>一句话</th><th>核心数学工具</th></tr>
+<tr><td><a href="#eq-6-9">6.9</a></td><td>训练总算力 \(\approx 6CP\)</td><td>矩阵乘法 FLOPs 计数 × 前向+反向</td></tr>
+<tr><td><a href="#eg-llama7b-cost">补充</a></td><td>LLaMA (7B) 训 10 亿 token 的 FLOPs 实例</td><td>代入法</td></tr>
+<tr><td><a href="#eq-6-10">6.10</a></td><td>训练时间 = FLOPs ÷ (GPU 数 × 单卡 FLOPS)</td><td>量纲分析、有效算力利用率</td></tr>
+<tr><td><a href="#eq-6-11">6.11</a></td><td>单卡激活显存（无并行、无重计算）</td><td>逐张量清点 + fp16 字节数</td></tr>
+<tr><td><a href="#eq-6-12">6.12</a></td><td>流水并行后的激活显存</td><td>整除 \(L/N_P\)</td></tr>
+<tr><td><a href="#eg-zero">补充</a></td><td>ZeRO-1/2/3 的参数-优化器显存阶梯</td><td>字节数加法</td></tr>
+<tr><td><a href="#eq-6-13">6.13</a></td><td>张量并行后的激活显存</td><td>可切分 / 不可切分张量的区分</td></tr>
+<tr><td><a href="#eg-comm">补充</a></td><td>数据并行 vs 张量并行的通信量</td><td>环形 all-reduce 通信下界</td></tr>
+<tr><td><a href="#eq-6-14">6.14</a></td><td>激活重计算后的激活显存</td><td>存储换算力</td></tr>
+<tr><td><a href="#eq-6-15">6.15</a></td><td>单卡总显存（ZeRO-3 + FlashAttention + 重计算）</td><td>三段相加</td></tr>
+<tr><td><a href="#eg-llama7b-mem">补充</a></td><td>LLaMA (7B) 双卡显存实例</td><td>代入法</td></tr>
+</table>
+
+<h2 id="symtab">本页符号约定</h2>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(P\)</td><td>模型参数总数（含嵌入层）</td><td>标量，\(10^7\sim10^{11}\)</td></tr>
+<tr><td>\(C\)</td><td>训练语料的总 token 数（\(C=BT\) 为一个 batch）</td><td>标量（token 个数）</td></tr>
+<tr><td>\(B\)</td><td>批大小（序列条数）</td><td>标量</td></tr>
+<tr><td>\(T\)</td><td>输入序列长度</td><td>标量（token 个数）</td></tr>
+<tr><td>\(L\)</td><td>Decoder 层数</td><td>标量，LLaMA(7B) = 32</td></tr>
+<tr><td>\(H\)</td><td>隐藏状态维度</td><td>标量，LLaMA(7B) = 4096</td></tr>
+<tr><td>\(H'\)</td><td>FFN 中间层维度</td><td>标量，LLaMA(7B) = 11008</td></tr>
+<tr><td>\(N\)</td><td>注意力头数（<strong>不是</strong>参数量，也不是数据并行度）</td><td>标量，LLaMA(7B) = 32</td></tr>
+<tr><td>\(D\)</td><td>单个注意力头的维度，\(H=ND\)</td><td>标量</td></tr>
+<tr><td>\(V\)</td><td>词表大小</td><td>标量，LLaMA(7B) = 32000</td></tr>
+<tr><td>\(N_D\)</td><td>数据并行度（\(N_D\) = GPU 总数 ÷ 模型并行度）</td><td>标量</td></tr>
+<tr><td>\(N_P\)</td><td>流水并行度</td><td>标量</td></tr>
+<tr><td>\(N_T\)</td><td>张量并行度</td><td>标量</td></tr>
+<tr><td>\(\text{FLOP}\)</td><td>一次浮点运算（乘或加各算 1 次）</td><td>无量纲计数</td></tr>
+</table>
+<div class="note">
+<b>关于符号 \(k\) 与常数 6</b>
+训练界常说"每参数每 token 约 6 FLOPs"（常写成 \(\text{FLOPs}\approx 6ND\)，\(N\) 参数量、\(D\) 数据量，Kaplan 等人的记号）。这个 6 拆开就是 <strong>\(6=2\times3\)</strong>：2 来自一次乘加（multiply-accumulate）算 2 FLOPs，3 来自"前向 1 次 + 反向 2 次矩阵乘法"。本书用 \(P\)（参数）和 \(C\)（token 数）替代 Kaplan 的 \(N,D\)，所以写成 \(6CP\)，数值完全一致。本书 \(C\) 与 Kaplan 的 \(D\)、本页 \(N\)（头数）与 Kaplan 的 \(N\)（参数量）<strong>含义不同</strong>，别混淆。
+</div>
+<div class="note">
+<b>关于"GB"和"GiB"</b>
+公式里算出来的都是字节数。原书用 \(1\,\mathrm{GB}=10^9\) 字节近似（如 \(16\times6.74\times10^9\approx1.08\times10^{11}\) 字节 ≈ 100 GB）。若按 \(1\,\mathrm{GiB}=2^{30}\) 字节，数字会小 7.4%。做容量规划时两者都要留余量。
+</div>
+
+<h2 id="pre-matmul">前置：矩阵乘法要烧多少 FLOPs</h2>
+<p>后面 5 条公式全部建立在一个计数技巧上，先把它单独推干净。原书给的提示（Tips）是：矩阵 \(\mathbf{A}\in\mathbb{R}^{n\times m}\) 与 \(\mathbf{B}\in\mathbb{R}^{m\times p}\) 相乘，计算量是 \(2nmp\)。</p>
+<div class="eq">
+\[ \mathbf{C}=\mathbf{A}\mathbf{B},\quad \mathbf{A}\in\mathbb{R}^{n\times m},\;\mathbf{B}\in\mathbb{R}^{m\times p}\;\Longrightarrow\; \text{FLOPs}(\mathbf{A}\mathbf{B})=2nmp \]
+</div>
+<ol class="steps">
+<li><b>先数输出元素。</b>\(\mathbf{C}\) 有 \(n\) 行 \(p\) 列，共 \(np\) 个元素。</li>
+<li><b>再数单个元素。</b>矩阵乘法的定义是 \(c_{ij}=\sum_{a=1}^{m}a_{ia}b_{aj}\)。对固定的 \((i,j)\)，要乘 \(m\) 次、把 \(m\) 个乘积累加 \(m-1\) 次，共 \(2m-1\) 次浮点运算，\(\approx 2m\)。</li>
+<li><b>相乘。</b>总 FLOPs \(=(2m-1)np\approx 2mnp\)。当 \(m\ge2\) 时误差在 5% 以内，直接写 \(2nmp\)。</li>
+</ol>
+<p>换成向量形式更好记：\(y=\mathbf{W}x\)，\(\mathbf{W}\in\mathbb{R}^{k\times n}\)、\(\mathbf{x}\in\mathbb{R}^{n}\)。<strong>每个输出元素需要 \(n\) 次乘 + \(n-1\) 次加 \(\approx 2n\) FLOPs，共 \(k\) 个输出</strong>，所以 \(\text{FLOPs}=2kn\)。若 \(\mathbf{W}\in\mathbb{R}^{n\times n}\)，就是 \(2n^2\)。</p>
+<div class="note">
+<b>直觉</b>
+矩阵乘法的计算量正比于"矩阵里有多少个数"。以后凡是看到"某层权重有 \(m\) 个元素、输入激活有 \(s\) 个元素"，前向 FLOPs 就记成 \(2\times(m+s)\)：权重贡献一次乘法，激活（矩阵的其余行）作为被乘向量的其余行贡献若干次加法。这就是为什么 LLM 的算力开销可以只用参数量来估——激活元素数和权重元素数量级相同，且注意力里的 \(T^2\) 项在短序列下被 \(H\) 压住（见 <a href="#eq-6-9">(6.9)</a>）。
+</div>
+<div class="warn">
+<b>易错点</b>
+"1 FLOP"到底是"一次乘"还是"一次乘加"？NVIDIA 的 Tensor Core 规格（A100 标称 312 TFLOPS）是按 <strong>FMA = 2 FLOPs</strong> 计的。本页统一按"乘 1 FLOP + 加 1 FLOP"计数，与原书一致。混用两套记法会让所有数字差 2 倍。
+</div>
+
+<section class="fml" id="eq-6-9">
+<h2><span class="num">(6.9)</span>训练总算力 \(\approx 6CP\)<a class="anchor" href="#eq-6-9">#</a></h2>
+<p class="where"><b>出处</b>第 6 章 6.4.2 节 Estimation of Training Cost　<a href="../thellm/12-6-model-pre-training.html#6-4-2-estimation-of-training-cost">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0143.png" alt="原书公式 6.9"><span class="cap">原书公式 6.9</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \text{Computational Cost}\approx 6CP. \]
+</div>
+<p>若额外使用<strong>激活重计算</strong>（activation recomputation / gradient checkpointing），则算力升到 \(\approx 8CP\)。</p>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(P\)</td><td>模型参数总数（线性变换权重占 95% 以上）</td><td>标量</td></tr>
+<tr><td>\(C\)</td><td>训练用到的总 token 数</td><td>标量（token 个数）</td></tr>
+<tr><td>\(H,N,D\)</td><td>隐藏维度、头数、单头维度，\(H=ND\)</td><td>标量</td></tr>
+<tr><td>\(B,T\)</td><td>批大小、序列长度，\(C=BT\)</td><td>标量</td></tr>
+<tr><td>\(k\)</td><td>每 token 每参数的 FLOPs 数，公式中 \(k=6\)（含重计算为 8）</td><td>无量纲常数</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<p><b>第 1 步：单层单次前向。</b>取 FFN 的上投影 \(y=\mathbf{X}\mathbf{W}_U\)，其中 \(\mathbf{X}\in\mathbb{R}^{B\times T\times H}\)、\(\mathbf{W}_U\in\mathbb{R}^{H\times H'}\)。按前置结论，前向 FLOPs \(=2\times(\text{权重元素数}+\text{激活元素数})=2BT\cdot HH'\)。把它写成"2 × 参数量 × token 数"的形式更省事：每层权重约 \(P_{\text{layer}}\) 个元素、输入激活约 \(P_{\text{layer}}\) 个元素，故前向 \(\approx 2CP_{\text{layer}}\)。</p>
+<p><b>第 2 步：单层反向。</b>设 \(y=\mathbf{X}\mathbf{W}\)，反向要同时算 \(\partial\mathcal{L}/\partial\mathbf{X}\) 和 \(\partial\mathcal{L}/\partial\mathbf{W}\)：</p>
+<ul>
+<li>\(\dfrac{\partial \mathcal{L}}{\partial \mathbf{X}} = \dfrac{\partial \mathcal{L}}{\partial y}\mathbf{W}^{\top}\)：形状 \(\mathbb{R}^{B\times T\times k}\times\mathbb{R}^{n\times k}\)，FLOPs 同样 \(2BTkn\)；</li>
+<li>\(\dfrac{\partial \mathcal{L}}{\partial \mathbf{W}} = \mathbf{X}^{\top}\dfrac{\partial \mathcal{L}}{\partial y}\)：形状 \(\mathbb{R}^{n\times m}\times\mathbb{R}^{m\times k}\)，FLOPs 同样 \(2BTkn\)。</li>
+</ul>
+<p>所以反向 \(\approx 2\times\) 前向 \(=4CP_{\text{layer}}\)。</p>
+<p><b>第 3 步：前向 + 反向。</b>总 FLOPs \(=2CP_{\text{layer}}+4CP_{\text{layer}}=6CP_{\text{layer}}\)。这就是常数 6 的来源：<strong>\(6 = 2\,(\text{乘}+\text{加})\times 3\,(\text{前向}1\text{ 次}+\text{反向}2\text{ 次矩阵乘})\)</strong>。对全模型求和，把各层参数加起来就是 \(P\)：</p>
+<div class="eq">
+\[ \text{总 FLOPs} \;=\; 3\times 2\times P\times C \;=\; 6CP \]
+</div>
+<p><b>第 4 步：为什么可以丢掉注意力？</b>把多头注意力和线性变换的算力相比（原书公式 6.6 与 6.7）：多头注意力每层前向是 \(4BT^2ND+4BT^2N=4BT^2H+4BT^2N\)，反向翻倍；线性变换是 \(6BTH^2\) 量级。两者的比值约为 \(\frac{2BT^2H}{BTH^2}=\frac{2T}{H}\)。假设 LLM 训练场景下序列长度小于隐藏维度，即 \(T&lt;H\)，则注意力算力<strong>最多占线性变换的 \(\frac{2}{6}=\frac13\) 以下</strong>，原书保守地说"至多 \(1/6\)"（按 6.6 vs 6.7 的口径）。加上归一化、输出映射、RoPE 只贡献 \(O(BTH)\) 级、输入嵌入层零计算，于是"线性变换的参数数目 \(\approx\) 总参数数目 \(P\)"成立（线性变换占 95% 以上），公式 6.9 成立。</p>
+<p><b>第 5 步：重计算为什么变成 8？</b>反向传播时若不保存层内中间激活，就要把该层前向重算一遍以重建它们。于是前向的 2 份变成 4 份（正常前向 1 份 + 重算 1 份 + 反向输入梯度那份重复计算），总份数由 3 变成 4：</p>
+<div class="eq">
+\[ \text{FLOPs}_{\text{recompute}} \;=\; 2\times\big(\underbrace{2}_{\text{前向一次}}\;+\;\underbrace{2}_{\text{反向中重算一次}}\big)\times PC \;=\; 8CP \]
+</div>
+<p>即用 <strong>33% 的额外算力</strong>换激活显存大降（见 <a href="#eq-6-14">(6.14)</a>）。</p>
+
+<div class="note"><b>直觉</b>训练一个参数要"看"它三遍：一遍前向算输出、一遍反向算权重梯度、一遍反向算输入梯度。所以算力天然是参数量的常数倍。数据有多少 token，账就乘以多少。</div>
+<div class="note"><b>和缩放定律的关系</b>\(C_{\text{total}}=6ND\) 正是 Kaplan 等人"算力 \(C\)"的定义式（见 <a href="../01-ch02-scaling.html">第 2 章</a>）。所以"训练成本"在这套记号里就是 \(6\times\text{非嵌入参数量}\times\text{token 数}\)，本页的 6.9 与第 2 章的缩放律是同一件事的两面。</div>
+<div class="warn"><b>易错点：长上下文会打破 \(T&lt;H\)</b>这一估计的前提。当序列长度 \(T\) 超过隐藏维度 \(H\)（例如 H=4096 而上下文 32K），\(O(T^2)\) 的注意力项不再可忽略：前向注意力 FLOPs \(\approx 4BT^2H\) 与线性变换 \(2BTH^2\) 之比 \(\approx 2T/H\) 会超过 1，\(6CP\) 变成下界而非估计。此时长上下文训练必须额外算上注意力（及 FlashAttention 带来的 IO 与显存变化）。这正是把 RoPE 的 \(\theta\)（旋转基底频率）做<strong>位置外推</strong>（positional extrapolation / NTK-aware scaling）延长上下文时必须重算预算的原因——见 <a href="../04-ch05-arch-b.html">第 5 章 5-4 节</a>。</div>
+<div class="warn"><b>易错点：6.9 是"约等于"，不是恒等式</b>它把注意力、归一化、激活函数、RoPE 的开销全部忽略，前提是"线性变换参数占 95% 以上、\(T&lt;H\)"。小模型（如 1B 以下、\(H\) 较小）或超长上下文场景下偏差会明显变大。</div>
+<div class="relnav">相关：<a href="#pre-matmul">前置：矩阵乘法 FLOPs 计数</a>　<a href="#eg-llama7b-cost">LLaMA(7B) 算力实例</a>　<a href="#eq-6-10">(6.10) 训练时间</a>　<a href="#eq-6-14">(6.14) 重计算的算力代价</a></div>
+</section>
+
+<h2 id="eg-llama7b-cost">补充实例：LLaMA (7B) 在 10 亿 token 上的算力</h2>
+<div class="origin"><img src="../thellm/assets/fig-0144.png" alt="原书 6.4.2 节算力实例（无编号公式）"><span class="cap">原书 6.4.2 节算力实例</span></div>
+<div class="eq">
+\[ \text{FLOPs}_{\text{LLaMA(7B)}} \;=\; 6\times 6.74\times 10^{9}\times 10^{9}\;\approx\;4.04\times 10^{19} \]
+</div>
+<ol class="steps">
+<li>LLaMA (7B) 的参数数目由原书 6.4.1 节算出 \(P\approx6.74\times10^{9}\)。</li>
+<li>设训练语料 \(C=1\times10^{9}\) token，且<strong>不使用</strong>激活重计算，则 \(\text{FLOPs}=6PC\)。</li>
+<li>代入：\(6\times6.74\times10^{9}\times10^{9}=40.44\times10^{18}=4.04\times10^{19}\) FLOPs。</li>
+<li>若改用重计算，则 \(\text{FLOPs}\approx8PC\approx5.39\times10^{19}\)。</li>
+</ol>
+<div class="note"><b>直觉</b>把算力和电费类比：这相当于单卡 A100（FP16 约 \(3.12\times10^{14}\) FLOP/s）不间断跑 \(4.04\times10^{19}/3.12\times10^{14}\approx1.3\times10^{5}\) 秒，即约 1.5 天——而这还只是 7B 模型读 10 亿 token 的"最低阅读量"，Chinchilla 结论认为 7B 至少要 140B token 才算训透。</div>
+
+<section class="fml" id="eq-6-10">
+<h2><span class="num">(6.10)</span>训练时间 = FLOPs ÷ (GPU 数 × 单卡 FLOPS)<a class="anchor" href="#eq-6-10">#</a></h2>
+<p class="where"><b>出处</b>第 6 章 6.4.3 节 Training Time Estimation　<a href="../thellm/12-6-model-pre-training.html#6-4-3-training-time-estimation">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0145.png" alt="原书公式 6.10"><span class="cap">原书公式 6.10</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \text{Training Time}\;=\;\frac{\text{Number of Floating-point Operations}}{\text{Number of GPUs}\times \text{Floating-point Operations per Second of GPU}} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\text{FLOPs}_{\text{tot}}\)</td><td>由公式 6.9 给出的总算力</td><td>标量，无量纲计数</td></tr>
+<tr><td>\(n_{\text{gpu}}\)</td><td>参与训练的 GPU 数量</td><td>标量，如 2048</td></tr>
+<tr><td>\(\text{FLOPS}_{\text{gpu}}\)</td><td>单卡每秒浮点运算数</td><td>FLOP/s，如 \(3.12\times10^{14}\)</td></tr>
+<tr><td>\(t\)</td><td>训练时间</td><td>秒</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>量纲检查。</b>分子 FLOPs 是"次数"，分母 FLOPS 是"次数/秒"，相除得秒。这条式子本质上就是"总工作量 ÷ 单位时间产能"。</li>
+<li><b>多卡线性加速的前提。</b>假定 \(n_{\text{gpu}}\) 张卡完美并行、无通信瓶颈，实际吞吐 \(\approx n_{\text{gpu}}\times\text{FLOPS}_{\text{gpu}}\)。</li>
+<li><b>有效算力折扣。</b>原书指出实际 FLOPS 通常只有理论峰值的 30%–70%，受通信、访存、算子调度、混合精度下的通信开销影响。</li>
+<li><b>代入原书实例。</b>LLaMA (65B)：\(P=6.5\times10^{10}\)、\(C=1.4\times10^{12}\)，用重计算故 \(\text{FLOPs}\approx8CP=8\times6.5\times10^{10}\times1.4\times10^{12}=7.28\times10^{23}\)；\(2048\) 张 A100，每张取有效 \(2\times10^{14}\) FLOP/s，于是
+<div class="eq">
+\[ t=\frac{7.28\times10^{23}}{2048\times2\times10^{14}}\approx1.78\times10^{6}\ \text{s}\approx20.6\ \text{天} \]
+</div>
+与论文报告的 21 天吻合。</li>
+</ol>
+<div class="note"><b>直觉</b>这条式子就是"几个人干多少活"。FLOPs 是工程量，FLOPS 是每个人的产能，GPU 数是人数。除法就是工期。它也是"为什么大模型训练是资本密集型生意"的算术表达：算力翻 10 倍，同等数据下训练时间才缩到 1/10。</div>
+<div class="warn"><b>易错点</b>不能直接用理论峰值。A100 标称 312 TFLOPS（FP16），实测 MFU 通常 40%–50%；不扣掉重计算、通信、checkpoint 存盘、评测的额外开销，规划会偏乐观 2–3 倍。另外"Number of GPUs"应理解为<strong>承担同一个全局 batch 的卡数</strong>（= \(N_DN_PN_T\)），若卡数增加但全局 batch 不变，那是在改数据并行度而非提升吞吐。</div>
+<div class="relnav">相关：<a href="#eq-6-9">(6.9) 训练总算力</a>　<a href="#eq-6-15">(6.15) 单卡显存</a></div>
+</section>
+
+<section class="fml" id="eq-6-11">
+<h2><span class="num">(6.11)</span>单卡激活显存（无并行、无重计算）<a class="anchor" href="#eq-6-11">#</a></h2>
+<p class="where"><b>出处</b>第 6 章 6.4.4 节 Training Memory Estimation　<a href="../thellm/12-6-model-pre-training.html#6-4-4-training-memory-estimation">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0147.png" alt="原书公式 6.11"><span class="cap">原书公式 6.11</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \text{Activation Memory}=\big(16BTH+6BTH'+2BT^{2}N\big)\cdot L+4BTH+4BTV. \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\mathbf{X}\)</td><td>进入某层的隐状态</td><td>\(\mathbb{R}^{B\times T\times H}\)，fp16 占 \(2BTH\) 字节</td></tr>
+<tr><td>\(\mathbf{Q},\mathbf{K},\mathbf{V}\)</td><td>多头注意力的三个投影结果</td><td>各 \(\mathbb{R}^{B\times T\times H}\)，各 \(2BTH\) 字节</td></tr>
+<tr><td>\(\mathbf{Q}\mathbf{K}^{\top}\)</td><td>注意力分数矩阵</td><td>\(\mathbb{R}^{B\times N\times T\times T}\)，\(2BT^{2}N\) 字节</td></tr>
+<tr><td>\(H'\)</td><td>FFN 中间层维度</td><td>标量，\(\mathbf{W}_U\mathbf{X}\) 等占 \(2BTH'\) 字节</td></tr>
+<tr><td>\(L,B,T,H,N,V\)</td><td>层数 / 批大小 / 序列长 / 隐藏维 / 头数 / 词表大小</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<p><b>为什么反向要存激活？</b>链式法则 \(\frac{\partial \mathcal{L}}{\partial \mathbf{W}}=\mathbf{X}^{\top}\frac{\partial \mathcal{L}}{\partial y}\) 明确要求前向时的 \(\mathbf{X}\) 还在。所以反向开始前，前向沿途每个"会被用到的输入"都必须留在显存里。这份账要逐层清点。</p>
+<ol class="steps">
+<li><b>多头注意力层。</b>(a) 求 \(\mathbf{Q},\mathbf{K},\mathbf{V}\) 都要它们的输入 \(\mathbf{X}\)，三处引用可共享同一份 \(\mathbf{X}\)，占 \(2BTH\) 字节；(b) 注意力内部 \(\mathbf{Q},\mathbf{K},\mathbf{V}\) 三张表要留着算 \(\mathbf{Q}\mathbf{K}^{\top}\) 与 softmax\(\cdot\mathbf{V}\)，共 \(3\times2BTH=6BTH\) 字节；(c) 多头合并需要 \(\mathrm{Concat}(\mathrm{head}_1,\dots,\mathrm{head}_N)\)，占 \(2BTH\) 字节；(d) 若不用 FlashAttention，\(\mathbf{Q}\mathbf{K}^{\top}\) 这张 \(T\times T\) 矩阵也要存，占 \(2BT^{2}N\) 字节（<strong>唯一随序列长度平方增长的一项</strong>）。小计 \(10BTH+2BT^{2}N\)。</li>
+<li><b>FFN 层。</b>输入 \(\mathbf{X}\) 需 \(2BTH\) 字节；而 \(\mathbf{W}_G\mathbf{X}\)、\(\mathbf{W}_U\mathbf{X}\)、\(\sigma(\mathbf{X}\mathbf{W}_U)\) 三者尺寸都是中间维，共 \(3\times2BTH'=6BTH'\) 字节。小计 \(2BTH+6BTH'\)。</li>
+<li><b>两个归一化层。</b>LayerNorm 的反向要用其输入，每层 2 个归一化、每个输入 \(2BTH\)，共 \(4BTH\) 字节。</li>
+<li><b>逐层相加。</b>每层合计 \((10+2+4)BTH+6BTH'+2BT^{2}N=16BTH+6BTH'+2BT^{2}N\)，乘层数 \(L\)。</li>
+<li><b>输出层。</b>过完 \(L\) 层后：最终归一化的输入需 \(2BTH\)；词表映射的输入 \(\mathbf{Y}^{L}\) 再需 \(2BTH\)；softmax 为提高精度用 fp32，其输入 \(\mathbf{Y}^{L}\mathbf{W}^{L}\) 需 \(4BTV\)。合起来 \(4BTH+4BTV\)。</li>
+</ol>
+<div class="eq">
+\[ \text{Activation Memory}=\underbrace{\big(16BTH+6BTH'+2BT^{2}N\big)\cdot L}_{\text{每个 decoder 层}}+\underbrace{4BTH+4BTV}_{\text{最终归一化 + 输出层}} \]
+</div>
+<div class="note"><b>直觉</b>激活显存可以粗看成"每个 token、每层要留几份 \(H\) 维向量"。这条式子说：每层每 token 约 16 个 \(H\) 宽的 fp16 向量（多头 10 + FFN 2 + 归一化 4），另外 FFN 因中间维更宽再多 6 个 \(H'\) 向量。所以显存随 \(B\cdot T\cdot L\) 三者<strong>线性</strong>增长，只有 \(2BT^2N\) 这一项是平方的。</div>
+<div class="warn"><b>易错点</b>(1) 用 FlashAttention 就没有 \(2BT^2N\) 这一项（分块计算不落盘中间注意力矩阵），这也是长上下文训练几乎必开 FlashAttention 的原因。(2) \(H'\) 在 LLaMA 里约是 \(2.7H\)（11008 vs 4096），\(6BTH'L\) 项不能忽略。(3) 原书省略了归一化、RoPE、激活函数本身的少量激活。</div>
+<div class="relnav">相关：<a href="#eq-6-12">(6.12) 流水并行</a>　<a href="#eq-6-13">(6.13) 张量并行</a>　<a href="#eq-6-14">(6.14) 激活重计算</a></div>
+</section>
+
+<section class="fml" id="eq-6-12">
+<h2><span class="num">(6.12)</span>流水并行下的激活显存<a class="anchor" href="#eq-6-12">#</a></h2>
+<p class="where"><b>出处</b>第 6 章 6.4.4 节 Training Memory Estimation（Pipeline parallelism）　<a href="../thellm/12-6-model-pre-training.html#6-4-4-training-memory-estimation">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0148.png" alt="原书公式 6.12"><span class="cap">原书公式 6.12</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \text{Activation Memory}=\big(16BTH+6BTH'+2BT^{2}N\big)\cdot\frac{L}{N_P}+4BTH+4BTV. \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(N_P\)</td><td>流水并行度，模型被切成 \(N_P\) 个 stage</td><td>标量，\(N_P\mid L\)</td></tr>
+<tr><td>\(L/N_P\)</td><td>单卡持有的 decoder 层数</td><td>标量</td></tr>
+<tr><td>其余同 <a href="#eq-6-11">(6.11)</a></td><td>\(L,B,T,H,H',N,V\)</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>切分的对象是"层"。</b>流水并行把连续的 \(L/N_P\) 个 decoder 层放在一张卡上，只有这几层的前向激活需要留在本卡。</li>
+<li><b>直接替换层数。</b>式 (6.11) 中乘在括号外的唯一因子是 \(L\)，把它换成 \(L/N_P\) 即得。</li>
+<li><b>为什么末尾两项不除？</b>最终归一化的输入、词表映射输入 \(\mathbf{Y}^{L}\)、softmax 的 fp32 输入都由<strong>最后一个 stage</strong>（持有第 \(L\) 层）计算，无论 \(N_P\) 多大都只存在于那一张卡上，所以 \(4BTH+4BTV\) 保持整份。</li>
+</ol>
+<div class="note"><b>直觉</b>流水并行像是把 32 层的楼分成 8 段，每台电梯只服务 4 层。楼内的水箱（激活）就少了 8 倍，但顶层的屋顶（输出层激活）只有一户人家产生，还得完整存一份。</div>
+<div class="note"><b>流水并行的真正代价是气泡，不是显存</b>\(N_P\) 增大确实把激活显存压下去，但简单调度下 GPU 会有空闲：原书指出 GPU 1 前向完要等 GPU 2 的反向才能继续自己的反向，形成"GPU1 前向 → GPU2 反向 → GPU1 反向"的串行。解决办法是<strong>梯度累积（gradient accumulation）</strong>——算完一个 batch 的梯度先不更新参数，攒够多个 batch 再更新，让 GPU1 前向完第 1 个 batch 后能直接做第 2 个 batch 的前向，流水线填满。气泡占比约为 \((N_P-1)/(N_P+\text{micro-batch 数}-1)\)。</div>
+<div class="warn"><b>易错点</b>式 (6.12) <strong>只算激活</strong>。参数与优化器状态也要除以 \(N_PN_T\)（原书 6.4.4 明确说明"把上述公式除以 \(N_P\times N_T\) 即可得到单卡用量"），但那时是把 \(P\) 也当成可均分的量，与这里逻辑相同却公式不同，别混用。</div>
+<div class="relnav">相关：<a href="#eq-6-11">(6.11)</a>　<a href="#eq-6-13">(6.13)</a>　<a href="#eg-zero">ZeRO 显存阶梯</a>　<a href="#eg-comm">并行通信量</a></div>
+</section>
+
+<h2 id="eg-zero">补充：参数与优化器状态的显存，以及 ZeRO 三阶段</h2>
+<p>公式 6.15 的第一项 \(16P/N_D\) 来自这里，先把 16 这个常数拆开。原书用<strong>混合精度</strong>（mixed precision，6.3.4 节）：前向/反向用 16 位（fp16/bf16，2 字节）算，但<strong>保留一份 fp32 主权重</strong>做更新。</p>
+<table class="sym">
+<tr><th>对象</th><th>精度</th><th>每参数字节</th><th>说明</th></tr>
+<tr><td>模型参数 \(\theta\)</td><td>fp16（更新时转 fp32 算）</td><td>2</td><td>参与前向反向的副本</td></tr>
+<tr><td>梯度 \(\Delta\theta\)</td><td>fp16</td><td>2</td><td>反向累加得到</td></tr>
+<tr><td>fp32 主权重</td><td>fp32</td><td>4</td><td>累积小更新量，防止 fp16 下 \(10^{-3}\) 级更新被舍入吞掉</td></tr>
+<tr><td>Adam 一阶动量 \(m\)</td><td>fp32</td><td>4</td><td>梯度的滑动平均（方向）</td></tr>
+<tr><td>Adam 二阶动量 \(v\)</td><td>fp32</td><td>4</td><td>梯度平方的滑动平均（尺度/方差）</td></tr>
+<tr><td><strong>合计</strong></td><td>—</td><td><strong>16</strong></td><td>\(2+2+4+4+4\)</td></tr>
+</table>
+<ol class="steps">
+<li><b>不用 ZeRO。</b>每卡各存一整份：\((2+2+4+4+4)\cdot P=16P\) 字节。</li>
+<li><b>ZeRO-1（优化器状态分片）。</b>只把 3 份 fp32 状态切开，每卡 \( (2+2)P+(4+4+4)\dfrac{P}{N_D}=4P+12\dfrac{P}{N_D}\)。当 \(N_D\) 很大时 \(\to4P\)，是原来的 \(1/4\)。</li>
+<li><b>ZeRO-2（再加梯度分片）。</b>\( 2P+(2+4+4+4)\dfrac{P}{N_D}=2P+14\dfrac{P}{N_D}\)，极限 \(2P\)，约 \(1/8\)。</li>
+<li><b>ZeRO-3（再加参数分片）。</b>\( 16\dfrac{P}{N_D}\)，极限趋近 0，是原来的
+<div class="origin"><img src="../thellm/assets/fig-0146.png" alt="原书 6.4.4 节 ZeRO-3 缩减比例（无编号公式）"><span class="cap">原书 6.4.4 节：ZeRO-3 相对不用 ZeRO 的缩减比例</span></div>
+</li>
+</ol>
+<div class="note"><b>这就是"7B 模型要多少显存"的答案</b>训练一个 7B 模型，参数与优化器状态至少要 \(16\times7\times10^{9}=1.12\times10^{11}\) 字节 \(\approx112\) GB（按 LLaMA 实测 \(P=6.74\times10^9\) 则约 108 GB / 100.6 GiB）。单张 80GB 卡装不下，所以 7B 全参训练至少 2 卡起步；用 ZeRO-3 + 4 卡可把这一项压到约 28 GB/卡。</div>
+<div class="why"><b>为什么要保留 fp32 主权重</b>Adam 的单步更新量约为 \(\text{lr}\cdot\frac{\hat m}{\sqrt{\hat v}+\varepsilon}\)，量级常在 \(10^{-3}\sim10^{-5}\)。而 fp16 的尾数只有 10 位，相对精度约 \(2^{-11}\approx5\times10^{-4}\)，一个权重 \(w\sim10^{-2}\) 时绝对分辨率约 \(5\times10^{-6}\)。若直接在 fp16 上累加，更新量会大量被舍入丢弃，表现为"训练 loss 莫名其妙卡住"。fp32 有 24 位有效尾数，能稳定累积微小更新。BF16 的 8 位指数 + 7 位尾数则是另一种取舍：动态范围大（不易下溢）但精度更低，因此通常仍配一份 fp32 主权重。</div>
+<div class="warn"><b>易错点</b>\(N_D\) 是<strong>数据并行度</strong>，不是 GPU 总数。总卡数 \(=N_D\times N_P\times N_T\)。混用会把显存账算错一个 \(N_PN_T\) 的倍数。另外 ZeRO-3 分片后每步都要 all-gather 参数，通信量换显存，延迟会明显上升（见 <a href="#eg-comm">通信量一节</a>）。</div>
+
+<section class="fml" id="eq-6-13">
+<h2><span class="num">(6.13)</span>张量并行下的激活显存<a class="anchor" href="#eq-6-13">#</a></h2>
+<p class="where"><b>出处</b>第 6 章 6.4.4 节 Training Memory Estimation（Tensor parallelism）　<a href="../thellm/12-6-model-pre-training.html#6-4-4-training-memory-estimation">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0150.png" alt="原书公式 6.13"><span class="cap">原书公式 6.13</span></div>
+<div class="origin"><img src="../thellm/assets/fig-0149.png" alt="原书 6.4.4 节张量并行中被切分的激活列表（无编号公式）"><span class="cap">原书 6.4.4 节：可被切分的激活张量</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \begin{aligned} \text{Activation Memory}={}&amp;\Big(8+\frac{8}{N_T}\Big)BTH+\frac{6}{N_T}BTH'+\frac{2}{N_T}BT^{2}N\\ &amp;{}\times L+4BTH+4BTV . \end{aligned} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(N_T\)</td><td>张量并行度，权重矩阵按行/列切 \(N_T\) 份</td><td>标量</td></tr>
+<tr><td>可切分张量</td><td>\(\mathbf{Q},\mathbf{K},\mathbf{V}\)、\(\mathrm{Concat}(\mathrm{head}_1,\dots,\mathrm{head}_N)\)、\(\mathbf{Q}\mathbf{K}^{\top}\)、\(\mathbf{W}_G\mathbf{X}\)、\(\mathbf{W}_U\mathbf{X}\)、\(\sigma(\mathbf{X}\mathbf{W}_U)\)</td><td>各 \(2BTH\)、\(2BTH'\)、\(2BT^{2}N\)</td></tr>
+<tr><td>不可切分张量</td><td>多头注意力层输入、FFN 层输入、两个归一化层输入</td><td>各 \(2BTH\)，共 4 份</td></tr>
+<tr><td>其余同 <a href="#eq-6-11">(6.11)</a></td><td>\(L,B,T,H,H',N,V\)</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<p>张量并行把矩阵乘法 \(\mathbf{H}\mathbf{W}_1\oplus\mathbf{H}\mathbf{W}_2\) 拆到多卡（如 Megatron-LM 沿行/沿列切块）。关键判断是：<strong>这个激活张量是"被多卡共同消费的完整张量"还是"每卡各自持有一片的小张量"</strong>。</p>
+<ol class="steps">
+<li><b>沿行切（column-parallel）的情形。</b>若 \(\mathbf{W}\in\mathbb{R}^{H\times H'}\) 沿输入维切成 \(\mathbf{W}^{(1)},\dots,\mathbf{W}^{(N_T)}\)，则输出 \(\mathbf{Y}=[\mathbf{X}\mathbf{W}^{(1)}\;\cdots\;\mathbf{X}\mathbf{W}^{(N_T)}]\)。每卡算出的是完整张量的<strong>一个切片</strong>，\(\mathbf{Y}\) 的 \(H'\) 维被切成 \(N_T\) 段。于是 \(\mathbf{Y}\)、\(\sigma(\mathbf{Y})\) 这类"下游激活"每卡只存 \(2BTH'/N_T\)。<strong>但输入 \(\mathbf{X}\) 每卡都要完整的</strong>——前向是 identity（不通信），反向对 \(\mathbf{X}\) 的梯度需要 all-reduce 求和。所以 \(\mathbf{X}\) 不可切分。</li>
+<li><b>沿列切（row-parallel）的情形。</b>把输出维切开后需要求和才得到完整 \(\mathbf{Y}\)，前向与反向各有一次 all-reduce；而每卡保存的是该层权重的 \(1/N_T\)，其伴随激活（\(\mathbf{X}\) 的各行分片）也只占 \(1/N_T\)。</li>
+<li><b>逐项清点可切分部分。</b>注意力侧：\(\mathbf{Q}\)、\(\mathbf{K}\)、\(\mathbf{V}\)、\(\mathrm{Concat}\) 共 4 个 \(2BTH\) 张量被切，合计 \(\frac{8}{N_T}BTH\)；再加上 \(\mathbf{Q}\mathbf{K}^{\top}\) 的 \(\frac{2}{N_T}BT^{2}N\)。FFN 侧：\(\mathbf{W}_G\mathbf{X}\)、\(\mathbf{W}_U\mathbf{X}\)、\(\sigma(\mathbf{X}\mathbf{W}_U)\) 共 3 个 \(2BTH'\) 张量被切，合计 \(\frac{6}{N_T}BTH'\)。</li>
+<li><b>不可切分部分共 4 份。</b>多头注意力层输入、FFN 层输入、两个归一化层输入，都是完整 \(H\) 维的 \(2BTH\)，每卡各存一份，共 \(4BTH\)，乘 \(L\)。</li>
+<li><b>输出层同理。</b>\(4BTH+4BTV\) 只存在于最后一层所在的那一组卡上，不除以 \(N_T\)。</li>
+<li><b>合并。</b>把上面各项乘层数 \(L\) 后与末尾两项相加，即得公式 6.13。</li>
+</ol>
+<div class="note"><b>直觉</b>公式里那个孤零零的 \(8BTHL\)（每层 16 份里的 8 份不除 \(N_T\)）就是张量并行"省不下来"的部分：凡是某层入口处的完整隐状态，每张卡都得拿一份全的。因为下一层的 all-reduce 恰恰需要完整向量才能正确求和。所以 \(N_T\) 增大时激活显存趋于 \(\lfloor 8BTH+6BTH'/N_T+2BT^2N/N_T\rfloor L\)，有硬下界。</div>
+<div class="note"><b>为什么切激活还要付通信代价</b>沿列切要求 all-reduce 完整输出才能继续算下一层，沿行切的前向输出是切片的、下一层的反向又要 all-reduce 才能还原出正确的 \(\partial\mathcal{L}/\partial\mathbf{X}\)。所以<strong>张量并行每层至少 2 次 all-reduce（前向 2、反向 2），量级是 batch 规模而非参数量</strong>——这就是它对带宽（NVLink）比对算力更敏感的原因，量化见 <a href="#eg-comm">并行通信量</a>。</div>
+<div class="warn"><b>易错点</b>\(N_T\) 一般不能太大（实践上限常取 8）：(1) 每卡保留 \(8BTHL\) 的不可切分激活，收益递减；(2) 每层 4 次 all-reduce 全部落在关键路径上，\(N_T\) 增大直接放大通信开销；(3) 必须配合 NVLink 域内放置，跨节点做张量并行几乎不可行。此外原书省略了 FlashAttention 的处理：用 FlashAttention 只需从式 (6.13) 中删去 \(\frac{2}{N_T}BT^2N\) 项。</div>
+<div class="relnav">相关：<a href="#eq-6-11">(6.11)</a>　<a href="#eq-6-12">(6.12) 流水并行</a>　<a href="#eg-comm">并行通信量</a>　<a href="#eq-6-14">(6.14)</a></div>
+</section>
+
+<h2 id="eg-comm">补充：数据并行与张量并行的通信量</h2>
+<p>原书 6.3 节讲了三种并行的机制，但没有给通信量公式。这里把账补上——判断"该不该用某种并行"靠的就是这两个数字。</p>
+<div class="eq">
+\[ \begin{aligned} \text{DP:}\quad &amp;\text{每步通信量}\;\approx\;2\big(N_D-1\big)\,\lVert\Delta\theta\rVert\;\xrightarrow[\text{分片摊薄}]{}\;2\,\frac{\lVert\Delta\theta\rVert}{N_D}\ \text{（每卡）}\\[4pt] \text{TP:}\quad &amp;\text{每层每次 all-reduce}\;=\;2\cdot\frac{B\cdot T\cdot H}{n}\ \text{元素}\;\xrightarrow{\text{每层 4 次}}\;4\times 2\cdot\frac{B\cdot T\cdot H}{N_T} \end{aligned} \]
+</div>
+<ol class="steps">
+<li><b>DP 的通信来自梯度同步。</b>数据并行的每张卡算自己那批数据的梯度 \(\Delta\theta_i\)，需要求平均 \(\Delta\theta=\frac{1}{N_D}\sum_i\Delta\theta_i\)。环形 all-reduce（ring all-reduce）分两阶段：reduce-scatter 把数据切成 \(N_D\) 份做部分求和（总线上传输 \((N_D-1)\lVert\Delta\theta\rVert\)），all-gather 再把结果广播回所有卡（同样 \((N_D-1)\lVert\Delta\theta\rVert\)），合计 \(2(N_D-1)\lVert\Delta\theta\rVert\)。每卡平均发出 \(\frac{2(N_D-1)}{N_D}\lVert\Delta\theta\rVert\approx2\lVert\Delta\theta\rVert\)，即 fp16 梯度下<strong>每个参数约 2 字节</strong>；若换成 ZeRO 式"只保留本卡那一片"的表述，就是 \(\frac{2\lVert\Delta\theta\rVert}{N_D}\)。</li>
+<li><b>DP 通信的关键：频率低、量级固定。</b>每次参数更新才同步一次，且通信量与<strong>参数量</strong>成正比、与 batch 无关。</li>
+<li><b>TP 的通信来自层内的切分。</b>每次 all-reduce 要传递的是隐状态切片的拼接结果，每个元素要送到 \(N_T\) 张卡上。单卡持有的切片是 \(\frac{B\cdot T\cdot H}{n}\)（\(n\) 为并行度，此处即 \(N_T\)），按 fp16 每元素 2 字节计，一次 all-reduce 的<strong>逻辑数据量</strong>就是 \(2\cdot\frac{B\cdot T\cdot H}{n}\) 元素对应字节。</li>
+<li><b>每层要通信几次？</b>多头注意力的 \(\mathbf{W}_V\)（沿列切，输出前向 all-reduce）和 \(\mathbf{W}_O\)（沿行切，输入反向 all-reduce），FFN 的 \(\mathbf{W}_U\) 和 \(\mathbf{W}_D\) 同理——每个模块 2 次，合计前向 2 次、反向 2 次、每层共 4 次。</li>
+<li><b>关键：反向为什么要传两次？</b>反向阶段要重建每个权重矩阵的梯度。沿行切的权重，\(\frac{\partial\mathcal{L}}{\partial\mathbf{X}}=\frac{\partial\mathcal{L}}{\partial\mathbf{Y}}\mathbf{W}^{\top}\) 中 \(\mathbf{W}^{\top}\) 是切片，必须 all-reduce 求和才能得到完整输入梯度；沿列切的权重同理。也就是"前向的每次 all-reduce，在反向都有一次镜像"，所以 <strong>4 次而非 2 次</strong>。</li>
+<li><b>对比量级。</b>DP 每步通信 \(\sim\lVert\Delta\theta\rVert\approx P\)；TP 每步通信 \(\sim L\cdot 4\cdot2BTH/N_T\)，随<strong>batch、序列长度、层数</strong>线性增长，与参数量无关。LLaMA (7B)：\(P=6.74\times10^9\) 字节 fp16，DP 每步约 13 GB；而 \(B=8,T=2048,H=4096,L=32,N_T=8\) 时，TP 每步约 \(32\times4\times2\times8\times2048\times4096/8\approx1.07\times10^{11}\) 字节 \(\approx107\) GB，<strong>比 DP 大一个量级</strong>。</li>
+</ol>
+<div class="warn"><b>易错点：带宽不是算力</b>算力可以在不同节点间用网络拼，通信不行。张量并行对带宽极其敏感，实践中必须把同一 TP 组放在同一 NVLink/NVSwitch 域内（8 卡以内），需要跨节点时改用流水并行（传的是 \(\frac{B\cdot T\cdot H}{N_P}\) 的层边界激活，比 TP 少得多、频率也低得多）。反向的通信次数被低估是常见错误——只算 2 次会低估一半。</div>
+<div class="note"><b>经验法则</b>判断瓶颈用"通信时间 / 计算时间"比值 \(\rho\)：DP 的 \(\rho\) 在大模型训练中通常小于 1（通信可与计算重叠），TP 的 \(\rho\) 常常接近甚至超过 1，此时就成为训练速度的主要限制。设计上把并行度乘积控制在 \(N_DN_PN_T=n_{\text{gpu}}\) 即可。</div>
+
+<section class="fml" id="eq-6-14">
+<h2><span class="num">(6.14)</span>激活重计算后的激活显存<a class="anchor" href="#eq-6-14">#</a></h2>
+<p class="where"><b>出处</b>第 6 章 6.4.4 节 Training Memory Estimation（Activation recomputation）　<a href="../thellm/12-6-model-pre-training.html#6-4-3-activation-recomputation">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0151.png" alt="原书公式 6.14"><span class="cap">原书公式 6.14</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \text{Activation Memory}=(4+2L)\,BTH+4BTV. \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(2BTH\)</td><td>每层只保留该层<strong>输入</strong> \(\mathbf{X}\) 的 fp16 副本</td><td>字节</td></tr>
+<tr><td>\(4BTH\)</td><td>末尾的 \(\mathbf{Y}^{L}\)：最终归一化输入 + 词表映射输入</td><td>字节</td></tr>
+<tr><td>\(4BTV\)</td><td>softmax 输入 \(\mathbf{Y}^{L}\mathbf{W}^{L}\) 的 fp32 副本</td><td>字节</td></tr>
+<tr><td>\(L,B,T,H,V\)</td><td>层数 / 批大小 / 序列长 / 隐藏维 / 词表</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>策略。</b>前向只存每个 decoder 层的输入 \(\mathbf{X}\in\mathbb{R}^{B\times T\times H}\)，层内全部中间激活（\(Q,K,V\)、注意力分数、FFN 的三个 \(H'\) 张量、归一化输入）一律丢弃。</li>
+<li><b>反向时重建。</b>轮到第 \(l\) 层反向时，用存下的 \(\mathbf{X}^{(l)}\) 把该层前向重跑一遍，重建出 \(\mathbf{Q},\mathbf{K},\mathbf{V}\) 等中间量，再按链式法则算 \(\partial\mathcal{L}/\partial\mathbf{X}^{(l)}\) 与各权重梯度。因为每层的计算是确定性的纯函数，重算结果与原值一致（无随机性；dropout 在 LLM 预训练中本就不用）。</li>
+<li><b>清点剩余存储。</b>层输入共 \(L\times2BTH\)；末尾 \(\mathbf{Y}^{L}\) 需两份（最终归一化输入、词表映射输入）共 \(4BTH\)；softmax 的 fp32 输入 \(4BTV\)。</li>
+<li><b>求和。</b>\(2LBTH+4BTH+4BTV=(4+2L)BTH+4BTV\)。</li>
+</ol>
+<div class="eq">
+\[ \frac{\text{式 (6.14)}}{\text{式 (6.11)}}\;\approx\;\frac{(4+2L)BTH}{(16+6H'/H)BTH\cdot L+4BTH}\;\xrightarrow{\,L\gg1,\;H'/H\approx2.7\,}\;\frac{1}{L}\cdot\frac{1}{32}\approx\frac{1}{1000} \]
+</div>
+<p>即激活显存降到原来的 <strong>约 1/30 ~ 1/1000</strong> 量级（L 越大越省，因为省掉的是"层内"细项、保留的是"层输入"大项，而后者随 \(L\) 线性增长）。</p>
+<div class="note"><b>直觉</b>这就是"带计算的笔记本"：平时只记笔记（层输入），要查某段推导时现场重算一遍。代价是多花 33% 算力（6.9 中 \(6\to8\)），换来显存能装下模型。所以现代大模型训练几乎默认开重计算——尤其是流水并行本身就需要它来削掉 stage 内的大量激活。</div>
+<div class="warn"><b>易错点</b>(1) 重计算会让 batch 变小（显存省下来才能开更大 \(B\)），进而影响梯度噪声与训练稳定性。(2) 它与流水并行的梯度累积是两件事：后者是为填气泡，前者是为省显存，工程上通常一起开。(3) 原书公式只算"全层重计算"；PyTorch 支持更细粒度的 <code>use_reentrant</code> / 逐子块 checkpoint，显存介于两者之间。</div>
+<div class="relnav">相关：<a href="#eq-6-9">(6.9) 算力 \(6\to8\)</a>　<a href="#eq-6-11">(6.11) 重算前</a>　<a href="#eq-6-15">(6.15) 单卡总量</a></div>
+</section>
+
+<section class="fml" id="eq-6-15">
+<h2><span class="num">(6.15)</span>单卡总显存（ZeRO-3 + FlashAttention + 重计算）<a class="anchor" href="#eq-6-15">#</a></h2>
+<p class="where"><b>出处</b>第 6 章 6.4.4 节 Training Memory Estimation（Example）　<a href="../thellm/12-6-model-pre-training.html#6-4-4-training-memory-estimation">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0152.png" alt="原书公式 6.15"><span class="cap">原书公式 6.15</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \text{Per-GPU Memory}\;\approx\;\frac{16P}{N_D}+(4+2L)BTH+12BTV+6 . \]
+</div>
+<p>末项 \(6\) 的单位是 GB，来自：PyTorch 框架加载库 kernel 约 0.8–1 GB；DeepSpeed 的 ZeRO 实现本身 1–4 GB；显存碎片 0.5–1 GB。</p>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(16P/N_D\)</td><td>参数 + 梯度 + 优化器状态（ZeRO-3 全分片）</td><td>字节</td></tr>
+<tr><td>\((4+2L)BTH\)</td><td>激活显存（开重计算、FlashAttention，故无 \(BT^2N\) 项）</td><td>字节</td></tr>
+<tr><td>\(12BTV\)</td><td>\(4BTV\)：softmax 的 fp32 输入；\(8BTV\)：Transformers 库实现 softmax 时的额外中间量（相当于输入的两倍）</td><td>字节</td></tr>
+<tr><td>\(6\)</td><td>框架 kernel + ZeRO 实现 + 显存碎片</td><td>GB</td></tr>
+<tr><td>\(P,N_D,L,B,T,H,V\)</td><td>见 <a href="#symtab">符号表</a></td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>第一项：状态显存。</b>按 <a href="#eg-zero">ZeRO 阶梯</a>，ZeRO-3 把参数、梯度、优化器状态全部按 \(N_D\) 切分，每卡 \(16\dfrac{P}{N_D}\) 字节。这是<strong>唯一随参数量增长的主导项</strong>。</li>
+<li><b>第二项：激活显存。</b>直接取式 (6.14)（用了重计算）；又因为用了 FlashAttention，式 (6.11)/(6.12)/(6.13) 里的 \(2BT^2N\)、\(\frac{2}{N_T}BT^2N\) 项本就被删掉了，所以这里也不含平方项。</li>
+<li><b>第三项：输出层附近的开销。</b>\(4BTV\) 是 softmax 的 fp32 输入；Transformers 库在实现式 (5.11) 的 softmax 时还有额外中间量，约等于输入大小的 2 倍，即 \(8BTV\)。两项相加 \(4BTV+8BTV=12BTV\)。</li>
+<li><b>第四项：固定开销。</b>这是纯工程经验值，不是公式推导：框架 ~1 GB + ZeRO 实现 1–4 GB + 碎片 0.5–1 GB \(\approx6\) GB。</li>
+<li><b>相加。</b>得到式 (6.15)。它是一份"配置说明书"：<strong>数据并行 + ZeRO-3 + FlashAttention + 激活重计算</strong> 四件套齐全时的单卡显存。</li>
+</ol>
+<div class="note"><b>直觉</b>这条式子的形状就是"训模型显存账单"：<strong>模型本体（不可压缩，只能靠分卡）+ 激活（可以靠重计算换）+ 输出层附近的零碎（随词表大小走）+ 固定开销（常数）</strong>。做容量规划时通常先按第一项定卡数，再看第二项定 batch size \(B\)——\(B\) 只影响后两项，是个自由旋钮。</div>
+<div class="note"><b>反向求解 batch size</b>给定卡数和显存余量，对式 (6.15) 解 \(B\)：
+<div class="eq">
+\[ B\;\approx\;\frac{M-6\times10^{9}-\frac{16P}{N_D}}{T\,(2L+4)H+12TV} \]
+</div>
+<p>其中 \(M\) 为单卡显存。13B 模型（\(P\approx1.3\times10^{10}\)）：3 张 A800-80G 上 \(B\approx2\)（太小、效率低），所以原书建议至少 4 卡取 \(B\approx12\)；30B、65B 则分别至少需要 8 卡、16 卡。</p></div>
+<div class="warn"><b>易错点</b>(1) \(6\) 是 GB 不是字节，与前三项的字节混在一起属于量纲不严谨，实际编程时统一按字节处理（\(6\times10^9\)）。(2) 该式假设 ZeRO-3 已把参数切到最小，ZeRO-1/2 的第一项分别是 \(4P+12P/N_D\)、\(2P+14P/N_D\)，不能套用。(3) 它忽略了注意力本身的临时显存与通信 buffer，长上下文时要额外预留。</div>
+<div class="relnav">相关：<a href="#eg-zero">ZeRO 显存阶梯</a>　<a href="#eq-6-14">(6.14) 重计算激活</a>　<a href="#eq-6-10">(6.10) 训练时间</a>　<a href="#eg-llama7b-mem">LLaMA(7B) 显存实例</a></div>
+</section>
+
+<h2 id="eg-llama7b-mem">补充实例：LLaMA (7B) 双卡 A800-80G 的显存账</h2>
+<div class="origin"><img src="../thellm/assets/fig-0153.png" alt="原书 6.4.4 节 LLaMA(7B) 显存实例（无编号公式）"><span class="cap">原书 6.4.4 节：LLaMA (7B) 每卡显存合计</span></div>
+<ol class="steps">
+<li><b>参数与优化器状态。</b>\(L=32\)、\(H=4096\)、\(P\approx6.74\times10^9\)，2 卡数据并行（\(N_D=2\)）：\(\frac{16P}{N_D}\approx5.39\times10^{10}\) 字节 \(\approx50.20\) GB。</li>
+<li><b>激活。</b>\(B=8,T=2048,V=32000\)：\((4+2L)BTH+4BTV=(4+2\times32)\times8\times2048\times4096+4\times8\times2048\times32000\approx6.66\times10^{9}\) 字节 \(\approx6.20\) GB。</li>
+<li><b>中间结果。</b>\(8BTV=8\times8\times2048\times32000\approx4.19\times10^{9}\) 字节 \(\approx3.91\) GB。</li>
+<li><b>其他开销。</b>\(\approx6\) GB（框架 + ZeRO 实现 + 碎片）。</li>
+<li><b>合计。</b>\(50.20+6.20+3.91+6\approx66\) GB，正好落在 A800-80G 的 80GB 之内——这就是"7B 模型全参训练至少要 2 张 80G 卡"这句话的完整来历。</li>
+</ol>
+<div class="note"><b>直觉</b>账单结构很说明问题：模型本体（50.2 GB）占了四分之三，激活只占 6.2 GB。所以<strong>"能不能训得动 7B"主要由参数量决定</strong>；如果显存不够，加卡（提高 \(N_D\)）比调小 batch 更直接。反过来，模型小的时候激活可能反超——那时 FlashAttention 与重计算才是主力。</div>
+
+<h2 id="wrap-up">把这一页串起来</h2>
+<table class="sym">
+<tr><th>我想做的事</th><th>用哪条公式</th><th>关键旋钮</th></tr>
+<tr><td>估算总账（FLOPs）</td><td><a href="#eq-6-9">(6.9)</a> \(6CP\)</td><td>\(P\)、\(C\)、是否重计算</td></tr>
+<tr><td>估算工期</td><td><a href="#eq-6-10">(6.10)</a></td><td>卡数、有效 FLOPS（30–70% 峰值）</td></tr>
+<tr><td>估算单卡显存</td><td><a href="#eq-6-15">(6.15)</a></td><td>\(N_D\)、\(B\)、是否 ZeRO-3/重计算</td></tr>
+<tr><td>为什么不能无限加卡</td><td><a href="#eg-comm">通信量</a></td><td>TP 组必须留在 NVLink 域内</td></tr>
+<tr><td>7B 模型为什么至少 2 张 80G</td><td><a href="#eg-zero">\(16P\)</a> + <a href="#eg-llama7b-mem">实例</a></td><td>fp16+fp32 混合精度的 16 字节/参数</td></tr>
+</table>
+<div class="why"><b>本页的"经验成分"在哪</b>公式 6.9–6.15 全部是<strong>工程估算</strong>而非数学定理：常数 6 与 8 来自"前向 1 次 + 反向 2 次矩阵乘"这个结构事实（这部分是推导）；而"线性变换参数占 95% 以上"、"\(T&lt;H\)"、"激活占 16 份 \(BTH\)"、"固定开销 6 GB"、"有效算力 30–70%" 都是实验归纳的经验值。改动模型结构（如 MoE 换掉稠密 FFN）或大幅拉长上下文时，必须重新校准。</div>
+<div class="relnav">相关：<a href="../06-ch06-pt-a.html">第 6 章（1/2）AdamW 与学习率调度</a>　<a href="../01-ch02-scaling.html">第 2 章 算力 \(C=6ND\) 的缩放定律</a>　<a href="../03-ch05-arch-a.html">第 5 章（1/3）注意力与 FFN 的矩阵形状</a></div>

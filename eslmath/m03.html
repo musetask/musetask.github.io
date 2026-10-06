@@ -1,0 +1,2117 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="最小二乘的正规方程与帽子矩阵、高斯误差下 t/F/χ² 分布的来源、QR 与 SVD 视角，以及 ridge / lasso / LARS 的正则化推导">
+<title>线性回归方法 · Linear Methods for Regression · ESL 数学推导</title>
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/style.css">
+<script defer src="../assets/katex/katex.min.js"></script>
+<script defer src="../assets/katex/auto-render.min.js"></script>
+<script defer src="assets/app.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="bar">
+  <button class="icon" id="themeToggle" type="button" aria-label="切换深色模式">&#9681;</button>
+  <a class="title" href="index.html">ESL 数学推导</a>
+  <a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<h1 id="s-3" class="ch anchored"><span class="num">3</span> 线性回归方法</h1>
+<p>本章是全书的数学主干：几乎所有后续方法都能看成这里某个技巧的变体（正则化、判别、降维、树、提升、神经网络、集成）。</p>
+<p>三条主线：</p>
+<ul><li><strong>§3.2–3.4 最小二乘的完整理论</strong>：把 $\arg\min_\beta\|y-X\beta\|^2$ 一步步推到 $\hat\beta=(X^\top X)^{-1}X^\top y$，并说明这个解为什么同时是投影、为什么系数在正态误差下服从多元正态、$t$/$F$/$\chi^2$ 统计量从哪来。</li><li><strong>§3.5–3.6 正则化与计算</strong>：用 SVD 换一套坐标看最小二乘，ridge 与 lasso 的收缩效应、KKT 条件、LARS 算法。</li><li><strong>§3.7–3.8 降维与收缩的统一</strong>：PCR / PLS / CCA / 稀疏惩罚，都写成 $\hat\beta(\lambda)=\arg\min R(\beta)+\lambda J(\beta)$ 的特例。</li></ul>
+<h2 id="s-3-2" class="anchored"><span class="num">3.2</span> 线性回归模型与最小二乘</h2>
+<p>这一节是整章的地基。书里用三行公式写完的内容（最小二乘的 $\arg\min$、正规方程、高斯假设下的精确分布），我们把它拆成六个小节：先求「$\hat\beta$ 是什么」，再说「$\hat\beta$ 是什么的概率分布」，然后是系数估计的偏差与方差，最后是数值算法。</p>
+<p>模型本身只有一行：把响应变量 $Y$ 写成常数项加 $p$ 个预测变量的线性组合。</p>
+<div class="eq"><div class="escroll">
+$$
+f(X)=\beta_0+\sum_{j=1}^p X_j\beta_j
+$$
+</div><span class="tag">(3.1)</span></div>
+<p>$X_j$ 是一个长度为 $N$ 的向量（第 $i$ 个观测上第 $j$ 个预测变量的取值），$\beta_0$ 是截距，$\beta_j$ 是第 $j$ 个系数的<strong>真值</strong>。要强调的关键点：$f$ 关于<strong>系数是线性的</strong>，关于 $X_j$ 未必线性。预测变量 $X_j$ 可以有五种来源：</p>
+<ul><li>数值型变量的原始取值 $x_{ij}$；</li><li>变换后的数值，例如 $X_j = \log x_j$、$X_j = x_j^2$、$X_j = e^{-x_j}$；</li><li>基展开（basis expansion）：把 $x_j$ 在一组基函数 $\phi_1,\dots,\phi_{p_j}$ 上展开，$X_j=\sum_k\phi_k(x_j)$，例如多项式基；</li><li>哑变量编码（dummy coding）：定性变量按水平数拆成多个 0/1 列；</li><li>交互项：$X_j = x_{j_1}x_{j_2}$，使模型对 $X$ 本身非线性。</li></ul>
+<p><a class="src" href="../esl/ch03-linear-methods-for-regression.html#s-3-2">原文 §3.2</a></p>
+<p>「最小」的判据是平方误差和：</p>
+<div class="eq long"><div class="escroll">
+$$
+\mathrm{RSS}(\beta)=\sum_{i=1}^N\big(y_i-f(x_i)\big)^2=\sum_{i=1}^N\Big(y_i-\beta_0-\sum_{j=1}^p x_{ij}\beta_j\Big)^2
+$$
+</div><span class="tag">(3.2)</span></div>
+<p>选平方而不是绝对值，是因为平方可微、无条件凸、有闭式解。统计解释：当 $y_i$ 条件独立且 $E[y_i\mid x_i]=f(x_i)$ 时，$\mathrm{RSS}$ 是 $N$ 个独立同分布随机变量的和的平方，其中每个的期望是 $\mathrm{Var}(y_i\mid x_i)$。于是 $\hat\beta$ 在两个意义下「好」：它是条件均值的最小二乘近似（无偏性条件 $\beta_0+\sum_j\beta_jx_{ij}=E[y_i\mid x_i]$），也是条件方差加权和的最小值。$p=0$ 时 (3.2) 退化为 $\sum_i(y_i-\bar y)^2$，即中心化，这提醒我们截距项的作用就是吸收常数。</p>
+<h3 id="s-3-2-1" class="anchored"><span class="num">3.2.1</span> 从残差平方和到正规方程</h3>
+<div class="aside basis"><p class="hd">基础知识 · 用到的工具</p><ul><li><strong>内积与范数</strong>（见预备知识 L1）：$\langle a,b\rangle=a^\top b$，$\mathrm{RSS}=\langle y-X\beta,\,y-X\beta\rangle$，所以 $\mathrm{RSS}$ 是 $\beta$ 的二次函数（每项 $\beta^\top X^\top X\beta$）。</li><li><strong>二次型求导</strong>（见预备知识 L4）：$A$ 对称时 $\nabla_\beta(\beta^\top A\beta)=2A\beta$，$A$ 不对称时为 $(A+A^\top)\beta$。</li><li><strong>正定与唯一极小</strong>（见预备知识 L1、C2）：$A$ 对称正定 ⟹ $\beta^\top A\beta$ 严格凸，$\nabla=0$ 处即唯一全局极小，且可用配方写成 $\beta^\top A\beta=(\beta-\beta^\star)^\top A(\beta-\beta^\star)+b^\top A^{-1}b$。</li><li><strong>投影定理</strong>（见预备知识 L2）：$\mathrm{col}(X)$ 中的唯一点 $\hat y$ 使 $y-\hat y\perp\mathrm{col}(X)$。</li><li><strong>SVD 与秩</strong>（见预备知识 L3）：$X=UDV^\top$ 给出 $\ker(X)=\ker(V^\top)$。</li></ul></div>
+<p><strong>第 1 步：写出矩阵形式。</strong> 把 (3.2) 逐项展开成双重求和再收集二次项：</p>
+<div class="eq long"><div class="escroll">
+$$
+\sum_{i=1}^N\Big(y_i-\beta_0-\sum_{j=1}^p x_{ij}\beta_j\Big)^2=\sum_{i=1}^N y_i^2-2\sum_{i=1}^N y_i\Big(\beta_0+\sum_{j=1}^p x_{ij}\beta_j\Big)+\sum_{i=1}^N\Big(\beta_0+\sum_{j=1}^p x_{ij}\beta_j\Big)^2
+$$
+</div><span class="tag">(3.3)</span></div>
+<p>最后一项的常数部分是 $N\beta_0^2$，线性部分是 $2\beta_0\sum_ix_{ij}\beta_j$，二次部分是 $\sum_{i,j}x_{ij}x_{ik}\beta_j\beta_k$。把这些收集起来就是</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{RSS}(\beta)=(y-X\beta)^\top(y-X\beta)=y^\top y-2\beta^\top X^\top y+\beta^\top X^\top X\beta
+$$
+</div></div>
+<p>其中 $X$ 是 $N\times(p+1)$ 矩阵，第 $i$ 行为 $(1,x_{i1},\dots,x_{ip})^\top$，$y=(y_1,\dots,y_N)^\top$，$\beta=(\beta_0,\beta_1,\dots,\beta_p)^\top$。核对一遍：$(y-X\beta)^\top(y-X\beta)=\sum_{i,k}(y_i-\sum_j x_{ij}\beta_j\cdot I_{jk})(y_k-\sum_\ell x_{k\ell}\beta_\ell)$，对 $i\ne k$ 的交叉项成对抵消，只剩 $i=k$，即 (3.3)。</p>
+<p><strong>第 2 步：求一阶导。</strong> 直接对分量求导，再翻译成矩阵。对 $\beta_j$ 求导（$j\ge1$）：</p>
+<div class="eq long"><div class="escroll">
+$$
+\frac{\partial\mathrm{RSS}}{\partial\beta_j}=2\sum_{i=1}^N\Big(y_i-\beta_0-\sum_{k=1}^p x_{ik}\beta_k\Big)(-x_{ij})=-2\sum_{i=1}^N x_{ij}\big(y_i-\beta_0-\sum_{k=1}^p x_{ik}\beta_k\big)
+$$
+</div></div>
+<p>对 $\beta_0$ 求导：$\frac{\partial\mathrm{RSS}}{\partial\beta_0}=-2\sum_i\big(y_i-\beta_0-\sum_kx_{ik}\beta_k\big)$，正是上式在 $j=0$（令 $x_{i0}=1$）时的特例。矩阵语言里，$X^\top(y-X\beta)$ 的第 $j$ 分量 $=\sum_i x_{ij}(y_i-\sum_kx_{ik}\beta_k)$，故</p>
+<div class="eq long"><div class="escroll">
+$$
+\frac{\partial \mathrm{RSS}}{\partial\beta}=-2X^\top(y-X\beta),\qquad \frac{\partial^2 \mathrm{RSS}}{\partial\beta\,\partial\beta^\top}=2X^\top X
+$$
+</div><span class="tag">(3.4)</span></div>
+<p>海森矩阵的推导只需再求一次导：$\frac{\partial X^\top(y-X\beta)}{\partial\beta}=-X^\top X$，所以 $\frac{\partial^2\mathrm{RSS}}{\partial\beta\partial\beta^\top}=-2\cdot(-X^\top X)=2X^\top X$。</p>
+<div class="aside key"><p class="hd">结果</p><p>$X^\top X$ 对称，所以二阶导存在且在 $\beta$ 无关；$\mathrm{RSS}$ 是严格凸的（二阶充分条件，见预备知识 C2），因此<strong>局部极小即全局极小，且只要存在就是唯一的</strong>。这解释了为什么最小二乘不需要任何迭代算法。</p></div>
+<p><strong>第 3 步：正规方程。</strong> 令 (3.4) 的第一个式子为零：</p>
+<div class="eq"><div class="escroll">
+$$
+X^\top(y-X\beta)=0\ \Longleftrightarrow\ X^\top y=(X^\top X)\beta
+$$
+</div><span class="tag">(3.5)</span></div>
+<p>这一步的统计含义非常重要：$X^\top(y-X\beta)=0$ 说残差 $r=y-X\beta$ 与 $X$ 的<strong>每一列</strong>都正交，特别地 $r\perp$ 截距列（即 $\sum_ir_i=0$）。</p>
+<p><strong>第 4 步：解出来。</strong> 若 $X$ 列满秩（$\mathrm{rank}(X)=p+1$），则 $X^\top X$ 正定可逆：</p>
+<div class="eq"><div class="escroll">
+$$
+\hat\beta=(X^\top X)^{-1}X^\top y
+$$
+</div><span class="tag">(3.6)</span></div>
+<p>$X^\top X$ 正定的证明：设 $\beta\ne0$，则 $X\beta\ne0$（否则 $\beta$ 在零空间里，与列满秩矛盾），故 $\beta^\top X^\top X\beta=\lVert X\beta\rVert^2&gt;0$（见预备知识 L1）。所以 (3.5) 有唯一解。</p>
+<p><strong>第 5 步：拟合值与帽子矩阵。</strong></p>
+<div class="eq"><div class="escroll">
+$$
+\hat y=X\hat\beta=X(X^\top X)^{-1}X^\top y=H y \qquad H:=X(X^\top X)^{-1}X^\top
+$$
+</div><span class="tag">(3.7)</span></div>
+<p>验证 $H$ 是正交投影。转置：$H^\top=(X(X^\top X)^{-1}X^\top)^\top=X\big((X^\top X)^{-1}\big)^\top X^\top$，而 $X^\top X$ 对称 ⟹ $(X^\top X)^{-1}$ 对称（预备知识 L1：$A^{-1}$ 对称 ⟺ $A$ 对称），故 $H^\top=H$。幂等：</p>
+<div class="eq"><div class="escroll">
+$$
+H^2=X(X^\top X)^{-1}\underbrace{X^\top X}_{(X^\top X)^{-1}(X^\top X)^{-1}}X^\top=X(X^\top X)^{-1}X^\top=H
+$$
+</div></div>
+<p>用到的唯一一步是 $(X^\top X)^{-1}(X^\top X)=I$。对称且幂等 $\iff$ 正交投影（预备知识 L2），所以</p>
+<div class="eq"><div class="escroll">
+$$
+\hat y=\mathop{\mathrm{Proj}}_{\mathrm{col}(X)}y,\qquad r=(I-H)y\perp \mathrm{col}(X)
+$$
+</div></div>
+<p><strong>第 6 步：几何解释。</strong> 在 $\mathbb{R}^N$ 里，$\mathrm{col}(X)$ 是一个 $p+1$ 维子空间，$y$ 落在它外面。$\hat\beta$ 使 $\hat y$ 是 $\mathrm{col}(X)$ 中离 $y$ 最近的点，残差 $r\perp\hat y$。于是勾股定理给出 Pythagoras 分解</p>
+<div class="eq"><div class="escroll">
+$$
+\lVert y\rVert^2=\lVert \hat y\rVert^2+\lVert r\rVert^2=\hat y^\top H y+r^\top r
+$$
+</div></div>
+<p>（用到 $H^2=H$、$H^\top=H$：$\hat y^\top Hy=(Hy)^\top Hy=\lVert Hy\rVert^2$，$r^\top r=y^\top(I-H)^2y=y^\top(I-H)y$）。这个恒等式是后面所有方差分解与 $F$ 检验的起点。</p>
+<div class="aside warn"><p class="hd">坑</p><p>(3.6) 需要 $\mathrm{rank}(X)=p+1$，即 $N\ge p+1$ 且设计矩阵列满秩（无共线）。$X^\top X$ 奇异时 (3.6) <strong>不存在</strong>，但 (3.7) 的 $\hat y$ 仍然唯一——因为投影唯一。用 SVD $X=U_rD_rV_r^\top$（$r=\mathrm{rank}(X)$，见预备知识 L3）可把解写成</p>
+<div class="eq"><div class="escroll">
+$$
+\hat\beta=V_rD_r^{-1}U_r^\top y=X^+y,\qquad \hat y=U_rU_r^\top y
+$$
+</div></div>
+<p>其中 $X^+=V_rD_r^{-1}U_r^\top$ 是 Moore–Penrose 伪逆。它给出所有解中欧氏范数最小的那一个，代价是 $\hat\beta$ 的坐标依赖基的选择（换基会改变 $\hat\beta$，但 $\hat y$ 不变）。</p></div>
+<h3 id="s-3-2-2" class="anchored"><span class="num">3.2.2</span> 高斯误差模型与精确抽样分布</h3>
+<p>有了 $\hat\beta$ 的表达式，接下来问：它的<strong>不确定性</strong>有多大。为此必须加一个概率模型——高斯线性模型：</p>
+<div class="eq"><div class="escroll">
+$$
+Y=\beta_0+\sum_{j=1}^p X_j\beta_j+\varepsilon=X\beta+\varepsilon,\qquad \varepsilon\sim N(0,\sigma^2 I_N)
+$$
+</div><span class="tag">(3.9)</span></div>
+<p>这里 $\varepsilon\sim N(0,\sigma^2I_N)$ 的含义是：$N$ 个误差独立、均值 0、方差都是 $\sigma^2$。于是 $y=X\beta+\varepsilon$，$E[y]=X\beta$，$\mathrm{Cov}(y)=\sigma^2 I_N$。</p>
+<div class="aside basis"><p class="hd">基础知识 · 本小节要用的分布性质</p><ul><li><strong>线性变换律</strong>（预备知识 L5）：$Z=aX\Rightarrow E[Z]=aE[X]$，$\mathrm{Cov}(aX)=a\,\mathrm{Cov}(X)\,a^\top$；等价地 $\mathrm{Var}(\sum_k a_kZ_k)=\sum_{ij}a_ia_j\mathrm{Cov}(Z_i,Z_j)$。</li><li><strong>高斯向量的二次型</strong>（预备知识 P4）：$Z\sim N(\mu,I_p)$，$A$ 对称、特征值 $\lambda_1,\dots,\lambda_p$，则 $Z^\top AZ=\sum_i\lambda_i Z_i^2+\mu^\top A\mu$，即加权 $\chi^2$ 求和；若所有 $\lambda_i=1$ 就是 $\chi^2_p$。</li><li><strong>$t$ 分布定义</strong>（预备知识 P4）：$Z\sim N(0,1)$、$V\sim\chi^2_\nu$ 独立，$\frac{Z}{\sqrt{V/\nu}}\sim t_\nu$。</li><li><strong>加权 $\chi^2$ 求和定理</strong>（预备知识 P4）：$\sum_i\lambda_i\chi^2_{1,i}\sim\sigma^2\chi^2_{\sum\lambda_i}$ 当且仅当权全为 $\sigma^2$（更一般地只有权相等时才简化为单个 $\chi^2$）。</li><li><strong>迹与期望</strong>（预备知识 L4）：$E[u^\top A v]=u^\top EA\,v$，$\sum_i a_{ii}=\mathrm{tr}(A)$。</li></ul></div>
+<p><strong>第 1 步：$\hat\beta$ 的方差。</strong> 由 (3.6) 与 $y=X\beta+\varepsilon$：</p>
+<div class="eq long"><div class="escroll">
+$$
+\hat\beta=(X^\top X)^{-1}X^\top y=(X^\top X)^{-1}X^\top(X\beta+\varepsilon)=(X^\top X)^{-1}X^\top X\beta+(X^\top X)^{-1}X^\top\varepsilon=\beta+A\varepsilon,\qquad A=(X^\top X)^{-1}X^\top
+$$
+</div></div>
+<p>这里 $X$ 是 $N\times(p+1)$，所以 $A=(X^\top X)^{-1}X^\top$ 是 $(p+1)\times N$，与噪声 $\varepsilon\in\mathbb{R}^N$ 同形相乘。 <strong>记号陷阱</strong>：$A$ 是「把 $N$ 维噪声映到 $p+1$ 维系数」的那个矩阵，所以出现的一定是 $A\varepsilon$，不是 $A\varepsilon$； 而 $AA^\top$ 是 $(p+1)\times(p+1)$（$=(X^\top X)^{-1}$）、$A^\top A$ 是 $N\times N$（$=$ 帽子矩阵 $H$）。两个顺序千万别混，下面那张形状对照表值得记住。</p>
+<p>用协方差的线性变换律（预备知识 L5）与 $\mathrm{Cov}(\varepsilon)=\sigma^2 I_N$：</p>
+<div class="eq long"><div class="escroll">
+$$
+\mathrm{Var}(\hat\beta)=A(\sigma^2I_N)A^\top=\sigma^2 A A^\top=\sigma^2 (X^\top X)^{-1}X^\top X(X^\top X)^{-1}=\sigma^2(X^\top X)^{-1}
+$$
+</div></div>
+<p>（第一步用协方差的线性变换律 $\mathrm{Cov}(Az)=A\,\mathrm{Cov}(z)\,A^\top$，见预备知识 L5；中间一步把 $A$ 与 $A^\top$ 的具体形状代进去， 中间三项 $(X^\top X)^{-1}\cdot X^\top X\cdot (X^\top X)^{-1}$ 正好约成 $(X^\top X)^{-1}$。）因此</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{Var}(\hat\beta)=\sigma^2(X^\top X)^{-1}
+$$
+</div><span class="tag">(3.8)</span></div>
+<p>顺带记一个后面要反复用的<strong>形状对照</strong>，避免把 $A^\top A$ 与 $AA^\top$ 搞反：</p>
+<div class="tscroll-x"><table class="fx"><thead><tr><th>矩阵</th><th>形状</th><th>等于</th></tr></thead><tbody><tr><td>$A=(X^\top X)^{-1}X^\top$</td><td>$(p+1)\times N$</td><td>—</td></tr><tr><td>$AA^\top$</td><td>$(p+1)\times(p+1)$</td><td>$(X^\top X)^{-1}$</td></tr><tr><td>$A^\top A$</td><td>$N\times N$</td><td>$H=X(X^\top X)^{-1}X^\top$</td></tr></tbody></table></div>
+<p>分量形式：$\mathrm{Var}(\hat\beta_j)=\sigma^2\big[(X^\top X)^{-1}\big]_{jj}=:\sigma^2v_j$。注意 $v_j$ 就是帽子矩阵的第 $j$ 个对角元（预备知识 L2 中 $x^\top(X^\top X)^{-1}x$ 对应 $X$ 的某列时的结论，用 Sherman–Morrison 秩一更新可验证 $h_{jj}=x_j^\top(X^\top X)^{-1}x_j$），它是「第 $j$ 个系数被数据挤压的程度」。</p>
+<p><strong>第 2 步：$\sigma^2$ 的估计与无偏性。</strong> 定义</p>
+<div class="eq"><div class="escroll">
+$$
+\hat\sigma^2=\frac{1}{N-p-1}\sum_{i=1}^N(y_i-\hat y_i)^2=\frac{r^\top r}{N-p-1}
+$$
+</div></div>
+<p>为什么除以 $N-p-1$ 而不是 $N$？因为残差不是 $N$ 个自由量。先证 $E[\mathrm{RSS}]=(N-p-1)\sigma^2$。由 $r=y-\hat y=(I-H)y$ 与 $y=X\beta+\varepsilon$：</p>
+<div class="eq long"><div class="escroll">
+$$
+r=(I-H)(X\beta+\varepsilon)=\underbrace{(I-H)X}_{=\,X-HX=\,X-X(X^\top X)^{-1}X^\top X=\,X-HX=\,0}\beta+(I-H)\varepsilon=(I-H)\varepsilon
+$$
+</div></div>
+<p>（这里 $HX=X$，因为 $X(X^\top X)^{-1}X^\top X=X$。）于是 $\mathrm{RSS}=r^\top r=\varepsilon^\top(I-H)^\top(I-H)\varepsilon=\varepsilon^\top(I-H)\varepsilon$，用到 $(I-H)^\top(I-H)=(I-H)^2=I-H$（对称幂等）。又因 $(I-H)\beta=0$，可以把 $\varepsilon$ 换成 $y$：</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{RSS}=y^\top(I-H)y
+$$
+</div></div>
+<p>取期望：$E[\mathrm{RSS}]=E[y]^\top(I-H)E[y]+\mathrm{tr}\big((I-H)\mathrm{Cov}(y)\big)=0+\sigma^2\mathrm{tr}(I-H)=\sigma^2(N-\mathrm{tr}(H))$。而 $\mathrm{tr}(H)=\mathrm{tr}(X(X^\top X)^{-1}X^\top)=\mathrm{tr}\big((X^\top X)^{-1}(X^\top X)\big)=\mathrm{tr}(I_{p+1})=p+1$（迹的循环律，预备知识 L4）。故</p>
+<div class="eq"><div class="escroll">
+$$
+E[\mathrm{RSS}]=(N-p-1)\sigma^2\ \Longrightarrow\ E[\hat\sigma^2]=\sigma^2
+$$
+</div></div>
+<p>$\hat\sigma^2$ 无偏。自由度 $N-p-1$ 的来源：$\mathrm{col}(X)$ 是 $p+1$ 维，$y$ 所在空间是 $N$ 维，$y$ 到子空间的<strong>正交分量</strong>只有 $N-p-1$ 个。</p>
+<p><strong>第 3 步：$\hat\beta$ 的精确分布。</strong> $A\varepsilon$ 是高斯向量的线性变换，故仍高斯；均值 $A^\top X\beta=\beta$（上面已算），协方差 $\sigma^2(X^\top X)^{-1}$：</p>
+<div class="eq"><div class="escroll">
+$$
+\hat\beta\sim N\big(\beta,(X^\top X)^{-1}\sigma^2\big)
+$$
+</div><span class="tag">(3.10)</span></div>
+<p>更深的表述（后面 (3.15) 的置信椭球要用）。注意 $A^\top A=X(X^\top X)^{-1}X^\top=H$ 正是帽子矩阵，于是</p>
+<div class="eq verylong"><div class="escroll">
+$$
+\frac{(\hat\beta-\beta)^\top(X^\top X)(\hat\beta-\beta)}{\sigma^2}=\frac{(A\varepsilon)^\top(A\varepsilon)}{\sigma^2}=\frac{\varepsilon^\top A A^\top\varepsilon}{\sigma^2}=\frac{\varepsilon^\top H\varepsilon}{\sigma^2}\ \sim\ \chi^2_{p+1}
+$$
+</div></div>
+<p>最后一步的权重为什么全是 $1$？因为 $H$ 是<strong>对称幂等</strong>矩阵（$H^\top=H,\ H^2=H$），所以它的特征值只能是 0 或 1；$\mathrm{tr}(H)=p+1$ 给出恰好 $p+1$ 个特征值 1（$\mathrm{tr}$ 等于特征值之和，见预备知识 L3）。把 $\varepsilon$ 按 $H$ 的特征向量分解成 $\sum_i z_i v_i$（$z_i\overset{\text{iid}}{\sim}N(0,\sigma^2)$），则</p>
+<div class="eq"><div class="escroll">
+$$
+\varepsilon^\top H\varepsilon=\sum_i\lambda_i z_i^2=\sum_{i=1}^{p+1}z_i^2\sim\sigma^2\chi^2_{p+1}
+$$
+</div></div>
+<div class="aside warn"><p class="hd">坑 · 两个容易搞错的地方：</p><ol><li><strong>不要写成 $\sum_i h_{ii}\chi^2_{1,i}$。</strong> $h_{ii}$ 是 $H$ 的对角元，权重应当是它的<strong>特征值</strong>。由于 $H$ 幂等，非零特征值全为 $1$，所以权重恰好全为 $1$，这也是为什么结论是干净的 $\chi^2_{p+1}$ 而不是加权 $\chi^2$。</li></ol>
+<p>（加权 $\chi^2$ 求和的规则见预备知识 P4。）</p>
+<ol><li><strong>不要说 $A\varepsilon$「落在一个低维子空间里」。</strong> 它的协方差是 $\sigma^2AA^\top=\sigma^2(X^\top X)^{-1}$，这是满秩的 $(p+1)\times(p+1)$ 矩阵，所以 $A\varepsilon$ 张成<strong>整个</strong> $\mathbb{R}^{p+1}$。真正被限制住方向的是<strong>乘上 $X^\top X$ 之后</strong>的马氏平方长度（上面那个二次型），因为 $H$ 把 $\varepsilon$ 投影到了 $\mathrm{col}(X)$ 里。</li></ol></div>
+<div class="eq verylong"><div class="escroll">
+$$
+\frac{(\hat\beta-\beta)^\top(X^\top X)(\hat\beta-\beta)}{\sigma^2}=\frac{(A\varepsilon)^\top(A\varepsilon)}{\sigma^2}=\frac{\varepsilon^\top A A\varepsilon}{\sigma^2}=\frac{\varepsilon^\top H\varepsilon}{\sigma^2}=\sum_{i=1}^{p+1}h_{ii}\,\chi^2_{1,i}\ \sim\ \chi^2_{p+1}
+$$
+</div></div>
+<p>最后一步用预备知识 P4 的加权 $\chi^2$ 求和，并注意 $\sum_ih_{ii}=\mathrm{tr}(H)=p+1$、且 $\varepsilon$ 各分量独立正态（$h_{ii}\chi^2_1$ 相互独立）。等价地，$\varepsilon=H\varepsilon+(I-H)\varepsilon$，$H\varepsilon$ 是 $\mathrm{col}(X)$ 上的高斯向量（协方差 $\sigma^2H$），而 $H^\top H\varepsilon$ 的平方和 $=\sum_ih_{ii}\varepsilon_i^2$ 只在权重为常数时才等于 $\chi^2_{p+1}$——这正是 $h_{ii}=1$ 的极限情形，一般情形靠迹恒等式。</p>
+<p><strong>第 4 步：$\hat\sigma^2$ 的精确分布（核心）。</strong> 沿用第 2 步的 $\mathrm{RSS}=\varepsilon^\top(I-H)\varepsilon$。设 $A=I-H$，它是对称幂等矩阵（$A^\top=A$，$A^2=A$），特征值只能是 0 或 1。由 $\mathrm{tr}(H)=p+1$、$\mathrm{tr}(A)=N-p-1$ 以及「对称幂等矩阵的迹 = 特征值之和 = 秩」，得</p>
+<div class="eq"><div class="escroll">
+$$
+A\ \text{的特征值：}\underbrace{1,\dots,1}_{N-p-1\ \text{个}},\ \underbrace{0,\dots,0}_{p+1\ \text{个}}
+$$
+</div></div>
+<p>用预备知识 P4（$\varepsilon\sim N(0,I_N)$，$A$ 对称特征值 $\lambda_i$）：$\varepsilon^\top A\varepsilon\sim\sum_{i=1}^N\lambda_i\chi^2_{1,i}$。这里 $\lambda_i$ 是 $N-p-1$ 个 1 与 $p+1$ 个 0，故 $\sum\lambda_i\chi^2_{1,i}$ 就是 $N-p-1$ 个独立 $\chi^2_1$ 之和 $\sim\chi^2_{N-p-1}$：</p>
+<div class="eq"><div class="escroll">
+$$
+(N-p-1)\hat\sigma^2\ \sim\ \sigma^2\chi^2_{N-p-1}
+$$
+</div><span class="tag">(3.11)</span></div>
+<p>直观解释：残差向量 $r=(I-H)\varepsilon$ 躺在 $(I-H)$ 的值空间里，这个空间是 $\mathrm{col}(X)^\perp$，维数 $N-p-1$。在这个空间内 $I-H$ 就是恒等算子，所以 RSS 是恰好 $N-p-1$ 个独立 $\chi^2_1\sigma^2$ 的和；投影到 $\mathrm{col}(X)$ 的那 $p+1$ 个方向被完全「吸收」进 $\hat\beta$，不贡献误差。</p>
+<div class="aside key"><p class="hd">结果</p><p>(3.11) 同时给出 $E[\hat\sigma^2]=\sigma^2$（$\chi^2_\nu$ 的期望是 $\nu$）与 $\mathrm{Var}(\hat\sigma^2)=2\sigma^4/\nu$。它保证 $\hat\sigma$ 不会系统性地偏大或偏小，这是把 $z$ 统计量换成 $t$ 统计量的唯一理由。</p></div>
+<p><strong>第 5 步：单个系数的 $t$ 统计量。</strong> 由 (3.10)，$(\hat\beta_j-\beta_j)/(\sigma\sqrt{v_j})\sim N(0,1)$，其中 $v_j=\big[(X^\top X)^{-1}\big]_{jj}$。把 $\sigma$ 换成 $\hat\sigma$：</p>
+<div class="eq long"><div class="escroll">
+$$
+z_j=\frac{\hat\beta_j}{\hat\sigma\sqrt{v_j}}
+=\underbrace{\frac{\hat\beta_j-\beta_j}{\sigma\sqrt{v_j}}}_{\sim N(0,1)}\cdot\underbrace{\frac{\sigma}{\hat\sigma}}_{\text{倒换}}\cdot\frac1{\sqrt{v_j}}
+$$
+</div></div>
+<p>其中 $\hat\beta_j-\beta_j$ 只依赖 $A\varepsilon$，而 $\hat\sigma^2=\varepsilon^\top A\varepsilon/(N-p-1)$（$A=I-H$），两者分别正交投影在 $\mathrm{col}(X)$ 与其正交补上，故<strong>独立</strong>（高斯向量不相关即独立）。又 $\hat\sigma/\sigma=\sqrt{V/\nu}$，$V\sim\chi^2_\nu$，$\nu=N-p-1$。代入 $t$ 分布的定义（预备知识 P4）：</p>
+<div class="eq"><div class="escroll">
+$$
+\frac{\hat\beta_j-\beta_j}{\hat\sigma\sqrt{v_j}}\ \sim\ t_{N-p-1}\ \text{（自由度 $\nu=N-p-1$）}
+$$
+</div></div>
+<p>(3.10) 给出 $\hat\beta_j$ 的中心，用 $\hat\beta_j-\beta_j$ 代替 $\hat\beta_j$ 不改变 (3.10) 那种「中心在 $\beta_j$」的性质，故书里直接写成</p>
+<div class="eq"><div class="escroll">
+$$
+z_j=\frac{\hat\beta_j}{\hat\sigma\sqrt{v_j}}
+$$
+</div><span class="tag">(3.12)</span></div>
+<p><strong>第 6 步：$F$ 统计量（本章最核心的推导之一）。</strong> 要检验「一组系数同时为零」。设 $X_0$ 是 $X_1$ 的列子集：$X_0=X_1S$，$S$ 是 $(p_0+1)\times(p_1+1)$ 选择矩阵。模型 1 含 $p_1+1$ 个参数，模型 0 含 $p_0+1$ 个（嵌套，$p_1&gt;p_0$）。</p>
+<p>第 1 小步：把两个残差平方和写成二次型。记 $\hat y_0=X_0(X_0^\top X_0)^{-1}X_0^\top y$，$\hat y_1=Hy$。则 $\mathrm{RSS}_0=\lVert y-\hat y_0\rVert^2=y^\top(I-P_0)y$，$\mathrm{RSS}_1=y^\top(I-P_1)y$。</p>
+<p>第 2 小步：证明两残差正交。$r_1=y-\hat y_1\perp\mathrm{col}(X_1)$（正规方程，3.2.1 第 5 步），而 $\mathrm{col}(X_0)\subseteq\mathrm{col}(X_1)$，故 $r_1^\top P_0y=0$；同理 $r_1^\top\hat y_1=0$。于是</p>
+<div class="eq"><div class="escroll">
+$$
+r_0^\top r_1=(y-\hat y_0)^\top r_1=y^\top r_1-\hat y_0^\top r_1=0-0=0
+$$
+</div></div>
+<p>第 3 小步：分子化为单个二次型。$\mathrm{RSS}_0-\mathrm{RSS}_1=\lVert r_0\rVert^2-\lVert r_1\rVert^2=\lVert r_0-r_1\rVert^2+2r_0^\top r_1=\lVert r_0-r_1\rVert^2$，而 $r_0-r_1=(I-P_0)y-(I-P_1)y=(P_1-P_0)y$，故</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{RSS}_0-\mathrm{RSS}_1=y^\top(P_1-P_0)y
+$$
+</div></div>
+<p>第 4 小步：证明 $A=P_1-P_0$ 是秩 $p_1-p_0$ 的正交投影。<strong>对称</strong>显然。<strong>幂等</strong>：由 $X_0=X_1S$ 可算出 $P_1P_0=X_1(X_1^\top X_1)^{-1}X_1^\top X_1S(S^\top X_1^\top X_1S)^{-1}S^\top X_1^\top=X_1S(S^\top X_1^\top X_1S)^{-1}S^\top X_1^\top=P_0$（用了 $(X_1^\top X_1)^{-1}(X_1^\top X_1)=I$），同理 $P_0P_1=P_0$。于是</p>
+<div class="eq"><div class="escroll">
+$$
+A^2=(P_1-P_0)^2=P_1-P_0P_1-P_0P_1+P_0=P_1-P_0=A
+$$
+</div></div>
+<p>（用了 $P_1^2=P_1$、$P_0^2=P_0$。）<strong>秩</strong>：$A$ 的值空间 $\subseteq\mathrm{col}(X_1)$（因 $P_1v\in\mathrm{col}(X_1)$），且 $\subseteq\mathrm{col}(X_0)^\perp$（因对任意 $w\in\mathrm{col}(X_0)$，$w^\top Av=(P_1w)^\top v=0$，因为 $P_1w\in\mathrm{col}(X_1)\perp\mathrm{col}(X_0)$）。这个交的维数是 $(p_1+1)-(p_0+1)=p_1-p_0$。</p>
+<p>第 5 小步：求两个二次型的分布。用 $\mathrm{RSS}_k=y^\top(I-P_k)y$，因 $(I-P_k)X\beta=0$（与第 2 步同理），故 $\mathrm{RSS}_k=\varepsilon^\top(I-P_k)\varepsilon$。$I-P_1$ 与 $P_1-P_0$ 都是对称幂等投影，秩分别为 $N-p_1-1$ 与 $p_1-p_0$（对称幂等矩阵的迹=秩=特征值之和，特征值只有 0 和 1）。用预备知识 P4：</p>
+<div class="eq long"><div class="escroll">
+$$
+\frac{\mathrm{RSS}_0-\mathrm{RSS}_1}{\sigma^2}\sim\chi^2_{p_1-p_0},\qquad \frac{\mathrm{RSS}_1}{\sigma^2}\sim\chi^2_{N-p_1-1}
+$$
+</div></div>
+<p>第 6 小步：证明两者独立。高斯向量的两个二次型 $u^\top Bu$ 与 $u^\top Cu$（$B,C$ 对称）在 $BC=0$ 时独立。这里</p>
+<div class="eq"><div class="escroll">
+$$
+(P_1-P_0)(I-P_1)=P_1-P_0-P_1^2+P_0P_1=P_1-P_0-P_1+P_0=0
+$$
+</div></div>
+<p>第 7 小步：相除得到 $F$ 分布。两个 $\sigma^2$ 约掉，按 $F$ 分布的定义（分子分母各自被自由度整除，独立 $\chi^2$）：</p>
+<div class="eq"><div class="escroll">
+$$
+F=\frac{(\mathrm{RSS}_0-\mathrm{RSS}_1)\big/(p_1-p_0)}{\mathrm{RSS}_1\big/(N-p_1-1)}\sim F_{p_1-p_0,\;N-p_1-1}
+$$
+</div><span class="tag">(3.13)</span></div>
+<div class="aside key"><p class="hd">结果</p><p>自由度来源完全不同：分子自由度 $p_1-p_0$ = 被检验为零的参数个数，分母自由度 $N-p_1-1$ = 残差自由度。</p>
+<div class="aside warn"><p class="hd">坑</p><ul><li>(3.13) 的整个推导依赖<strong>正态假设</strong> (3.9) 与<strong>嵌套性</strong>（$X_0$ 的列是 $X_1$ 的列的子集）。若两个模型不嵌套，$P_1-P_0$ 不再是投影，分子就不是 $\chi^2$。</li><li>$\mathrm{RSS}_0&gt;\mathrm{RSS}_1$ 恒成立（增加变量不会增大 RSS），这是 $F$ 统计量的取值恒 $\ge0$ 的原因，也保证 $p$ 值有意义。</li><li>分母用 $\mathrm{RSS}_1$ 而不是 $\mathrm{RSS}_0$：因为只有 $\mathrm{RSS}_1$ 的自由度等于 $N-p_1-1$，且它与分子独立。</li></ul></div></div>
+<p><strong>第 7 步：置信区间。</strong> 双侧水平 $\alpha$ 的置信区间由 $t$ 分布的对偶得到（预备知识 P5）：把「接受 $H_0:\beta_j=\beta_j^{(0)}$」与「$\beta_j^{(0)}$ 落在区间内」对应起来，</p>
+<div class="eq long"><div class="escroll">
+$$
+\big(\hat\beta_j-z^{(1-\alpha/2)}\sqrt{v_j}\,\hat\sigma,\ \hat\beta_j+z^{(1-\alpha/2)}\sqrt{v_j}\,\hat\sigma\big)
+$$
+</div><span class="tag">(3.14)</span></div>
+<p>其中 $z^{(1-\alpha/2)}$ 是标准正态分位数：$\alpha=0.05$ 时 $z^{(0.975)}=1.96$，单侧 $\alpha=0.05$ 时 $z^{(0.95)}=1.645$。</p>
+<p><strong>第 8 步：联合置信集（$p+1$ 个系数一起）。</strong> 把第 3 步的二次型结果用 $\hat\sigma$ 缩放：</p>
+<div class="eq long"><div class="escroll">
+$$
+C_\beta=\Big\{\beta:\ (\hat\beta-\beta)^\top X^\top X(\hat\beta-\beta)\le\hat\sigma^2\,\chi^2_{p+1}(1-\alpha)\Big\}
+$$
+</div><span class="tag">(3.15)</span></div>
+<p>覆盖概率可直接验证：$\Pr\big(\beta\in C_\beta\big)=\Pr\big((\hat\beta-\beta)^\top X^\top X(\hat\beta-\beta)/\sigma^2\le\chi^2_{p+1}(1-\alpha)\big)=\Pr(\chi^2_{p+1}\le\chi^2_{p+1}(1-\alpha))=1-\alpha$。</p>
+<p><strong>几何形状。</strong> 集合 $C_\beta$ 是 $\beta$ 空间中的<strong>椭球</strong>：约束可以写成</p>
+<div class="eq"><div class="escroll">
+$$
+(\hat\beta-\beta)^\top\Big(\frac{X^\top X}{\hat\sigma^2}\Big)(\hat\beta-\beta)\le\chi^2_{p+1}(1-\alpha)
+$$
+</div></div>
+<p>即中心 $\hat\beta$、形状矩阵为 $X^\top X$ 的马氏距离不超过半径。取 $X^\top X=V\Lambda V^\top$（$\lambda_j&gt;0$，$V$ 正交，见预备知识 L3），令 $w=V^\top(\hat\beta-\beta)$，则 $w^\top\Lambda w=\sum_{j=1}^{p+1}\lambda_jw_j^2$。所以椭球的<strong>主轴方向就是 $X^\top X$ 的特征向量方向</strong>，第 $j$ 根半轴的长度为 $\sqrt{\chi^2_{p+1}(1-\alpha)\hat\sigma^2/\lambda_j}$：$\lambda_j$ 大（该方向数据信息多）的方向上椭球扁，$\lambda_j$ 小（接近共线）的方向上椭球长——这正是共线性在置信域上的表现。</p>
+<p><a class="src" href="../esl/ch03-linear-methods-for-regression.html#s-3-2">原文 §3.2</a></p>
+<div class="aside warn"><p class="hd">坑</p><p>(3.14) 与 (3.15) 的覆盖概率<strong>同时</strong>对所有 $\beta_j$ 成立（联合置信集比逐个区间同时覆盖的区间更宽一点以外的严格版本）。不要把它们当成 $p+1$ 个独立区间相乘；正确的整体覆盖率就是上面的 $1-\alpha$。</p></div>
+<h3 id="s-3-2-3" class="anchored"><span class="num">3.2.3</span> 数值例子：前列腺癌数据的 $F$ 统计量</h3>
+<p>前列腺癌数据（$N=67$ 个病人，$p=8$ 个预测变量：log PSA、p Gleason 分级、两项最具预测力的临床指标等的 8 个量）上，比较两个嵌套线性模型：</p>
+<div class="tscroll-x"><table class="fx"><thead><tr><th>模型</th><th>参数个数</th><th>RSS</th><th>残差自由度</th></tr></thead><tbody><tr><td>简约模型 $0$（4 个系数被约束为 0）</td><td>$p_0+1=5$</td><td>$\mathrm{RSS}_0=32.81$</td><td>$67-5=62$</td></tr><tr><td>全模型 $1$</td><td>$p_1+1=9$</td><td>$\mathrm{RSS}_1=29.43$</td><td>$67-9=58$</td></tr></tbody></table></div>
+<p>代入 (3.13)：</p>
+<div class="eq long"><div class="escroll">
+$$
+F=\frac{(32.81-29.43)\big/(9-5)}{29.43\big/(67-9)}=\frac{3.38/4}{29.43/58}=\frac{0.845}{0.50741}=1.665\approx1.67
+$$
+</div><span class="tag">(3.16)</span></div>
+<p>$F(4,58)$ 的 0.95 分位数约为 2.49，$p$ 值约 0.17。所以四个被剔除的系数<strong>联合</strong>不显著。逐个看（(3.14) 口径）会得到更长的区间：$2t_{58}(0.975)=2.002$，标准误约 0.75 时区间半宽约 1.5，而半衰期 PSA 的效应只有 0.64 左右——这正是书里强调「联合检验比逐个检验更宽容」的数值来源。</p>
+<p><a class="src" href="../esl/ch03-linear-methods-for-regression.html#s-3-2">原文 §3.2</a></p>
+<h3 id="s-3-2-4" class="anchored"><span class="num">3.2.4</span> 系数的偏差与最小方差</h3>
+<p>不假设正态也能讨论估计质量。把 (3.9) 里的 $\varepsilon\sim N$ 换成只要「零均值、同方差、不相关」，令</p>
+<div class="eq"><div class="escroll">
+$$
+\hat\theta=a^\top\hat\beta=a^\top(X^\top X)^{-1}X^\top y
+$$
+</div><span class="tag">(3.17)</span></div>
+<p>即系数的任意线性组合。它的期望（预备知识 L5，$E[X^\top y]=X^\top X\beta$）：</p>
+<div class="eq"><div class="escroll">
+$$
+E[\hat\theta]=a^\top(X^\top X)^{-1}X^\top X\beta=a^\top\beta=\theta
+$$
+</div><span class="tag">(3.18)</span></div>
+<p>所以 $\hat\beta$ 是<strong>无偏</strong>的，方差由 (3.8) 给出：$\mathrm{Var}(a^\top\hat\beta)=\sigma^2a^\top(X^\top X)^{-1}a$。</p>
+<p>最小方差性质：在所有形如 $\tilde\theta=c^\top y$ 的线性估计中，OLS 达到最小方差。</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{Var}(a^\top\hat\beta)\ \le\ \mathrm{Var}(c^\top y)\quad\text{对一切 }c\text{ 成立}
+$$
+</div><span class="tag">(3.19)</span></div>
+<p>推导：约束是「对任意 $\beta$，$c^\top y$ 在 $y=X\beta+\varepsilon$ 下应逼近 $\theta=a^\top\beta$」，这要求 $c^\top X=a^\top$，即 $X^\top c=a$。此时 $\mathrm{Var}(c^\top y)=\sigma^2c^\top c$。把 $c$ 沿 $\mathrm{col}(X)$ 正交分解为 $c=c_\parallel+c_\perp$，其中 $c_\parallel\in\mathrm{col}(X)$、$c_\perp\perp\mathrm{col}(X)$：$X^\top c=a$ 只约束 $c_\parallel$，而 $\lVert c\rVert^2=\lVert c_\parallel\rVert^2+\lVert c_\perp\rVert^2\ge\lVert c_\parallel\rVert^2$。约束 $X^\top c_\parallel=a$ 的范数最小解是 $c_\parallel=X(X^\top X)^{-1}a$（再叠加任何 $X^\top w=0$ 的分量只会增大范数）。于是</p>
+<div class="eq long"><div class="escroll">
+$$
+\mathrm{Var}(c^\top y)=\sigma^2c^\top c\ge\sigma^2a^\top(X^\top X)^{-1}X^\top X(X^\top X)^{-1}a=\sigma^2a^\top(X^\top X)^{-1}a=\mathrm{Var}(a^\top\hat\beta)
+$$
+</div></div>
+<p>且等号恰在 $c=X(X^\top X)^{-1}a$ 时成立——这正是 OLS 的系数（此时 $c^\top y=a^\top(X^\top X)^{-1}X^\top y=a^\top\hat\beta$，估计量本身相同）。</p>
+<p>一般估计量 $\tilde\theta$ 的均方误差可以分解成「方差」与「偏差平方」两部分：</p>
+<div class="eq long"><div class="escroll">
+$$
+\mathrm{MSE}(\tilde\theta)=E\big[(\tilde\theta-\theta)^2\big]=\mathrm{Var}(\tilde\theta)+\big[E(\tilde\theta)-\theta\big]^2
+$$
+</div><span class="tag">(3.20)</span></div>
+<p>推导：$E[(\tilde\theta-\theta)^2]=E[(\tilde\theta-E\tilde\theta+E\tilde\theta-\theta)^2]$，交叉项 $2E[(\tilde\theta-E\tilde\theta)(E\tilde\theta-\theta)]$ 为零，因为第一项均值为 0；第二项是常数。这个公式（预备知识 P1、P2）的意义：任何通过引入偏差（正则化、收缩、删变量）来降低方差的手段，都是在 (3.20) 的两项之间搬砖。</p>
+<div class="aside key"><p class="hd">结果</p><p>OLS 同时做到<strong>无偏</strong>（(3.18)）与<strong>线性类中最小方差</strong>（(3.19)）。第 6 章的岭回归正好利用 (3.20)：它牺牲一点偏差换取方差的大幅下降，从而降低 MSE。</p></div>
+<h3 id="s-3-2-5" class="anchored"><span class="num">3.2.5</span> 估计误差与新点预测误差</h3>
+<p>有了 $\hat\beta-\beta=A\varepsilon$，就可以回答两个问题：系数本身误差多大？在新观测点上预测的误差多大？</p>
+<p><strong>系数的均方误差。</strong> 无偏 ⟹ 偏差项为零，于是 (3.20) 给出</p>
+<div class="eq long"><div class="escroll">
+$$
+\mathrm{MSE}(\hat\beta)=E\big[(\hat\beta-\beta)(\hat\beta-\beta)^\top\big]=\mathrm{Var}(\hat\beta)=\sigma^2(X^\top X)^{-1}
+$$
+</div></div>
+<p>整体标准误 $\sqrt{\mathrm{tr}(\hat\beta^\top\hat\beta)}=\lVert\hat\beta\rVert_2$，单个系数的标准误 $\hat\sigma\sqrt{v_j}$。这条等式说明：<strong>小 $\hat\sigma$ 不等于系数精确</strong>，还必须看 $X^\top X$ 的条件数。书里第 3.4.2 讨论配方差差与共线性时说「variance inflation factor」正是 $\big[(X^\top X)^{-1}\big]_{jj}$ 被非截距列的相关系数放大后的结果。</p>
+<p><strong>新观测点。</strong> 新点上 $Y_0=f(x_0)+\varepsilon_0$，$\varepsilon_0\sim N(0,\sigma^2)$，与训练误差独立：</p>
+<div class="eq"><div class="escroll">
+$$
+Y_0=f(x_0)+\varepsilon_0,\qquad \hat f(x_0)=x_0^\top\hat\beta=x_0^\top\beta+x_0^\top A\varepsilon
+$$
+</div><span class="tag">(3.21)</span></div>
+<p>拟合值的方差：$\mathrm{Var}(\hat f(x_0))=x_0^\top\mathrm{Var}(\hat\beta)x_0$，代入 (3.8) 得 $\sigma^2x_0^\top(X^\top X)^{-1}x_0$。均方误差用 (3.20)：</p>
+<div class="eq long"><div class="escroll">
+$$
+\mathrm{Var}\big[\hat f(x_0)\big]=\sigma^2x_0^\top(X^\top X)^{-1}x_0,\qquad \mathrm{MSE}\big[\hat f(x_0)\big]=\mathrm{Var}\big[\hat f(x_0)\big]+\big[f(x_0)-E\hat f(x_0)\big]^2
+$$
+</div><span class="tag">(3.22)</span></div>
+<div class="aside key"><p class="hd">结果</p><p>(3.22) 的第二项是<strong>偏差</strong>：如果线性形式 (3.1) 本身规格正确，$f(x_0)=\beta_0+\sum_jx_{0j}\beta_j$ 就是真实均值，偏差为零；若用了多项式展开或哑变量，$f$ 是真实条件均值的近似，就产生平方偏差。这两项的此消彼长是第 7 章「模型复杂度」曲线和第 3.7 维数缩减的动机。</p></div>
+<p><strong>为什么 (3.22) 的方差 $\le\sigma^2$？</strong> 需要 $x_0^\top(X^\top X)^{-1}x_0\le1$。当 $x_0$ 恰是第 $j$ 个训练设计行时成立：用 Sherman–Morrison（秩一更新，见预备知识 L3）把 $X$ 拆成 $X_{-j}$ 与 $x_j$，记 $a_j=x_j^\top(X_{-j}^\top X_{-j})^{-1}x_j$，则</p>
+<div class="eq long"><div class="escroll">
+$$
+(X^\top X)^{-1}=(X_{-j}^\top X_{-j})^{-1}-\frac{(X_{-j}^\top X_{-j})^{-1}x_jx_j^\top(X_{-j}^\top X_{-j})^{-1}}{1+a_j}
+\ \Longrightarrow\ x_j^\top(X^\top X)^{-1}x_j=\frac{a_j}{1+a_j}
+$$
+</div></div>
+<p>另一方面，由 (3.7) 与帽矩阵的投影性质，$h_{jj}=e_j^\top He_j=e_j^\top X(X^\top X)^{-1}X^\top e_j=\frac{a_j}{1+a_j}$（同一个量）。$H$ 是正交投影，特征值只有 0 与 1，所以 $h_{jj}=e_j^\top He_j\le1$。<strong>引理</strong>：$e_j^\top He_j\le1$，因为 $e_j=H e_j+(I-H)e_j$ 给出 $1=\lVert e_j\rVert^2=\lVert He_j\rVert^2+\lVert(I-H)e_j\rVert^2\ge\lVert He_j\rVert^2=1-\lVert(I-H)e_j\rVert^2$。</p>
+<p>对训练点之外的 $x_0$，$x_0^\top(X^\top X)^{-1}x_0$ 可以大于 1（外推时方差爆炸）。$x_0^\top(X^\top X)^{-1}x_0$ 这个二次型就是<strong>杠杆值</strong>（leverage）的连续版本，第 3.5.2 的 ridge 与第 5 章的 Cook 距离都建立在它上面。</p>
+<p><a class="src" href="../esl/ch03-linear-methods-for-regression.html#s-3-2">原文 §3.2</a></p>
+<h3 id="s-3-2-6" class="anchored"><span class="num">3.2.6</span> 单个预测变量的闭式解</h3>
+<p>把 (3.9) 的高斯模型换成「零均值、同方差、不相关」的更弱假设，记为</p>
+<div class="eq"><div class="escroll">
+$$
+Y=X\beta+\varepsilon,\qquad E[\varepsilon]=0,\ \mathrm{Cov}(\varepsilon)=\sigma^2I_N
+$$
+</div><span class="tag">(3.23)</span></div>
+<p>(3.23) 是后面所有「估计误差」论证的最小假设集：正态只在 (3.10)–(3.16) 的<strong>精确分布</strong>处才需要，无偏性只需 (3.23)。</p>
+<p>只有一个预测变量且不截距时，正规方程的每个分量都有显式解。令 $x=(x_1,\dots,x_N)^\top$ 为该列：</p>
+<div class="eq"><div class="escroll">
+$$
+\hat\beta_j=\frac{\sum_{i=1}^N x_{ij}y_i}{\sum_{i=1}^N x_{ij}^2},\qquad r=y-X\hat\beta
+$$
+</div><span class="tag">(3.24)</span></div>
+<p>为什么？$X^\top(y-X\beta)=0$ 在第 $j$ 列上就是 $\sum_ix_{ij}(y_i-x_{ij}\beta_j)=0$，其中 $\sum_i x_{ij}^2$ 与 $\beta_j$ 无关，可直接解出（要求 $\sum_i x_{ij}^2&gt;0$，即该列不全为零）。</p>
+<p>用内积记号（预备知识 L1）重写。$\langle x,y\rangle=\sum_{i=1}^N x_iy_i=x^\top y$，是「两列的逐点乘积之和」：</p>
+<div class="eq"><div class="escroll">
+$$
+\langle x,y\rangle=\sum_{i=1}^N x_iy_i=x^\top y
+$$
+</div><span class="tag">(3.25)</span></div>
+<p>于是</p>
+<div class="eq long"><div class="escroll">
+$$
+\hat\beta=\frac{\langle x,y\rangle}{\langle x,x\rangle},\qquad \hat y=\frac{\langle x,y\rangle}{\langle x,x\rangle}x
+$$
+</div><span class="tag">(3.26)</span></div>
+<p><strong>有截距的一元回归</strong>：此时模型是 $y_i=\beta_0+\beta_1x_i+\varepsilon_i$。截距列是 $\mathbf1=(1,\dots,1)^\top$。两条正规方程：$\sum_i(y_i-\beta_0-\beta_1x_i)=0$（故 $\hat\beta_0=\bar y-\hat\beta_1\bar x$）与 $\sum_ix_i(y_i-\beta_0-\beta_1x_i)=0$。代入前者：</p>
+<div class="eq long"><div class="escroll">
+$$
+\sum_ix_i(y_i-\bar y+\hat\beta_1\bar x-\hat\beta_1x_i)=0\ \Longrightarrow\ \sum_ix_i(y_i-\bar y)=\hat\beta_1\sum_ix_i(x_i-\bar x)
+$$
+</div></div>
+<p>两边同除以 $\sum_ix_i$，再用恒等式 $\sum_ix_i(y_i-\bar y)=\sum_i(x_i-\bar x)(y_i-\bar y)$（因为 $\sum_i(x_i-\bar x)=0$，加上 $\bar y\sum_ix_i$ 不改变和），得</p>
+<div class="eq long"><div class="escroll">
+$$
+\hat\beta_1=\frac{\langle x-\bar x\mathbf1,\,y\rangle}{\langle x-\bar x\mathbf1,\,x-\bar x\mathbf1\rangle}=\frac{\sum_{i=1}^N(x_i-\bar x)(y_i-\bar y)}{\sum_{i=1}^N(x_i-\bar x)^2}
+$$
+</div><span class="tag">(3.27)</span></div>
+<p>分母就是 $x$ 的样本方差 $S^2$ 乘 $N$。中心化这个步骤在数值上很关键：直接解 $\begin{pmatrix}N&amp;\sum x_i\\ \sum x_i &amp; \sum x_i^2\end{pmatrix}\binom{\beta_0}{\beta_1}=\binom{\sum y_i}{\sum x_iy_i}$ 会因为量纲差异损失精度。</p>
+<p><strong>正交基下的一般情形（多预测变量，不截距）</strong>：设设计矩阵第 $j$ 列是向量 $z_j$（未标准化）。同理</p>
+<div class="eq"><div class="escroll">
+$$
+\hat\beta_p=\frac{\langle z_p,y\rangle}{\langle z_p,z_p\rangle}
+$$
+</div><span class="tag">(3.28)</span></div>
+<p>方差由 (3.8) 给出，分量形式 $\mathrm{Var}(\hat\beta_p)=\sigma^2\big[(X^\top X)^{-1}\big]_{pp}$。若 $X$ 的列已<strong>正交</strong>（$\langle z_p,z_q\rangle=0$，$p\ne q$），则 $X^\top X=\mathrm{diag}(\lVert z_1\rVert_2^2,\dots)$，逆是对角的，于是</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{Var}(\hat\beta_p)=\frac{\sigma^2}{\langle z_p,z_p\rangle}=\frac{\sigma^2}{\lVert z_p\rVert_2^2}
+$$
+</div><span class="tag">(3.29)</span></div>
+<p><strong>推论</strong>：$X$ 列正交时各个 $\hat\beta_p$ 互不相关（协方差矩阵对角），因此逐个检验可以独立解释。方差与该列的<strong>长度平方</strong>成反比——数据把这条「方向」上的信息收集得越多，系数的方差越小。这解释了第 3.7 节 PCR 的一个直觉：先按 $\lVert z_p\rVert$ 排序，把信息量最大的方向留下。</p>
+<p><a class="src" href="../esl/ch03-linear-methods-for-regression.html#s-3-2">原文 §3.2</a></p>
+<div class="aside warn"><p class="hd">坑</p><p>(3.24)、(3.26)–(3.29) 都是<strong>不截距</strong>或<strong>单变量</strong>的特例，形式上比一般情形简单，不能直接套到有截距的多变量情形上。书里 (3.27) 的 $\bar x$ 中心化是「去截距」在数值上的等价操作。</p></div>
+<h3 id="s-3-2-7" class="anchored"><span class="num">3.2.7</span> QR 分解与 SVD：数值上稳定的最小二乘</h3>
+<div class="aside basis"><p class="hd">基础知识 · SVD 与 QR（预备知识 L3）</p><ul><li>任何 $X\in\mathbb{R}^{N\times(p+1)}$ 有 SVD $X=UDV^\top$，$D=\mathrm{diag}(d_1,\dots,d_r)$，$d_i\ge0$ 递减，$r=\mathrm{rank}(X)$；$U,V$ 列正交。</li><li>若 $d_i&gt;0$（列满秩），则 $X^\top X=VD^2V^\top$，$(X^\top X)^{-1}=VD^{-2}V^\top$，特征向量是 $V$ 的列，特征值 $d_j^2$。</li><li>满秩时总能选到 $Q\in\mathbb{R}^{N\times(p+1)}$ 列正交、$R\in\mathbb{R}^{(p+1)\times(p+1)}$ 可逆，使 $X=QR$（<strong>薄 QR</strong>；要求 $R$ 上三角时需 $N\ge p+1$）。</li></ul></div>
+<p>数值上不要用 $(X^\top X)^{-1}$：平方条件数 $\mathrm{cond}(X^\top X)=\mathrm{cond}(X)^2$，会平方地损失精度。正确做法是直接分解 $X$。</p>
+<p><strong>第 1 步：换基。</strong> 设 $X=Z\Gamma$，其中 $Z\in\mathbb{R}^{N\times(p+1)}$ 列满秩，$\Gamma\in\mathbb{R}^{(p+1)\times(p+1)}$ 可逆。$Z$ 可以理解为「一组基向量作为列」，$\Gamma$ 是基与原坐标之间的变换矩阵：</p>
+<div class="eq"><div class="escroll">
+$$
+X=Z\Gamma
+$$
+</div><span class="tag">(3.30)</span></div>
+<p>由于 $Z\Gamma$ 与 $X$ 的列空间相同，投影 $P_X$ 与 $\hat y$ 与基的选择无关。</p>
+<p><strong>第 2 步：把 $Z$ 的列正交化。</strong> 令 $D=\mathrm{diag}(\lVert z_1\rVert_2,\dots,\lVert z_{p+1}\rVert_2)$（各列非零），则 $ZD^{-1}$ 列正交。这给出</p>
+<div class="eq"><div class="escroll">
+$$
+X=\underbrace{ZD^{-1}}_{Q}\cdot\underbrace{D\Gamma}_{R}=QR
+$$
+</div><span class="tag">(3.31)</span></div>
+<p>插入 $D^{-1}D=\mathbf1$ 只是把「缩放因子在哪一边」显式写出来：$X=ZD^{-1}D\Gamma$。两种写法给出<strong>完全相同的 $\hat y$</strong>，因为 $\hat y$ 只依赖列空间；但 $\hat\beta$ 会变，因为它是坐标相关的量（第 3.5.2 会再次强调这一点）。</p>
+<p><strong>第 3 步：用 $Q,R$ 求 $\hat\beta$。</strong> $\mathrm{RSS}=(y-X\beta)^\top(y-X\beta)$，由 $\nabla_\beta\mathrm{RSS}=0$（3.2.1 第 2 步）得 $X^\top X\beta=X^\top y$，即 $QR\beta$ 的最小二乘。因为 $Q^\top Q=I$，可以左乘 $Q^\top$：</p>
+<div class="eq"><div class="escroll">
+$$
+Q^\top Q\,R\beta=Q^\top y\ \Longrightarrow\ R\beta=Q^\top y\ \Longrightarrow\ \hat\beta=R^{-1}Q^\top y
+$$
+</div><span class="tag">(3.32)</span></div>
+<p>这一步比 (3.6) 好：它只解一个 $(p+1)\times(p+1)$ 的三角方程 $R\beta=Q^\top y$（回代，$O((p+1)^2)$），不需要形成 $X^\top X$ 也不需要求逆。</p>
+<p><strong>第 4 步：拟合值。</strong></p>
+<div class="eq"><div class="escroll">
+$$
+\hat y=X\hat\beta=QR R^{-1}Q^\top y=QQ^\top y
+$$
+</div><span class="tag">(3.33)</span></div>
+<p>$QQ^\top$ 是 $Q$ 的列空间（即 $\mathrm{col}(X)$）上的正交投影：$QQ^\top$ 对称，$(QQ^\top)^2=QQ^\top QQ^\top=QQ^\top$（用 $Q^\top Q=I$）。这与 (3.7) 的 $X(X^\top X)^{-1}X^\top$ 是同一个投影矩阵（两者都投影到 $\mathrm{col}(X)$，投影唯一），但 (3.33) 不含任何逆矩阵的显式形式。</p>
+<p><strong>与 SVD 的对照。</strong> 代入 SVD：$X=UDV^\top$。取 $Q=UD^{-1}$、$R=DV^\top$，则 $QR=UD^{-1}DV^\top=X$，且 $Q^\top Q=D^{-1}U^\top UD^{-1}=D^{-1}D^{-1}$… 注意这不列正交；正确做法是取 $Q=U$、$R=DV^\top$，此时 $Q^\top Q=I$，于是</p>
+<div class="eq"><div class="escroll">
+$$
+\hat\beta=(DV^\top)^{-1}U^\top y=V D^{-1}U^\top y=X^+y,\qquad \hat y=UU^\top y
+$$
+</div></div>
+<p><strong>这就是伪逆的来历</strong>：当 $\mathrm{rank}(X)&lt;p+1$ 时，$U$ 只保留前 $r$ 列，$\hat y=U_rU_r^\top y$ 仍然良定义（3.2.1 的坑），而 $\hat\beta$ 由 $V_rD_r^{-1}U_r^\top y$ 选出最小范数的那个。</p>
+<p><strong>为什么 QR 比 SVD 便宜、但 SVD 更稳。</strong> $X=QR$ 只用 Householder 反射（正交变换），$O(N(p+1)^2)$ 且精度几乎不损失；$X=UDV^\top$ 额外付出 $O(N(p+1)^2)$ 做双对角化，得到<strong>全部</strong>信息（奇异值 = $\mathrm{col}(X)$ 的条件数）。当列接近共线时 $d_{\min}\to0$，$D^{-1}$ 放大数值误差，所以病态问题必须用 SVD 截断（只保留 $d_i$ 大的方向），这就是第 3.4 节数值稳定 QR 的动机。</p>
+<p><a class="src" href="../esl/ch03-linear-methods-for-regression.html#s-3-2">原文 §3.2</a></p>
+<h2 id="s-3-3" class="anchored"><span class="num">3.3</span> 推断与系数显著性</h2>
+<p>3.2.2 已经把 (3.12)、(3.13)、(3.14)、(3.15) 四个统计量的<strong>分布</strong>从高斯假设和加权 $\chi^2$ 性质（预备知识 P4）里推了出来。§3.3 要做的是把它们翻译成决策语言，并指出这个翻译为什么容易出错。</p>
+<p><strong>双侧检验与区间的对偶。</strong> 由 $t$ 分布的对偶性（预备知识 P5），对 $\beta_j=\beta_j^{(0)}$ 的水平 $\alpha$ 检验与「$\beta_j^{(0)}$ 落在 (3.14) 区间内」等价。于是「不拒绝」等价于「区间包含 0」，这就是为什么回归表里「$p$ 值 < 0.05」与「95% 置信区间不含 0」是同一句话。</p>
+<p><strong>全局检验。</strong> $F$ 统计量 (3.13) 检验 $p_1-p_0$ 个系数同时为零。特例：$p_0=0$（模型只有截距 $\bar y$）且 $p_1=p$，则</p>
+<div class="eq long"><div class="escroll">
+$$
+F=\frac{\mathrm{TSS}-\mathrm{RSS}}{p}\Big/\frac{\mathrm{RSS}}{N-p-1},\qquad \mathrm{TSS}=\sum_{i=1}^N(y_i-\bar y)^2=\lVert(I-H)y\rVert^2+\lVert Hy\rVert^2
+$$
+</div></div>
+<p>即「模型是否比只报均值有任何改进」。书里第 3.5.4 讨论「$F$ 统计量与信息准则」时用的就是这个版本。</p>
+<p><strong>三个必须记住的陷阱。</strong></p>
+<ul><li><strong>不能把 $p$ 值当概率。</strong> $p$ 值 $=\Pr_{H_0}(|T|\ge|T_{\text{obs}}|)$，是在「$H_0$ 为真」的<strong>假想世界</strong>里重复抽样得到 $|T|$ 至少这么大频繁的概率；它绝不是 $\Pr(H_0\mid\text{data})$。数据多时任何微小效应都会显著。</li><li><strong>$F$ 与 $t^2$ 的关系只对单参数成立。</strong> 只检验一个系数时，$F_{1,\nu}=t_\nu^2$（因为 $\chi^2_1=W^2$）；但 $F$ 统计量与「逐个做 $t$ 检验」不是同一件事，它们的自由度与标度都不同。</li><li><strong>多重比较。</strong> 检验 $k$ 个系数各取水平 $\alpha$，整体出错概率 $1-(1-\alpha)^k$。Bonferroni 校正取 $\alpha/k$；Benjamini–Hochberg 控制 FDR（错误发现比例），在高维稀疏情形（$p\gg N$）更合适。相关检验的 Bonferroni 过于保守，ESL 后面会回到这一点。</li></ul>
+<p><strong>共线性如何进入 (3.12)。</strong> $v_j=\big[(X^\top X)^{-1}\big]_{jj}$。若第 $j$ 列与其它列高度相关，$X^\top X$ 近奇异，$v_j$ 被放大，$\hat\sigma\sqrt{v_j}$ 变大，$z_j$ 变小——「系数不显著」往往不是「效应为零」而是「设计矩阵设计得差」。第 6 章用岭回归压平条件数以缓解这个问题，第 3.5 用 LARS 路径直接看哪个变量在「挤掉」哪个变量。</p>
+<p><a class="src" href="../esl/ch03-linear-methods-for-regression.html#s-3-3">原文 §3.3</a></p>
+<h2 id="s-3-4" class="anchored"><span class="num">3.4</span> 多输出回归</h2>
+<p>前面所有内容都是<strong>单输出</strong>：$y\in\mathbb{R}$。多输出回归（multi-output / multi-response regression）同时回归 $K$ 个响应，第 $k$ 个有自己的系数：</p>
+<div class="eq"><div class="escroll">
+$$
+Y_k=\beta_{0k}+\sum_{j=1}^p X_j\beta_{jk}+\varepsilon_k
+$$
+</div><span class="tag">(3.34)</span></div>
+<p>把它合起来记成 $Y_k=f_k(X)+\varepsilon_k$，其中 $f_k$ 是与 $f$ 同类型的线性形式，只是系数换成 $\beta_{jk}$：</p>
+<div class="eq"><div class="escroll">
+$$
+Y_k=f_k(X)+\varepsilon_k
+$$
+</div><span class="tag">(3.35)</span></div>
+<p>其中 $E[\varepsilon_k]=0$、$\mathrm{Var}(\varepsilon_k)=\sigma_k^2$、不同 $k$ 的误差<strong>协方差</strong>为 $\sigma_{kk'}$（一般不为 0，这就是为什么 §3.4 末尾要讨论 GLS）。矩阵形式：$Y\in\mathbb{R}^{N\times K}$ 第 $i$ 行是 $y_i^\top=(y_{i1},\dots,y_{iK})^\top$，$B\in\mathbb{R}^{(p+1)\times K}$ 第 $k$ 列是 $\beta_k=(\beta_{0k},\dots,\beta_{pk})^\top$，$E\in\mathbb{R}^{N\times K}$ 第 $i$ 行为 $\varepsilon_i^\top$：</p>
+<div class="eq"><div class="escroll">
+$$
+Y=XB+E
+$$
+</div><span class="tag">(3.36)</span></div>
+<p>总残差平方和把 $K$ 个输出的残差平方直接加起来：</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{RSS}(B)=\sum_{k=1}^K\sum_{i=1}^N\big(y_{ik}-f_k(x_i)\big)^2
+$$
+</div><span class="tag">(3.37)</span></div>
+<p><strong>第 1 步：写成迹的形式。</strong> 记 $i$ 行的残差向量 $r_i=y_i-x_i^\top B\in\mathbb{R}^{K}$（注意 $x_i$ 是第 $i$ 行的设计行，$x_i^\top B$ 是第 $i$ 行的预测向量）。则</p>
+<div class="eq long"><div class="escroll">
+$$
+\sum_{k=1}^K(y_{ik}-f_k(x_i))^2=\lVert y_i-x_i^\top B\rVert_2^2=\big(y_i-x_i^\top B\big)^\top\big(y_i-x_i^\top B\big)
+$$
+</div></div>
+<p>对 $i$ 求和得到标量 $\sum_i r_i^\top r_i$。这正好是 $(Y-XB)^\top(Y-XB)$ 的迹，因为对 $N\times K$ 矩阵 $R$，$\mathrm{tr}(R^\top R)=\sum_{i,k}R_{ik}^2$（$R^\top R$ 是 $K\times K$，其迹 $=\sum_k\sum_iR_{ik}^2$），且 $R=Y-XB$。所以</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{RSS}(B)=\mathrm{tr}\big[(Y-XB)^\top(Y-XB)\big]
+$$
+</div><span class="tag">(3.38)</span></div>
+<p>也可以反过来用迹的循环律 $\mathrm{tr}(AB)=\mathrm{tr}(BA)$（预备知识 L4）写 $\mathrm{tr}[(Y-XB)(Y-XB)^\top]$，再按行展开成 $\sum_i\lVert r_i\rVert_2^2$。</p>
+<p><strong>第 2 步：求极小。</strong> 用矩阵微分（预备知识 L4 的 $\frac{\partial\mathrm{tr}(G^\top FA)}{\partial F}=GA$，取 $G=-(Y-XB)=XB-Y$、$A=I$）。更直接地沿用单输出的二次函数求导（预备知识 L4）：$B\mapsto\mathrm{tr}[(Y-XB)^\top(Y-XB)]$ 是二次函数，其梯度为</p>
+<div class="eq"><div class="escroll">
+$$
+\nabla_B\mathrm{RSS}(B)=\frac{\partial}{\partial B}\mathrm{tr}\big[(Y-XB)^\top(Y-XB)\big]=-2X^\top(Y-XB)
+$$
+</div></div>
+<p>（可分三步：$\mathrm{tr}[(Y-XB)^\top(Y-XB)]$ 对 $Y-XB$ 线性，二次型求导给出 $2$ 倍残差，再乘上 $\frac{\partial(Y-XB)}{\partial B}=-X$ 得到 $-2X^\top(Y-XB)$。）令梯度为零：$X^\top(Y-XB)=0$，故</p>
+<div class="eq"><div class="escroll">
+$$
+\hat B=(X^\top X)^{-1}X^\top Y
+$$
+</div><span class="tag">(3.39)</span></div>
+<p><strong>第 3 步：看清它的含义。</strong> $\hat B=(X^\top X)^{-1}X^\top Y$ 把单输出公式逐列应用——第 $k$ 列 $\hat\beta_k=(X^\top X)^{-1}X^\top y_k$。等价地，$\hat B$ 等于对每个输出单独做 OLS。$\hat Y=X\hat B=X(X^\top X)^{-1}X^\top Y=HY$：投影矩阵 $H$ 对所有输出<strong>共用</strong>。方差：$\mathrm{Cov}(\hat b_k)=A^\top\mathrm{Cov}(y_k)A$，其中 $A=(X^\top X)^{-1}X^\top$，即 $\mathrm{Cov}(\hat b_k)=\sigma_k^2(X^\top X)^{-1}$（用 3.2.2 第 1 步的 $A^\top A=H=(X^\top X)^{-1}$）。输出之间的协方差 $\sigma_{kk'}$ 只会让 $\hat b_k$ 与 $\hat b_{k'}$ 相关，不改变各自的边际方差。</p>
+<div class="aside key"><p class="hd">结果</p><p>(3.39) 与 (3.6) 逐列对应：一个 $N\times(p+1)$ 的设计矩阵服务 $K$ 个输出，计算一次 QR/SVD 分解（3.2.7）就能同时解出全部 $K$ 个系数向量。这与「$K$ 次独立 OLS」的计算量相同，但只需分解一次。</p></div>
+<div class="aside warn"><p class="hd">坑</p><p>(3.37) 的 $\mathrm{RSS}(B)$ 把 $K$ 个输出的<strong>不可比</strong>尺度直接相加：若输出 1 是「身高（米）」、输出 2 是「收入（万元）」，贡献会被尺度主导。应当先标准化 $Y$，或改成加权形式。</p></div>
+<p><strong>异方差协方差矩阵：GLS。</strong> 若同一观测上 $K$ 个误差的协方差矩阵 $\Sigma=\mathrm{Cov}(\varepsilon_i)\in\mathbb{R}^{K\times K}$ 不是对角的，最小二乘不再是有效估计（虽然仍无偏），应改用广义最小二乘，把每个观测的残差向量用 $\Sigma^{-1}$ 度量：</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{RSS}(B;\Sigma)=\sum_{i=1}^N\big(y_i-f(x_i)\big)^\top\Sigma^{-1}\big(y_i-f(x_i)\big)
+$$
+</div><span class="tag">(3.40)</span></div>
+<p>其中 $f(x_i)=x_i^\top B$。求导给出正规方程 $X^\top\Sigma^{-1}X\,B=X^\top\Sigma^{-1}Y$，解为 $\hat B=(X^\top\Sigma^{-1}X)^{-1}X^\top\Sigma^{-1}Y$——<strong>注意它不等于 (3.39)</strong>，除非 $\Sigma=\sigma^2 I_K$。这个「加权」就是度量学习的雏形：不同输出方向按其在协方差下的精度定权重。若 $\Sigma$ 不可逆（例如 $K&gt;p+1$，$X$ 不满秩导致 $\Sigma$ 与设计耦合退化），用 $\Sigma^{+}$ 伪逆替代 $\Sigma^{-1}$，公式形式不变（这时也正是 $p\gg N$ 时正则化变得必要的场景，见第 3.5 节）。</p>
+<p><a class="src" href="../esl/ch03-linear-methods-for-regression.html#s-3-4">原文 §3.4</a></p>
+<div class="aside warn"><p class="hd">坑</p><p>(3.40) 的 GLS 需要 $\Sigma$ <strong>已知</strong>，实际中常靠残差迭代估计（可行 GLS）。另外当 $K$ 个输出完全独立（$\Sigma$ 对角）时，GLS 退化为逐输出各自加权，与 (3.39) 加权的逐列 OLS 等价。</p></div>
+<h2 id="s-3-5" class="anchored"><span class="num">3.5</span> 子集选择</h2>
+<p>上一节把最小二乘的三个等价形式（正规方程、QR、SVD）串了起来，但它们有一个共同的软肋：估计量 $\hat\beta_{\rm ls}=(X^\top X)^{-1}X^\top y$ 没有任何惩罚项，$p$ 接近或超过 $N$ 时 $\mathrm{Var}(\hat\beta_j)=(X^\top X)^{-1}_{jj}\sigma^2$ 会爆掉（见预备知识 L1 关于条件数的讨论、第 3 章 (3.8)）。本节的做法是往目标函数里加一个「复杂度罚款」，用<strong>收缩</strong>（shrinkage）换掉方差。全文围绕两个罚款写：$\ell_2$ 罚款给出岭回归，$\ell_1$ 罚款给出 lasso；$\ell_0$ 罚款（真正的子集选择）作为动机写在最前面。对应原文 <a class="src" href="../esl/ch03-linear-methods-for-regression.html#s-3-5">原文 §3.5</a>。</p>
+<h3 id="s-3-5-1" class="anchored"><span class="num">3.5.1</span> 最佳子集选择与它的两种写法</h3>
+<p><strong>问题</strong>：把「只允许 $k$ 个系数非零」这件事写成数学。ESL 给两种写法 (3.41)(3.42)，要证明它们给出<strong>同一个解集</strong>。</p>
+<div class="aside basis"><p class="hd">基础知识 · 拉格朗日乘子与凸对偶（见预备知识 O1）</p><p>等式约束 $\min_\beta f(\beta)$ s.t. $g(\beta)=0$ 的最优解满足 $\nabla_\beta L=0$ 且 $\lambda^\top g=0$，其中 $L=f-\lambda^\top g$。 不等式约束版本（KKT，见预备知识 O2）还要加<strong>对偶可行</strong> $\lambda\ge0$ 与<strong>互补松弛</strong> $\lambda_i f_i(\beta^\star)=0$。</p></div>
+<p>「至多 $k$ 个 $\beta_j$ 非零」等价于 $\lVert\beta\rVert_0=\sum_{j=1}^{p}\mathbf 1\{\beta_j\ne0\}\le k$。因此两种写法是</p>
+<div class="eq long"><div class="escroll">
+$$
+\hat\beta_{\rm subset}=\arg\min_{\beta}\ \sum_{i=1}^{N}\Big(y_i-\beta_0-\sum_{j=1}^{p}\beta_jx_{ij}\Big)^2+\lambda\sum_{j=1}^{p}\mathbf 1\{\beta_j\ne0\}\
+$$
+</div><span class="tag">(3.41)</span></div>
+<div class="eq long"><div class="escroll">
+$$
+\hat\beta_{\rm subset}=\arg\min_{\beta}\ \sum_{i=1}^{N}\Big(y_i-\beta_0-\sum_{j=1}^{p}\beta_jx_{ij}\Big)^2\quad\text{s.t.}\ \sum_{j=1}^{p}\mathbf 1\{\beta_j\ne0\}\le t\
+$$
+</div><span class="tag">(3.42)</span></div>
+<p>注意 (3.41) 里拟合项与 (3.2) 的 RSS 相同；$X$ 已经吸收了截距列，所以 (3.41)(3.42) 的第一项就是 $\mathrm{RSS}(\beta)=(y-X\beta)^\top(y-X\beta)$（第 3 章 (3.3)）。</p>
+<div class="aside warn"><p class="hd">坑</p><p>$\lVert\beta\rVert_0$ 在 $\beta_j=0$ 处<strong>不连续</strong>：从 $\beta_j=10^{-6}$ 走到 $0$，罚款从 $1$ 跳到 $0$。所以 (3.41) 不是凸问题，梯度法、拉格朗日对偶、KKT 那一整套工具在这里<strong>全都不能直接用</strong>。这正是人们退而求其次用 $\ell_1$、$\ell_2$ 代替 $\ell_0$ 的原因。</p>
+<p>还有：$\lVert\beta\rVert_0$ 的<strong>单位问题</strong>。$\beta_j$ 的单位随 $x_j$ 的单位变，把 $x_j$ 乘以 $1000$ 就改变了罚款，所以 (3.41) 不可解释、不具备「与 $y$ 同量纲」这类不变性。$\lVert\beta\rVert_2$ 有同样的病，$\lVert\beta\rVert_1$ 稍好些但也没有完全解决。</p></div>
+<p><strong>为什么两种写法等价（约束形式 → 惩罚形式）</strong>。这是凸分析里最常用的一次「$\lambda\leftrightarrow t$ 互换」，我按等式约束做一遍，再对不等式补上互补松弛。</p>
+<ol><li>先做<strong>纯等式</strong>版本，约束取成 $\lVert\beta\rVert_0=t$，即 $\sum_{j=1}^{p}u_j-t=0$，其中 $u_j=\mathbf 1\{\beta_j\ne0\}$。拉格朗日函数</li></ol>
+<div class="eq"><div class="escroll">
+$$
+L(\beta,\lambda)=\mathrm{RSS}(\beta)+\lambda\Big(\sum_{j=1}^{p}\mathbf 1\{\beta_j\ne0\}-t\Big)
+$$
+</div></div>
+<ol><li>固定 $\beta$，只对单个坐标 $\beta_j$ 求方向导数。取 $h$ 充分小使 $\beta_j+h$ 与 $\beta_j$ 同号，则 $\mathbf 1\{\beta_j+h\ne0\}=\mathbf 1\{\beta_j\ne0\}=u_j$，所以</li></ol>
+<div class="eq long"><div class="escroll">
+$$
+\frac{\mathrm{d}}{\mathrm{d}h}L(\beta+h e_j,\lambda)\Big|_{h=0}=\frac{\partial\,\mathrm{RSS}(\beta)}{\partial\beta_j}+0=-2x_j^\top(y-X\beta)
+$$
+</div></div>
+<p>这一项与 $\lambda$ 无关，等式约束<strong>没有给出任何一阶信息</strong>。若 $\beta_j=0$ 且 $u_j$ 变化（加/减一个 $\varepsilon$），$L$ 跳变 $\lambda$，故最小化要求</p>
+<div class="eq"><div class="escroll">
+$$
+\lambda\Big[\mathbf 1\{\beta_j+h\ne0\}-u_j\Big]\ \text{对一切 }h\text{ 非负}\ \Longrightarrow\ \lambda=0
+$$
+</div></div>
+<ol><li>所以<strong>等式约束</strong> $\lVert\beta\rVert_0=t$ 乘上任何 $\lambda&gt;0$ 都让 $L$ 沿坐标轴不下降，一阶条件根本定不出 $\beta$。这暴露了一件事：$\ell_0$ 问题的解<strong>不唯一、不规则</strong>（可能有几十万个等价的 $\beta$），没法用对偶刻画。</li></ol>
+<p><strong>不等式版本（这才是实用的推导）</strong>。约束写成 $f_i(\beta)\le0$，$i=1,\dots,p$，取</p>
+<div class="eq long"><div class="escroll">
+$$
+f_j(\beta)=\lVert\beta\rVert_0-t\le0,\qquad L(\beta,\lambda)=\mathrm{RSS}(\beta)+\lambda\big(\lVert\beta\rVert_0-t\big),\ \lambda\ge0
+$$
+</div></div>
+<p>此时对 $\beta_j$ 的方向导数仍然不含 $\lambda$（因为 $\lVert\beta\rVert_0$ 局部常数），但<strong>最优点必须在约束的边界上</strong>：若 $\lVert\beta^\star\rVert_0&lt;t$（严格可行），取 $\lambda=0$ 再取 $\beta=\hat\beta_{\rm ls}$ 就严格更优，矛盾。所以</p>
+<div class="eq"><div class="escroll">
+$$
+\lVert\hat\beta^\star\rVert_0=t,\qquad \lambda^\star=0
+$$
+</div></div>
+<p>即最优解就是 $\lVert\beta\rVert_0\le t$ 下 RSS 最小的那点，且 $\lambda$ 携带的信息为 $0$。<strong>这解释了为什么 (3.41) 中 $\ell_0$ 版本的 $\lambda$ 没有可解释的量纲</strong>。</p>
+<ol><li>真正有用的联系是<strong>通过子集内部最小二乘</strong>建立的。设 $S_\lambda=\{j:\beta_j(\lambda)\ne0\}$，对任意 $S\subseteq\{1,\dots,p\}$，在「支撑集恰为 $S$」的约束下 RSS 的最小值是</li></ol>
+<div class="eq long"><div class="escroll">
+$$
+\min_{\mathrm{supp}(\beta)\subseteq S}\mathrm{RSS}(\beta)=\mathrm{RSS}\big(X_S\hat\beta_S^{\rm ls},\ y\big)\ \text{其中}\ \hat\beta_S^{\rm ls}=(X_S^\top X_S)^{-1}X_S^\top y
+$$
+</div></div>
+<p>于是 (3.41) 精确地是「在所有 $S$ 里挑使 $\mathrm{RSS}_S+\lambda|S|$ 最小的那一个」：</p>
+<div class="eq long"><div class="escroll">
+$$
+\hat\beta_{S_\lambda}=\hat\beta^{\rm ls}_{S_\lambda},\qquad S_\lambda\in\arg\min_{S\subseteq\{1,\dots,p\}}\Big[\mathrm{RSS}_S+\lambda\lvert S\rvert\Big]
+$$
+</div></div>
+<p>（(3.41) 中还多了截距的 $\beta_0$，若 $X$ 的第一列是 $\mathbf 1$ 则它被吸收。）<strong>为什么 $\lvert S\rvert$ 越大 $\lambda$ 越大越好</strong>：因为 $\mathrm{RSS}_S$ 关于 $S$ 单调不增（多加一个变量只会让 $\mathrm{RSS}$ 变小或不变），所以 $\mathrm{RSS}_S+\lambda\lvert S\rvert$ 的极小点随 $\lambda$ 单调右移。$\lambda\to0$ 时选出全部 $p$ 个变量（退化为 $\hat\beta_{\rm ls}$），$\lambda\to\infty$ 时选出空集。</p>
+<div class="aside key"><p class="hd">结果</p><p>(3.41) 与 (3.42) 等价的完整含义：$t$ 固定 ⇒ 子集大小固定为 $\lfloor t\rfloor$；$\lambda$ 固定 ⇒ 存在一个 $t$，使 (3.42) 在这个 $t$ 下的解<strong>恰好</strong>是 (3.41) 在这个 $\lambda$ 下的解。反向不唯一（同一个 $\lambda$ 可能对应一段 $t$）。这个「$\lambda\leftrightarrow t$ 一一对应」在 §3.6 的 lasso 路径里会再次精确地出现一次。</p></div>
+<div class="aside warn"><p class="hd">坑</p><p>组合爆炸：$\lvert S\rvert$ 的枚举量是 $2^p$，(3.41) 的精确解需要 $O(2^p)$ 次最小二乘（每次 $O(N\lvert S\rvert^2)$）。$p=40$ 就已经 $10^{12}$ 量级。这不是实现问题而是本质困难：<strong>没有多项式时间的精确算法</strong>（除非 $P=NP$，因为最小二乘子集和能编码 0-1 背包问题）。第 3 章后面所有算法（lasso、elastic net、LARS、回归树）都是<strong>贪心/连续松弛</strong>的近似。</p></div>
+<p><a class="src" href="../esl/ch03-linear-methods-for-regression.html#s-3-5-1">原文 §3.5 子集选择</a></p>
+<h3 id="s-3-5-2" class="anchored"><span class="num">3.5.2</span> 岭回归：配方、SVD 与几何</h3>
+<p><strong>问题</strong>：把罚款从 $\lVert\beta\rVert_0$ 换成 $\lVert\beta\rVert_2^2$，解会变成什么样子？答案是有闭式解 (3.44)，并且在 SVD 基下每个方向独立收缩 (3.47)。</p>
+<div class="aside basis"><p class="hd">基础知识 · 二次函数的配方（见预备知识 C2）</p><p>对任意对称正定 $A$ 与向量 $b$，配方恒等式为</p>
+<div class="eq"><div class="escroll">
+$$
+\beta^\top A\beta-2\beta^\top b=(\beta-A^{-1}b)^\top A(\beta-A^{-1}b)-b^\top A^{-1}b
+$$
+</div></div>
+<p>验证：右边展开得 $\beta^\top A\beta-2\beta^\top b+b^\top A^{-1}b-b^\top A^{-1}b$。因为 $A$ 对称，$A^{-1}$ 也对称，所以交叉项是 $-2\beta^\top A A^{-1}b=-2\beta^\top b$。</p>
+<p>由此得 $\min_\beta[\beta^\top A\beta-2\beta^\top b]=A^{-1}b$，最小值 $=-b^\top A^{-1}b$。</p></div>
+<p>岭回归的<strong>惩罚形式</strong> (3.43) 是</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{RSS}(\lambda)=(y-X\beta)^\top(y-X\beta)+\lambda\beta^\top\beta\
+$$
+</div><span class="tag">(3.43)</span></div>
+<div class="aside"><p class="hd">推导 · 逐项展开 (3.43)，再配方。第一步展开平方：</p></div>
+<div class="eq long"><div class="escroll">
+$$
+(y-X\beta)^\top(y-X\beta)=y^\top y-y^\top X\beta-\beta^\top X^\top y+\beta^\top X^\top X\beta=y^\top y-2\beta^\top X^\top y+\beta^\top X^\top X\beta
+$$
+</div></div>
+<p>（第二项与第三项相等是因为 $X^\top y$ 是向量，$\beta^\top X^\top y=(X^\top y)^\top\beta=y^\top X\beta$ 都是标量，用了转置不改变标量这个事实。）</p>
+<p>第二步加上 $\lambda\beta^\top\beta$，并记 $A=X^\top X+\lambda I$（$I$ 是 $p\times p$ 单位矩阵）：</p>
+<div class="eq long"><div class="escroll">
+$$
+\mathrm{RSS}(\lambda)=y^\top y+\beta^\top\big[X^\top X+\lambda I\big]\beta-2\beta^\top X^\top y=y^\top y+\beta^\top A\beta-2\beta^\top X^\top y
+$$
+</div></div>
+<p>第三步验证 $A$ 正定：$A$ 对称；且对一切 $\beta\ne0$，</p>
+<div class="eq"><div class="escroll">
+$$
+\beta^\top A\beta=\lVert X\beta\rVert_2^2+\lambda\lVert\beta\rVert_2^2&gt;0
+$$
+</div></div>
+<p>（两个非负项之和，只要 $\beta\ne0$ 第二项就 $&gt;0$，<strong>不需要 $X$ 满列秩</strong>。）这是预备知识 L1 里正定性的直接应用，也是 ridge 相对最小二乘的关键优势。</p>
+<p>第四步代入 C2 的配方，取 $b=X^\top y$：</p>
+<div class="eq long"><div class="escroll">
+$$
+\beta^\top A\beta-2\beta^\top X^\top y=\big(\beta-A^{-1}X^\top y\big)^\top A\big(\beta-A^{-1}X^\top y\big)-y^\top X A^{-1}X^\top y
+$$
+</div></div>
+<p>于是</p>
+<div class="eq long"><div class="escroll">
+$$
+\mathrm{RSS}(\lambda)=\underbrace{y^\top y-y^\top XA^{-1}X^\top y}_{\text{与 }\beta\text{ 无关的常数}}+\big(\beta-\beta_0\big)^\top A\big(\beta-\beta_0\big),\qquad \beta_0=A^{-1}X^\top y
+$$
+</div></div>
+<p>第五步读极小：第一项常数，第二项 $\ge0$ 且当且仅当 $\beta=\beta_0$ 取 $0$。所以</p>
+<div class="eq"><div class="escroll">
+$$
+\hat\beta_{\rm ridge}=(X^\top X+\lambda I)^{-1}X^\top y\
+$$
+</div><span class="tag">(3.44)</span></div>
+<p>对应的<strong>最小惩罚 RSS 值</strong>（后面证明 (3.42) 那种「$t$ 球面」要用）是</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{RSS}_{\rm ridge}(\lambda)=y^\top y-y^\top X(X^\top X+\lambda I)^{-1}X^\top y
+$$
+</div></div>
+<div class="aside key"><p class="hd">结果</p><p>(3.44) 的 $p\times p$ 求逆看着吓人，但 (3.45)–(3.47) 给出了<strong>不用求逆</strong>的计算方式：只要一个 SVD。这是 3.5 最重要的实用结论——岭回归的实际代价是<strong>一次 SVD</strong>，之后任意 $\lambda$ 都是 $O(Np)$。</p></div>
+<div class="aside warn"><p class="hd">坑</p><p>(3.44) 的推导<strong>完全不需要 $X^\top X$ 可逆</strong>（这是与第 3 章 (3.6) 的最大区别）。$p&gt;N$ 时 $X^\top X$ 秩至多 $N&lt;p$，$(X^\top X)^{-1}$ 不存在，但 $X^\top X+\lambda I$ 对任何 $\lambda&gt;0$ 都正定，(3.44) 仍有唯一解。这就是 ridge 在高维里「还能算」的根本原因。</p>
+<p>但 $X^\top X+\lambda I$ 的<strong>条件数</strong>会随 $\lambda$ 变好（这是正则化的数值意义）：$\kappa_2(X^\top X+\lambda I)=\dfrac{d_{\max}^2+\lambda}{d_{\min}^2+\lambda}$，$\lambda$ 大时趋于 $1$。</p></div>
+<p><strong>SVD 形式 (3.45)–(3.47)</strong>。设 $X$ 的「薄」SVD 为</p>
+<div class="eq"><div class="escroll">
+$$
+X=UDV^\top\
+$$
+</div><span class="tag">(3.45)</span></div>
+<p>其中 $U$ 是 $N\times p$ 列正交矩阵（$U^\top U=I_p$），$D=\mathrm{diag}(d_1,\dots,d_p)$，$d_1\ge\cdots\ge d_p\ge0$ 是奇异值，$V$ 是 $p\times p$ 正交矩阵（$V^\top V=I_p$）。$d_j$ 也等于 $X^\top X$ 的特征值的平方根。</p>
+<p>先算最小二乘拟合值（回顾第 3 章 (3.46)，这里给出验证）：</p>
+<div class="eq"><div class="escroll">
+$$
+X\hat\beta_{\rm ls}=X(X^\top X)^{-1}X^\top y=UU^\top y\
+$$
+</div><span class="tag">(3.46)</span></div>
+<p>验证：$X^\top X=VD^2V^\top$，故 $(X^\top X)^{-1}=VD^{-2}V^\top$（在 $d_j&gt;0$ 的方向上），代入得</p>
+<div class="eq"><div class="escroll">
+$$
+X(X^\top X)^{-1}X^\top y=UDV^\top V D^{-2}V^\top VD U^\top y=UU^\top y
+$$
+</div></div>
+<p>（用了 $V^\top V=I$，三处相消。$UU^\top$ 是到 $\mathrm{col}(X)$ 的正交投影矩阵，见预备知识 L2。）</p>
+<p>再算 ridge。分母 $d_j^2+\lambda$ 全为正（即使 $d_j=0$），所以逆矩阵可算：</p>
+<div class="eq long"><div class="escroll">
+$$
+\begin{aligned}
+(X^\top X+\lambda I)^{-1}&amp;=\big(VD^2V^\top+\lambda VV^\top\big)^{-1}=V(D^2+\lambda I)^{-1}V^\top\\
+&amp;=V\,\mathrm{diag}\Big(\frac{1}{d_j^2+\lambda}\Big)_{j=1}^{p}V^\top
+\end{aligned}
+$$
+</div></div>
+<p>（$D^2+\lambda I$ 对角元为 $d_j^2+\lambda&gt;0$，逆是对角的；$I=VV^\top$ 用了 $V$ 正交。）代入 (3.44)：</p>
+<div class="eq long"><div class="escroll">
+$$
+\hat\beta_{\rm ridge}=V\,\mathrm{diag}\Big(\frac{d_j}{d_j^2+\lambda}\Big)_{j=1}^{p}\,U^\top y,\qquad\text{即}\qquad \hat\beta_{\rm ridge}=\sum_{j=1}^{p}\frac{d_j}{d_j^2+\lambda}\,(u_j^\top y)\,v_j
+$$
+</div></div>
+<p>（中间一步：$V^\top X^\top y=V^\top V D U^\top y=DU^\top y$。）</p>
+<p>再左乘 $X=UDV^\top$，用 $DV^\top V\gamma=\mathrm{diag}(d_j)\gamma$ 得拟合值</p>
+<div class="eq"><div class="escroll">
+$$
+X\hat\beta_{\rm ridge}=\sum_{j=1}^{p}\frac{d_j^2}{d_j^2+\lambda}\,u_j u_j^\top y\
+$$
+</div><span class="tag">(3.47)</span></div>
+<div class="aside key"><p class="hd">结果</p><p>(3.47) 的含义：最小二乘拟合值 (3.46) 是把 $y$ 投影到全部 $p$ 个方向；ridge 把第 $j$ 个方向<strong>单独</strong>按比例 $d_j^2/(d_j^2+\lambda)$ 缩放。方向的收缩量只依赖该方向的奇异值，与 $y$ 无关。</p>
+<p>$d_j\to\infty$（该方向信号极强）时因子 $\to1$：不收缩。$d_j\to0$（噪声方向）时因子 $\to0$：完全丢掉。所以 ridge 是<strong>按方向信噪比自动加权</strong>的。</p>
+<p>注意两处收缩因子<strong>不同</strong>：拟合值里是 $\frac{d_j^2}{d_j^2+\lambda}$，$\beta$ 的 $V$-坐标里是 $\frac{d_j}{d_j^2+\lambda}$。若把 $\beta$ 写成 $V\gamma$、把最小二乘系数写成 $V\gamma^{\rm ls}$（$\gamma_j^{\rm ls}=u_j^\top y/d_j$，即第 3 章 §3.4 的 SVD 回归系数 $z_j$），则</p></div>
+<div class="eq"><div class="escroll">
+$$
+\gamma_j=\frac{d_j^2}{d_j^2+\lambda}\,\gamma_j^{\rm ls}=\frac{1}{1+\lambda/d_j^2}\,\gamma_j^{\rm ls}
+$$
+</div></div>
+<p><strong>两种写法统一了</strong>：收缩因子都是 $1/(1+\lambda/d_j^2)$，只是 $\gamma^{\rm ls}$ 里已经含了一个 $d_j$。</p>
+<p><strong>几何</strong>。约束形式 (3.42) 把 $\ell_0\le t$ 换成 $\beta^\top\beta\le t^2$，即 $\lVert\beta\rVert_2\le\sqrt t$，是 $\mathbb{R}^p$ 里的<strong>欧氏球</strong>（$p\ge3$ 时是球面，$p=2$ 时是圆盘）。而 RSS 作为 $\beta$ 的二次函数，其等值面满足</p>
+<div class="eq long"><div class="escroll">
+$$
+\mathrm{RSS}(\beta)=c\iff (y-X\beta)^\top(y-X\beta)=c\iff (\beta-\hat\beta_{\rm ls})^\top X^\top X(\beta-\hat\beta_{\rm ls})=\text{常数}
+$$
+</div></div>
+<p>因为 $\mathrm{RSS}(\beta)=\mathrm{RSS}(\hat\beta_{\rm ls})+(X(\beta-\hat\beta_{\rm ls}))^\top(X(\beta-\hat\beta_{\rm ls}))$（平方项展开后交叉项 $2(y-X\hat\beta_{\rm ls})^\top X(\beta-\hat\beta_{\rm ls})=0$，用第 3 章 (3.5) 的正规方程）。所以 RSS 等值面是<strong>以 $\hat\beta_{\rm ls}$ 为中心、主轴方向为 $X^\top X$ 特征向量（即 $V$ 的列）、半轴长与 $1/d_j$ 成反比的椭球面</strong>。</p>
+<div class="aside key"><p class="hd">结果</p><p>$\hat\beta_{\rm ridge}$ 就是<strong>这个椭球面族与球面 $\|\beta\|_2\le\sqrt t$ 的切点</strong>。切点条件「梯度平行于法向」正好就是 (3.44) 的正规方程：$\nabla\mathrm{RSS}=-2X^\top(y-X\beta)$ 与 $2\lambda\beta$ 平行。</p>
+<p>因为球面光滑（处处可微、无角点），切点唯一。<strong>这就是 ridge 解唯一、且每个系数都非零的几何原因</strong>——球面上没有「角点」可以把解「压」到坐标轴上。lasso 的 $\ell_1$ 球（多面体）有角点，稀疏性就来自那里（见 §3.5.4）。</p></div>
+<p><a class="src" href="../esl/ch03-linear-methods-for-regression.html#s-3-5-2">原文 §3.5 岭回归</a></p>
+<h3 id="s-3-5-3" class="anchored"><span class="num">3.5.3</span> 有效自由度与主成分</h3>
+<p><strong>问题</strong>：「岭回归的有效自由度」是多少？为什么它能跟「用了 $M$ 个主成分」画等号？</p>
+<div class="aside basis"><p class="hd">基础知识 · 迹与迹循环律（见预备知识 L4）</p><p>$\mathrm{tr}(AB)=\mathrm{tr}(BA)$（$A$ 是 $m\times n$、$B$ 是 $n\times m$）；$\mathrm{tr}(A)=\sum_i A_{ii}$。迹是线性函数：$\mathrm{tr}(A+B)=\mathrm{tr}(A)+\mathrm{tr}(B)$。</p></div>
+<p>用 $V$ 的列作坐标重新写 (3.44)。$V^\top\hat\beta_{\rm ridge}$ 给出 $\beta$ 在正交基 $v_1,\dots,v_p$ 下的坐标：</p>
+<div class="eq"><div class="escroll">
+$$
+V^\top\hat\beta_{\rm ridge}=\mathrm{diag}\Big(\frac{d_j}{d_j^2+\lambda}\Big)U^\top y
+$$
+</div></div>
+<p>把 $X^\top X$ 的特征分解写出来更方便（这是 (3.48)）：</p>
+<div class="eq"><div class="escroll">
+$$
+X^\top X=VD^2V^\top\
+$$
+</div><span class="tag">(3.48)</span></div>
+<p>其中 $d_j^2$ 是 $X^\top X$ 的第 $j$ 个特征值，$v_j$ 是对应的单位特征向量。注意 (3.48) 就是 §3.4 里用过的谱分解，<strong>没有新东西</strong>。</p>
+<p>定义第 $j$ 个回归系数的随机变量</p>
+<div class="eq"><div class="escroll">
+$$
+z_j=\frac{v_j^\top X^\top y}{v_j^\top X^\top Xv_j}=\frac{v_j^\top X^\top y}{d_j^2}\qquad (d_j&gt;0)
+$$
+</div></div>
+<p>这是 $v_j$ 这个方向上的「单变量最小二乘系数」（第 3 章 (3.28) 的向量版）。它把 ridge 系数表成<strong>方向</strong>的形式：</p>
+<div class="eq"><div class="escroll">
+$$
+\hat\beta_{\rm ridge}=\sum_{j=1}^{p}\frac{d_j^2}{d_j^2+\lambda}\,z_j\,v_j\ \text{（$z_j$ 用 }\hat z_j\text{ 代入）}
+$$
+</div></div>
+<p><strong>为什么 $d_j^2\mathrm{Var}(z_j)$ 就是该方向解释的方差</strong>。在模型 $y=X\beta+\varepsilon$、$\mathrm{Var}(\varepsilon)=\sigma^2I$ 下（预备知识 L5）：</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{Var}(v_j^\top X^\top y)=\mathrm{Var}\big((Xv_j)^\top y\big)
+$$
+</div></div>
+<p>而 $Xv_j$ 是 $y$ 方向上的一个回归系数，记 $\gamma=v_j^\top\beta$，则 $v_j^\top X^\top y=\gamma\,v_j^\top X^\top Xv_j+v_j^\top X^\top\varepsilon=\gamma d_j^2+v_j^\top X^\top\varepsilon$。用 (3.8) 的推导（$\mathrm{Var}(X^\top\varepsilon)=\sigma^2X^\top X$，见预备知识 L5 的高斯线性组合）得</p>
+<div class="eq long"><div class="escroll">
+$$
+\mathrm{Var}(v_j^\top X^\top y)=\sigma^2d_j^2,\qquad
+\mathrm{Var}(z_j)=\frac{\sigma^2d_j^2}{d_j^4}=\frac{\sigma^2}{d_j^2}
+$$
+</div></div>
+<p>再由 $Xv_j$ 与 $z_j$ 的关系 $\mathrm{Var}(Xv_j)=\mathrm{Var}\big(\sum_j\beta_jXv_j\big)$ 在 $v_j$ 这个坐标上的分量 $=d_j^2\mathrm{Var}(z_j)$，即得 (3.49)：</p>
+<div class="eq"><div class="escroll">
+$$
+d_j^2\,\mathrm{Var}(z_j)=\mathrm{Var}(Xv_j)=\sigma^2\
+$$
+</div><span class="tag">(3.49)</span></div>
+<p>直观说法：<strong>若 $z_j$ 已知，则 $Xv_j$ 的取值完全被 $\sigma^2$ 的噪声决定</strong>；$d_j^2\mathrm{Var}(z_j)$ 衡量这个方向上「$X$ 空间位移」的方差，即该方向真正的信号强度。$d_j=0$ 的方向是 $X$ 的零空间，$Xv_j=0$，无信号。</p>
+<p><strong>有效自由度 (3.50)</strong>。岭回归的拟合值是 $X\hat\beta_{\rm ridge}$，写成矩阵形式</p>
+<div class="eq"><div class="escroll">
+$$
+X\hat\beta_{\rm ridge}=\underbrace{X(X^\top X+\lambda I)^{-1}X^\top}_{=:H_\lambda}y
+$$
+</div></div>
+<p>$H_\lambda$ 是 $N\times N$ 的<strong>线性 smoother</strong>（对称、不一定有秩 $N$）。用 (3.47) 与 $UU^\top y$ 得</p>
+<div class="eq"><div class="escroll">
+$$
+H_\lambda=\sum_{j=1}^{p}\frac{d_j^2}{d_j^2+\lambda}\,u_ju_j^\top
+$$
+</div></div>
+<p><strong>推导</strong> $\mathrm{tr}(H_\lambda)$。用迹的定义逐项算（$\mathrm{tr}(u_ju_j^\top)=u_j^\top u_j=1$，因为 $u_j$ 是单位列向量）：</p>
+<div class="eq verylong"><div class="escroll">
+$$
+\begin{aligned}
+\mathrm{tr}(H_\lambda)
+&amp;=\sum_{j=1}^{p}\frac{d_j^2}{d_j^2+\lambda}\,\mathrm{tr}(u_ju_j^\top)\\
+&amp;=\sum_{j=1}^{p}\frac{d_j^2}{d_j^2+\lambda}\sum_{i=1}^{N}\sum_{k=1}^{N}(u_j)_i(u_j)_k\,\mathrm{tr}(e_ie_k^\top)\\
+&amp;=\sum_{j=1}^{p}\frac{d_j^2}{d_j^2+\lambda}\sum_{i=1}^{N}\sum_{k=1}^{N}(u_j)_i(u_j)_k\,\delta_{ik}\qquad(\mathrm{tr}(e_ie_k^\top)=(e_i^\top e_k)=\delta_{ik})\\
+&amp;=\sum_{j=1}^{p}\frac{d_j^2}{d_j^2+\lambda}\sum_{i=1}^{N}(u_j)_i^2\\
+&amp;=\sum_{j=1}^{p}\frac{d_j^2}{d_j^2+\lambda}\ \qquad(\text{因为 }u_j^\top u_j=1)
+\end{aligned}
+$$
+</div></div>
+<p>所以</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{df}(\hat y)=\mathrm{tr}(H_\lambda)=\sum_{j=1}^{p}\frac{d_j^2}{d_j^2+\lambda}\
+$$
+</div><span class="tag">(3.50)</span></div>
+<div class="aside key"><p class="hd">结果</p><p>(3.50) 是<strong>主成分回归（PCR）的另一种写法</strong>。因为 $H_\lambda$ 的第 $j$ 个特征方向上的特征值是 $d_j^2/(d_j^2+\lambda)\in(0,1)$，记</p></div>
+<div class="eq"><div class="escroll">
+$$
+M_\lambda=\#\Big\{j:\ \frac{d_j^2}{d_j^2+\lambda}&gt;\frac12\Big\}=\#\{j:\ d_j^2&gt;\lambda\}
+$$
+</div></div>
+<p>则 (3.50) 落在 $(M_\lambda,\ M_\lambda+1)$ 之间（每个保留项贡献接近 $1$，每个丢弃项贡献接近 $0$，而 $\frac{d_j^2}{d_j^2+\lambda}-1=-\frac{\lambda}{d_j^2+\lambda}$ 各项都 $&lt;0$）。所以 <strong>PCR 是 ridge 的「阶梯化」版本</strong>：PCR 只取 $M$ 个方向、保留全部；ridge 取全部方向、逐个部分保留。</p>
+<p>具体对应关系：设 (3.49) 给出第 $j$ 个方向的信号强度 $d_j^2\mathrm{Var}(z_j)$。若 $d_j^2&gt;\lambda$，该方向在 ridge 里保留比例 $&gt;1/2$，同时它的信号强度 $&gt;\lambda$；若 $d_j^2&lt;\lambda$，保留比例 $&lt;1/2$ 且信号强度 $&lt;\lambda$。<strong>这正是「按信噪比阈值截断」的含义</strong>：$\lambda$ 就是同时扮演「截断阈值」和「收缩强度」两个角色。</p>
+<div class="aside warn"><p class="hd">坑</p><p>(3.50) 要求 $d_j^2+\lambda&gt;0$，$\lambda&gt;0$ 时自动成立。$\lambda=0$ 时 $d_j=0$ 的项是 $0/0$，必须理解为<strong>丢弃</strong>（这正是 §3.7 里用 $\mathrm{Var}(z_j)$ 排序后丢掉 $\mathrm{Var}(z_j)$ 最小的那几个的做法），此时 df 应为 $\mathrm{rank}(X)$ 而不是 $p$。</p>
+<p>另一个坑：$d_j^2$ <strong>不是</strong>可以观测的量（$y$ 不出现在 $d_j$ 里，只出现在 $z_j$ 里），所以「$d_j^2&gt;\lambda$」这个截断判据在<strong>纯 ridge</strong> 里没有实用意义——ridge 是<strong>连续收缩</strong>的，不做硬截断。只有当 $X$ 被标准化且列间近乎正交时，$d_j^2\approx$ 每列的 $N$ 倍，$\lambda$ 才近似有「保留几个变量」的直觉。ESL 后面反复提醒：<strong>ridge 与 lasso 混用时不要用 ridge 的直觉去解释 lasso 的解</strong>。</p>
+<p>还有：$d_j^2$ 是<strong>未标准化</strong>列的量。若 $x_j$ 的单位是「元」而 $x_k$ 是「米」，$d_j^2$ 的比较毫无意义。所以 ridge <strong>必须配合标准化</strong>才可解释（lasso 同理，见 §3.5.4 的坑）。</p></div>
+<p><a class="src" href="../esl/ch03-linear-methods-for-regression.html#s-3-5">原文 §3.5 有效自由度</a></p>
+<h3 id="s-3-5-4" class="anchored"><span class="num">3.5.4</span> Lasso：软阈值与稀疏性</h3>
+<p><strong>问题</strong>：把 $\ell_2$ 罚款换成 $\ell_1$，(3.41) 的解会变成什么？为什么它给出稀疏？</p>
+<p>lasso 的<strong>约束形式</strong> (3.51) 与<strong>惩罚形式</strong> (3.52)：</p>
+<div class="eq long"><div class="escroll">
+$$
+\hat\beta_{\rm lasso}=\arg\min_{\beta}\ \sum_{i=1}^{N}\Big(y_i-\beta_0-\sum_{j=1}^{p}\beta_jx_{ij}\Big)^2\quad\text{s.t.}\ \sum_{j=1}^{p}|\beta_j|\le t\
+$$
+</div><span class="tag">(3.51)</span></div>
+<div class="eq long"><div class="escroll">
+$$
+\hat\beta_{\rm lasso}=\arg\min_{\beta}\ \frac{1}{2N}\sum_{i=1}^{N}\Big(y_i-\beta_0-\sum_{j=1}^{p}\beta_jx_{ij}\Big)^2+\lambda\sum_{j=1}^{p}|\beta_j|\
+$$
+</div><span class="tag">(3.52)</span></div>
+<p>两式的等价性论证<strong>与 §3.5.1 的 lasso 版本完全平行</strong>，而且这次真的能做成凸对偶（因为 $\lVert\beta\rVert_1$ 是凸函数）：</p>
+<ol><li>拉格朗日函数 $L(\beta,\lambda)=\mathrm{RSS}(\beta)+\lambda(\lVert\beta\rVert_1-t)$，$\lambda\ge0$。</li><li>对 $\beta_j$ 求偏导，$j\ne0$ 时 $\frac{\partial|\beta_j|}{\partial\beta_j}=\mathrm{sign}(\beta_j)$，$j=0$ 时是 $[-1,1]$ 的区间（次梯度）。所以</li></ol>
+<div class="eq"><div class="escroll">
+$$
+\frac{\partial L}{\partial\beta_j}=-2x_j^\top(y-X\beta)+\lambda\,\mathrm{sign}(\beta_j)=0,\qquad j=1,\dots,p
+$$
+</div></div>
+<ol><li>最优点在边界上（若 $\lVert\hat\beta\rVert_1&lt;t$ 则 $\lambda=0$，解退化成 $\hat\beta_{\rm ls}$，它一般不在 $\lVert\beta\rVert_1\le t$ 内）。KKT 的互补松弛（预备知识 O2）给 $\lambda^\star&gt;0$ 且 $\lVert\hat\beta^{\rm lasso}\rVert_1=t$。</li><li>Slater 条件满足（取 $\beta=0$，$t&gt;0$ 时严格可行），目标凸，所以<strong>强对偶</strong>成立：$\max_{\lambda\ge0}g(\lambda)=\min_\beta\mathrm{RSS}(\beta)$ s.t. $\lVert\beta\rVert_1\le t$，其中 $g(\lambda)=\inf_\beta[\mathrm{RSS}(\beta)+\lambda\lVert\beta\rVert_1]$。这就给出 (3.51) 与 (3.52) 的一一对应。</li></ol>
+<div class="aside key"><p class="hd">结果</p><p>(3.52) 的最优解是 $\lambda$ 的<strong>分段线性函数</strong>：$\hat\beta(\lambda)=\hat\beta(0)+\lambda\gamma$，在 $0\le\lambda\le\lambda_{\max}$ 上（这一段上支撑集固定）。$\lambda_{\max}$ 的显式值：</p></div>
+<div class="eq"><div class="escroll">
+$$
+\lambda_{\max}=\frac{1}{N}\max_{j=1,\dots,p}\big|x_j^\top(y-\bar y\mathbf 1)\big|
+$$
+</div></div>
+<p>证明：从 (3.52) 的一阶条件，若最优解是 $\beta=0$，需要（用次梯度的 $0\in\partial$）$\big|-2x_j^\top y+\lambda s_j\big|\le\lambda$ 对某个 $|s_j|\le1$ 成立，即 $2|x_j^\top y|\le\lambda(1+|s_j|)$ 恒真，也就是 $2|x_j^\top y|\le2\lambda$，取最大的那个 $j$ 即得 $\lambda\ge\max_j|x_j^\top y|$。归一化到 (3.52) 的 $1/(2N)$ 版本得 $\lambda_{\max}=\frac1N\max_j|x_j^\top y|$；去中心后 $x_j^\top y=x_j^\top(y-\bar y\mathbf 1)$。</p>
+<p><strong>为什么 lasso 稀疏：几何论证</strong>。</p>
+<p>$\lVert\beta\rVert_1\le t$ 的可行集 $C_t=\{\beta:\sum_j|\beta_j|\le t\}$ 是一��� $p$ 维单纯形的多面体。它有 $2^{p}$ 个顶点，恰好是坐标轴上的点</p>
+<div class="eq"><div class="escroll">
+$$
+\pm te_j,\qquad j=1,\dots,p
+$$
+</div></div>
+<p>（可以直接验证：$\lVert\beta\rVert_1=\sum_j|\beta_j|\ge|\beta_j|$ 对每个 $j$ 成立，所以 $\lVert\beta\rVert_1\le t$ 蕴含 $|\beta_j|\le t$，等号只在 $\beta=\pm te_j$ 达到。）</p>
+<p>RSS 的等值面仍是中心在 $\hat\beta_{\rm ls}$ 的椭球面（§3.5.2 证明过）。现在最小化 RSS 就是<strong>把椭球面族从 $\hat\beta_{\rm ls}$ 处膨胀到第一次碰到 $C_t$</strong>，接触点就是 $\hat\beta_{\rm lasso}$。</p>
+<ul><li>若 $p=2$，$C_t$ 是<strong>菱形</strong>。RSS 椭球面第一次接触菱形的位置通常是<strong>角点或角附近的边</strong>。角点对应「只有一个 $\beta_j\ne0$」——<strong>这就是稀疏性的来源</strong>。</li><li>一般 $p$ 下，接触点落在哪个 facet 上由哪几个变量的「相关」决定。facet 是 $\sum_{j\in\mathcal A}s_j\beta_j=t$（$\mathcal A\subseteq\{1,\dots,p\}$，$s_j=\pm1$）。若接触点落在 facet $\mathcal A$ 的<strong>相对内部</strong>（即 $\beta_j\ne0$ 对所有 $j\in\mathcal A$），则 KKT 给出</li></ul>
+<div class="eq"><div class="escroll">
+$$
+-2x_j^\top(y-X\hat\beta)+\lambda s_j=0\quad(j\in\mathcal A)
+$$
+</div></div>
+<p>解出 $\hat\beta_\mathcal{A}$ 后，若某个 $k\notin\mathcal A$ 的 $|x_k^\top(y-X\hat\beta)|&gt;\lambda$，椭球还能再膨胀一点而不越界，说明还没到最紧，<strong>矛盾</strong>。所以不活跃集上的变量必须满足 (3.59) 的阈值条件（§3.6 推导）。$\lVert\beta\rVert_1$ 固定时，$\mathcal A$ 越小（$\beta_j$ 越集中）越容易满足这些阈值条件——这就是 lasso 系统性偏好的解形态。</p>
+<div class="aside key"><p class="hd">结果</p><p>球面（$\ell_2$）光滑 ⇒ 解唯一、系数全非零；多面体（$\ell_1$）有角点 ⇒ 解可以落在角上 ⇒ 系数为 0。<strong>平滑 vs 尖角是收缩与稀疏的唯一区别</strong>。</p>
+<p>更定量地说：$\ell_1$ 球约束下解满足 $\mathrm{sign}(\hat\beta_j)=\mathrm{sign}\big(x_j^\top(y-X\hat\beta)\big)$（相关性方向与系数方向一致），而 $\ell_2$ 球没有这个「符号锁定」。</p></div>
+<p><strong>收缩算子</strong>。把 §3.6 要用的软阈值算子先定义在这里（它是 lasso 的核心输出形式，见 (3.53)）。设 $\hat\beta_j^{\rm ls}$ 是第 $j$ 个变量的<strong>单变量</strong>最小二乘系数（其余变量不管），则 lasso 系数的（非线性）变换形式是</p>
+<div class="eq verylong"><div class="escroll">
+$$
+S(\hat\beta_j^{\rm ls},\lambda)=\mathrm{sign}\big(\hat\beta_j^{\rm ls}\big)\max\Big(\big|\hat\beta_j^{\rm ls}\big|-\lambda,\ 0\Big)=\mathrm{sign}\big(\hat\beta_j^{\rm ls}\big)\big(\big|\hat\beta_j^{\rm ls}\big|-\lambda\big)_+
+$$
+</div></div>
+<p>其中 $(a)_+=\max(a,0)$。注意<strong>这个公式只在单变量（或正交设计）情形严格成立</strong>；在一般的共线情形下 lasso 解不是逐坐标的软阈值（§3.6 的坐标下降是迭代地把每个坐标「拉」到正确位置）。</p>
+<p><a class="src" href="../esl/ch03-linear-methods-for-regression.html#s-3-5">原文 §3.5 Lasso</a></p>
+<h3 id="s-3-5-5" class="anchored"><span class="num">3.5.5</span> 岭、lasso 与 elastic net 的对比</h3>
+<p><strong>问题</strong>：(3.53) 把两者的收缩规则并排放在一起。差别到底有多大？</p>
+<div class="aside key"><p class="hd">结果 · 收缩规则 (3.53)</p></div>
+<div class="eq verylong"><div class="escroll">
+$$
+\begin{cases}
+\text{Ridge}:\ \dfrac{\hat\beta_j^{\rm ridge}}{\hat\beta_j^{\rm ls}}=\dfrac{1}{1+\lambda}\ \text{（近似，$\langle x_j,x_j\rangle=N$ 归一化下）}\\[8pt]
+\text{Lasso}:\ \dfrac{\hat\beta_j^{\rm lasso}}{1}=\mathrm{sign}\big(\hat\beta_j^{\rm ls}\big)\Big(\big|\hat\beta_j^{\rm ls}\big|-\lambda\Big)_+\ \text{（仅单变量情形）}
+\end{cases}\
+$$
+</div><span class="tag">(3.53)</span></div>
+<p>(3.53) 的严格版本（ESL 原文的形式）是在<strong>标准化</strong>设计矩阵（每列平方和为 $N$）下的近似。为看清差别，做一张表：</p>
+<div class="tscroll-x"><table class="fx"><thead><tr><th></th><th>Ridge $\hat\beta_j/(1+\lambda)$</th><th>Lasso $\mathrm{sign}(\hat\beta_j)(\lvert\hat\beta_j\rvert-\lambda)_+$</th></tr></thead><tbody><tr><td>$\lvert\hat\beta_j\rvert&gt;\lambda$</td><td>乘 $1/(1+\lambda)$，<strong>严格为正</strong></td><td>$\lvert\hat\beta_j\rvert-\lambda$，同号</td></tr><tr><td>$\lvert\hat\beta_j\rvert\le\lambda$</td><td>$\hat\beta_j/(1+\lambda)$，<strong>严格为正</strong></td><td>精确等于 $0$</td></tr><tr><td>是否非线性</td><td>线性（关于 $\hat\beta_j$）</td><td>分段线性、有拐点，<strong>非线性</strong></td></tr><tr><td>收缩随 $\lvert\hat\beta_j\rvert$ 的变化</td><td>比例恒定 $1/(1+\lambda)$</td><td>比例 $1-\lambda/\lvert\hat\beta_j\rvert$ 随系数增大而增大</td></tr></tbody></table></div>
+<p>三条可验证的结论：</p>
+<ol><li><strong>Ridge 永远不产生 0</strong>。若 $\hat\beta_j^{\rm ls}\ne0$，则 $\hat\beta_j^{\rm ridge}=\hat\beta_j^{\rm ls}/(1+\lambda)\ne0$（因为 $1+\lambda&lt;\infty$）。要真正置零需要 $\lambda\to\infty$。</li><li><strong>Lasso 把小系数精确压成 0</strong>。阈值 $|\hat\beta_j^{\rm ls}|\le\lambda$ 就是 (3.59) 的 KKT 条件在单变量情形的直接后果（那个坐标的最优值确实是 $0$ 当且仅当偏导的「梯度区间」包含 $0$）。</li><li><strong>相对收缩量 ridge 更大、lasso 更温和</strong>。取 $\lvert\hat\beta_j^{\rm ls}\rvert$ 很大时，lasso 的收缩比例 $\to1$（几乎不收缩），ridge 的比例恒为 $1/(1+\lambda)$；反之在小系数处 lasso 收缩到 0、ridge 保留一个小的正数。所以 <strong>lasso 是「选择性收缩」，ridge 是「均匀收缩」</strong>。ESL 的经验法则：<strong>预测误差相同时 lasso 系数更稀疏</strong>；<strong>$p$ 很小且信噪比高时 ridge 的 MSE 更低</strong>（因为 lasso 硬阈值带来的「偏差」在信号明确时是纯粹的损失）。</li></ol>
+<div class="aside warn"><p class="hd">坑</p><p>(3.53) 的两个公式<strong>都不是</strong>一般情况下 lasso/ridge 精确解的逐坐标表达。只有在<strong>正交设计</strong>（$X^\top X=N\cdot I$，即列两两正交且等长）时才严格成立；共线时 ridge 的收缩因子逐方向是 $d_j^2/(d_j^2+\lambda)$（不是 $1/(1+\lambda)$），lasso 需要迭代（§3.6）。ESL 把这个表放在正文里是为了给<strong>直觉</strong>，不要当定理用。</p>
+<p>另一个坑：$\mathrm{sign}(0)$ 的定义。$S(u,\lambda)$ 在 $u=0$ 处 $S(0,\lambda)=0$，一致；但 $\mathrm{sign}(0)=0$ 会让 $\lambda\,\mathrm{sign}(\beta_j)$ 在 $\beta_j=0$ 时等于 $0$，而 KKT 需要的其实是 $-\lambda\le x_j^\top(y-X\beta)\le\lambda$（见 (3.59)）。这是初学者最容易写错的地方。</p></div>
+<p><strong>Elastic net (3.54)</strong>。既然 ridge 稳（唯一解、连续）而 lasso 稀疏（但可能不稳），把两个罚款加起来：</p>
+<div class="eq long"><div class="escroll">
+$$
+\hat\beta_{\rm EN}=\arg\min_{\beta}\ \frac{1}{2N}\sum_{i=1}^{N}\Big(y_i-\beta_0-\sum_{j=1}^{p}\beta_jx_{ij}\Big)^2+\lambda\sum_{j=1}^{p}\Big[\alpha\beta_j^2+(1-\alpha)|\beta_j|\Big]\
+$$
+</div><span class="tag">(3.54)</span></div>
+<p>（ESL 把 $\alpha\beta_j^2+(1-\alpha)|\beta_j|$ 称为 elastic net 罚，$\alpha\in[0,1]$：$\alpha=1$ 退化为 ridge，$\alpha=0$ 退化为 lasso，$\alpha\in(0,1)$ 兼顾两者。）</p>
+<div class="aside"><p class="hd">推导</p><p>弹性网的唯一性。目标函数的可微部分（忽略 $\lVert\cdot\rVert_1$ 的次梯度）的 Hession 是</p></div>
+<div class="eq long"><div class="escroll">
+$$
+\nabla^2\Big[\tfrac12 y^\top y-y^\top X\beta+\beta^\top X^\top X\beta+N\lambda\alpha\beta^\top\beta\Big]=2\big(X^\top X+N\lambda\alpha I\big)
+$$
+</div></div>
+<p>对任何 $\lambda\alpha&gt;0$，这个矩阵<strong>正定</strong>（$X^\top X$ 半正定，$N\lambda\alpha I$ 正定，和必正定，见预备知识 L1）。加上凸函数 $\lambda(1-\alpha)\lVert\beta\rVert_1$ 后，总目标是<strong>严格凸</strong>的（严格凸的证明：任意 $\beta\ne\beta'$，取中点，二次部分严格下降、$\ell_1$ 部分不增，故中点目标严格小于两端平均）⇒ <strong>极小点唯一</strong>。</p>
+<div class="aside key"><p class="hd">结果</p><p>$p&gt;N$（甚至 $N&lt;p$ 秩亏）时：$\alpha&gt;0$ ⇒ (3.54) 有唯一解；$\alpha=0$（纯 lasso）⇒ 解<strong>可能不唯一</strong>。显式反例：$N=1$，$y=1$，$X=(1,1)$（$p=2$），$\lambda=1$。目标为</p></div>
+<div class="eq"><div class="escroll">
+$$
+(1-\beta_1-\beta_2)^2+|\beta_1|+|\beta_2|
+$$
+</div></div>
+<p>固定 $s=\beta_1+\beta_2$ 时 $\lvert\beta_1\rvert+\lvert\beta_2\rvert\ge\lvert s\rvert$，等号当且仅当 $\beta_1,\beta_2$ 同号。$s\in[0,1]$ 上目标为 $1-s+s^2$，在 $s=1/2$ 取 $3/4$；$s&lt;0$ 上目标为 $1-s-s^2+s=1-s^2&lt;1$ 在 $s\to0^-$… 更仔细地，$s\le0$ 时 $(1-s)^2-s=1-3s+s^2&gt;1$。所以最小值 $3/4$ 在 $(\beta_1,\beta_2)=(1/2,0),(0,1/2),(1/4,1/4)$ 等无穷多组上取到 ⇒ <strong>不唯一</strong>。</p>
+<p>这就是 elastic net 存在的第二个理由：$\alpha&gt;0$ 的 $\ell_2$ 项提供了<strong>唯一性</strong>。$Zou \&amp; Hastie (2005)$ 的命名也来自这个「net（网）」——把 lasso 的 $\ell_1$ 尖角「兜」上一层光滑的 $\ell_2$ 球。</p>
+<div class="aside warn"><p class="hd">坑</p><p>elastic net 的 $\lambda$ 与 $\alpha$ <strong>不是各自独立可解释的</strong>。整体罚款强度是 $\sqrt{(1-\alpha)}\lambda$（见第 3 章 (3.88) 的 $\lambda^{(1-\alpha)}=\sqrt{1-\alpha}\,\lambda$ 那段讨论），只有这个组合量决定解在路径上的位置。ESL 后面明确说：不要用「lasso 的 $\lambda$」或「ridge 的 $\lambda$」的直觉去读 (3.54) 的 $\lambda$。</p></div>
+<p><a class="src" href="../esl/ch03-linear-methods-for-regression.html#s-3-5">原文 §3.5 Elastic net</a></p>
+<h2 id="s-3-6" class="anchored"><span class="num">3.6</span> 坐标下降</h2>
+<p>§3.5 给出了 lasso 的定义 (3.52)，但没给算法——(3.52) 是个含 $\lVert\beta\rVert_1$ 的不可微凸问题，没有闭式解。本节补上三件事：<strong>实际怎么算</strong>（坐标下降，(3.83)(3.84)）、<strong>解长什么样</strong>（KKT 条件 (3.58)(3.59)）、<strong>一条更快的算法路线</strong>（LARS，(3.55)(3.56)），最后回答「岭回归和 lasso 的有效自由度能不能用同一套公式算」（(3.60)）。对应原文 <a class="src" href="../esl/ch03-linear-methods-for-regression.html#s-3-6">原文 §3.6</a>。</p>
+<h3 id="s-3-6-1" class="anchored"><span class="num">3.6.1</span> 坐标下降</h3>
+<p><strong>问题</strong>：一个具体的迭代格式，一次只更新一个坐标，几次之后收敛。</p>
+<div class="aside basis"><p class="hd">基础知识 · 坐标下降（见预备知识 O4）</p><p>对可分目标 $F(\beta)=\sum_{j=1}^pF_j(\beta_j)$，固定其余坐标只优化第 $j$ 个：$\beta_j\leftarrow\arg\min_tF_j(t)$。因为 $F(\beta)\le F(\beta^{\pm})$，每次迭代单调不增目标值。</p></div>
+<p>ESL 采用的目标函数 (3.57)（注意这个版本不带 $1/N$，$\lambda$ 的定义与 (3.52) 差一个 $N$ 倍因子，见下面的坑）：</p>
+<div class="eq"><div class="escroll">
+$$
+R(\beta)=\frac{1}{2}\lVert y-X\beta\rVert_2^2+\lambda\lVert\beta\rVert_1\
+$$
+</div><span class="tag">(3.57)</span></div>
+<p><strong>第一步：写「残差修正量」</strong>。更新 $\beta_j$ 时，只有 $\beta_jx_j$ 这一项变化。定义</p>
+<div class="eq long"><div class="escroll">
+$$
+\tilde y^{(j)}=y-\sum_{k\ne j}\hat\beta_kx_k\ \in\ \mathbb{R}^N\ \text{，逐元素写为}\ \tilde y_i^{(j)}=y_i-\sum_{k\ne j}\hat\beta_kx_{ik}
+$$
+</div></div>
+<p>（注意 $\tilde y^{(j)}$ 里的 $\hat\beta_k$（$k\ne j$）是<strong>上一次迭代</strong>的值，$j$ 坐标被清零。用 (3.2) 的记号，这等价于 $\tilde y_i^{(j)}=y_i-\beta_0-\sum_{k\ne j}\hat\beta_kx_{ik}$，截距被放进了 $\beta_0$。）</p>
+<p>于是</p>
+<div class="eq long"><div class="escroll">
+$$
+R(\hat\beta^{\pm})=\frac{1}{2}\sum_{i=1}^{N}\big(\tilde y_i^{(j)}-x_{ij}\beta_j\big)^2+\lambda\sum_{k\ne j}|\hat\beta_k|+\lambda|\beta_j|
+$$
+</div></div>
+<p>固定其余坐标后，$\sum_{k\ne j}|\hat\beta_k|$ 是常数（<strong>可分性</strong>），只需极小化</p>
+<div class="eq"><div class="escroll">
+$$
+g_j(t)=\frac{1}{2}\sum_{i=1}^{N}\big(\tilde y_i^{(j)}-x_{ij}t\big)^2+\lambda|t|
+$$
+</div></div>
+<p><strong>第二步：对 $t$ 求导，分三种情形</strong>。$t\ne0$ 时 $\frac{\mathrm d|t|}{\mathrm dt}=\mathrm{sign}(t)$，</p>
+<div class="eq"><div class="escroll">
+$$
+g_j'(t)=-x_j^\top\tilde y^{(j)}+t\,\lVert x_j\rVert_2^2+\lambda\,\mathrm{sign}(t)
+$$
+</div></div>
+<p>（$g_j''=\lVert x_j\rVert_2^2&gt;0$，因为 $x_j$ 不为零向量，所以 $g_j$ 严格凸，最小点唯一。）</p>
+<ul><li><strong>$t&gt;0$</strong>：$g_j'(t)=0$ 解出</li></ul>
+<div class="eq"><div class="escroll">
+$$
+t=\frac{x_j^\top\tilde y^{(j)}-\lambda}{\lVert x_j\rVert_2^2}
+$$
+</div></div>
+<p>这个值 $&gt;0$ 的条件是 $x_j^\top\tilde y^{(j)}&gt;\lambda$。</p>
+<ul><li><strong>$t&lt;0$</strong>：$\mathrm{sign}(t)=-1$，</li></ul>
+<div class="eq"><div class="escroll">
+$$
+t=\frac{x_j^\top\tilde y^{(j)}+\lambda}{\lVert x_j\rVert_2^2}
+$$
+</div></div>
+<p>为负的条件是 $x_j^\top\tilde y^{(j)}&lt;-\lambda$。</p>
+<ul><li><strong>$t=0$</strong>：$g_j$ 在 $0$ 处不可导，$0$ 是极小点当且仅当 $0$ 属于次梯度，即</li></ul>
+<div class="eq"><div class="escroll">
+$$
+-x_j^\top\tilde y^{(j)}\in\lambda[-1,1]\iff \big|x_j^\top\tilde y^{(j)}\big|\le\lambda
+$$
+</div></div>
+<p>这正是 (3.59) 的不等式在 $N=1$ 归一化下的样子。</p>
+<p><strong>第三步：合并成软阈值算子</strong>。设 $a=\frac{x_j^\top\tilde y^{(j)}}{\lVert x_j\rVert_2^2}$（即 $x_j$ 方向上的单变量最小二乘系数），则</p>
+<div class="eq verylong"><div class="escroll">
+$$
+t^\star=\begin{cases}
+a-\dfrac{\lambda}{\lVert x_j\rVert_2^2}, &amp; a&gt;\dfrac{\lambda}{\lVert x_j\rVert_2^2}\\[6pt]
+0, &amp; \lvert a\rvert\le\dfrac{\lambda}{\lVert x_j\rVert_2^2}\\[6pt]
+a+\dfrac{\lambda}{\lVert x_j\rVert_2^2}, &amp; a&lt;-\dfrac{\lambda}{\lVert x_j\rVert_2^2}
+\end{cases}=\mathrm{sign}(a)\Big(\lvert a\rvert-\frac{\lambda}{\lVert x_j\rVert_2^2}\Big)_+
+$$
+</div></div>
+<p>用 $\frac{1}{N}\sum$ 的记号（假设 $\lVert x_j\rVert_2^2=N$，即列已标准化）写成 ESL 的形式 (3.83)(3.84)：</p>
+<div class="eq"><div class="escroll">
+$$
+\tilde y_i^{(j)}=y_i-\sum_{k\ne j}\hat\beta_kx_{ik}\
+$$
+</div><span class="tag">(3.83)</span></div>
+<div class="eq"><div class="escroll">
+$$
+\hat\beta_j\leftarrow S\Big(\frac{1}{N}\sum_{i=1}^{N}\tilde y_i^{(j)}x_{ij},\ \lambda\Big)\
+$$
+</div><span class="tag">(3.84)</span></div>
+<div class="aside warn"><p class="hd">坑</p><p>原书 (3.84) 里<strong>没有</strong> $\lambda$ 的减项，写的就是 $S(a,\lambda)$。常见的错误推论是「软阈值算子有平移性质 $S(u-\lambda,\lambda)=S(u,\lambda)-\lambda$，所以两者等价」——<strong>这个恒等式不成立</strong>：</p>
+<div class="eq"><div class="escroll">
+$$
+S(1.5\lambda,\lambda)-\lambda=(1.5\lambda-\lambda)-\lambda=-0.5\lambda\ \ne\ S(0.5\lambda,\lambda)=0.5\lambda
+$$
+</div></div>
+<p>真正成立的是<strong>正齐次性</strong> $S(cu,c\lambda)=c\,S(u,\lambda)\ (c&gt;0)$，以及只在 $u\ge0$ 一侧成立的$S(u+\lambda,\lambda)=S(u,\lambda)+\lambda$。至于 $\frac12\lVert y-X\beta\rVert^2$ 与 $\frac1{2N}\sum_i(\cdot)^2$ 之间的归一化差异，是通过<strong>阈值本身</strong>被缩放来吸收的（目标里的 $\lambda/N$ 对应这里阈值 $\lambda$），不是在结果上再减一个 $\lambda$。</p>
+<p>若不确定，直接把 $u=0$ 代进去检验：$S(0,\lambda)-\lambda=-\lambda\ne0$，而正确解在 $x_j^\top r=0$ 时必须给出 $\beta_j=0$。</p></div>
+<p>其中软阈值算子 $S$ 与 (3.53) 里的写法等价：ESL 常用<strong>去中心</strong>的版本</p>
+<div class="eq long"><div class="escroll">
+$$
+S(a,\lambda)=\begin{cases}
+a-\lambda,&amp; a&gt;\lambda\\
+0,&amp; -\lambda\le a\le\lambda\\
+a+\lambda,&amp; a&lt;-\lambda
+\end{cases}\qquad\text{（这是「$a\mapsto a-\lambda\,\mathrm{sign}(a)$ 对 $|a|&gt;\lambda$，否则 $0$」）}
+$$
+</div></div>
+<div class="eq long"><div class="escroll">
+$$
+S\big(a-\lambda,\ \lambda\big)=S\big(a,\ \lambda\big)-\lambda\qquad\text{（对一切 }a,\lambda&gt;0\text{ 成立，逐段代入上面三个分支即可）}
+$$
+</div></div>
+<div class="aside calc"><p class="hd">数值</p><p>一次迭代的代价（N2）：更新 $\beta_j$ 需要 $\sum_i x_{ij}^2$（$O(N)$，预处理后是查表）和 $\sum_i\tilde y_i^{(j)}x_{ij}$（$O(N)$）。所以<strong>单坐标更新是 $O(N)$</strong>，一轮扫过 $p$ 个坐标是 $O(Np)$，与一次矩阵–向量乘同阶。这比任何需要构造 $X^\top X$（$O(Np^2)$）的方法都便宜。ESL 强调这一点：lasso 的实际计算量是 $O(Np)$ per sweep。</p></div>
+<div class="aside warn"><p class="hd">坑 · 三条，都容易踩：</p><ol><li><strong>标准化必须做</strong>。若不标准化，$\lVert x_j\rVert_2^2$ 各不相同，阈值变成 $\lambda/\lVert x_j\rVert_2^2$，$\ell_1$ 罚的「等权」假设被破坏，解不再是「每个变量同等对待」。ESL 的所有例子都假定 $x_j$ 已中心化、标准化到 $\frac{1}{N}\sum_i x_{ij}^2=1$。</li><li><strong>截距必须从罚里排除</strong>。$\lVert\beta_1\rVert_1$ 里不能含 $\beta_0$（截距），否则 (3.57) 会惩罚截距。实现上 (3.83) 里的 $\hat\beta_0$ 是单独处理的。</li><li><strong>收敛是线性的但很慢，且不保证唯一解</strong>。坐标下降单调不增 $R$，凸性保证收敛到全局极小（预备知识 O4）；但若解不唯一（§3.5.5 的反例），停在哪个解取决于初始化。</li></ol></div>
+<p><a class="src" href="../esl/ch03-linear-methods-for-regression.html#s-3-6">原文 §3.6 坐标下降</a></p>
+<h3 id="s-3-6-2" class="anchored"><span class="num">3.6.2</span> Lasso 解的 KKT 条件</h3>
+<p><strong>问题</strong>：解 $\hat\beta$ 满足什么方程？这些方程能用来做<strong>证书</strong>（检查一个候选解是否为全局最优），也能解释 LARS。</p>
+<p>把 (3.57) 写开（$y$ 已中心化、$X$ 已标准化，$\lambda&gt;0$）：</p>
+<div class="eq"><div class="escroll">
+$$
+R(\beta)=\frac{1}{2}\sum_{i=1}^{N}\big(y_i-\sum_{j=1}^{p}\beta_jx_{ij}\big)^2+\lambda\sum_{j=1}^{p}|\beta_j|
+$$
+</div></div>
+<div class="aside"><p class="hd">推导</p><p>第一阶条件。设 $\mathcal{B}=\{j:\ \hat\beta_j\ne0\}$ 为<strong>活跃集</strong>（active set，系数非零的变量），$\mathcal{A}=\{1,\dots,p\}\setminus\mathcal{B}$ 为零集。</p>
+<p><strong>（a）$\beta_j\ne0$ 时</strong>（$j\in\mathcal{B}$）：$\lvert\beta_j\rvert$ 在 $j$ 附近可微，$\frac{\partial|\beta_j|}{\partial\beta_j}=\mathrm{sign}(\beta_j)$。用链式法则与平方项求导 $\frac{\partial}{\partial\beta_j}\frac12\sum_i(y_i-\sum_k\beta_kx_{ik})^2=-\sum_i x_{ij}(y_i-\sum_k\hat\beta_kx_{ik})=-x_j^\top(y-X\hat\beta)$，得</p></div>
+<div class="eq"><div class="escroll">
+$$
+x_j^\top(y-X\hat\beta)=\lambda\,\mathrm{sign}(\hat\beta_j),\qquad\forall j\in\mathcal{B}\
+$$
+</div><span class="tag">(3.58)</span></div>
+<div class="aside"><p class="hd">（b）$\beta_j=0$ 时</p><p>（$j\in\mathcal{A}$）：$|\beta_j|$ 不可导，一阶条件要改成<strong>次梯度</strong>形式 $\mathbf 0\in\partial R$。$\partial|\beta_j|\big|_{\beta_j=0}=[-1,1]$，所以要求存在 $s_j\in[-1,1]$ 使</p></div>
+<div class="eq"><div class="escroll">
+$$
+-x_j^\top(y-X\hat\beta)+\lambda s_j=0
+$$
+</div></div>
+<p>因为 $\hat\beta_j=0$ 时 $\mathrm{sign}(\hat\beta_j)$ 无定义（若约定 $\mathrm{sign}(0)=0$ 则会错），KKT 的正确写法是 (3.59) 的<strong>不等式</strong>。两边不等号的来源：$-x_j^\top(y-X\hat\beta)=-\lambda s_j$ 且 $|s_j|\le1$ 给出 $\big|x_j^\top(y-X\hat\beta)\big|\le\lambda$：</p>
+<div class="eq"><div class="escroll">
+$$
+\big|x_k^\top(y-X\hat\beta)\big|\le\lambda,\qquad\forall k\notin\mathcal{B}\
+$$
+</div><span class="tag">(3.59)</span></div>
+<p><strong>与坐标下降不动点是同一组方程</strong>。这是本节最值得记住的观察：</p>
+<ul><li>(3.84) 的一步不动点条件：$\beta_j=\beta_j^{\text{new}}$。由 §3.6.1 的第三步，$\beta_j=0$ 当且仅当 $\big|\frac1N x_j^\top r\big|\le\lambda$；$\beta_j\ne0$ 时 $\frac1N x_j^\top r=\beta_j+\lambda\,\mathrm{sign}(\beta_j)$。因为 $r=y-X\hat\beta+\text{（只影响 }j\text{ 的项）}$，在不动点上 $r=y-X\hat\beta$，<strong>乘掉 $1/N$ 的归一化</strong>后恰好是 (3.58)(3.59)。</li><li>更进一步：坐标下降每扫一轮，若 $R$ 严格下降，则每一步的一阶条件都<strong>至少在一个坐标上失效</strong>；坐标下降终止 ⟺ 所有坐标都满足一阶条件 ⟺ KKT ⟺ 全局最优（因为 $R$ 凸，预备知识 O2）。</li></ul>
+<div class="aside key"><p class="hd">结果</p><p>(3.58)(3.59) 是 lasso 的<strong>最优性证书</strong>。给定 $y,X,\lambda$，可以：① 用坐标下降求 $\hat\beta$；② 计算 $s_k=\frac{x_k^\top(y-X\hat\beta)}{\lambda}$，检查是否所有 $k\notin\mathcal{B}$ 都有 $|s_k|\le1$、所有 $j\in\mathcal{B}$ 都有 $s_j=\mathrm{sign}(\hat\beta_j)$。若全部满足，$\hat\beta$ <strong>必是全局最优</strong>（凸性 + KKT 充分必要）。这比「目标值下降很小就停」严格得多，也是很多 lasso 软件库（<code>glmnet</code> 等）实际使用的收敛判据。</p></div>
+<div class="aside warn"><p class="hd">坑 · 两条：</p><ol><li>(3.58) 里 $\mathcal{B}$ 是<strong>活跃集（$\hat\beta_j\ne0$）</strong>，不是零集。ESL 的记号在 §3.6 里容易读反——(3.58) 的 <code>∀j∈B</code> 里 <code>sign(β_j)</code> 才有意义，$\beta_j=0$ 时 <code>sign</code> 无定义。所以 $\mathcal{B}$ 必须是非零集。若把 $\mathcal{B}$ 读成零集，(3.58) 退化成 $x_j^\top(y-X\hat\beta)=0$（$j\in$ 零集），那是<strong>最小二乘</strong>的正规方程，不是 lasso 的。</li><li>KKT 只在<strong>凸</strong>问题上充分。$R$ 确实是凸的（平方项凸 + $\lVert\cdot\rVert_1$ 凸，见预备知识 C3 关于 $\|x\|^1$ 凸性的讨论），所以 (3.58)(3.59) <strong>充分且必要</strong>。但这不含「唯一性」——$X^\top X$ 秩亏时解不唯一，KKT 仍全满足（§3.5.5 的反例）。</li></ol></div>
+<p><a class="src" href="../esl/ch03-linear-methods-for-regression.html#s-3-6">原文 §3.6 KKT 条件</a></p>
+<h3 id="s-3-6-3" class="anchored"><span class="num">3.6.3</span> LARS 与 lasso 路径</h3>
+<p><strong>问题</strong>：坐标下降一次 $O(Np)$，要几百次扫。LARS（Least Angle Regression）沿整条路径走，每个 $k$ 只需一次 $O(\lvert\mathcal{A}_k\rvert^3)$ 的小矩阵求解。</p>
+<p>设 $\mathcal{A}_k$ 是第 $k$ 步的活跃集（ESL 这里用 $\mathcal{A}$，注意与上一小节 $\mathcal{B}$ 指同一个东西，<strong>同一概念两个字母</strong>，别被绕晕），$X_{\mathcal{A}_k}$ 是 $X$ 取 $\mathcal{A}_k$ 列的子矩阵（$N\times\lvert\mathcal{A}_k\rvert$），$X^\top_{\mathcal{A}_k}$ 是它的转置。当前拟合 $\hat y_k=X_{\mathcal{A}_k}\hat\beta_{\mathcal{A}_k}$，残差</p>
+<div class="eq"><div class="escroll">
+$$
+r_k=y-\hat y_k=y-X_{\mathcal{A}_k}\hat\beta_{\mathcal{A}_k}
+$$
+</div></div>
+<p><strong>LARS 的每一步（3.55）</strong>：<strong>单个最小二乘步</strong></p>
+<div class="eq"><div class="escroll">
+$$
+\delta_k=\big(X^\top_{\mathcal{A}_k}X_{\mathcal{A}_k}\big)^{-1}X^\top_{\mathcal{A}_k}r_k\
+$$
+</div><span class="tag">(3.55)</span></div>
+<div class="aside"><p class="hd">推导</p><p>为什么 $\delta_k$ 就是「保持当前活跃集时的最优改进方向」。若我们只允许 $\mathcal{A}_k$ 里的系数变动（其余固定为 0），最小二乘残差平方是</p></div>
+<div class="eq long"><div class="escroll">
+$$
+\mathrm{RSS}(\hat\beta_{\mathcal{A}_k}+\delta)=\lVert r_k-X_{\mathcal{A}_k}\delta\rVert_2^2=r_k^\top r_k-2\delta^\top X^\top_{\mathcal{A}_k}r_k+\delta^\top X^\top_{\mathcal{A}_k}X_{\mathcal{A}_k}\delta
+$$
+</div></div>
+<p>对 $\delta$ 求梯度置零：$X^\top_{\mathcal{A}_k}X_{\mathcal{A}_k}\delta=X^\top_{\mathcal{A}_k}r_k$。矩阵 $X^\top_{\mathcal{A}_k}X_{\mathcal{A}_k}$ 是 $\lvert\mathcal{A}_k\rvert\times\lvert\mathcal{A}_k\rvert$ 的 Gram 矩阵；因 $X_{\mathcal{A}_k}$ 列满秩（活跃集的定义）故正定（预备知识 L1），逆存在，解即 (3.55)。</p>
+<p>然后 $\hat y_{k+1}=X_{\mathcal{A}_k}(\hat\beta_{\mathcal{A}_k}+\gamma_k\delta_k)$，$\gamma_k&gt;0$ 是标量步长，$\hat\beta_{k+1}=\hat\beta_k+\gamma_k\delta_k$。<strong>$\gamma_k$ 选多大？</strong> 一直走到「某个新变量与当前残差的相关性等于当前活跃集内所有相关性的最小绝对值」为止——这就是<strong>等相关（equicorrelation）</strong>条件 (3.56)：</p>
+<div class="eq"><div class="escroll">
+$$
+x_j^\top(y-X\hat\beta)=\gamma\cdot s_j,\qquad\forall j\in\mathcal{A}_k\
+$$
+</div><span class="tag">(3.56)</span></div>
+<p>其中 $s_j=\mathrm{sign}(\hat\beta_j)$ 是每个活跃变量系数的符号，$\gamma\ge0$ 是当前残差与所有活跃预测量的<strong>公共内积大小</strong>。若 $|x_j^\top r|$ 的最大值落在 $j\notin\mathcal{A}_k$ 上，就把 $j$ 加入活跃集（$\mathcal{A}\leftarrow\mathcal{A}\cup\{j\}$）；若活跃集内某变量的 $\mathrm{sign}$ 要翻转，就把它踢出（对应 lasso 路径上的<strong>变量退出</strong>点）。</p>
+<div class="aside key"><p class="hd">结果</p><p>(3.56) <strong>正是 lasso 的 KKT 条件 (3.58) 限制在活跃集上</strong>。逐一核对：</p>
+<ul><li>(3.58) 说：对 $j\in\mathcal{B}$（= 活跃集），$x_j^\top(y-X\hat\beta)=\lambda\,\mathrm{sign}(\hat\beta_j)$。</li><li>(3.56) 说：对 $j\in\mathcal{A}_k$（= 同一个集合），$x_j^\top(y-X\hat\beta)=\gamma\,s_j$，其中 $s_j=\mathrm{sign}(\hat\beta_j)$。</li></ul>
+<p>两式形式完全一致，只差一个标量 $\gamma$ 替代 $\lambda$。<strong>LARS 沿路径走出的折线，与 lasso 的解路径重合</strong>。所以 LARS 是 lasso 的一个高效求解器（$p$ 中等时 $O(Np^2)$ 总代价，远少于坐标下降的数百次 $O(Np)$ 扫描 + 收敛判据的开销）。</p></div>
+<div class="aside warn"><p class="hd">坑</p><p>LARS 与 lasso 路径只在<strong>「一般位置」</strong>上重合。当 $\lvert x_j^\top r\rvert$ 的最大值同时在多个变量（包括已在 $\mathcal{A}$ 里的）上取到时出现<strong>结（knot）</strong>，LARS 一次加/删一组变量。lasso 路径在结处通常也有折角。ESL 说明：标准 LARS 实现处理一般位置的简单结，<strong>「lasso 的 LARS」（lasso modification / 修正 LARS）在结处需要额外处理</strong>才能严格等于 lasso 的 argmin。这是个实打实的实现坑。</p>
+<p>另：LARS 依赖 $X^\top_{\mathcal{A}}X_{\mathcal{A}}$ 可逆（活跃集列满秩），所以 <strong>$\mathcal{A}$ 的大小不超过 $\mathrm{rank}(X)\le\min(N,p)$</strong>——LARS 天然不会让解有超过 $\min(N,p)$ 个非零。这与 §3.5.5 中「$p&gt;N$ 时 lasso 不唯一」呼应：LARS 输出的是其中一个特定解。</p></div>
+<p><strong>$L_1$ arc-length 参数化</strong>。LARS 走的是<strong>分段线性路径</strong>（每步 $\hat\beta\leftarrow\hat\beta+\gamma\delta$），但用 $\gamma$ 作横轴不好解释。ESL 用 <strong>$L_1$ 弧长</strong>作横轴：</p>
+<div class="eq"><div class="escroll">
+$$
+\text{横轴}\ =\ \sum_{j=1}^{p}\big|\hat\beta_j(\lambda)\big|\ \text{（$L_1$ arc-length）}
+$$
+</div></div>
+<p>即 lasso 路径按 $\|\hat\beta\|_1$ 归一化。因为 $\hat\beta(\lambda)$ 在 $\lambda\in[0,\lambda_{\max}]$ 上分段线性且在 $\lambda=0$ 处连续（$\hat\beta(0)=\hat\beta_{\rm ls}$，$\lVert\hat\beta_{\rm ls}\rVert_1$ 有限），$\lVert\hat\beta(\lambda)\rVert_1$ 也是 $\lambda$ 的分段线性<strong>递减</strong>函数（对 lasso，$\lambda$ 增大时每个非零系数向 0 移动），且<strong>严格递减</strong>直到 $\lambda_{\max}$ 时归零。所以 $\lVert\hat\beta\rVert_1$ 是 $\lambda$ 的一一对应单调函数，<strong>可以反过来用 $\lVert\hat\beta\rVert_1$ 当自变量</strong>，横轴「fraction of $L_1$ arc-length」就是 $\lVert\hat\beta(\lambda)\rVert_1/\lVert\hat\beta_{\rm ls}\rVert_1\in[0,1]$。</p>
+<p>这样画的图有两个好处：① 纵轴 $\hat\beta_j$ 对横轴分段线性，lasso 路径和 LARS 都是折线，容易读出「哪个变量在哪个弧长处进出」；② 横轴在 $[0,1]$ 里，各变量尺度可比，不同 $p$ 的模型能放一起比（如与前向逐步回归的对比）。ESL 的图 3.11 就是这个形式，也是第 3 章末尾比较 lasso / ridge / elastic net / 逐步选择 / 前向逐步的主要工具。</p>
+<p><a class="src" href="../esl/ch03-linear-methods-for-regression.html#s-3-6">原文 §3.6 LARS</a></p>
+<h3 id="s-3-6-4" class="anchored"><span class="num">3.6.4</span> 有效自由度 (3.60)</h3>
+<p><strong>问题</strong>：§3.5.3 用迹 $\mathrm{tr}(H_\lambda)$ 定义了岭回归的有效自由度。lasso、PCR、LARS 没有矩阵 $H$，但「有效自由度」照样要能算。怎么统一？</p>
+<p>答案是用 (3.60)：</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{df}(\hat y)=\frac{1}{\sigma^2}\sum_{i=1}^{N}\mathrm{Cov}\big(\hat y_i,\ y_i\big)\
+$$
+</div><span class="tag">(3.60)</span></div>
+<p>原文对这个 $\mathrm{Cov}$ 有一句关键的限定：<strong>「$\mathrm{Cov}(\hat y_i,y_i)$ 指预测值 $\hat y_i$ 与对应观测值 $y_i$ 之间的</strong>抽样<strong>协方差」</strong>。这一句话就是整个推导的钥匙——它意味着我们<strong>条件于 $X$</strong>（把 $X\beta$ 当作常数），于是 $y$ 的全部随机性都来自噪声。</p>
+<div class="aside basis"><p class="hd">基础知识 · 条件协方差与线性平滑器</p><p>记条件于 $X$ 的协方差为 $\mathrm{Cov}(\cdot\mid X)$。在高斯线性模型 $y=X\beta+\varepsilon$、$\varepsilon\sim N(0,\sigma^2I_N)$、$X$ 视为固定（预备知识 P4）下，</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{Cov}(y\mid X)=\mathrm{Cov}(\varepsilon\mid X)=\sigma^2I_N
+$$
+</div></div>
+<p>对任何<strong>对称</strong>的线性平滑器 $\hat y=Hy$（$H$ 对称即可，不必是对称幂等的），矩阵协方差公式给出</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{Cov}(\hat y,y\mid X)=H\,\mathrm{Cov}(y\mid X)\,H^\top=\sigma^2HH^\top=\sigma^2H
+$$
+</div></div></div>
+<div class="aside"><p class="hd">推导</p><p><strong>第 1 步：条件于 $X$，$y$ 的协方差就是 $\sigma^2I$</strong>。</p>
+<p>条件于 $X$ 时 $\beta$ 与 $\varepsilon$ 都是常数，只有观测的随机性来自 $\varepsilon$，故上式的 $\mathrm{Cov}(y\mid X)=\sigma^2I_N$（预备知识 L5 的线性变换律，取 $a=I$）。</p></div>
+<div class="aside"><p class="hd">第 2 步：把 $H$ 代进去</p><p>。$\hat y=Hy$ 是 $y$ 的线性变换，而 $\mathrm{Cov}(Ay,B)=A\,\mathrm{Cov}(y)\,B^\top$（可直接展开：$E[((Ay-EAy)(By-EBy)^\top)]$，展开后非零的只有 $E[(y-Ey)(y-Ey)^\top]$）。所以</p></div>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{Cov}(\hat y,y\mid X)=H\,\mathrm{Cov}(y\mid X)\,H^\top=\sigma^2HH^\top=\sigma^2H
+$$
+</div></div>
+<p>最后一步只用了 $H$ 对称。</p>
+<div class="aside"><p class="hd">第 3 步：取对角线</p><p>。$\big[\mathrm{Cov}(\hat y,y\mid X)\big]_{ii}=\mathrm{Cov}(\hat y_i,y_i\mid X)=\sigma^2H_{ii}$，逐项就是 $\sigma^2$ 乘以帽子矩阵的第 $i$ 个对角元。求和：</p></div>
+<div class="eq"><div class="escroll">
+$$
+\sum_{i=1}^{N}\mathrm{Cov}\big(\hat y_i,\ y_i\big)=\sigma^2\sum_{i=1}^{N}H_{ii}=\sigma^2\,\mathrm{tr}(H)
+$$
+</div></div>
+<div class="aside"><p class="hd">第 4 步：代回 (3.60)</p><p>，就得到</p></div>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{df}(\hat y)=\frac{1}{\sigma^2}\cdot\sigma^2\,\mathrm{tr}(H)=\mathrm{tr}(H)
+$$
+</div></div>
+<div class="aside"><p class="hd">这个推导的三个要点</p><p>① 条件于 $X$，否则信号部分会混进来（见「坑」第 1 条）；② 只要求 $H$ <strong>对称</strong>，不要求对称幂等——所以它对岭回归、PCR、以及任何「$\hat y=Hy$ 型」的拟合都成立；③ 不要求 $HX=X$，所以 ridge 的收缩不会被破坏（$E\hat y=HX\beta$ 只是被 $\mathrm{Cov}$ 减掉的东西，不出现在结果里）。</p></div>
+<div class="aside key"><p class="hd">结果</p><p>(3.60) 与 §3.5.3 的迹公式完全一致，但它有两个实用优势：</p>
+<ul><li><strong>只需要 $\hat y$ 和 $y$</strong>，不需要 $\hat\beta$、不需要矩阵 $H$、不需要 $\lambda$。所以任何方法只要能给出拟合值向量 $\hat y$，就能算有效自由度——这也是第 7 章讨论交叉验证与模型复杂度时的通用武器。</li><li><strong>数值验证</strong>：对固定 $k$ 个预测子的线性回归，$H=P_{\mathcal A}$（$\mathcal A$ 是这 $k$ 个列张成的子空间），$\mathrm{tr}(H)=k$，即「预先指定的 $k$ 个变量恰好用掉 $k$ 个自由度」；而如果这 $k$ 个变量是用最优子集<strong>从数据里选出来</strong>的，$k$ 个参数背后实际用掉的自由度大于 $k$——(3.60) 正好量化了「多用掉多少」。</li><li><strong>与 Mallows $C_p$ 的关系</strong>：$\mathrm{CMSE}\approx\frac{\sigma^2}{N}\big[\mathrm{df}(\hat y)+2\frac{(N-p)\hat\sigma^2}{\sigma^2}\big]$ 一类形式里，df 正是被 (3.60) 提供的量。</li></ul></div>
+<div class="aside warn"><p class="hd">坑 · 三条：</p><ol><li><strong>必须条件于 $X$（固定设计）。</strong> 如果把 $\beta$ 也当成随机量，$\mathrm{Cov}(y)=\sigma^2I+X\beta\beta^\top X^\top$，第 2 步就变成 $H(X\beta\beta^\top X^\top+\sigma^2I)H^\top$，逐项出现信号项 $\big(\beta^\top x_i\big)\big(x_i^\top H\beta\big)$，求和不再等于 $\sigma^2\mathrm{tr}(H)$。所以 (3.60) 是<strong>固定设计下</strong>的定义；随机设计下要写成条件期望 $\mathbb{E}_X[\ldots]$。</li><li><strong>$\sigma^2$ 未知时</strong>要用 $\hat\sigma^2$ 代替，于是 df 也带估计误差，(3.60) 变成近似。实践中取 $\hat\sigma^2=\mathrm{RSS}/(N-p)$。</li><li><strong>要求 $\hat y$ 是 $y$ 的线性函数</strong>（$\hat y=Hy$，$H$ 对称）。对 lasso/LARS 这类非线性方法，(3.60) 不是恒等式而是一个<strong>定义</strong>：它把「$\hat y$ 跟 $y$ 有多紧地一起动」折成一个标量。好处是它对任意预测器都有定义；代价是它在非线性方法下不再等于任何显式的秩。要理解这点，请对比本节 §3.5.3 的 $\mathrm{tr}(H_\lambda)$：那里 $H$ 存在且对称幂等，两种定义恰好重合。</li></ol></div>
+<div class="aside"><p class="hd">延伸</p><p>lasso / LARS 路径上的 df。LARS 与 lasso 的解 $\hat y(\lambda)$ 在相邻 $\lambda$ 之间是<strong>线性</strong>的（系数路径分段线性，见 (3.90)），于是 $\hat y$ 对 $\lambda$ 的斜率 $g_m=\hat y(\lambda_{m+1})-\hat y(\lambda_m)$ 是常数。整条路径上的 $\mathrm{df}$ 也是分段线性的：在一个段内，$\hat y(\lambda)=\hat y_m-(\lambda-\lambda_m)g_m$，把 (3.60) 的 $\hat y_i$ 换成这个表达式即可得到该段上 df 的闭式，然后逐段线性插值。这是 lasso 软件报告「有效自由度」的标准做法。$\mathrm{df}$ 随 $\lambda$ 单调递增（拟合越紧 df 越大），这与 §3.6.2 中「松弛越少、约束越紧」的直觉一致。</p></div>
+<p><a class="src" href="../esl/ch03-linear-methods-for-regression.html#s-3-6">原文 §3.6 有效自由度</a></p>
+<p>（完）</p>
+<h2 id="s-3-7" class="anchored"><span class="num">3.7</span> 降维的线性方法</h2>
+<p>前两节我们一直在做同一件事：把 $\arg\min_\beta\lVert y-X\beta\rVert^2$ 写清楚，然后往目标函数里加罚款。这一节换个角度——<strong>先把 $p$ 维的预测子压到 $m$ 维，再对 $m$ 个新变量做最小二乘</strong>。逻辑是：$p$ 大时 $\mathrm{Var}(\hat\beta_j)$ 随 $1/(N-p)$ 爆炸（见 §3.2 与 (3.8)），把自由度限制到 $m\ll N$ 就把方差压回去了。</p>
+<p>三种线性降维方法都写成「响应/预测子被投影到一个 $m$ 维子空间」的形式，但<strong>投影方向怎么选</strong>是它们的全部区别：</p>
+<ul><li><strong>PCR</strong>：方向与 $y$ 无关，只由 $X$ 的协方差结构（主成分）决定；</li><li><strong>CCA</strong>：方向同时看 $X$ 和 $Y$，使两组变量的相关系数最大；</li><li><strong>PLS</strong>：方向由「交替最小化残差」这一优化过程隐式决定，不是一个显式的特征值问题。</li></ul>
+<p>本节的核心结论是：在标准模型下，<strong>PLS 的得分方向与 PCR / CCA 的方向重合</strong>，差别只在用几个分量。推导见 §3.7.4。对应原文 <a class="src" href="../esl/ch03-linear-methods-for-regression.html#s-3-7">原文 §3.7</a>。</p>
+<h3 id="s-3-7-1" class="anchored"><span class="num">3.7.1</span> 主成分回归的三个式子</h3>
+<p><a class="src" href="../esl/ch03-linear-methods-for-regression.html#s-3-7">原文 §3.7.1 主成分回归</a></p>
+<p><strong>问题</strong>：把「只用前 $m$ 个主成分做线性回归」写成 $\hat y$ 和 $\hat\beta$ 的闭式，并说明得分 $z_m$ 本身是 $X$ 的什么组合。ESL 对应 (3.61)(3.62)。</p>
+<div class="aside basis"><p class="hd">基础知识 · 记号与两个正交分解</p><p>全部数据中心化：$x_j$ 是 $X\in\mathbb{R}^{N\times p}$ 的第 $j$ 列（已减去均值 $\bar x_j$），$\tilde y=y-\bar y\mathbf 1\in\mathbb{R}^N$（下文为省字写成 $y$）。记内积 $\langle a,b\rangle=a^\top b$。</p>
+<p>$X$ 的谱分解（见预备知识 L3）：</p>
+<div class="eq"><div class="escroll">
+$$
+X^\top X=\sum_{k=1}^{p}d_k^2v_kv_k^\top,\qquad V^\top V=I
+$$
+</div></div>
+<p>主成分得分 $z_k:=Xv_k=d_ku_k$，其中 $u_k=Xv_k/d_k$ 是 $X^\top X$ 的特征向量 $v_k$ 在 $x$ 空间的像。<strong>关键正交性</strong>（可直接展开验证）：</p>
+<div class="eq long"><div class="escroll">
+$$
+\langle z_k,z_{k'}\rangle=v_k^\top X^\top Xv_{k'}=v_k^\top\Big(\sum_{l}d_l^2v_lv_l^\top\Big)v_{k'}=d_k^2\,v_k^\top v_{k'}=d_k^2\delta_{kk'}
+$$
+</div></div>
+<p>最后一步用到 $V^\top V=I$ 与 $V\Lambda V^\top V=\Lambda$。整个第 14 章的 PCA 与这里的 PCR 用的是同一套式子。</p></div>
+<p><strong>(a) 拟合值</strong>：对固定的 $z_m$，只有一个自由参数 $\hat\theta_m$。</p>
+<div class="eq long"><div class="escroll">
+$$
+\hat y_{(m)}=\bar y\,\mathbf 1+\hat\theta_m z_m,\qquad \hat\theta_m=\frac{\langle z_m,y\rangle}{\langle z_m,z_m\rangle}=\frac{v_m^\top X^\top y}{d_m^2}\
+$$
+</div><span class="tag">(3.61)</span></div>
+<div class="aside"><p class="hd">推导 · 为什么 (3.61) 是唯一解</p><p>目标函数只剩一维：$R(\theta)=\sum_{i=1}^N(\tilde y_i-\theta z_{mi})^2$。展开成两个标量积</p>
+<div class="eq"><div class="escroll">
+$$
+R(\theta)=\lVert y\rVert^2-2\theta\langle z_m,y\rangle+\theta^2\lVert z_m\rVert^2
+$$
+</div></div>
+<p>（第二项用了 $\sum_i\theta^2z_{mi}^2=\theta^2\langle z_m,z_m\rangle$。）求导</p>
+<div class="eq long"><div class="escroll">
+$$
+\frac{dR}{d\theta}=-2\langle z_m,y\rangle+2\theta\lVert z_m\rVert^2,\qquad \frac{d^2R}{d\theta^2}=2\lVert z_m\rVert^2&gt;0
+$$
+</div></div>
+<p>二次项系数严格正 ⟹ $R$ 严格凸，唯一极小点令一阶导为零，得 $\hat\theta_m=\langle z_m,y\rangle/\langle z_m,z_m\rangle$。分子分母再代入 $z_m=Xv_m$：$\langle z_m,y\rangle=v_m^\top X^\top y$，$\langle z_m,z_m\rangle=v_m^\top X^\top Xv_m=d_m^2$。</p>
+<p>由此得到一个后面到处要用的<strong>对称投影算子</strong>：</p>
+<div class="eq long"><div class="escroll">
+$$
+\hat y_{(m)}=X\frac{v_mv_m^\top}{d_m^2}X^\top y \qquad\Longrightarrow\qquad H_m=\frac{v_mv_m^\top X^\top Xv_m}{d_m^4}=\frac{v_mv_m^\top}{d_m^2}
+$$
+</div></div>
+<p>这里 $H_mv_m = v_m(v_m^\top v_m)/d_m^2=v_m/d_m^2=v_m/d_m^2$，且 $H_mx=H_mXv_m = v_m(v_m^\top Xv_m)/d_m^2=v_m$，故 $H_m$ 确实是从 $x$ 空间映到 $\mathrm{span}(z_m)$ 的正交投影（$H_m^\top=H_m$、$H_m^2=H_m$，见预备知识 L2）。</p></div>
+<p><strong>(b) 系数</strong>：把 (3.61) 的 $\hat y_{(m)}$ 写成 $X\hat\beta$。</p>
+<div class="eq long"><div class="escroll">
+$$
+\hat\beta_{\rm pcr}^{(m)}=\frac{X^\top z_m}{\langle z_m,z_m\rangle}=\frac{X^\top Xv_m}{d_m^2}=\hat\theta_m v_m\
+$$
+</div><span class="tag">(3.62)</span></div>
+<div class="aside"><p class="hd">推导 · 从拟合值到系数</p><p>$\hat\beta$ 必须使 $X\hat\beta=\hat\theta_mXv_m$。取 $\hat\beta=(X^\top X)^{-1}X^\top\hat y_{(m)}$（见预备知识 L2 的投影定理），代入 $\hat y_{(m)}=\hat\theta_mXv_m$：</p>
+<div class="eq"><div class="escroll">
+$$
+\hat\beta=(X^\top X)^{-1}X^\top\hat\theta_mXv_m=\hat\theta_m v_m
+$$
+</div></div>
+<p>中间一步只用了 $X^\top X\,v_m=d_m^2v_m$。所以 (3.62) 的信息量是：<strong>PCR 的系数向量就是第 $m$ 个主成分方向乘上一个标量</strong>，标量由 $y$ 决定、方向完全由 $X$ 决定。</p></div>
+<p><strong>(c) 得分是原预测子的组合</strong>：</p>
+<div class="eq long"><div class="escroll">
+$$
+z_m=\sum_{j=1}^{p}\phi_{mj}x_j,\qquad \phi_{mj}=\frac{\langle x_j,z_m\rangle}{d_m^2}=v_{mj}\ \text{（ESL 的等价记法：}\ \phi_{mj}=\frac{\langle x_j,y\rangle}{\sum_{j'\le m}\langle x_{j'},y\rangle}\text{）}
+$$
+</div></div>
+<div class="aside"><p class="hd">推导 · $\phi_{mj}$ 的来历</p><p>第一步：$z_m=Xv_m=\sum_j v_{mj}x_j$ 是定义，所以 $\phi_{mj}=v_{mj}$ 是同义反复。</p>
+<p>第二步（<strong>可用的形式</strong>）：由 (3.62)，$\hat\beta_{\rm pcr}^{(m)}$ 的第 $j$ 个分量是 $\hat\theta_m v_{mj}$。另一方面，对 $\hat\beta_{\rm pcr}^{(m)}$ 逐分量看回归系数与变量-响应内积的关系：</p>
+<div class="eq verylong"><div class="escroll">
+$$
+\hat\theta_m v_{mj}=\frac{v_m^\top X^\top y}{d_m^2}v_{mj}=\frac{\langle z_m,y\rangle\,v_{mj}}{d_m^2}=\frac{\langle z_m,y\rangle}{d_m^2}\cdot\frac{\langle x_j,z_m\rangle}{d_m^2}\cdot\frac{d_m^2}{\langle x_j,z_m\rangle}\ldots
+$$
+</div></div>
+<p>直接算更干净：$\langle x_j,z_m\rangle=\langle x_j,Xv_m\rangle=v_m^\top X^\top x_j$。而由 $X^\top x_j=\sum_k d_k(u_k^\top x_j)v_k$（对 $X=\sum_k d_ku_kv_k^\top$ 取 $X^\top$ 再作用 $x_j$，用 $V^\top V=I$ 收集），得</p>
+<div class="eq long"><div class="escroll">
+$$
+\langle x_j,z_m\rangle=v_m^\top X^\top x_j=d_m\,(u_m^\top x_j)\quad\Longrightarrow\quad v_{mj}=\frac{\langle x_j,z_m\rangle}{d_m^2}
+$$
+</div></div>
+<p>第三步（ESL 用的那一步）：把 $\langle x_j,z_m\rangle$ 换成 $\langle x_j,y\rangle$。设残差 $r_m=y-\sum_{k\le m}\hat\theta_kz_k$，则 $r_m\perp\mathrm{span}(z_1,\ldots,z_m)$，于是</p>
+<div class="eq long"><div class="escroll">
+$$
+\langle x_j,y\rangle=\langle x_j,\hat y_{(m)}\rangle+\langle x_j,r_m\rangle=\sum_{k\le m}\hat\theta_k\langle x_j,z_k\rangle+\langle x_j,r_m\rangle
+$$
+</div></div>
+<p>这里<strong>不能</strong>把最后一项丢掉：$r_m\perp \mathrm{span}(z_1,\ldots,z_m)\subseteq\mathrm{col}(X)$，但 $x_j$ 本身在 $\mathrm{col}(X)$ 里。只有当 $r_m\perp x_j$ 时才有 $\langle x_j,y\rangle=\hat\theta_m\langle x_j,z_m\rangle$，代入 (3.61) 的 $\hat\theta_m=\langle z_m,y\rangle/d_m^2$ 得</p>
+<div class="eq long"><div class="escroll">
+$$
+\phi_{mj}=\frac{\langle x_j,z_m\rangle}{d_m^2}=\frac{\langle x_j,y\rangle}{\hat\theta_m d_m^2}=\frac{\langle x_j,y\rangle}{\langle z_m,y\rangle/\langle z_m,z_m\rangle\cdot\langle z_m,z_m\rangle}\ \text{（ESL 记法）}
+$$
+</div></div>
+<p>这正是 上面的 $\phi_{mj}$ 式 右边那个「$\langle x_j,y\rangle$ 除以一个共同的归一化量」的形式：分子是变量与响应的内积，分母是该得分与响应的内积。</p></div>
+<div class="aside key"><p class="hd">结果 · PCR 的三条性质</p><ul><li><strong>方向与 $y$ 无关</strong>：$\hat\beta_{\rm pcr}^{(m)}$ 的方向永远是 $v_m$，$y$ 只影响长度 $\hat\theta_m$。所以加不加一个新的响应变量不会改变主成分方向（除非它改变了 $X^\top X$，即 $X$ 本身变了）。</li><li><strong>方差随 $m$ 下降</strong>：$\hat\theta_m = u_m^\top y/d_m$，在独立同方差噪声下 $\mathrm{Var}(\hat\theta_m)=\sigma^2/d_m^2$，而 $d_m^2$ 随 $m$ 递减，故 RSS 随 $m$ 递减。同时 $H_m$ 的迹 $=d_m^2/d_m^2=1$，即每个主成分恰好用掉 1 个自由度（对比 §3.6.4 的 (3.60)）。</li><li><strong>单变量系数不稀疏</strong>：$\hat\beta_{\rm pcr}^{(m)}=\hat\theta_m v_m$，$v$ 有 $p$ 个非零分量（一般情形），所以 $m=1$ 也能「用」所有 $p$ 个预测子。这与后面 §3.8 的 lasso 形成尖锐对比。</li></ul></div>
+<div class="aside warn"><p class="hd">坑</p><ol><li>$d_m^2=0$（第 $m$ 个特征值为 0）时 (3.61)(3.62) 都无定义。此时应把 $m$ 限在 $\mathrm{rank}(X)$ 以内，或者用伪逆 $X^\dagger$（见预备知识 L3）。</li><li>中心化是必需的：$X^\top X$ 度量的是<strong>中心化后</strong>的协方差（差一个 $N$ 的因子）。不中心化时第一个主成分通常就是常数向量 1，PCR 会退化成「只预测均值」。</li><li>上面的 $\phi_{mj}$ 式 中带 $\langle x_j,y\rangle$ 的形式只在 $r_m\perp x_j$ 时严格成立（最保险的情形是 $m=p$，此时 $r_m=0$）。原文为行文简洁省略了 $\langle x_j,r_m\rangle$ 一项，实践中的 $\phi_{mj}$ 应按 $\langle x_j,z_m\rangle/d_m^2$ 计算。</li></ol></div>
+<h3 id="s-3-7-2" class="anchored"><span class="num">3.7.2</span> 主成分作为预测子：两种说法</h3>
+<p><strong>问题</strong>：主成分的经典定义是「方差最大」，但 上面的 $\phi_{mj}$ 式 用到的却是「预测 $y$」。这两种说法是一回事吗？(3.63)(3.64) 给出答案：不完全是。</p>
+<div class="aside basis"><p class="hd">基础知识 · 二次型极值（见预备知识 C2、L3）</p><p>$\max_{\lVert\alpha\rVert_2=1}\alpha^\top A\alpha$ 的解是 $A$ 最大特征值对应的单位特征向量，值是该特征值。推导：谱分解 $A=V\Lambda V^\top$，令 $\alpha=Vz$，约束变成 $\lVert z\rVert=1$，则 $\alpha^\top A\alpha=\sum_i\lambda_i z_i^2\le\lambda_1\sum_iz_i^2=\lambda_1$，等号在 $z=e_1$。</p></div>
+<p><strong>(a) 经典说法：方差最大</strong></p>
+<div class="eq"><div class="escroll">
+$$
+\max_{\alpha}\ \mathrm{Var}(X\alpha)\ \text{ s.t. } \lVert\alpha\rVert_2=1\
+$$
+</div><span class="tag">(3.63)</span></div>
+<div class="aside"><p class="hd">推导 · (3.63) 的解</p><p>中心化后 $\mathrm{Var}(X\alpha)=\alpha^\top\mathrm{Cov}(X)\alpha\cdot N$，而 $N\mathrm{Cov}(X)=X^\top X=\sum_kd_k^2v_kv_k^\top$，比例因子与 $\alpha$ 无关。由上面的二次型极值定理，(3.63) 的极值点是 $\alpha=v_1$，极值是 $d_1^2$。<strong>这个优化完全没出现 $y$</strong>，这就是「主成分是纯 $X$ 的对象」的来源。</p></div>
+<p><strong>(b) 预测导向的说法</strong></p>
+<div class="eq"><div class="escroll">
+$$
+\max_{\alpha}\ \mathrm{Corr}^2(y,X\alpha)\,\mathrm{Var}(X\alpha)\
+$$
+</div><span class="tag">(3.64)</span></div>
+<div class="aside"><p class="hd">推导 · (3.64) 的解 <strong>不是</strong> $v_1$</p><p>记 $s:=X^\top y\in\mathbb{R}^p$，$S:=X^\top X$。三个量分别是</p>
+<div class="eq long"><div class="escroll">
+$$
+\mathrm{Cov}(y,X\alpha)=\alpha^\top s,\qquad \mathrm{Var}(y)=\frac{\lVert y\rVert^2}{N},\qquad \mathrm{Var}(X\alpha)=\alpha^\top S\alpha
+$$
+</div></div>
+<p>所以 (3.64) 的目标函数等于</p>
+<div class="eq long"><div class="escroll">
+$$
+F(\alpha)=\mathrm{Corr}^2\cdot\mathrm{Var}=\frac{(\alpha^\top s)^2}{\mathrm{Var}(y)}\cdot\frac{\alpha^\top S\alpha}{\alpha^\top S\alpha}=\frac{1}{\mathrm{Var}(y)}\cdot\frac{(\alpha^\top s)^2}{\alpha^\top S\alpha}
+$$
+</div></div>
+<p><strong>$\mathrm{Var}(X\alpha)$ 被约掉了</strong>——这是本节最值得记住的一步：$\mathrm{Corr}^2$ 里的分母 $\mathrm{Var}(X\alpha)$ 与乘在外面的 $\mathrm{Var}(X\alpha)$ 正好抵消。于是 (3.64) 与 (3.63) 优化的是<strong>完全不同的两个泛函</strong>。</p>
+<p>用 Cauchy–Schwarz（见预备知识 L1）估计分子：$(\alpha^\top s)^2=\big(\alpha^\top S^{1/2}\cdot S^{-1/2}s\big)^2\le(\alpha^\top S\alpha)\big(s^\top S^{-1}s\big)$，等号成立当且仅当 $S^{1/2}\alpha\propto S^{-1/2}s$，即 $\alpha\propto S^{-1}s$。故</p>
+<div class="eq long"><div class="escroll">
+$$
+\hat\alpha_{\rm pred}=\frac{S^{-1}s}{\lVert S^{-1}s\rVert},\qquad F_{\max}=\frac{s^\top S^{-1}s}{\mathrm{Var}(y)}=\frac{N\,s^\top S^{-1}s}{\lVert y\rVert^2}
+$$
+</div></div>
+<p>而 $S^{-1}s=(X^\top X)^{-1}X^\top y=\hat\beta_{\rm ls}$（(3.6)）。<strong>所以 (3.64) 的答案是最小二乘方向，而不是第一主成分方向。</strong></p></div>
+<div class="aside key"><p class="hd">结果 · 两种说法何时一致</p><p>$v_1=S^{-1}s/\lVert\cdot\rVert$ 当且仅当 $s$ 是 $S$ 的特征向量，即 $X^\top y\parallel v_1$。一般情形下二者不同，因为：</p>
+<div class="tscroll-x"><table class="fx"><thead><tr><th>说法</th><th>优化对象</th><th>解</th><th>用在哪</th></tr></thead><tbody><tr><td>(3.63) 方差最大</td><td>$X$ 单独</td><td>$v_1$，与 $y$ 无关</td><td>无监督降维、可视化、去噪</td></tr><tr><td>(3.64) 预测相关最大</td><td>$X$ 与 $y$ 联合</td><td>$\hat\beta_{\rm ls}$</td><td>监督降维（这才是「降维回归」想要的）</td></tr></tbody></table></div>
+<p>PCR 站在 (3.63) 这一边（方向由 $X$ 定），CCA/PLS 站在 (3.64) 这一边。<strong>这就是 PCA 回归与 PLS 回归的分野</strong>。</p></div>
+<div class="aside warn"><p class="hd">坑</p><p>(3.64) 写成无约束形式时目标函数在 $\alpha=0$ 附近是 $0/0$（$\mathrm{Corr}$ 未定义）。数学上 $F(\alpha)$ 的表达式在 $\alpha\ne0$ 时与 $\alpha$ 的方向无关（只有齐次性），所以补上 $\lVert\alpha\rVert_2=1$ 不改变解；但要保证 $s\notin\mathrm{null}(S)$，否则最大值退化。</p></div>
+<h3 id="s-3-7-3" class="anchored"><span class="num">3.7.3</span> 典型相关分析：两视图模型与特征值问题</h3>
+<p><a class="src" href="../esl/ch03-linear-methods-for-regression.html#s-3-7">原文 §3.7.3 典型相关分析</a></p>
+<p><strong>问题</strong>：当响应是 $K$ 维向量、预测子分成两组时，如何找「同时能解释两组」的投影方向？CCA 给出答案，而它的最优性条件是一个<strong>广义特征值问题</strong>——本节要把它推出来。</p>
+<div class="aside basis"><p class="hd">基础知识 · 拉格朗日乘子与广义特征值问题（见预备知识 O1）</p><p>$\max_u\, u^\top M u$ s.t. $u^\top A u=1$（$M$、$A$ 对称，$A$ 正定）的拉格朗日函数 $L=u^\top Mu-\gamma(u^\top Au-1)$，一阶条件 $2Mu=2\gamma Au$，即 $M u=\gamma A u$。代入约束：$\gamma=u^\top Mu/u^\top Au$，故 $\gamma\le\lambda_{\max}(A^{-1/2}MA^{-1/2})$（由 Cauchy–Schwarz），最大值在对应特征向量处取到。</p></div>
+<p><strong>(a) 两视图模型</strong></p>
+<div class="eq"><div class="escroll">
+$$
+Y_k=f_k(X)+\varepsilon_k,\qquad k=1,\dots,K\
+$$
+</div><span class="tag">(3.65)</span></div>
+<div class="eq"><div class="escroll">
+$$
+X_j=g_j(Y)+\delta_j,\qquad j=1,\dots,p\
+$$
+</div><span class="tag">(3.66)</span></div>
+<p>(3.65) 是本章的线性模型（$X\in\mathbb{R}^{N\times p}$，$Y\in\mathbb{R}^{N\times K}$）；(3.66) 是把角色互换的同一模型。<strong>两侧同时被建模</strong>是 CCA 与单向 PLS 的区别：CCA 只用样本 $\{X_i,Y_i\}_{i=1}^N$，不假设哪个是「结果」。</p>
+<p><strong>(b) CCA 的定义</strong></p>
+<div class="eq"><div class="escroll">
+$$
+\max_{u\in\mathbb{R}^K,\ v\in\mathbb{R}^p}\ \mathrm{Corr}^2(Yu,\,Xv)\
+$$
+</div><span class="tag">(3.67)</span></div>
+<div class="aside"><p class="hd">推导</p><p>CCA 最优权重 = 最小残差 = 广义特征值问题</p></div>
+<p>记三个 $N\times N$ 的二阶矩矩阵（都对称）：$S_{XX}=X^\top X$，$S_{XY}=X^\top Y$，$S_{YY}=Y^\top Y$。展开相关系数：</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{Corr}^2(Yu,Xv)=\frac{\big(u^\top S_{YX}v\big)^2}{\big(u^\top S_{YY}u\big)\big(v^\top S_{XX}v\big)}
+$$
+</div></div>
+<p><strong>第一步：归一化消掉分母。</strong> (3.67) 在 $(u,v)\mapsto(-u,v)$、$(u,-v)$ 下不变，故可以加两个等式约束 $u^\top S_{YY}u=1$、$v^\top S_{XX}v=1$（这两个约束可行：取 $u=S_{YY}^{-1}e_1/\lVert\cdot\rVert$ 即可）。此时目标变成 $\max\, (u^\top S_{YX}v)^2$。</p>
+<p><strong>第二步：写出两个一阶条件。</strong> 拉格朗日函数</p>
+<div class="eq"><div class="escroll">
+$$
+L(u,v,\gamma_1,\gamma_2)=2u^\top S_{YX}v-\gamma_1\big(u^\top S_{YY}u-1\big)-\gamma_2\big(v^\top S_{XX}v-1\big)
+$$
+</div></div>
+<p>（系数 $2$ 是为了消掉公因子。）两个偏导为零（用 $\nabla_u(u^\top Mu)=2Mu$，见预备知识 L4）：</p>
+<div class="eq long"><div class="escroll">
+$$
+\frac{\partial L}{\partial u}=2S_{YX}v-2\gamma_1S_{YY}u=0,\qquad \frac{\partial L}{\partial v}=2S_{YX}^\top u-2\gamma_2S_{XX}v=0
+$$
+</div></div>
+<p>从第一个解出 $u$：$S_{YY}$ 可逆（$K\le N$ 且满秩），故 $u=\frac1{\gamma_1}S_{YY}^{-1}S_{YX}v\propto S_{YY}^{-1}S_{YX}v$。从第二个解出 $v\propto S_{XX}^{-1}S_{YX}^\top u$。<strong>把后者代回前者</strong>：</p>
+<div class="eq long"><div class="escroll">
+$$
+S_{YY}^{-1}S_{YX}\cdot\frac1{\gamma_2}S_{XX}^{-1}S_{YX}^\top\cdot\frac1{\gamma_1}S_{YY}^{-1}S_{YX}v\ \propto\ v
+$$
+</div></div>
+<p>整理成关于 $u$ 的特征值问题（把 $S_{YX}^\top u=\gamma_2S_{XX}v$ 用回第一式）：</p>
+<div class="eq"><div class="escroll">
+$$
+S_{YX}\big(\tfrac1{\gamma_2}S_{XX}^{-1}S_{YX}^\top\big)\big(\tfrac1{\gamma_1}S_{YY}^{-1}S_{YX}v\big)\ \ldots
+$$
+</div></div>
+<p>更直接：两式合成为 $u=\gamma_1^{-1}\gamma_2^{-1}S_{YY}^{-1}S_{YX}S_{XX}^{-1}S_{YX}^\top u$，而回代时 $\gamma_2$ 已被吸收，故标准写法是</p>
+<div class="eq"><div class="escroll">
+$$
+v_m\ \propto\ S_{XX}^{-1}S_{XY}\,u_m\ \ \text{（$X$ 空间权重）}\qquad\text{（$X$ 空间权重）}
+$$
+</div></div>
+<div class="eq"><div class="escroll">
+$$
+u_m\ \propto\ S_{YY}^{-1}S_{YX}\,v_m\ \ \text{（$Y$ 空间权重）}\qquad\text{（$Y$ 空间权重）}
+$$
+</div></div>
+<div class="eq"><div class="escroll">
+$$
+S_{YY}^{-1}S_{YX}S_{XX}^{-1}S_{XY}\,u_m=\rho_m^2\,u_m
+$$
+</div></div>
+<p>(3.67c) 就是<strong>CCA 的特征值问题</strong>：$S_{YY}^{-1}S_{YX}S_{XX}^{-1}S_{XY}$ 一般不对称，所以它是广义特征值问题而非通常的特征值问题；把它对称化：令 $a=S_{YY}^{-1/2}u$、$b=S_{XX}^{-1/2}v$，则 (3.67) 的分子变为</p>
+<div class="eq long"><div class="escroll">
+$$
+u^\top S_{YX}v=a^\top\underbrace{\Big(S_{YY}^{-1/2}S_{YX}S_{XX}^{-1/2}\Big)}_{=:T}b,\qquad T\ \text{对称正半定（是 }X^\top\Sigma_X^{-1}Y\ \text{的 Gram 阵）}
+$$
+</div></div>
+<p>约束变成 $\lVert a\rVert=\lVert b\rVert=1$，于是 $\mathrm{Corr}^2=\big(a^\top Tb\big)^2\le\lambda_1^2(T)$（Cauchy–Schwarz），等号在 $a=b=$ 顶级奇异向量处。所以 $\rho_m^2$ 就是 $T$ 的第 $m$ 个奇异值之平方。</p>
+<p><strong>第三步：同一个特征值问题也来自「最小残差」。</strong> 这一步说明 CCA 也可以被看成降维回归。取 $v=S_{XX}^{-1}S_{XY}u$，则</p>
+<div class="eq long"><div class="escroll">
+$$
+\mathrm{Corr}^2(Yu,Xv)=\frac{u^\top S_{YX}S_{XX}^{-1}S_{XY}u}{u^\top S_{YY}u}=1-\frac{u^\top\underbrace{\big(S_{YY}-S_{YX}S_{XX}^{-1}S_{XY}\big)}_{=:M}u}{u^\top S_{YY}u}
+$$
+</div></div>
+<p>（用了 $S_{YX}=S_{XY}^\top$，所以 $S_{YX}S_{XX}^{-1}S_{XY}$ 对称。）$M\succeq0$ 是残差协方差：$M=(Y-\hat Y_{\rm ls})^\top(Y-\hat Y_{\rm ls})$，其中 $\hat Y_{\rm ls}=XS_{XX}^{-1}S_{XY}$。于是「最大化 $\mathrm{Corr}^2$」$\iff$「在 $u^\top S_{YY}u=1$ 下最小化 $u^\top Mu$」。对这个最小化问题用拉格朗日乘子：$2Mu-2\rho^2S_{YY}u=0$，即</p>
+<div class="eq"><div class="escroll">
+$$
+Mu=\rho^2S_{YY}u\iff S_{YY}^{-1}Mu=\rho^2u\iff S_{YY}^{-1}S_{YX}S_{XX}^{-1}S_{XY}u=\rho^2u
+$$
+</div></div>
+<p>与 (3.67c) <strong>完全相同</strong>。</p>
+<div class="aside key"><p class="hd">结果 · 一个特征值问题，三种读法</p><div class="eq"><div class="escroll">
+$$
+S_{YY}^{-1}S_{YX}S_{XX}^{-1}S_{XY}u_m=\rho_m^2u_m
+$$
+</div></div>
+<ol><li>$\max\mathrm{Corr}^2(Yu,Xv)$ 的驻点（第一、二步）；</li><li>$\min\,u^\top(S_{YY}-S_{YX}S_{XX}^{-1}S_{XY})u$ s.t. $u^\top S_{YY}u=1$ 的驻点（第三步）；</li><li>$u^\top M u$ 的广义 Rayleigh 商，其中 $M$ 是残差 $Y-\hat Y_{\rm ls}$ 的 Gram 阵。</li></ol>
+<p>而 $v_m\propto S_{XX}^{-1}S_{XY}u_m$ (3.67a) 恰是「用 $u_m$ 去线性预测 $Y$，再把 $X$ 投影过去」的方向。<strong>这正是 PLS 的权重</strong>，见下一小节。</p></div>
+<div class="aside warn"><p class="hd">坑</p><ol><li>CCA 的 $\rho_m^2$ 是相关系数的平方，故 $0\le\rho_m^2\le1$；若 $S_{XX}$ 或 $S_{YY}$ 秩亏，$S^{-1}$ 不存在，必须用伪逆并把零空间的贡献单独处理（等价于先做一次删列）。</li><li>$K&gt;1$ 时「典型相关系数」有 $K$ 个，<strong>没有唯一的自然顺序之外的选择</strong>；若只取前 $m$ 个，剩下的方向由约束归一化方式决定，需要一个明确约定。</li><li>上面所有式子都要求<strong>列中心化</strong>，否则 $S_{XX}$ 含均值方向，得分会被常数向量主导。</li></ol></div>
+<h3 id="s-3-7-4" class="anchored"><span class="num">3.7.4</span> 偏最小二乘：交替最小化的驻点</h3>
+<p><a class="src" href="../esl/ch03-linear-methods-for-regression.html#s-3-7">原文 §3.7.4 偏最小二乘</a></p>
+<p><strong>问题</strong>：PLS 不直接解 (3.67) 的特征值问题，而是交替最小化一个双线性目标。这个交替过程在收敛点上满足什么条件？结论是：<strong>得分方向退化成 PCA / CCA 的方向</strong>。</p>
+<div class="aside basis"><p class="hd">基础知识 · 矩阵微分（见预备知识 L4）与迹循环律</p><p>$\nabla_B\mathrm{tr}(B^\top M)=M$（$M$ 常矩阵）；$A$ 对称时 $\nabla_B\mathrm{tr}(B^\top AB)=(A+A^\top)B=2AB$。两者都在 L4 里有逐分量证明。</p>
+<p><strong>维度约定</strong>（本小节全部式子按此读）：$X\in\mathbb{R}^{N\times p}$，$Y\in\mathbb{R}^{N\times K}$，$B\in\mathbb{R}^{p\times K}$；$U_m\in\mathbb{R}^{K\times m}$ 是响应权重，$YU_m\in\mathbb{R}^{N\times m}$ 是响应得分，$U_{-m}\in\mathbb{R}^{m\times K}$ 是响应载荷。</p></div>
+<p><strong>(a) PLS 目标函数</strong></p>
+<div class="eq long"><div class="escroll">
+$$
+\hat B_{\rm rr}^{(m)}=\arg\min_B\ \sum_{i=1}^{N}\big(y_i-B^\top x_i\big)^\top\Sigma^{-1}\big(y_i-B^\top x_i\big)\
+$$
+</div><span class="tag">(3.68)</span></div>
+<div class="aside"><p class="hd">推导 · 把 (3.68) 写成迹并求一阶条件</p><p>设 $R=Y-XB\in\mathbb{R}^{N\times K}$。单项是 $\sum_i r_i^\top\Sigma^{-1}r_i=\sum_i\mathrm{tr}(r_i^\top\Sigma^{-1}r_i)=\mathrm{tr}(R^\top\Sigma^{-1}R)$。所以 (3.68) 的目标函数是 $F(B)=\mathrm{tr}(R^\top\Sigma^{-1}R)$。展开成三项：</p>
+<div class="eq long"><div class="escroll">
+$$
+F(B)=\mathrm{tr}(Y^\top\Sigma^{-1}Y)-2\mathrm{tr}\big(B^\top X^\top\Sigma^{-1}Y\big)+\mathrm{tr}\big(B^\top (X^\top\Sigma^{-1}X)B\big)
+$$
+</div></div>
+<p>逐项求导：</p>
+<div class="eq"><div class="escroll">
+$$
+\nabla_BF=-2X^\top\Sigma^{-1}Y+2(X^\top\Sigma^{-1}X)B=2X^\top\Sigma^{-1}(XB-Y)
+$$
+</div></div>
+<p>第二个等号用了 $\Sigma^{-1}$ 对称 ⟹ $X^\top\Sigma^{-1}X$ 对称，于是 $\nabla_B\mathrm{tr}(B^\top AB)=2AB$。令 $\nabla_BF=0$：</p>
+<div class="eq"><div class="escroll">
+$$
+X^\top\Sigma^{-1}(Y-XB)=0\ \Longrightarrow\ \Sigma^{-1}(Y-XB)\ \perp\ \mathrm{col}(X)
+$$
+</div></div></div>
+<p>这就是<strong>一阶条件</strong>：残差矩阵在 $\Sigma^{-1}$ 度量下与 $X$ 的列空间正交。$\Sigma=I$ 时它退化成最小二乘正规方程 $X^\top(Y-XB)=0$。</p>
+<p><strong>(b) 权重矩阵</strong></p>
+<div class="eq"><div class="escroll">
+$$
+\hat B_{\rm rr}^{(m)}=\hat U_m\,\hat U_{-m}\
+$$
+</div><span class="tag">(3.69)</span></div>
+<p>其中 $\hat U_m=(X^\top X)^{-1}X^\top(YU_m)\in\mathbb{R}^{p\times m}$ 是「$X$ 空间里被 (3.68) 的一阶条件 投影过的得分方向」，$\hat U_{-m}=U_{-m}\in\mathbb{R}^{m\times K}$ 是响应载荷（把得分映回 $Y$）。于是 $\hat B_{\rm rr}^{(m)}$ 与 $YU_m$ 的关系是</p>
+<div class="eq long"><div class="escroll">
+$$
+\hat B_{\rm rr}^{(m)}=\hat U_mU_{-m}\ \Longleftrightarrow\ \hat Y_{\rm rr}^{(m)}:=X\hat B_{\rm rr}^{(m)}=H\,(YU_m)U_{-m}
+$$
+</div></div>
+<p>即「先把 $Y$ 投到 $m$ 个得分上、再用 $H$ 映回 $x$ 空间」。这个乘积的形状是本小节所有结论的载体。</p>
+<p><strong>(c) 最终系数</strong></p>
+<div class="eq"><div class="escroll">
+$$
+\hat B_{\rm rr}^{(M)}=(X^\top X)^{-1}X^\top\,(Y\,U_m)\,U_{-m}\
+$$
+</div><span class="tag">(3.70)</span></div>
+<div class="aside"><p class="hd">推导</p><p>(3.70) 是 (3.69) 的 $B$-更新步</p>
+<p>PLS 的一步迭代是：给定 $U_{-m}$，求 $B$ 使 $(Y\hat U_{-m}^\top)$ 被 $\mathrm{col}(X)$ 最好地解释。把这步写成</p>
+<div class="eq"><div class="escroll">
+$$
+\min_B\ \lVert YU_{-m}^\top-XB U_{-m}^\top\rVert^2\ \text{ s.t. } BU_{-m}^\top\ \text{给定}
+$$
+</div></div>
+<p>固定 $U_{-m}$（列满秩）时它等价于 $\min_{T}\lVert YU_{-m}^\top-XT\rVert^2$，其中 $T=BU_{-m}^\top$，其解是标准最小二乘 $T=(X^\top X)^{-1}X^\top YU_{-m}^\top$（见 (3.6)）。回代并乘回 $U_{-m}$：</p>
+<div class="eq"><div class="escroll">
+$$
+B=(X^\top X)^{-1}X^\top YU_{-m}^\top(U_{-m}^\top U_{-m})^{-1}U_{-m}^\top
+$$
+</div></div>
+<p>把 $(U_{-m}^\top U_{-m})^{-1}$ 吸收进响应权重的定义（把 $U_{-m}$ 正交归一化，$U_{-m}^\top U_{-m}=I$），$B=(X^\top X)^{-1}X^\top YU_{-m}^\top=(X^\top X)^{-1}X^\top(YU_{-m})U_{-m}^\top$。令 $U_{-m}^\top:=U_{-m}$，$YU_{m}:=YU_{-m}^\top$，得 (3.70)。</p></div>
+<p><strong>(d) 拟合值</strong></p>
+<div class="eq"><div class="escroll">
+$$
+\hat Y_{\rm rr}^{(m)}=H\,Y_{\rm pcr}^{(m)}\
+$$
+</div><span class="tag">(3.71)</span></div>
+<p>其中 $H=X(X^\top X)^{-1}X^\top$ 是帽子矩阵（对称幂等，$\mathrm{tr}(H)=p$，见预备知识 L2），$Y_{\rm pcr}^{(m)}$ 是用前 $m$ 个主成分得到的秩 $m$ 拟合。</p>
+<div class="aside"><p class="hd">核心推导</p><p>为什么 $\hat U_m$ 同时是 PCR 和 PLS 的方向</p>
+<p>这是 §3.7 最需要补的一步，ESL 用一句话带过。</p>
+<p><strong>第一步（PLS 驻点）：</strong> 在交替最小化的收敛点上，两个更新步都是最优的。</p>
+<ul><li>$B$-步给出 (3.68) 的一阶条件：$\Sigma^{-1}(Y-XB)\perp\mathrm{col}(X)$；</li><li>$U$-步给出 $\hat U_{-m}$ 是 $YU_{-m}^\top$ 的<strong>最佳秩 $m$ 近似</strong>的左奇异方向。等价地（Eckart–Young 一阶条件）：令 $E=Y-XB$，则</li></ul>
+<div class="eq long"><div class="escroll">
+$$
+\hat U_{-m}^\top\big(YU_{-m}^\top-XB U_{-m}^\top\big)=\hat U_{-m}^\top E U_{-m}^\top=0\ \Longrightarrow\ \hat U_{-m}^\top E=0
+$$
+</div></div>
+<p><strong>第二步（残差方向可以扔掉）：</strong> 设 $H=X(X^\top X)^{-1}X^\top$，$E_0=(I-H)Y$。由 $H$ 对称幂等，$\mathrm{col}(E_0)\perp\mathrm{col}(X)$。现在看 $Y^\top Y=H Y^\top H Y+E_0^\top E_0$（展开：$Y=HY+E_0$，$Y^\top Y=H^\top Y^\top H Y + Y^\top (I-H^\top)E_0+\ldots$，交叉项用 $\mathrm{col}(E_0)\perp\mathrm{col}(X)=\mathrm{col}(HY)$ 消掉）。若 $E_0^\top E_0$ 的谱范数不超过 $HY^\top H Y$ 的第 $m$ 个特征值，则 $Y$ 与 $HY$ 的前 $m$ 个左奇异子空间<strong>重合</strong>，即</p>
+<div class="eq long"><div class="escroll">
+$$
+\mathrm{col}(\hat U_{-m})=\mathrm{span}\big\{\text{前 } m \text{ 个左奇异向量 of } Y\big\}=\mathrm{span}\big\{\text{前 } m \text{ 个左奇异向量 of } HY\big\}=\mathrm{span}\{v_1,\ldots,v_m\}\cdot(\text{在 }x\text{ 空间})
+$$
+</div></div>
+<p>而 $\mathrm{col}(HY)\subseteq\mathrm{col}(X)$，故还有 $\hat U_{-m}^\top(I-H)=0$。</p>
+<p><strong>第三步（与 CCA 对上）：</strong> 用 上面的条件式 与 $\hat U_{-m}^\top(I-H)=0$：</p>
+<div class="eq long"><div class="escroll">
+$$
+\hat U_{-m}^\top E U_{-m}^\top=0,\quad E=Y-HY\ \Longrightarrow\ \hat U_{-m}^\top H YU_{-m}^\top=\hat U_{-m}^\top YU_{-m}^\top
+$$
+</div></div>
+<p>两边左乘 $\Sigma^{-1}$，展开 $HY=XS_{XX}^{-1}S_{XY}$，得</p>
+<div class="eq"><div class="escroll">
+$$
+\hat U_{-m}^\top S_{XX}^{-1}S_{XY}\,U_{-m}^\top=\hat U_{-m}^\top\Sigma^{-1}Y\,U_{-m}^\top
+$$
+</div></div>
+<p>这与 上面两条权重式与特征值式 的联合形式 $\Sigma^{-1}\cdot$ 特征值方程逐字对应：<strong>$\hat U_{-m}$ 就是 CCA 的 $u_m$，也是 $\mathrm{span}(z_1,\ldots,z_m)$。</strong></p>
+<p><strong>第四步（结论）：</strong> 把第三步代回 $B$ 的表达式，$B\hat U_{-m}^\top$（即拟合的响应）落在 $\mathrm{span}(HY)\cap$（得分张成的 $m$ 维子空间），而这正是 $Y_{\rm pcr}^{(m)}$ 所张成的空间。故</p>
+<div class="eq"><div class="escroll">
+$$
+\hat Y_{\rm rr}^{(m)}=X\hat B_{\rm rr}^{(m)}Y=H\,Y_{\rm pcr}^{(m)}
+$$
+</div></div>
+<p>即 (3.71)。取 $m=1$ 时两者<strong>完全相等</strong>；$m$ 增大后 PLS 开始偏离 PCR，但都落在同一个 $\mathrm{span}(z_1,\ldots,z_m)$ 之内（若 $m\ge K$ 则 PLS 也等于 PCR）。</p></div>
+<div class="aside key"><p class="hd">结果 · 三种方法的关系一览</p><div class="tscroll-x"><table class="fx"><thead><tr><th>方法</th><th>方向来源</th><th>是否需要 $Y$</th><th>$m=1$ 时</th></tr></thead><tbody><tr><td>PCR</td><td>$X^\top X$ 的前 $m$ 个特征向量</td><td>否</td><td>自己的方向</td></tr><tr><td>CCA</td><td>$S_{YY}^{-1}S_{YX}S_{XX}^{-1}S_{XY}$ 的前 $m$ 个特征向量</td><td>是（同时用 $X,Y$）</td><td>与 PCR 方向不同</td></tr><tr><td>PLS</td><td>交替最小化的驻点</td><td>是</td><td><strong>等于 PCR</strong></td></tr></tbody></table></div>
+<p>$m=1$ 时 PLS 系数还有闭式：$B_{\rm pls}^{(1)}=S_{XX}^{-1}X^\top y\cdot\frac{\langle v_1,y\rangle}{\langle z_1,y\rangle}\cdot\frac{1}{1}$，即沿 $v_1$ 的单个主成分回归——这就是「PLS 的一步就是 PCR」。</p></div>
+<div class="aside warn"><p class="hd">坑</p><ol><li>PLS 的交替最小化<strong>不保证收敛到全局最优</strong>（双线性目标），但保证单调下降，因此每个聚点都是驻点，上面的推导只用到「驻点」性质，不受影响。</li><li>第二步的条件「$E_0^\top E_0$ 的谱范数不超过 $HY^\top HY$ 的第 $m$ 个特征值」在 $m$ 小、$N/p$ 大、信号足够强时成立；$m$ 接近 $K$ 时结论总是成立。这是「PLS 与 PCR 只在小 $m$ 时相近」的定量依据。</li><li>$\Sigma$ 若与 $X$ 相关，$\hat B$ 不再是 (3.6) 的最小二乘解，(3.71) 的等式也不成立——GLS 加权只在 $\Sigma$ 已知且与 $X$ 独立时是安全的。</li></ol></div>
+<h3 id="s-3-7-5" class="anchored"><span class="num">3.7.5</span> CCA 与 ridge 之间的连续过渡</h3>
+<p><a class="src" href="../esl/ch03-linear-methods-for-regression.html#s-3-7">原文 §3.7.5 CCA 与 ridge</a></p>
+<p><strong>问题</strong>：CCA 用的方向是「最大化 $\mathrm{Corr}^2$」，ridge 用的是「最小化残差」。它们看起来是两件事，但存在一个参数 $c\ge0$ 把它们连成一条线：$c=0$ 是 CCA，$c\to\infty$ 是 ridge。</p>
+<div class="aside basis"><p class="hd">基础知识 · 关于对称幂等算子的分解（见预备知识 L1、L3）</p><p>任何 $H=H^\top=H^2$ 可以写成 $H=W\Lambda W^\top$，$\Lambda$ 是 0/1 对角矩阵（$\Lambda_{mm}=1$ 当 $w_m$ 在 $\mathrm{col}(H)$ 内）。核对：$H^2=H\Rightarrow H=H^\top H$，故 $\mathrm{col}(H)=\mathrm{range}(H^\top)$，正交分解后特征值只能取 0 或 1。<strong>这是所有「$c=0$ 用前 $m$ 个分量、$c\to\infty$ 用全部」的写法的基础。</strong></p></div>
+<div class="eq long"><div class="escroll">
+$$
+\hat B_{c+w}=\hat B\,\hat\Lambda\,\hat U^{-1},\qquad \hat\Lambda=\mathrm{diag}(\lambda_1,\ldots,\lambda_p),\ \ \lambda_m^2=\frac{c}{p}\
+$$
+</div><span class="tag">(3.72)</span></div>
+<div class="eq"><div class="escroll">
+$$
+\hat\Lambda=\hat\Lambda(c),\qquad \hat\Lambda(0)=0,\qquad \lim_{c\to\infty}\frac{\hat\Lambda(c)}{c}=\hat I\
+$$
+</div><span class="tag">(3.73)</span></div>
+<div class="eq"><div class="escroll">
+$$
+\hat Y_{c+w}=H\,Y_{S_{c+w}}\
+$$
+</div><span class="tag">(3.74)</span></div>
+<div class="eq long"><div class="escroll">
+$$
+\hat Y_{{\rm ridge},c+w}=A_\lambda\,Y_{S_{c+w}},\qquad A_\lambda=\big(I-\Pi_\lambda\big)^\top\ \text{的一般形式 } (X^\top X+\lambda I)^{-1}X^\top X\
+$$
+</div><span class="tag">(3.75)</span></div>
+<div class="aside"><p class="hd">推导 · 三个因子的分工</p><p>把 (3.72) 的因子逐个解释（这也是原文那句话的意思）：</p>
+<ul><li>$\hat U$：$Y$ 的（正交归一化的）典型方向 $u_1,\ldots,u_p$ 组成的 $N\times p$ 矩阵，$\hat U^\top\hat U=I$，于是 $\hat U^{-1}=\hat U^\top$，<strong>$\hat U^{-1}$ 把 $y$ 转到典型坐标系</strong>；</li><li>$\hat\Lambda$：在典型坐标系里对每个坐标乘一个权重 $\lambda_m$，即<strong>收缩只作用在典型方向上</strong>；</li><li>$\hat B$：把典型坐标映回 $X$ 空间的系数矩阵（在 (3.67a) 的 $v_m\propto S_{XX}^{-1}S_{XY}u_m$ 上乘 $\lambda_m$）。</li></ul>
+<p>于是 $\hat B\Lambda\hat U^{-1}y=\hat B\Lambda(\text{典型坐标})$，与 (3.72) 一致。</p>
+<p><strong>端点 $c=0$。</strong> 由 (3.73)，$\hat\Lambda(0)=0$，此时权重重数为 0，留在解里的是<strong>不在</strong>前 $m$ 个典型方向上的部分——把 (3.72) 写成</p>
+<div class="eq long"><div class="escroll">
+$$
+\hat B_{c+w}=\hat B(\hat I-\hat\Lambda_c)\hat U^\top\ \text{的形式（等价，因为 }\hat U^\top Y\hat U\ \text{只在前 }m\text{ 个坐标上有信息）}
+$$
+</div></div>
+<p>就看到 $c=0$ 时只有前 $m$ 个典型坐标被保留 ⟹ 拟合是 CCA 的 $m$ 分量解。</p>
+<p><strong>端点 $c\to\infty$。</strong> 由 (3.73) 的 $\hat\Lambda(c)/c\to\hat I$，$\hat B_{c+w}/c\to\hat B\hat U^{-1}$。而 §3.4.2 中 ridge 的系数是</p>
+<div class="eq long"><div class="escroll">
+$$
+\hat\beta_{\rm ridge}=(X^\top X+\lambda I)^{-1}X^\top y=\Big(I-(X^\top X+\lambda I)^{-1}\lambda\Big)\cdot\hat\beta_{\rm ls}\ \Longrightarrow\ A_\lambda=(X^\top X+\lambda I)^{-1}X^\top X
+$$
+</div></div>
+<p>逐项核对：$(X^\top X+\lambda I)^{-1}X^\top X=I-\lambda(X^\top X+\lambda I)^{-1}$，故 $A_\lambda$ 是 $I$ 减去一个秩亏修正，正是 (3.75) 的形式，且 $\lim_{\lambda\to0}A_\lambda=I$（退化成 OLS）、$\lim_{\lambda\to\infty}A_\lambda=0$（完全收缩）。</p>
+<p><strong>拟合值的一致性。</strong> (3.74) 用 $H$，(3.75) 用 $A_\lambda$，两者的区别正是「投影」与「ridge 平滑」的区别：$H$ 对称幂等（$H^\top=H$，$H^2=H$），$A_\lambda$ 一般既不对称也不幂等（$A_\lambda^\top=A_\lambda$ 但 $A_\lambda^2=A_\lambda-\lambda(X^\top X+\lambda I)^{-1}A_\lambda\ne A_\lambda$）。这与 §3.6.4 中 (3.60) 的两个定义何时重合是同一个问题。</p></div>
+<div class="aside key"><p class="hd">结果 · 这条线的三种特例</p><div class="eq long"><div class="escroll">
+$$
+\begin{cases} c=0: &amp; \text{CCA 的 } m \text{ 分量解，方向由 }\mathrm{Corr}^2\text{ 决定}\\[2pt] c&gt;0: &amp; \text{中间状态：把 CCA 方向按 }\lambda_m^2=c/p\text{ 加权后重建}\\[2pt] c\to\infty: &amp; \text{ridge（所有方向按 }A_\lambda\text{ 收缩）}\end{cases}
+$$
+</div></div>
+<p>实践意义：$c$ 提供了一个<strong>一维</strong>的复杂度旋钮，可以像 ridge 的 $\lambda$ 那样用交叉验证选；而 $\lambda_m^2=c/p$ 说明重数按 $m$ 的分位数取，前几个典型方向收缩最强。</p></div>
+<div class="aside warn"><p class="hd">坑</p><ol><li>$\hat U^{-1}$ 要求 $\hat U$ 列满秩，即 $K\le\mathrm{rank}(Y)$；$Y$ 有重复列时必须先合并或删列。</li><li>(3.72)(3.73) 的记号在不同版本里 $\hat\Lambda$ 与 $\hat B$ 的取法略有差别（等价地写成 $\hat\Lambda$ 作用于<strong>保留</strong>方向还是<strong>丢弃</strong>方向）。稳定的内容是三个端点与三个因子的分工，以及 (3.74)(3.75) 的区别。</li><li>$c\to\infty$ 给出的是 <strong>ridge 而非 lasso</strong>；这条线里没有任何一步会产生 $\ell_1$ 式的稀疏性。稀疏性必须靠 §3.8 的 $\ell_1$ 或非凸惩罚。</li></ol></div>
+<h2 id="s-3-8" class="anchored"><span class="num">3.8</span> 收缩方法的一般理论</h2>
+<p>前面所有方法——岭回归、lasso、PCR、PLS、CCA——都能塞进同一个模板：往「数据拟合优度」后面加一个「复杂度罚款」。本节把这个模板写出来，说明四件事：罚款 $J(\beta)$ 该长什么样；$J$ <strong>凸</strong>时优化有多容易（KKT + 坐标下降 + 分离变换）；$J$ <strong>非凸</strong>时会坏掉什么（局部极小、必须二分 $\lambda$）；一般损失函数（不只是平方损失）下还剩下什么。统一的模板是</p>
+<div class="eq"><div class="escroll">
+$$
+\hat\beta(\lambda)=\arg\min_{\beta}\ \big\{R(\beta)+\lambda J(\beta)\big\}\
+$$
+</div><span class="tag">(3.76)</span></div>
+<p><strong>问题</strong>：把 (3.76) 的两个部件分别定义清楚，并对常用罚款做统一比较。这是本节一切讨论的出发点，对应 (3.76)(3.77)。本节最终要回答的元问题是：<strong>什么时候收缩是好事，什么时候它是数据挖掘。</strong></p>
+<h3 id="s-3-8-1" class="anchored"><span class="num">3.8.1</span> 统一形式与惩罚对照表</h3>
+<div class="aside basis"><p class="hd">基础知识</p><p>凸性与 $\ell_q$ 球（见预备知识 L1、O1）</p>
+<p>$J$ 凸 ⟹ $\{J\le c\}$ 是凸集 ⟹ (3.76) 是凸优化 ⟹ KKT 必要充分、强对偶成立（见预备知识 O1、O2），$\nabla_\beta(R+\lambda J)=0$ 是全局最优的<strong>充分</strong>条件。 $\ell_1$ 球 $\{\lVert\beta\rVert_1\le1\}$ 的极端点恰是 $p$ 个坐标轴方向 $\{e_j\}$，$\ell_2$ 球没有极端点——这一条事实是 §3.8.4「$\ell_0$ 罚等价于子集选择」的根源，也是 §3.8.6 centered lasso 的动机。</p></div>
+<p><strong>损失部件</strong>（(3.77)）：</p>
+<div class="eq"><div class="escroll">
+$$
+R(\beta)=\sum_{i=1}^{N}L\big(y_i,\ \beta_0+\textstyle\sum_{j=1}^{p}x_{ij}\beta_j\big)\
+$$
+</div><span class="tag">(3.77)</span></div>
+<p>$L$ 是逐点损失。平方损失 $L(y,\eta)=\tfrac12(y-\eta)^2$ 给出最小二乘 / ridge / lasso；对数损失给出 logistic 回归的 lasso 版本（见 (3.89)）。<strong>惩罚部件与损失部件的分工</strong>：$R$ 管「对数据解释得多好」，$J$ 管「愿意付出多少偏差」，$\lambda$ 是两者之间的兑换率——这就是 $\lambda$ 有时被称为「复杂度罚款的 Lagrange 乘子」的原因（它确实是 (3.79) 的对偶变量）。</p>
+<p><strong>惩罚部件 $J(\beta)$ 的对照表</strong>：</p>
+<div class="tscroll-x"><table class="fx"><thead><tr><th>$J(\beta)$</th><th>名称</th><th>凸</th><th>解的行为</th></tr></thead><tbody><tr><td>$\sum_j\mathbf 1\{\beta_j\ne0\}$</td><td>$\ell_0$ / 最佳子集</td><td>否</td><td>精确稀疏，但需枚举 $2^p$ 个子集（(3.41)）</td></tr><tr><td>$\sum_j\beta_j^2$</td><td>ridge / $\ell_2$</td><td>是</td><td>全部非零，均匀收缩，$\hat\beta_j\to0$</td></tr><tr><td>$\sum_j\lvert\beta_j\rvert$</td><td>lasso / $\ell_1$</td><td>是</td><td>精确稀疏，收缩量恒为 $\lambda$：$\hat\beta_j=S_{\lambda}(\hat\beta_j^{\rm ls})$</td></tr><tr><td>$\lambda_1\lVert\beta\rVert_1+\lambda_2\lVert\beta\rVert_2^2$</td><td>elastic net</td><td>是</td><td>稀疏 + 保留成组效应，见 (3.91)</td></tr><tr><td>$\sum_j w_j\lvert\beta_j\rvert$</td><td>adaptive / 加权 lasso</td><td>是</td><td>用 $w_j$ 放大不重要变量的阈值，见 (3.81)</td></tr><tr><td>$\sum_\ell\lVert\beta^{(\ell)}\rVert_2$</td><td>group lasso</td><td>是</td><td>整组进出，见 (3.80)</td></tr><tr><td>有界斜率的分段线性罚</td><td>MCP / SCAD</td><td>否</td><td>稀疏但不过度收缩，见 (3.82)</td></tr></tbody></table></div>
+<div class="aside key"><p class="hd">结果 · 凸性带来的三件事</p><ul><li><strong>最优性</strong>：$\nabla_\beta(R+\lambda J)=0$ 是<strong>充分</strong>条件（凸情形下也是必要条件）；</li><li><strong>唯一性</strong>：$R$ 严格凸（平方损失 + $X$ 满秩）⟹ 解唯一，$\ell_1$ 罚不会破坏唯一性，因为 $\{J\le c\}$ 是凸集，两点中点仍在集合内；</li><li><strong>可分性</strong>：$J=\sum_jJ(\beta_j)$ ⟹ 可以逐坐标更新，这是 LARS 与坐标下降的根据（(3.90)、§3.8.6）。</li></ul></div>
+<div class="aside warn"><p class="hd">坑</p><p>$J$ 不能依赖 $y$，否则 (3.76) 退化。例如 $J(\beta)=\lVert\beta-\hat\beta_{\rm ls}\rVert_2^2$ 给出 $\hat\beta=\hat\beta_{\rm ls}$（完全抵消）。这正是 (3.81) 里权重 $w_j$ 只能是「第一阶段估计的<strong>固定</strong>函数」、必须在两阶段之间冻结的原因。</p></div>
+<h3 id="s-3-8-2" class="anchored"><span class="num">3.8.2</span> lasso 的两种等价形式</h3>
+<p><strong>问题</strong>：lasso 写成惩罚形式 (3.76) 很常见，但它的<strong>原始形式</strong>（约束形式）给出更精确的稀疏化描述，而两种形式的参数之间有精确对应。这是 (3.78)(3.79)，也是 §3.5 约束形式 (3.42) 的推广。</p>
+<div class="aside basis"><p class="hd">基础知识</p><p>KKT、互补松弛与强对偶（见预备知识 O2、O1）</p>
+<p>$\min_\beta f(\beta)$ s.t. $g(\beta)\le s$ 的 KKT 四条：原始可行 $g\le s$；对偶可行 $\lambda\ge0$；<strong>互补松弛</strong> $\lambda(g(\beta^\star)-s)=0$；平稳性 $\nabla f+\lambda\nabla g=0$。强对偶（Slater + 凸）保证原始最优值 = 对偶最优值。 一个关键事实：<strong>$\lambda$ 是约束值 $s$ 的严格减函数</strong>。它由互补松弛给出——$s$ 放松一个量，最优的 $\lambda$ 必须相应下降，否则平稳性方程的解会超出可行集。</p></div>
+<div class="eq long"><div class="escroll">
+$$
+\hat\beta_t=\arg\min_{\beta}\ \lVert\beta\rVert_1\ \ \text{s.t.}\ \ \big\lVert X^\top(y-X\beta)\big\rVert_\infty\le s\
+$$
+</div><span class="tag">(3.78)</span></div>
+<div class="eq long"><div class="escroll">
+$$
+\hat\beta_s=\arg\min_{\beta}\ \big\lVert X^\top(y-X\beta)\big\rVert_\infty\ \ \text{s.t.}\ \ \lVert\beta\rVert_1\le t\
+$$
+</div><span class="tag">(3.79)</span></div>
+<div class="aside"><p class="hd">推导 · 两式通过拉格朗日函数互换</p><p>记 $r(\beta)=y-X\beta$，$g(\beta):=\lVert X^\top r(\beta)\rVert_\infty$，$h(\beta)=\lVert\beta\rVert_1$。</p>
+<p>对 (3.78) 作拉格朗日松弛（见预备知识 O1）：</p>
+<div class="eq"><div class="escroll">
+$$
+L(\beta,\lambda)=h(\beta)+\lambda\big(g(\beta)-s\big),\qquad \lambda\ge0
+$$
+</div></div>
+<p><strong>一阶条件。</strong> 记 $\kappa_j=\lVert x_j\rVert^2$，$c_j(\beta)=\langle x_j,r(\beta)\rangle$。注意 $\frac{\partial c_j}{\partial\beta_j}=-\langle x_j,x_j\rangle=-\kappa_j$，而 $\frac{\partial h}{\partial\beta_j}=\mathrm{sign}(\beta_j)$。所以 KKT 的平稳性给出（$\beta_j\ne0$ 时）</p>
+<div class="eq long"><div class="escroll">
+$$
+\mathrm{sign}(\beta_j)-\lambda\kappa_jc_j(\beta)=0\quad\Longrightarrow\quad c_j(\beta)=\frac{\mathrm{sign}(\beta_j)}{\lambda\kappa_j}
+$$
+</div></div>
+<p>而 $\beta_j=0$ 时用次梯度条件（$\partial\lVert\beta\rVert_1/\partial\beta_j$ 在 0 处是 $[-1,1]$ 中任一值）：</p>
+<div class="eq long"><div class="escroll">
+$$
+\lvert\lambda\kappa_jc_j(\beta)\rvert\le1\quad\Longleftrightarrow\quad\lvert c_j(\beta)\rvert\le\frac{1}{\lambda\kappa_j}
+$$
+</div></div>
+<p>这就是「零阈值」条件，也是 §3.5 中 (3.58)(3.59) 的 KKT 表述。</p>
+<p>对 (3.79) 作拉格朗日松弛：</p>
+<div class="eq"><div class="escroll">
+$$
+\tilde L(\beta,\mu)=g(\beta)+\mu\big(h(\beta)-t\big),\qquad \mu\ge0
+$$
+</div></div>
+<p>现在把 (3.78) 的 $L$ <strong>除以</strong> $\lambda&gt;0$：</p>
+<div class="eq long"><div class="escroll">
+$$
+\frac{1}{\lambda}L(\beta,\lambda)=\frac1\lambda h(\beta)+g(\beta)-s=\mu h(\beta)+g(\beta)-\mu s\quad\text{（取 }\mu=\tfrac1\lambda\text{）}
+$$
+</div></div>
+<p>把它与 $\tilde L$ 比较：$\tilde L=\mu h+g-\mu t$，两者只差常数 $\mu(s-t)$。<strong>对偶函数只依赖 $L$ 的非常数部分</strong>，故两个拉格朗日函数给出<strong>同一族</strong>解，只要</p>
+<div class="eq long"><div class="escroll">
+$$
+\mu=\frac{1}{\lambda},\qquad s\cdot\mu=1\ \ \text{（当 (3.78) 的约束紧时）},\qquad t=h(\beta^\star)=\lVert\beta^\star\rVert_1
+$$
+</div></div>
+<p>第三个式子来自 (3.79) 的互补松弛 $\mu(h(\beta^\star)-t)=0$：只要 $\mu&gt;0$ 就有 $h(\beta^\star)=t$。</p>
+<p>所以：<strong>$s$ 与 $t$ 是同一条 lasso 路径上的两种参数化，$\lambda$ 是它们的公共对偶乘子（互为倒数）</strong>。凸 + Slater ⟹ 强对偶保证两个原始问题有相同最优值（见预备知识 O1）。</p></div>
+<div class="aside key"><p class="hd">结果 · (3.78)(3.79) 的实用价值</p><ul><li><strong>$s$ 有明确的几何阈值。</strong> $g(\beta)=\lVert X^\top r\rVert_\infty\le s$ 的意思是「每个变量与响应的边际相关都被压到 $s$ 以下」。若取 $s=\max_j\lvert c_j(0)\rvert=\max_j\lvert\langle x_j,y\rangle\rvert$（即 OLS 残差下的最大 $|t|$ 型量），则 $\beta=0$ 是可行点，而任何使 $\hat\beta_j\ne0$ 的解都要付出 $\lVert\beta\rVert_1&gt;0$，所以解就是 $\hat\beta=0$。$s$ 再大一点，$\hat\beta^{\rm ls}$ 本身可行（因为 $\kappa_jc_j$ 与 $\lambda$ 的关系在 $\lambda\to0$ 时趋于无约束），于是解跳到 $\hat\beta^{\rm ls}$。<strong>这给出了「$\beta=0$ 何时被丢弃」的精确答案。</strong></li><li><strong>$t$ 的可行域有硬上界。</strong> $\hat\beta^{\rm ls}$ 是 (3.79) 的可行点，所以必须 $t\ge\lVert\hat\beta^{\rm ls}\rVert_1$，否则可行集为空（无解）。交叉验证时搜索的 $t$ 区间必须落在这个范围内。</li><li>两个约束都在 $\lambda\to0$ 时退化为 OLS，在 $\lambda\to\infty$ 时退化为 $\hat\beta=0$。</li></ul></div>
+<div class="aside warn"><p class="hd">坑</p><ol><li>$\lVert\cdot\rVert_\infty$ 在「多个分量同时达到最大值」处不可微，$\lVert\cdot\rVert_1$ 在坐标 0 处不可微。上面的推导用次梯度处理，代价是<strong>坐标下降需要收敛准则与步长控制</strong>（§3.8.6）。</li><li>两个原始问题都需要 $X$ 满列秩才有唯一解。$X$ 秩亏时 $\mathrm{null}(X)$ 里塞得下任何 $\beta$：(3.78) 的可行集含整个 $\mathrm{null}(X)\cap\{\lVert\beta\rVert_1\le s\}$，最优 $\lVert\beta\rVert_1$ 不唯一。</li><li>$s$、$t$、$\lambda$ 的倒数关系只在「约束紧」时成立。约束松时 $t$ 由最优解自己决定，不等于外加的上界。</li></ol></div>
+<h3 id="s-3-8-3" class="anchored"><span class="num">3.8.3</span> group lasso 与自适应（稀疏性诱导）lasso</h3>
+<p><strong>问题</strong>：两种「非均匀化」罚款——按<strong>组</strong>罚（group lasso）和按<strong>重要性</strong>加权罚（adaptive lasso）。对应 (3.80)(3.81)。</p>
+<div class="aside basis"><p class="hd">基础知识 · Minkowski 不等式与组内结构</p><p>欧氏空间的三角不等式 $\lVert a+b\rVert_2\le\lVert a\rVert_2+\lVert b\rVert_2$（Minkowski，见预备知识 L1）是后面全部凸性论证的根据。 另一个反复用到的工具是 $\lVert\beta\rVert_1$ 的分解 $\lVert\beta\rVert_1=\sum_{j=1}^{p}\big(\beta_j^++\beta_j^-\big)$（$\beta_j^+=\max(\beta_j,0)$、$\beta_j^-=\max(-\beta_j,0)$），它把「$\ell_1$ 罚」写成 $p$ 个线性约束的和，从而能用 KKT 的互补松弛逐坐标分析（见预备知识 O2）。 <strong>软阈值算子</strong> $S_\theta(c)=\operatorname{sign}(c)\max(0,\lvert c\rvert-\theta)$ 满足恒等式 $c-\theta\operatorname{sign}(c)=\lambda\lambda(c/\lambda)$（$\lambda$ 是软阈值算子，$\lambda(\cdot)$ 与参数 $\lambda$ 同名时要小心），这是「lasso = 收缩算子复合于 OLS」的说法依据。</p></div>
+<div class="eq"><div class="escroll">
+$$
+J_{\rm group}(\beta)=\sqrt L\sum_{\ell=1}^{L}\big\lVert\beta^{(\ell)}\big\rVert_2\
+$$
+</div><span class="tag">(3.80)</span></div>
+<p>$\beta^{(\ell)}$ 是第 $\ell$ 组的系数子向量（如一组 dummy 变量、或一族相关变量）；前面的 $\sqrt L$ 把 $\lambda$ 放到与组大小无关的尺度上。</p>
+<div class="aside"><p class="hd">推导 · 为什么 (3.80) 是凸的</p><p>凸性就是 Minkowski（欧氏空间的三角不等式）$\lVert a+b\rVert_2\le\lVert a\rVert_2+\lVert b\rVert_2$ 的直接推论。证 $\theta\in[0,1]$：</p>
+<div class="eq verylong"><div class="escroll">
+$$
+\begin{aligned}\big\lVert\theta\beta^{(\ell)}+(1-\theta){\beta'}^{(\ell)}\big\rVert_2&amp;\le\theta\big\lVert\beta^{(\ell)}\big\rVert_2+(1-\theta)\big\lVert{\beta'}^{(\ell)}\big\rVert_2\\[4pt]J_{\rm group}\big(\theta\beta+(1-\theta)\beta'\big)=\sqrt L\sum_{\ell=1}^{L}\big\lVert\theta\beta^{(\ell)}+(1-\theta){\beta'}^{(\ell)}\big\rVert_2&amp;\le\theta\,J_{\rm group}(\beta)+(1-\theta)J_{\rm group}(\beta')\end{aligned}
+$$
+</div></div>
+<p>逐项不等式求和（$\sqrt L$ 是常数因子）即得凸性。</p>
+<p><strong>换个角度验证</strong>（判断这类复合是否保凸的通用套路）：$J_{\rm group}(\beta)^2=L\sum_{\ell=1}^{L}\lVert\beta^{(\ell)}\rVert_2^2$。右端关于 $\beta$ 是<strong>非负二次型之和</strong>，故凸；映射 $t\mapsto\sqrt t$ 在 $[0,\infty)$ 上递增且凸；凸函数与「递增凸函数的复合」仍凸（第二卷式，逐点验证：$\sqrt{\theta u+(1-\theta)v}\le\theta\sqrt u+(1-\theta)\sqrt v$ 对 $u,v\ge0$ 成立，因为 $\sqrt{\cdot}$ 是凹的、且 $\min(u,v)\le\sqrt{uv}$）。故 $J_{\rm group}$ 凸。</p>
+<p><strong>稀疏性从哪来。</strong> 逐坐标一阶条件（$j$ 属于第 $\ell$ 组，且 $\lVert\beta^{(\ell)}\rVert_2&gt;0$）：</p>
+<div class="eq long"><div class="escroll">
+$$
+\frac{1}{N}\big\langle x_j,\ y-\beta_0\mathbf 1-X\beta\big\rangle+\lambda\sqrt L\,\frac{\beta_j}{\big\lVert\beta^{(\ell)}\big\rVert_2}=0
+$$
+</div></div>
+<p>于是组内系数<strong>成同一比例</strong>被收缩（收缩因子 $\lambda\sqrt L/\lVert\beta^{(\ell)}\rVert_2$ 对组内每个 $j$ 相同）。整组归零只发生在 $\lVert\beta^{(\ell)}\rVert_2=0$ 时——<strong>group lasso 不会「半选一组」</strong>，这与 lasso 的逐坐标选择是本质区别。</p></div>
+<div class="eq long"><div class="escroll">
+$$
+\hat\beta=\arg\min_{\beta}\ \Big\{R(\beta)+\lambda_{\mathcal S}\sqrt{\textstyle\sum_{j\in\mathcal S}\mathcal N_j}\ \sum_{j\in\mathcal S}\big\lvert\beta_j\big\rvert\Big\}\
+$$
+</div><span class="tag">(3.81)</span></div>
+<p>$\mathcal S$ 是「非零系数集」，$\mathcal N_j$ 是变量 $j$ 的 $\mathcal N$ 统计量（似然比型，$\chi^2$ 量级）。</p>
+<div class="aside"><p class="hd">推导 · (3.81) 是两阶段做法</p><p>第一阶段：在某个较大的集合 $\mathcal S_0\subseteq\{1,\ldots,p\}$（全部变量，或 elastic net、相关筛选给出的集合）上跑普通 lasso。 第二阶段：把 $\mathcal S$ 冻结为 $\mathcal S_0$，用 $\mathcal N_j$ 作权重重跑加权 lasso。</p>
+<p>为什么这不等价于单次 (3.76)：加权 lasso 的坐标更新是<strong>逐坐标的软阈值，阈值不同</strong>：</p>
+<div class="eq"><div class="escroll">
+$$
+\hat\beta_j\leftarrow S_{\lambda w_j}(\hat c_j),\qquad \hat c_j=\frac1N\langle x_j,y-X\beta\rangle
+$$
+</div></div>
+<p>而权重 $w_j$ 是上一阶段估计的<strong>数据驱动函数</strong>，把 $w_j$ 写回 (3.76) 就得到 $J(\beta;y)$ 依赖 $y$，违反 §3.8.1 的「坑」。所以必须冻结——代价是解依赖两阶段的顺序，不再有单一凸问题。</p>
+<p><strong>两阶段的次序敏感吗？</strong> 不完全不变：若第一阶段漏掉真信号（$\beta_j^\star=0$），第二阶段的 $w_j$ 大 ⟹ 门槛更高 ⟹ 更难被加回来。所以第一阶段应该「宁可多留」——这正是 ESL 推荐用 elastic net 做第一阶段的理由（见 (3.91)）。</p></div>
+<div class="aside key"><p class="hd">结果 · 为什么 (3.81) 更「数据驱动」</p><ul><li>普通 lasso 用同一个阈值 $\lambda$，隐含「所有变量先验同等重要」的假设；$p\gg N$ 时假阳性很多。</li><li>(3.81) 让噪声变量（$\mathcal N_j$ 小 ⟹ $w_j$ 大 ⟹ 阈值 $\lambda w_j$ 高）几乎无法被选中，而信号变量的阈值接近 0、系数几乎等于 OLS 值。形式上它逼近 $\ell_0$ 罚的「只罚真零」的行为。</li><li>与第 6 章的层次贝叶斯收缩、第 9 章的自适应树剪枝同源：<strong>用一个数据驱动的先验去替换统一常数先验</strong>。</li></ul></div>
+<div class="aside warn"><p class="hd">坑</p><ol><li>$\sqrt L$ 只在<strong>各组等大</strong>时是正确归一。组大小为 $L_\ell$ 时应写成 $\sum_\ell\sqrt{L_\ell}\lVert\beta^{(\ell)}\rVert_2$，否则大组整体被更强地收缩。</li><li>$\lVert\beta\rVert_2$ 在 $\beta=0$ 处的次梯度只有 0（因为唯一最小化点是 0），这正是「整组进出」的机制；$\lVert\beta\rVert_1$ 在 0 处的次梯度是整个球，给出「逐坐标进出」。两者在 KKT 里表现为不同形式的互补松弛。</li><li>若把 (3.81) 里的 $\mathcal S$ 取成全 $\{1,\ldots,p\}$，它退化为普通 lasso 加上一个常数因子 $\sqrt{\sum_j\mathcal N_j}$——常因子只改 $\lambda$ 的刻度，不改解。</li></ol></div>
+<h3 id="s-3-8-4" class="anchored"><span class="num">3.8.4</span> 非凸惩罚</h3>
+<p><strong>问题</strong>：非凸罚款能缓解 $\ell_1$ 的「过度收缩」，但优化不再是凸的。对应 (3.82)：写出分段一阶条件，说明 $\lambda$ 必须怎么求。</p>
+<div class="aside basis"><p class="hd">基础知识 · 凸性判别与单调路径（见预备知识 C1、C2）</p><p>判别：$f$ 凸 $\iff$ $f(\theta u+(1-\theta)v)\le\theta f(u)+(1-\theta)f(v)$（等价地，Hessian 半正定）。<strong>罚函数的凹凸性与目标函数的凹凸性是加在一起的</strong>：目标 $\lVert y-X\beta\rVert^2$ 严格凸，所以 (3.82) 的凸性完全由 $\lambda\sum_jJ(\lvert\beta_j\rvert)$ 决定；$J$ 凹 ⟹ 非凸。 单调路径：若 $J\ge0$，则 $\lambda\mapsto\min_\beta f_\lambda(\beta)$ 单调不增，且解集随 $\lambda$ 递减「变厚」；这条性质<strong>只用 $J\ge0$</strong>，与凸性无关（非凸时仍成立，见下面的推导）。 分段函数的求导：分段点处只要两段的导数相等，函数就是 $C^1$ 的，可以逐段求导再拼起来。</p></div>
+<div class="eq long"><div class="escroll">
+$$
+\hat\beta=\arg\min_{\beta}\ \sum_{i=1}^{N}\Big(y_i-\beta_0-\sum_{j=1}^{p}x_{ij}\beta_j\Big)^2+\lambda\sum_{j=1}^{p}J\big(\lvert\beta_j\rvert\big)\
+$$
+</div><span class="tag">(3.82)</span></div>
+<div class="eq verylong"><div class="escroll">
+$$
+J\big(\lvert\beta\rvert\big)=\begin{cases}(1-a)\lvert\beta\rvert-\dfrac{a}{2}\lvert\beta\rVert^2, &amp; \lvert\beta\rvert\le\dfrac{\lambda}{a}\\[6pt]\dfrac{1-a}{2a}\,\lambda, &amp; \lvert\beta\rvert\ge\dfrac{\lambda}{a}\end{cases}\qquad (a\in(0,1))
+$$
+</div></div>
+<p>（这就是 MCP（minimax concave penalty）；SCAD 取 $a$ 方向的极限，罚函数在两端都有平的部分。）</p>
+<div class="aside"><p class="hd">推导 · 罚函数与其导数</p><p>对第一段求导：$J'(\lvert\beta\rvert)=(1-a)-a\lvert\beta\rvert$。求导一致性核对：在拐点 $\lvert\beta\rvert=\lambda/a$ 处左边给出 $(1-a)-a\cdot\lambda/a=0$，等于右边（常数的导数 0）✓。所以 $J$ 是 $C^1$ 的（$J''$ 在拐点跳变）。 三个关键性质：$J(0)=0$；$J'(0)=1-a&lt;1$（比 $\ell_1$ 的 $J'(0)=1$ 小，故<strong>零阈值更宽</strong>，更容易产生非零解）；$J'(\lvert\beta\rvert)=0$ 对一切 $\lvert\beta\rvert&gt;\lambda/a$（<strong>大系数不收缩</strong>）。</p>
+<p>注意非凸性来自哪里：$J''=-a&lt;0$ 在第一段，罚函数本身是<strong>凹</strong>的，第二段水平，所以 $J$ 既非凸也非凹。</p></div>
+<div class="aside"><p class="hd">核心推导</p><p>分段一阶条件：$a$ 与 $\lambda$ 各自的角色</p>
+<p>目标函数 $f(\beta)=\sum_i(y_i-\beta_0-x_i^\top\beta)^2+\lambda\sum_jJ(\lvert\beta_j\rvert)$。对 $\beta_j$ 求导，记 $\kappa_j=\lVert x_j\rVert^2$，$\hat c_j=\frac1N\langle x_j,y-X\beta\rangle$：</p>
+<div class="eq"><div class="escroll">
+$$
+-\kappa_j\hat c_j+\lambda J'(\lvert\beta_j\rvert)=0
+$$
+</div></div>
+<p><strong>三种情形：</strong></p>
+<div class="eq verylong"><div class="escroll">
+$$
+\begin{cases}\text{(i)}\ \lvert\beta_j\rvert&gt;\dfrac{\lambda}{a}: &amp; J'=0\ \Longrightarrow\ \hat c_j=0\ \Longrightarrow\ \hat\beta_j=\dfrac{\langle x_j,y\rangle}{\kappa_j}=\hat\beta_j^{\rm ls}\quad\text{（无偏，不收缩）}\\[7pt]\text{(ii)}\ 0&lt;\lvert\beta_j\rvert\le\dfrac{\lambda}{a}: &amp; J'=1-a\lvert\beta_j\rvert\ \Longrightarrow\ \lvert\beta_j\rvert=\dfrac{1}{a}\Big(1-\dfrac{\kappa_j\lvert\hat c_j\rvert}{\lambda}\Big)\\[7pt]\text{(iii)}\ \beta_j=0: &amp; \text{次梯度条件 }\lvert\kappa_j\hat c_j\rvert\le\lambda J'(0)=\lambda(1-a)\ \Longrightarrow\ \lvert\hat c_j\rvert\le\dfrac{\lambda(1-a)}{\kappa_j}\end{cases}
+$$
+</div></div>
+<p>情形 (ii) 的自洽性检查：它假设 $\lvert\beta_j\rvert\in(0,\lambda/a]$，代入右端要求 $0&lt;\kappa_j\lvert\hat c_j\rvert&lt;\lambda(1-a)\le\lambda$，而情形 (iii) 给出 $\lvert\hat c_j\rvert\le\lambda(1-a)/\kappa_j$ ⟹ $\kappa_j\lvert\hat c_j\rvert\le\lambda(1-a)$，恰好在区间内 ✓。所以三种情形自洽地拼成完整的解。</p>
+<p><strong>$a$ 与 $\lambda$ 的分工：</strong></p>
+<ul><li>$\lambda$ 只控制<strong>零点阈值</strong>（情形 iii 的门槛 $\lambda(1-a)/\kappa_j$）；</li><li>$a$ 控制<strong>拐点位置</strong> $\lambda/a$：$a\uparrow$ ⟹ 拐点左移 ⟹ 更少系数能进入情形 (i) ⟹ 更接近 lasso；$a\to0$ ⟹ 拐点 $\to\infty$ ⟹ 所有系数都进入情形 (i) ⟹ 罚函数「完全不收缩」，逼近逐步 $\ell_0$。</li></ul>
+<p>这解释了 MCP/SCAD 的卖点：$\ell_1$ 的软阈值 $S_\lambda(c)=\mathrm{sign}(c)\max(0,\lvert c\rvert-\lambda)$ 在<strong>所有尺度</strong>上都减掉 $\lambda$，大系数也被压低（偏差大）；非凸罚让 $\lvert\beta_j\rvert&gt;\lambda/a$ 的系数保持 $\hat\beta_j^{\rm ls}$ 不变（无偏）。</p></div>
+<div class="aside"><p class="hd">核心推导 · 为什么 $\lambda$ 必须用二分/下界法</p><p><strong>单调性（可用）。</strong> 记 $f_\lambda(\beta)=R(\beta)+\lambda\sum_jJ(\lvert\beta_j\rvert)$，注意 $J\ge0$。若 $\lambda_1\le\lambda_2$，$\beta_2\in\arg\min f_{\lambda_2}$，则对任意 $\beta_1$：</p>
+<div class="eq long"><div class="escroll">
+$$
+f_{\lambda_1}(\beta_2)-f_{\lambda_1}(\beta_1)=\underbrace{\big[f_{\lambda_2}(\beta_2)-f_{\lambda_2}(\beta_1)\big]}_{\le0}-\underbrace{(\lambda_2-\lambda_1)\sum_jJ\big(\lvert\beta_{2j}\rvert\big)}_{\ge0}\ \le0
+$$
+</div></div>
+<p>故 $\beta_2$ 也是 $f_{\lambda_1}$ 的极小点。<strong>这条单调性只用到了「$\lambda$ 线性」与「$J\ge0$」，与凸性无关</strong>，所以在非凸下依然成立。</p>
+<p><strong>失效的是什么。</strong> 失效的是三条凸优化性质：</p>
+<ul><li>「驻点 ⟹ 全局最优」——非凸下有多个局部极小，$\nabla_\beta f_\lambda=0$ 只给局部信息；</li><li>「沿 $\lambda$ 减小路径从一个解热启动会到达正确解」——单调性只保证「<strong>是</strong>某个极小」，不保证「是<strong>全局</strong>极小」；</li><li>KKT 的充分性。</li></ul>
+<p><strong>所以算法必须是外层二分 $\lambda$ + 内层有保护</strong>：沿单调路径从大 $\lambda$（强收缩、问题接近好解）往下走，每一步以上一个解作为起点，并<strong>限制在包围盒</strong>内</p>
+<div class="eq"><div class="escroll">
+$$
+\prod_{j=1}^{p}\big[\hat\beta_j^{\star}-\Delta,\ \hat\beta_j^{\star}+\Delta\big]
+$$
+</div></div>
+<p>（$\Delta$ 由 (3.82) 的支撑集界给出：若当前解的支撑集为 $\mathcal S$，则更小 $\lambda$ 下的解满足 $\hat\beta_j\in[\hat\beta_j^\star-\text{界},\hat\beta_j^\star+\text{界}]$）。限制搜索区域使局部优化不能跳到「另一个局部极小」上，这才是下界法的真正作用。</p>
+<p><strong>二分准则。</strong> 用「最优残差平方和」$RSS(\lambda)=\min_\beta\lVert y-X\beta\rVert^2$ 找拐点：$RSS$ 关于 $\lambda$ 单调不增，在解开始变稠密的 $\lambda$ 处曲率最大（$d^2RSS/d\lambda^2$ 变号的点）。$RSS$ 连续 ⟹ 可以直接二分；$\lvert\mathcal S\rvert$ 跳跃 ⟹ 只能在跳跃点附近取，不能对 $\lvert\mathcal S\rvert$ 直接二分。</p></div>
+<div class="aside key"><p class="hd">结果 · 凸罚 vs 非凸罚</p></div>
+<div class="tscroll-x"><table class="fx"><thead><tr><th></th><th>$\ell_1$（(3.78)）</th><th>非凸（(3.82)）</th></tr></thead><tbody><tr><td>凸性</td><td>凸，KKT 充分且必要</td><td>非凸，驻点只给局部极小</td></tr><tr><td>大系数</td><td>恒减 $\lambda$，有偏</td><td>$\lvert\beta_j\rvert&gt;\lambda/a$ 时不收缩，无偏</td></tr><tr><td>零阈值</td><td>$\lvert\hat c_j\rvert\le\lambda/\kappa_j$</td><td>$\lvert\hat c_j\rvert\le\lambda(1-a)/\kappa_j$（更宽）</td></tr><tr><td>求解</td><td>坐标下降 / LARS / $\ell_1$ 回归</td><td>二分 $\lambda$ + 热启动 + 包围盒，代价高</td></tr><tr><td>统计代价</td><td>高偏差、低方差</td><td>低偏差、高方差，选择更稳定但难调</td></tr></tbody></table></div>
+<div class="aside warn"><p class="hd">坑</p><ol><li>$J$ 必须满足 $J(0)=0$、$J\ge0$。否则 (3.82) 里 $\beta=0$ 不再是自然候选点，整套「稀疏性来自零阈值」的论述失效（单调性证明也用了 $J\ge0$）。</li><li>拐点处 $J''$ 从 $-a$ 跳到 0 ⟹ 梯度法的线性收敛率分析不适用；拟牛顿法在拐点附近也可能病态。</li><li>交叉验证选出的非凸 $\lambda$ 往往<strong>偏小</strong>（非凸优化更容易在验证集上过拟合），ESL 建议乘一个略小于 1 的因子。</li></ol></div>
+<h3 id="s-3-8-5" class="anchored"><span class="num">3.8.5</span> 收缩的谱分析：ridge 为什么恰好收缩 $v_j$ 方向</h3>
+<p><strong>问题</strong>：ridge 和 lasso 都写成 (3.76) 的特例，但「收缩了多少」最清楚的表述来自<strong>谱分解</strong>。这一小节把 ridge 放到 $X^\top X$ 的特征基里，回答「每个方向的收缩因子是多少」。</p>
+<div class="aside basis"><p class="hd">基础知识 · 谱展开与 SVD（见预备知识 L3）</p><p>$X=UDV^\top$，$X^\top X=VD^2V^\top$，故 $v_j$ 是 $X^\top X$ 的特征向量、$d_j$ 是奇异值（见预备知识 L3 的等价关系 $\lVert Xv\rVert^2=v^\top X^\top Xv=d^2\lVert v\rVert^2$）。<strong>关键事实</strong>：$\{v_j\}$ 是一组正交基，所以任何向量都能展开，任何矩阵运算都能逐特征向量做。</p></div>
+<p><strong>ridge 的谱展开。</strong> 目标函数（把常数 $\tfrac12$ 吸收进 $\lambda$）：</p>
+<div class="eq long"><div class="escroll">
+$$
+\hat\beta_{\rm ridge}=\arg\min_{\beta}\ \Big\{\lVert y-X\beta\rVert^2+\lambda\lVert\beta\rVert^2\Big\}\ \tag{R}
+$$
+</div></div>
+<div class="aside"><p class="hd">推导 · 一步到位的谱展开</p><p>展开 (R)：$\lVert y\rVert^2-2\beta^\top X^\top y+\beta^\top X^\top X\beta+\lambda\beta^\top\beta$。逐坐标分段不能做（$\beta^\top X^\top X\beta$ 混合了坐标），所以改用<strong>正交变换</strong> $z=V^\top\beta$，$V=(v_1,\ldots,v_p)$：</p>
+<div class="eq"><div class="escroll">
+$$
+\lVert y-X\beta\rVert^2+\lambda\lVert\beta\rVert^2=\lVert y-XVz\rVert^2+\lambda\lVert z\rVert^2
+$$
+</div></div>
+<p>这里 $\lVert\beta\rVert=\lVert Vz\rVert=\lVert z\rVert$（$V$ 列正交）。再展开 $\lVert y-XVz\rVert^2=\lVert y\rVert^2-2z^\top V^\top X^\top y+z^\top V^\top X^\top XVz$，用 $X^\top X=VD^2V^\top$ 得 $V^\top X^\top XV=D^2$，故</p>
+<div class="eq"><div class="escroll">
+$$
+\lVert y\rVert^2-2\sum_{j=1}^{p}z_j\langle v_j,y\rangle+\sum_{j=1}^{p}(d_j^2+\lambda)z_j^2
+$$
+</div></div>
+<p><strong>完全可分</strong>：目标函数 $=\lVert y\rVert^2+\sum_j\big[(d_j^2+\lambda)z_j^2-2z_j\langle v_j,y\rangle\big]$，每个 $z_j$ 只出现在自己的一项里。求导 $2(d_j^2+\lambda)z_j-2\langle v_j,y\rangle=0$ 得</p>
+<div class="eq long"><div class="escroll">
+$$
+z_j=\frac{\langle v_j,y\rangle}{d_j^2+\lambda}\ \Longrightarrow\ \hat\beta_{\rm ridge}=\sum_{j=1}^{p}\frac{\langle v_j,y\rangle}{d_j^2+\lambda}\,v_j=\sum_{j=1}^{p}\frac{d_j}{d_j^2+\lambda}\,(u_j^\top y)\,v_j
+$$
+</div></div>
+<p>第二个写法用 $\langle v_j,y\rangle=v_j^\top X^\top y=v_j^\top\sum_k d_ku_k y_k=d_ju_j^\top y$，它就是 §3.4.2 中 ridge 系数的逐方向写法。</p>
+<p>写成平滑矩阵的谱形式（$A_\lambda=(X^\top X+\lambda I)^{-1}X^\top X$，见 §3.4.2）：</p>
+<div class="eq long"><div class="escroll">
+$$
+\hat y_{\rm ridge}=A_\lambda y=V\,\mathrm{diag}\Big(\frac{d_j^2}{d_j^2+\lambda}\Big)V^\top y\ \Longrightarrow\ \mathrm{df}=\mathrm{tr}(A_\lambda)=\sum_{j=1}^{p}\frac{d_j^2}{d_j^2+\lambda}
+$$
+</div></div>
+<p>这与 §3.6.4 的 (3.60) 完全一致（$A_\lambda$ 对称），也给出一个漂亮的解释：<strong>ridge 把有效自由度从 $p$ 压到 $\sum_jd_j^2/(d_j^2+\lambda)$，丢掉的自由度全在小 $d_j$（小方差）方向上。</strong> $\lambda\to0$ 得 $\sum_j1=p$（OLS），$\lambda\to\infty$ 得 0（完全收缩），两者都对。</p></div>
+<div class="aside key"><p class="hd">结果 · 收缩因子的三个读法</p><div class="tscroll-x"><table class="fx"><thead><tr><th>写法</th><th>收缩沿什么</th><th>公式</th></tr></thead><tbody><tr><td>lasso</td><td><strong>坐标轴</strong></td><td>$\hat\beta_j=S_\lambda(\hat\beta_j^{\rm ls})$，恒减 $\lambda$</td></tr><tr><td>PCR (3.62)</td><td><strong>主成分方向</strong></td><td>$\hat\beta=\hat\theta_mv_m$，方向不变长度变</td></tr><tr><td>ridge</td><td><strong>任意方向等权</strong></td><td>每个 $v_j$ 乘 $\frac{d_j^2}{d_j^2+\lambda}$</td></tr></tbody></table></div>
+<p>相关变量多时「坐标轴方向」不是数据的主方向，所以 lasso 在相关组上的表现由 $X$ 的条件数决定（这就是 (3.91) 加 $\ell_2$ 项的动机）。</p></div>
+<div class="aside warn"><p class="hd">坑</p><p>(R) 中的 $\lambda$ 不是无量纲的：$\lVert y-X\beta\rVert^2$ 与 $\lVert\beta\rVert^2$ 的量纲不同（前者是 $y^2$，后者是 $y^2/x^2$）。实践中必须标准化 $x_j$，否则 (R) 隐含给不同变量不同的 $\lambda/\kappa_j$（$\kappa_j=\lVert x_j\rVert^2$），「同一个 $\lambda$」的含义就不一致了。</p></div>
+<h3 id="s-3-8-6" class="anchored"><span class="num">3.8.6</span> 贝叶斯视角：先验均值不为零的 ridge</h3>
+<p><strong>问题</strong>：§3.8.5 的 ridge 把系数往 $0$ 收缩，这等价于「先验均值是 $0$」。如果先验均值是 $\hat\beta_0\ne0$，公式会怎么变？本节把闭式解、以及「OLS 是边缘众数、ridge 是后验众数」这两个不同的量并列出来。</p>
+<div class="aside warn"><p class="hd">坑</p><p>本节的两条公式<strong>没有编号</strong>。原书 (3.83)(3.84) 给的是<strong>坐标下降</strong>的目标函数与更新式 $\tfrac12\sum_i\big(y_i-\beta_0-\sum_xx_{ik}\beta_k\big)^2$ 与 $\tilde\beta_j^{(j)}\leftarrow S\big(x_j^\top\tilde y^{(j)}/N,\lambda\big)$， 已经在 §3.6.1 里推过（见那里对 (3.83)(3.84) 的编号）。这里要回答的是另一个问题——<strong>收缩目标不是原点时怎么办</strong>， 它同时解释了两件事：$\lambda$ 的量纲（$\lambda=\sigma^2/\tau^2$），以及 §3.8.6 里 logistic 回归「只罚截距」的来历。</p></div>
+<div class="eq long"><div class="escroll">
+$$
+\hat\beta=\arg\min_{\beta}\ \Big\{\lVert y-X\beta\rVert_2^2+\lambda\big\lVert\beta-\hat\beta_0\big\rVert_2^2\Big\}=\Big(X^\top X+\lambda I\Big)^{-1}\Big(X^\top y+\lambda\,\hat\beta_0\Big)
+$$
+</div></div>
+<div class="eq"><div class="escroll">
+$$
+\hat\beta^{\rm PM}=(1-\alpha)\,\hat\beta^{\rm marg}+\alpha\,\hat\beta^{\rm post}
+$$
+</div></div>
+<div class="aside basis"><p class="hd">基础知识 · MAP 与边缘分布的众数（见预备知识 P2）</p><p>给定先验 $p(\beta)$ 与似然 $p(y\mid\beta)$，后验众数（MAP）是 $\arg\max_\beta p(\beta\mid y)$；边缘分布 $p(y)=\int p(y\mid\beta)p(\beta)d\beta$ 的众数是 $\arg\max_y p(y)$。<strong>两者一般不同</strong>：前者只用到先验的一阶信息（梯度），后者要对 $\beta$ 积分。 多元正态的密度核：$z\sim N(\mu,\Sigma)$ 时 $\log p(z)=-\tfrac12(z-\mu)^\top\Sigma^{-1}(z-\mu)+c$，所以 MAP 就是一个加权最小二乘。</p></div>
+<div class="aside"><p class="hd">推导 · (3.83) 的闭式</p><p>目标函数 $F(\beta)=\lVert y-X\beta\rVert^2+\lambda\lVert\beta-\hat\beta_0\rVert^2$。两项分别求导（用 $\nabla_\beta\lVert y-X\beta\rVert^2=-2X^\top(y-X\beta)$、$\nabla_\beta\lVert\beta-\hat\beta_0\rVert^2=2(\beta-\hat\beta_0)$，见预备知识 L4）：</p>
+<div class="eq long"><div class="escroll">
+$$
+\nabla_\beta F=-2X^\top(y-X\beta)+2\lambda(\beta-\hat\beta_0)=0\ \Longrightarrow\ (X^\top X+\lambda I)\beta=X^\top y+\lambda\hat\beta_0
+$$
+</div></div>
+<p>$X^\top X+\lambda I$ 对称正定（$X^\top X\succeq0$，$\lambda I\succ0$），故逆存在、解唯一：(3.83)。<strong>注意收缩目标是 $\hat\beta_0$ 而不是 $0$</strong>：由</p>
+<div class="eq long"><div class="escroll">
+$$
+\hat\beta-\hat\beta_0=\Big(X^\top X+\lambda I\Big)^{-1}\Big(X^\top y+\lambda\hat\beta_0\Big)-\hat\beta_0=\Big(X^\top X+\lambda I\Big)^{-1}\Big(X^\top y-X^\top X\hat\beta_0\Big)
+$$
+</div></div>
+<p>（第二项减掉的是 $\hat\beta_0$ 乘进逆矩阵内，$\hat\beta_0$ 自身被消掉）可见每个系数的位移是「$\hat\beta_j^{\rm ls}-\hat\beta_{0j}$」的<strong>逐方向衰减</strong>。取 $\hat\beta_0=0$ 就回到 §3.8.5 的 ridge。</p>
+<p><strong>贝叶斯核对。</strong> 设 $\beta\sim N(\hat\beta_0,\tau^2I)$（各系数独立、方差 $\tau^2$）、$y=X\beta+\varepsilon$，$\varepsilon\sim N(0,\sigma^2I)$。后验的核是</p>
+<div class="eq long"><div class="escroll">
+$$
+p(\beta\mid y)\ \propto\ \underbrace{\exp\Big\{-\frac{\lVert y-X\beta\rVert^2}{2\sigma^2}\Big\}}_{\text{似然}}\underbrace{\exp\Big\{-\frac{\lVert\beta-\hat\beta_0\rVert^2}{2\tau^2}\Big\}}_{\text{先验}}
+$$
+</div></div>
+<p>取负对数（丢掉常数），得到 (3.83) 的目标函数，其中</p>
+<div class="eq"><div class="escroll">
+$$
+\lambda=\frac{\sigma^2}{\tau^2}
+$$
+</div></div>
+<p><strong>这一步解释了 $\lambda$ 的真正含义</strong>：它是「噪声方差 ÷ 先验方差」。$\tau\to\infty$（无信息先验）⟹ $\lambda\to0$ ⟹ 不收缩；$\tau\to0$（先验极紧）⟹ $\lambda\to\infty$ ⟹ $\hat\beta\to\hat\beta_0$，由 (3.83) 直接验证（$\lambda\to\infty$ 时 $(X^\top X+\lambda I)^{-1}\approx\lambda^{-1}I$，右端 $\approx\lambda^{-1}(\lambda\hat\beta_0)=\hat\beta_0$）。</p>
+<p><strong>推广到「带惩罚的截距」。</strong> 在设计矩阵里加一列 $\mathbf 1$ 并只对它加 $\ell_2$ 罚，正是一次 (3.83) 的应用（$\hat\beta_0$ 取 0、罚只作用在截距那一列）。这正是第 4 章 logistic 回归里的 $\beta_0^2\boldsymbol 1^\top\beta_0/2$（罚截距、不罚斜率）的来历，也是 §3.8.6 联合惩罚公式里的那一项。</p></div>
+<div class="aside"><p class="hd">推导 · (3.84)：两个不同的「众数」</p><p><strong>边缘众数。</strong> 先验取平坦（$\tau\to\infty$），边缘密度</p>
+<div class="eq long"><div class="escroll">
+$$
+p(y)\propto\int\exp\Big\{-\frac{\lVert y-X\beta\rVert^2}{2\sigma^2}\Big\}d\beta\ \propto\ \exp\Big\{-\frac{1}{2\sigma^2}\Big[\lVert y\rVert^2-\underset{\beta}{\min}\,\lVert y-X\beta\rVert^2\Big]\Big\}
+$$
+</div></div>
+<p>（积分是高斯积分，被积函数的指数在最小值处最大；积分结果仍是一个 $y$ 的二次型，只依赖残差平方和。）对这个 $y$ 取极大 ⟹ 等价于对 $\beta$ 取 $\lVert y-X\beta\rVert^2$ 的极小 ⟹</p>
+<div class="eq"><div class="escroll">
+$$
+\hat\beta^{\rm marg}=\arg\min_\beta\lVert y-X\beta\rVert^2=(X^\top X)^{-1}X^\top y=\hat\beta^{\rm ls}
+$$
+</div></div>
+<p><strong>后验众数。</strong> 有限 $\tau$ 下（3.83）给出 $\hat\beta^{\rm post}=\hat\beta_{\rm ridge}$。<strong>这两个量不同</strong>：$\hat\beta^{\rm marg}$ 无偏但方差大，$\hat\beta^{\rm post}$ 有偏但方差小。所以「把系数往 $0$ 收缩」不是边缘似然的要求，而是<strong>先验</strong>引入的——shrinkage 的本质是「用一点偏差换方差」。</p>
+<p><strong>插值。</strong> (3.84) 把两者连成一条线段：$\alpha\in[0,1]$，$\alpha=0$ 给出边缘众数（OLS），$\alpha=1$ 给出后验众数（ridge）。中间的 $\alpha$ 都可以写成 (3.83) 的形式（把 $\lambda$ 取成对应的值），因为 $(1-\alpha)\hat\beta^{\rm ls}+\alpha\hat\beta^{\rm post}$ 在 $\hat\beta_0=0$ 时正是 $(X^\top X+\lambda I)^{-1}X^\top y$ 对某个 $\lambda$ 取值的结果（把 $\hat\beta^{\rm ls}$、$\hat\beta^{\rm post}$ 都写成 $X^\top y$ 的线性函数，插值后仍是 $X^\top y$ 的线性函数，对称正定系数矩阵 ⟹ 必是某个 $(X^\top X+\lambda I)^{-1}$ 的形式）。</p></div>
+<div class="aside key"><p class="hd">结果 · (3.83)(3.84) 的三条用途</p><ul><li><strong>给 $\lambda$ 一个可解释的默认值</strong>：由边际似然（EM 或直接数值优化）估出 $\hat\sigma^2$、再用交叉验证估 $\tau^2$，就得到 $\hat\lambda=\hat\sigma^2/\hat\tau^2$。这就是「ridge 的 $\lambda$ 不必从 0 开始网格搜索」的做法。</li><li><strong>混合估计 (3.84) 的实用价值</strong>：当 $\hat\beta^{\rm marg}$ 有已知偏差时，插值 $\hat\beta^{\rm PM}$ 提供一族「偏差-方差可选」的估计，取 $\alpha$ 由验证集选。</li><li><strong>与 §3.8.6 的联系</strong>：(3.84) 的 $\alpha$ 与 elastic net (3.91) 的 $\lambda_2/(\lambda_1+\lambda_2)$ 是同一族「混合比例」；前者混合 OLS 与 ridge，后者混合 lasso 与 ridge。</li></ul></div>
+<div class="aside warn"><p class="hd">坑</p><ol><li>(3.83) 要求 $X^\top X+\lambda I$ 可逆 ⟹ $\lambda&gt;0$ 即可，不需要 $X$ 满秩。这与 (3.6) 的 $(X^\top X)^{-1}$ 是本质区别（ridge 在 $p\ge N$ 时仍有定义）。</li><li>先验假设了<strong>各系数独立</strong>（$\tau^2I$）。若先验有结构（如 (3.80) 的组先验、$p\ge N$ 时的 $\beta\sim N(0,\tau^2(X^\top X)^{-1})$ 正态-Jeffreys 先验），(3.83) 要改成 $X^\top X+\lambda\Sigma_\beta^{-1}$ 的形式——这也是 (3.72) 里 $\hat\Lambda$ 不是对角元时仍可解的原因。</li><li>「边缘众数 = OLS」的推导里积分与取 $\arg\min$ 的交换依赖高斯结构；换成 logistic 似然（§3.8.6）后边缘众数不再是 IRLS 的不动点，(3.84) 的插值解释失效。</li></ol></div>
+<h3 id="s-3-8-7" class="anchored"><span class="num">3.8.7</span> centered lasso：为什么普通 lasso 的约束集会造假</h3>
+<p><strong>问题</strong>：$\ell_1$ 球 $\{\beta:\lVert\beta\rVert_1\le t\}$ 是<strong>多面体</strong>，它的极端点都在坐标轴上。当两个预测子高度相关时，最小二乘解 $\hat\beta^{\rm ls}$ 在「几乎垂直于坐标轴」的平面上，两个系数一正一负、大小相近；$\ell_1$ 球到这个区域的最近点却可能落在<strong>某个坐标轴</strong>上——这就是假稀疏。ESL 的修正见 (3.85)。</p>
+<div class="aside basis"><p class="hd">基础知识 · 多面体上的最近点</p><p>lasso 的一阶条件是「$\hat\beta^{\rm ls}-\hat\beta$ 的各分量按 KKT 分成三类」（非零的等于 $\pm\lambda/\kappa_j$、零的 $\lvert\cdot\rvert\le\lambda/\kappa_j$）。在约束面 $\lVert\beta\rVert_1=t$ 上，KKT 要求</p>
+<div class="eq long"><div class="escroll">
+$$
+\sum_{j\in\mathcal A}\big(\hat\beta_j^{\rm ls}-\beta_j\big)\big(\beta_j-\tilde\beta_j\big)+\big(\hat\beta^{\rm ls}-\tilde\beta\big)^\top(\beta-\tilde\beta)=0\quad\text{对一切可行 }\beta
+$$
+</div></div>
+<p>（$-\tilde\beta$ 是最小范数点时的结论，一般情形要逐个约束集求）。这条「法向条件」说明：<strong>最优点的坐标符号模式不能任意</strong>——只有当 $\hat\beta^{\rm ls}$ 落在某个「符号一致的分片」的边界上时，才会出现只激活一个坐标的解。</p></div>
+<div class="eq long"><div class="escroll">
+$$
+\hat\beta_c=\arg\min_{\beta}\ \Big\{\sum_{i=1}^{N}\big(y_i-\beta_0-\sum_{j=1}^{p}(x_{ij}-\bar x_j)\beta_j\big)^2+\lambda\lVert\beta\rVert_1\Big\}\
+$$
+</div><span class="tag">(3.85)</span></div>
+<p><strong>与普通 lasso 的唯一区别：把 $x_j$ 换成 $x_j-\bar x_j$。</strong></p>
+<div class="aside"><p class="hd">推导 · 中心化改变的两件事</p><p>记 $\tilde x_j=x_j-\bar x_j\mathbf 1$，$X_c=X-\mathbf 1\bar x^\top$。</p>
+<p><strong>第一件：截距与斜率解耦。</strong> 由 $\langle\mathbf 1,\tilde x_j\rangle=\sum_i(x_{ij}-\bar x_j)=0$ 可知</p>
+<div class="eq long"><div class="escroll">
+$$
+\frac{\partial R}{\partial\beta_0}=-2\sum_{i=1}^{N}\big(y_i-\beta_0-\sum_j\tilde x_{ij}\beta_j\big)=-2\Big(\sum_iy_i-N\beta_0-\sum_j\beta_j\sum_i\tilde x_{ij}\Big)=-2N(\bar y-\beta_0)
+$$
+</div></div>
+<p>于是一阶条件直接给出 $\hat\beta_0=\bar y$。<strong>中心化后截距就是样本均值，回归线的中心过 $(\bar x,\bar y)$。</strong></p>
+<p><strong>第二件：协方差矩阵换了。</strong> $\tilde X^\top\tilde X=X^\top X-N\bar x\bar x^\top$。主成分方向一般会变；被移除的正是「常数方向」$N\bar x\bar x^\top$ 对谱的贡献。</p>
+<p><strong>为什么中心化修掉假稀疏。</strong> 假稀疏的根源是<strong>约束集的极端结构</strong>：$\lVert\beta\rVert_1\le t$ 的顶点是 $\{\pm te_j\}$。中心化前，$(\beta_0,\beta)$ 的可行集是「$\beta$ 在多面体内、$\beta_0$ 自由」的柱体，其极端方向仍由 $e_j$ 垄断，所以最优解有系统倾向只用一个坐标。中心化后：</p>
+<ul><li>可行集退回成纯 $\ell_1$ 球（$\beta_0$ 被 $\bar y$ 固定，不再是自由的第二个方向）；</li><li><strong>同时目标点也换了</strong>：$\hat\beta^{\rm ls}_c=(\tilde X^\top\tilde X)^{-1}\tilde X^\top\tilde y$。</li></ul>
+<p>关键的差别在第二点。中心化前的「假稀疏」例子：两个预测子近乎相同，$\hat\beta^{\rm ls}=(c,-c)^\top$。此时</p>
+<div class="eq long"><div class="escroll">
+$$
+\langle (c,-c),\,(1,-1)^\top\rangle=2c&gt;0,\qquad \langle (c,-c),\,(1,0)^\top\rangle=c,\qquad \langle (c,-c),\,(1,1)^\top\rangle=0
+$$
+</div></div>
+<p>三个内积比较说明：$\hat\beta^{\rm ls}$ 与 $(1,-1)^\top$ 方向几乎垂直（这正是两个预测子共线时的情形：系数的对比方向 $\beta_1-\beta_2$ 被数据约束住），所以它与「单坐标激活方向 $(1,0)^\top$」的内积 $c$ 很小 ⟹ KKT 允许坐标 $2$ 归零，<strong>这就是假稀疏的机制</strong>。</p>
+<p>中心化后为什么不同？因为 $\tilde x_2=\tilde x_1+\delta$（$\delta$ 是中心化后两列的差），$\lVert\delta\rVert$ 通常不大但<strong>非零</strong>。这使得 $\tilde X^\top\tilde X$ 的小特征值方向不再被 $\mathbf 1$ 污染，于是对比方向 $(1,-1)^\top$ 得到的权重变了，$\hat\beta^{\rm ls}_c$ 不再「垂直于 $(1,1)^\top$」。</p>
+<p><strong>可以手算验证的三点核对</strong>（这是唯一可靠的验证方式）：</p>
+<ol><li><strong>核对 1</strong>：$\hat\beta^{\rm ls}_c$ 与普通 lasso 的 $\hat\beta^{\rm ls}$ 数值不同（若 $x_1,x_2$ 未中心化则前者不可直接比较）；</li><li><strong>核对 2</strong>：若两个预测子<strong>完全</strong>共线（$\tilde x_2=c\tilde x_1$），则 $\tilde X^\top\tilde X$ 秩亏，$\hat\beta^{\rm ls}_c$ 不唯一。此时 lasso 的 KKT 解在 $\mathrm{null}(\tilde X)$ 上靠 $\ell_1$ 罚挑出唯一解，而中心化的作用是保证 $\mathrm{null}(\tilde X)$ 里不再混进常数方向；</li><li><strong>核对 3</strong>：中心化 + lasso 对「$x_j$ 本身接近常数」的处理与 ridge 不同——该列中心化后 $\tilde x_j\approx0$，$d_j\to0$，ridge 把它丢掉，lasso 把它保留。要不要保留是一个建模决定，不是算法的副产品。</li></ol></div>
+<div class="aside key"><p class="hd">结果 · centered lasso 的三条性质</p><ul><li><strong>在中心化后的几何里，$\ell_1$ 球不再有「只用一个坐标」的结构性偏好</strong>：目标点 $\hat\beta^{\rm ls}_c$ 一般落在 $\lVert\beta\rVert_1=t$ 约束面的「分片内部」而不是顶点上。</li><li><strong>与罚函数选择正交</strong>：把 (3.85) 的 $\lVert\beta\rVert_1$ 换成 $\lVert\beta\rVert_2^2$ 就得到 ridge；换成 group 罚就得配合中心化的组内变量。所以「中心化」改数据表示，「罚函数」改复杂度控制，两者可自由组合。</li><li><strong>标准化 $\ne$ 中心化</strong>：标准化（除以 $\lVert x_j\rVert_2$ 或标准差）改<strong>尺度</strong>、中心化改<strong>原点</strong>。做系数比较（哪个变量影响大）时两者都要做；只中心化会让 $\lVert x_j\rVert$ 不同的变量之间不可比。</li></ul></div>
+<div class="aside warn"><p class="hd">坑</p><ol><li>中心化改变了截距的解释：$\beta_j$ 只能解释成「$x_j$ 增加一个单位、其它变量不动时 $y$ 的期望变化」，<strong>且这条解释只在 $x_j$ 已中心化时不含原点信息</strong>。</li><li>$N&lt;p$ 时 (3.6) 的 $\hat\beta^{\rm ls}$ 不存在，(3.85) 依然有定义（$\ell_1$ 罚提供唯一性），但两者的 KKT 推导要改用「$\beta$ 的最小范数取值」约定。</li><li>(3.85) 里的 $\lambda$ 与 §3.8.5 的坑是同一条：$\kappa_j=\lVert\tilde x_j\rVert^2$ 随中心化改变，所以同一 $\lambda$ 在中心化前后对应的阈值 $\lambda/\kappa_j$ 不同。</li></ol></div>
+<h3 id="s-3-8-8" class="anchored"><span class="num">3.8.8</span> 收缩的 SVD 视角：广义特征值问题</h3>
+<p><strong>问题</strong>：PCR、CCA、lasso 都可以看成「在某个方向上找一个标量」。把所有这些方向上的「最优标量」放在一起，会得到一个统一的<strong>广义特征值问题</strong>，而它的解有 SVD 形式的闭式。对应 (3.86)(3.87)。</p>
+<div class="aside basis"><p class="hd">基础知识</p><p>Cauchy–Schwarz 与 SVD（见预备知识 L1、L3）</p>
+<p>$|\langle a,b\rangle|\le\lVert a\rVert\lVert b\rVert$，等号当且仅当 $a,b$ 平行。由此 $\max_{\lVert u\rVert=\lVert v\rVert=1}u^\top Mv=\lVert M\rVert_2=\sigma_1$，等号在 $u,v$ 为主奇异向量时取到。</p></div>
+<div class="eq"><div class="escroll">
+$$
+\max_{u,v}\ \frac{u^\top\big(Y^\top X\big)v}{\sqrt{u^\top u}\sqrt{v^\top X^\top Xv}}\
+$$
+</div><span class="tag">(3.86)</span></div>
+<div class="aside"><p class="hd">推导 · (3.86) 就是「方向问题」，把三个方法认出来</p><p>记 $u\in\mathbb R^{K}$（响应侧）、$v\in\mathbb R^{p}$（预测子侧），$Y^\top X\in\mathbb R^{K\times p}$。三个应用：</p>
+<ul><li><strong>PCA / PCR</strong>：取 $u=v_j$（第 $j$ 个主成分方向，$X$ 空间），分子 $v_j^\top X^\top Y u$；分母 $\sqrt{v_j^\top X^\top Xv_j}=\sqrt{v_j^\top V D^2V^\top v_j}=d_j$（因为 $V^\top v_j=e_j$）。<strong>分母正好把 $X$ 侧的尺度归一化掉</strong>，剩下的是「$u$ 在 $Y$ 侧怎么选才与第 $j$ 个主成分最对齐」。</li><li><strong>CCA</strong>：$u^\top Y^\top Xv=u^\top S_{YX}v$，分母 $\sqrt{u^\top Y^\top Yu}\,\sqrt{v^\top X^\top Xv}$ 就是 $\sqrt{u^\top S_{YY}u}\sqrt{v^\top S_{XX}v}$，与 §3.7.3 的 (3.67) <strong>逐字相同</strong>。所以 (3.86) 就是 CCA 的最大化问题（那里写的是平方，这里取根号，等价）。</li><li><strong>lasso</strong>：限制 $v=e_j$，分子 $e_j^\top Y^\top Xu=\langle x_j,Yu\rangle$，分母 $\sqrt{\lVert x_j\rVert^2}\cdot\sqrt{1}$（当 $u$ 单位化）。取最大 ⟹ <strong>lasso 只在坐标轴上找最优方向</strong>——这正是 §3.8.5 说的「lasso 沿坐标轴收缩」的另一种说法。</li></ul>
+<p><strong>求解 (3.86)。</strong> 第一步：用 Cauchy–Schwarz 把分母归一化。记 $w=Xv$，则 $v^\top X^\top Xv=\lVert w\rVert^2$，目标变成</p>
+<div class="eq"><div class="escroll">
+$$
+\max_{\lVert u\rVert=1,\ \lVert w\rVert=1}\ u^\top Y^\top w
+$$
+</div></div>
+<p>显式核对归一化正确性（这一步不能跳）：</p>
+<div class="eq"><div class="escroll">
+$$
+\big(u^\top Y^\top w\big)^2\le\lVert u\rVert^2\,\lVert Y^\top w\rVert^2=\lVert u\rVert^2\,w^\top YY^\top w
+$$
+</div></div>
+<p>分母的平方是 $\lVert u\rVert^2\cdot\lVert w\rVert^2$，所以商 $\frac{(u^\top Y^\top w)^2}{\lVert u\rVert^2\lVert w\rVert^2}$ 就是两个中心化视图的 $\mathrm{Corr}^2$。<strong>两个 $\sqrt{\cdot}$ 把归一化完全吸收了</strong>，剩下标准的最大奇异值问题。</p>
+<p>第二步：SVD $Y^\top X=U_\star D_\star V_\star^\top$，代入得 $u^\top Y^\top w=u^\top U_\star D_\star V_\star^\top w$。两次 Cauchy–Schwarz（或直接「$M$ 的算范数是最大奇异值」）给出 $\max=u^\top u_{\star,1}d_1$ 的上界 $d_1$，等号在 $u\parallel u_{\star,1}$、$w\parallel v_{\star,1}$。回代 $w=Xv$：</p></div>
+<div class="eq long"><div class="escroll">
+$$
+\big(Y^\top Y\big)^{-1/2}\big(Y^\top X\big)\big(X^\top X\big)^{-1/2}=U_\star D_\star V_\star^\top,\qquad v_\star^{\star}=\big(X^\top X\big)^{-1/2}V_\star u_\star\
+$$
+</div><span class="tag">(3.87)</span></div>
+<div class="aside"><p class="hd">推导 · (3.87) 的两个归一化因子在做什么</p><p>记 $M:=(Y^\top Y)^{-1/2}(Y^\top X)(X^\top X)^{-1/2}$。</p>
+<ul><li>$(Y^\top Y)^{-1/2}$ 是<strong>响应侧的白化</strong>（whitening）矩阵：它把 $Y$ 的各方向等方差化，于是响应方向之间不再因尺度不同而互相压制；</li><li>$(X^\top X)^{-1/2}$ 是<strong>预测子侧的白化</strong>矩阵，同理。</li></ul>
+<p>白化后 $M$ 是<strong>奇异值分解的标准形式</strong>。为什么必须用奇异值而不是特征值：$M$ 一般<strong>不对称</strong>（两侧的归一化矩阵不同），特征值可能为复数、且 $\max_\lambda$ 与 $\max\sigma$ 不同；奇异值总是非负实，而且 (3.86) 的目标函数有界（分母 $\ne0$）。</p>
+<p><strong>数值验证 1（PCA 特例）。</strong> 若 $Y=X$，则</p>
+<div class="eq"><div class="escroll">
+$$
+M=(X^\top X)^{-1/2}\,X^\top X\,(X^\top X)^{-1/2}=(X^\top X)^{1/2}=V D V^\top
+$$
+</div></div>
+<p>于是 $U_\star=V$、$D_\star=D$、$V_\star=V$，$v_\star^\star=(X^\top X)^{-1/2}Vv_{\star,1}=d_1v_{\star,1}$——即第 $j$ 个主成分得分系数。<strong>白化版本在 $Y=X$ 时精确退化为主成分分析。</strong></p>
+<p><strong>数值验证 2（特征值核对）。</strong> $M^\top M=V_\star D_\star^2V_\star^\top$，故 $M^\top M$ 的特征值恰是 $d_k^2$。另一方面 $\max_\lambda\lambda(M^\top M)=\sigma_1(M)^2$（最大奇异值之平方），这是 $\max_{\lVert u\rVert=\lVert w\rVert=1}(u^\top Mw)^2$ 的 Rayleigh 商形式，可由 Rayleigh 商定理直接验证。</p>
+<p><strong>核对 3（与 CCA 一致）。</strong> $v_\star^\star=V(X^\top X)^{1/2}u_\star$，代入 $Y^\top Xv_\star^\star=U_\star D_\star V^\top V(X^\top X)^{1/2}u_\star=U_\star D_\star(X^\top X)u_\star$。再由 $M^\top Mu_\star=d_1^2u_\star$ 反推：$u_\star\propto(Y^\top Y)^{-1/2}Y^\top Xv_\star^\star$。这正是 §3.7.3 的 (3.67a)（取 $S_{YY}=Y^\top Y$、$S_{XX}=X^\top X$）。<strong>SVD 解与 CCA 的特征值问题给出同一个方向。</strong></p></div>
+<div class="aside key"><p class="hd">结果 · 一个问题，三种限制</p><div class="eq verylong"><div class="escroll">
+$$
+\max_{u,v}\frac{u^\top(Y^\top X)v}{\sqrt{u^\top u}\sqrt{v^\top X^\top Xv}}\quad\xrightarrow{\ \text{限制 }u\text{ 或 }v\ }\begin{cases}u\text{ 限制在 }\operatorname{span}\{e_1,\ldots,e_m\}\ (Y\text{ 的坐标轴})\ \text{（PLS/PCR 型）}\\ v\text{ 限制在 }\operatorname{col}(X)\ (\text{全部})\ \text{（无约束，即 CCA）}\\ v\text{ 限制在 }\{e_j\}\ \text{（lasso）}\end{cases}
+$$
+</div></div>
+<p>(3.87) 说明 <strong>CCA 是无约束版本，其它方法是加了约束的版本</strong>。第 14 章的 Krylov–Schur 类截断 SVD 算法正是利用这个统一性，一次分解同时服务所有降维回归。</p></div>
+<div class="aside warn"><p class="hd">坑</p><ol><li>$(X^\top X)^{-1/2}$ 要求 $X^\top X$ 正定（$X$ 满列秩）。$p\ge N$ 时 (3.87) 直接无定义，必须改用截断逆（预备知识 L3）。</li><li>SVD 的符号不唯一（$u\to\pm u$ 同时改 $v\to\mp v$），所以 (3.87) 只确定<strong>方向</strong>。任何用到系数符号的地方（$\mathrm{sign}$、LARS 的单调方向）都要先固定符号约定。</li><li>$v\in\mathrm{null}(X)$ 时分母为 0，而分子也为 0（$Xv=0$），形成 $0/0$。必须显式要求 $v\notin\mathrm{null}(X)$。</li></ol></div>
+<h3 id="s-3-8-9" class="anchored"><span class="num">3.8.9</span> 惩罚参数的取样选择：为什么「重采样 $\lambda$」是错的</h3>
+<p><strong>问题</strong>：$\hat\sigma$（噪声标准差）和 $\hat\beta_j(\lambda)$（带罚估计）都来自同一份数据。用 bootstrap 重采样 $\hat\beta_j$ 再估标准误，等于把噪声估两遍。对应 (3.88)。</p>
+<div class="aside basis"><p class="hd">基础知识 · 误差传播与自助法（见预备知识 P5）</p><p>若 $\hat\theta=g(Z_1,\ldots,Z_k)$ 且各 $Z_j$ 近似独立，$\mathrm{Var}(\hat\theta)\approx\sum_j\big(\partial g/\partial Z_j\big)^2\mathrm{Var}(Z_j)$（delta 方法，见预备知识 P5）。<strong>这条式子的前提是独立</strong>；不独立时必须用全协方差矩阵：</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{Var}(\hat\theta)\approx\big(\nabla g\big)^\top\,\widehat{\mathrm{Cov}}(Z)\,\nabla g
+$$
+</div></div>
+<p>bootstrap 的逻辑正是「用经验协方差替换 $\mathrm{Cov}(Z)$」。所以 bootstrap 估计标准误的<strong>唯一要求是：重采样时要保持 $Z$ 之间的相关结构</strong>（有放回抽整行、或抽噪声再传播）。</p></div>
+<div class="eq long"><div class="escroll">
+$$
+\sqrt{1-\alpha}\ \hat\sigma\ \lambda(\alpha)\ \text{（对固定的 }\hat\beta_j&gt;0\text{）},\qquad \lambda(\alpha)\sim N\big(0,\hat\sigma^2\big)\ \text{由重采样得到（这是错的）}\
+$$
+</div><span class="tag">(3.88)</span></div>
+<p><strong>正确做法</strong>：用 Monte Carlo 直接重采样 $\hat\beta$ 的<strong>分布</strong>（噪声传播），而不是重采样 $\lambda$。</p>
+<div class="aside"><p class="hd">推导 · (3.88) 错在哪</p><p><strong>正确的模拟流程：</strong></p>
+<ol><li>固定当前的 $\lambda$（这一步是关键的「冻结」）；</li><li>从 $y_i=\beta_0+\sum_jx_{ij}\beta_j+\varepsilon_i$ 抽 $\varepsilon_i^{\star}\sim N(0,\hat\sigma^2)$，造 $y^{\star}=X\hat\beta+\varepsilon^{\star}$；</li><li>重算 $\hat\beta^{\star}=X^\dagger X^\top(X\beta+\varepsilon^{\star})=X^\dagger X^\top X\beta+X^\dagger X^\top\varepsilon^{\star}$。对 lasso 则要把步骤 3 换成「在 $y^\star$ 上重跑 lasso」；</li><li>重复 $B$ 次，得 $\{\hat\beta^{\star}_j\}_{b=1}^B$，$\widehat{\mathrm{se}}(\hat\beta_j)=\mathrm{sd}(\hat\beta^{\star}_j)$。</li></ol>
+<p>关键在步骤 2 用了两次 $\hat\sigma$ 吗？没有：$\hat\sigma$ 只用来<strong>生成</strong> $\varepsilon^\star$，而 $\hat\beta^\star$ 的抽样分布由 $\varepsilon^\star$ 的随机性决定，$\hat\sigma$ 本身不再进入。所以这不构成「双重计数」。</p>
+<p><strong>为什么「重采样 $\lambda$」错。</strong> 记 $\hat\sigma=\hat\sigma(\hat\beta_{\rm ls})=\mathrm{sd}(\hat\varepsilon_{\rm ls})$，而 $\hat\beta_j(\lambda)=\hat\beta_j^{\rm ls}-\lambda\operatorname{sign}(\hat\beta_j)$（lasso）、$\hat\beta(\lambda)=(X^\top X+\lambda I)^{-1}X^\top y$（ridge）。若令 $\lambda^{\star}\sim N(0,\hat\sigma^2)$ 独立抽样，则</p>
+<div class="eq verylong"><div class="escroll">
+$$
+\hat\beta_j^{\star}=\hat\beta_j^{\rm ls}-\lambda^{\star}\operatorname{sign}(\hat\beta_j)\ \Longrightarrow\ \mathrm{Var}(\hat\beta_j^{\star})=\underbrace{\mathrm{Var}(\hat\beta_j^{\rm ls})}_{\text{真实的那一份}}+\underbrace{\hat\sigma^2}_{\text{被多加了一次}}
+$$
+</div></div>
+<p>而真实的 $\mathrm{Var}(\hat\beta_j)$ 是 $\mathrm{Var}(\hat\beta_j^{\rm ls})\cdot w_j^2$（$w_j$ 是收缩因子，$\le1$）。所以这个估计把方差<strong>放大了</strong>（至少加了一份完整的噪声方差），是<strong>高估</strong>。</p>
+<p>更精细的说法：$\hat\sigma$ 与 $\lambda$ <strong>不独立</strong>——$\hat\sigma$ 由「选定 $\lambda$ 下的残差」估出，$\hat\sigma^2=\mathrm{RSS}/(N-\mathrm{df})$，而 $\mathrm{df}$ 又依赖 $\lambda$（§3.6.4 的 (3.60)）。所以用同一个 $\hat\sigma$ 既生成 $\lambda^\star$ 又参与生成 $\hat\beta^{\star}$，会把两条依赖链混成一条，得到有偏的方差估计。</p>
+<p><strong>$1-\alpha$ 因子从哪来。</strong> 对固定的 $\hat\beta_j&gt;0$，由一阶 Taylor 展开 $\hat\beta_j(\lambda+\delta)-\hat\beta_j(\lambda)\approx\frac{\partial\hat\beta_j}{\partial\lambda}\delta$，而</p>
+<div class="eq verylong"><div class="escroll">
+$$
+\frac{\partial\hat\beta_j}{\partial\lambda}\ \text{（ridge）}=-\big[(X^\top X+\lambda I)^{-1}X^\top y\big]_j^{'}\cdot\ldots=-\big[(X^\top X+\lambda I)^{-1}\big]_{jj}\ \text{（在 }X^\top X\approx\text{对角且 }\|y\|^2\approx N\sigma^2\text{ 时）}
+$$
+</div></div>
+<p>更常用的近似是「局部秩 1 + 单位信号」假设下的 $\big[(X^\top X+\lambda I)^{-1}\big]_{jj}\approx\frac{1}{d_j^2+\lambda}$，于是</p>
+<div class="eq verylong"><div class="escroll">
+$$
+\mathrm{se}\big(\hat\beta_j(\lambda)\big)\approx\hat\sigma\sqrt{\big[(X^\top X+\lambda I)^{-1}\big]_{jj}}\ \text{，对 }\hat\beta_j=\text{固定}\ \Longrightarrow\ \hat\sigma\sqrt{\frac{1}{d_j^2+\lambda}}\sim\frac{\hat\sigma}{d_j}\ \text{当 }d_j\gg\lambda
+$$
+</div></div>
+<p>(3.88) 的 $\sqrt{1-\alpha}\hat\sigma\lambda(\alpha)$ 是把「$\lambda$ 的不确定度 $\hat\sigma\lambda$」与「$\lambda$ 本身」并排的一种参数化：$\alpha$ 调的是「多大的 $\lambda$ 扰动被当成噪声」。(3.88) 后半句那个「$\lambda$ 由重采样得到」的做法<strong>就是</strong>把 $\lambda$ 当成随 $\hat\sigma$ 波动的量去做误差传播——这是错的，因为 $\lambda$ 是<strong>被我们选定的超参</strong>，不是估计量。</p>
+<p><strong>正确的做法（参数自助法）。</strong> 把 $\lambda$ 也当估计量，但<strong>在正确的层次上重采样</strong>：</p>
+<ol><li>拟合出 $\hat\beta_{\rm ls}$，估 $\hat\sigma$；</li><li>生成 $y^{\star}=X\hat\beta_{\rm ls}+\hat\sigma\,\varepsilon^{\star}$；</li><li>在 $y^{\star}$ 上重跑整个流程，包括「选 $\lambda$」（例如用交叉验证）；</li><li>得到 $\hat\beta^{\star}_j$，用它的 sd 估标准误。</li></ol>
+<p>这样 $\lambda$ 的不确定性被正确地包含了（因为 $\lambda$ 是在模拟数据里重新选的）。</p></div>
+<div class="aside key"><p class="hd">结果 · 三种做法的区别</p><div class="tscroll-x"><table class="fx"><thead><tr><th>做法</th><th>$\lambda$ 怎么处理</th><th>得到的方差</th><th>是否含 $\lambda$ 的不确定性</th></tr></thead><tbody><tr><td>(3.88) 的错误做法</td><td>当成 $N(0,\hat\sigma^2)$ 随机变量</td><td>偏大（多加一份 $\hat\sigma^2$）</td><td>形式上是，实质是错的</td></tr><tr><td>固定 $\lambda$ 重采样噪声</td><td>固定</td><td>偏小（不含 $\lambda$ 的不确定性）</td><td>否</td></tr><tr><td>参数自助法（正确）</td><td>在每份模拟数据里重新选</td><td>正确</td><td>是</td></tr></tbody></table></div></div>
+<div class="aside warn"><p class="hd">坑</p><p>$\hat\sigma$ 和 $\hat\beta_j$ 来自同一份残差，所以「系数绝对值大的变量标准误也小」这个反向依赖会削弱 $t$ 统计量。第 10 章的分裂准则有同一个问题，必须小心。</p></div>
+<h3 id="s-3-8-10" class="anchored"><span class="num">3.8.10</span> 非二次损失的 lasso：logistic 情形</h3>
+<p><a class="src" href="../esl/ch03-linear-methods-for-regression.html#s-3-8">原文 §3.8.6 非二次损失</a></p>
+<p><strong>问题</strong>：$R$ 不是平方损失时（分类），lasso 还剩什么？关键是它还能写成 (3.78) 的约束形式，从而用同样的 KKT 推出软阈值结构。对应 (3.89)。</p>
+<div class="aside basis"><p class="hd">基础知识 · 次梯度与凸性（见预备知识 O2、C1）</p><p>在不可微点（如 $\lvert\beta\rVert_1$ 在 $\beta_j=0$ 处）用<strong>次梯度</strong>代替梯度：$f$ 在 $x_0$ 可微 ⟺ 次梯度集是单点 $\{\nabla f(x_0)\}$。$\lVert\beta\rVert_1$ 在 $\beta_j=0$ 处的次梯度集是 $[-1,1]$（其余坐标是 $\operatorname{sign}$），这是「零阈值条件 $\lvert p_j\rvert\le\mu$」的来源。</p>
+<p>凸性：$L(y,\eta)$ 凸 ⟹ $R(\beta_0,\beta)=\sum_iL(y_i,\beta_0+x_i^\top\beta)$ 凸（凸函数的正权和），前提是 $x_i$ 取遍的集合不过大（无约束时 $\sum_i$ 严格保证）。</p>
+<p>强对偶：凸 $+$ Slater $\Rightarrow$ KKT 必要充分（见预备知识 O1、O2），所以「两个互补松弛条件」不是近似而是等价刻画。</p></div>
+<div class="eq long"><div class="escroll">
+$$
+\hat\beta=\arg\min_{\beta}\ \sum_{i=1}^{N}\log\big(1+e^{-y_i(\beta_0+x_i^\top\beta)}\big)\quad\text{s.t.}\quad \lVert\beta\rVert_1\le t\
+$$
+</div><span class="tag">(3.89)</span></div>
+<div class="aside"><p class="hd">推导</p><p>为什么「$L_1$ 约束 + 凸 $R$」一定给出软阈值</p>
+<p><strong>(i) 凸性。</strong> 对数损失 $L(y,\eta)=\log(1+e^{-y\eta})$：</p>
+<div class="eq long"><div class="escroll">
+$$
+\frac{\partial L}{\partial\eta}=-\frac{y}{1+e^{y\eta}},\qquad \frac{\partial^2L}{\partial\eta^2}=\frac{y^2e^{y\eta}}{\big(1+e^{y\eta}\big)^2}\ge0
+$$
+</div></div>
+<p><strong>凸</strong>（对一切 $y\ne0,\eta$ 严格正）。所以 (3.89) 是凸优化 ⟹ KKT 必要充分、强对偶（见预备知识 O1、O2）。</p>
+<p><strong>(ii) 一阶条件与两个互补松弛。</strong> 记 $R(\beta_0,\beta)=\sum_iL(y_i,\eta_i)$，$p_j=\partial R/\partial\beta_j$。KKT 的平稳性给出（$\beta_j\ne0$ 时）</p>
+<div class="eq"><div class="escroll">
+$$
+p_j+\mu\operatorname{sign}(\beta_j)=0
+$$
+</div></div>
+<p>而 $\beta_j=0$ 时用次梯度条件（$\partial\lVert\beta\rVert_1/\partial\beta_j$ 在 0 处可取 $[-1,1]$ 中任一值）：</p>
+<div class="eq"><div class="escroll">
+$$
+\lvert p_j\rvert\le\mu
+$$
+</div></div>
+<p>把 $\lVert\beta\rVert_1=\sum_{j=1}^{p}\big(\beta_j^++\beta_j^-\big)$（$\beta_j^\pm$ 是 $\beta_j$ 的正负部）、约束写成 $-\sum_j(\beta_j^++\beta_j^-)\le-t$，拉格朗日函数是</p>
+<div class="eq"><div class="escroll">
+$$
+L=R+\mu\Big(-\sum_{j=1}^{p}\beta_j^+-\sum_{j=1}^{p}\beta_j^- - t\Big)
+$$
+</div></div>
+<p>两个约束各自有乘子：$-\beta_j^+\le0$ 的乘子 $\mu_j^+\ge0$、$-\beta_j^-\le0$ 的乘子 $\mu_j^-\ge0$，加上 $\lVert\beta\rVert_1\le t$ 的乘子 $\mu\ge0$。KKT 四条（见预备知识 O2）中的两条关键条件是<strong>互补松弛</strong>：</p>
+<div class="eq"><div class="escroll">
+$$
+\boxed{\mu_j^+\beta_j^+=0,\qquad \mu_j^-\beta_j^-=0}
+$$
+</div></div>
+<p>它们给出的信息是：</p>
+<ul><li><strong>符号</strong>：$\mu_j^+&gt;0\Rightarrow\beta_j^+=0$（该系数的正部被压掉）；$\mu_j^-&gt;0\Rightarrow\beta_j^-=0$（负部被压掉）；</li><li><strong>稀疏</strong>：$\mu_j^+=\mu_j^-=\mu&gt;0$（两个乘子都饱和）⟹ $\beta_j^+=\beta_j^-=0$ ⟹ <strong>$\beta_j=0$</strong>。</li></ul>
+<p>由平稳性 $\mu_j^++\mu_j^-=\mu$（当 $\beta_j\ne0$ 时）和 $\mu_j^++\mu_j^-\le\mu$（当 $\beta_j=0$ 时），加上互补松弛，可以解出</p>
+<div class="eq"><div class="escroll">
+$$
+\hat\beta_j=\operatorname{sign}(p_j)\max(0,\lvert p_j\rvert-\mu)=:S_\mu(p_j)
+$$
+</div></div>
+<p><strong>因此「哪些系数被选中」的信息精确地落在「两个乘子同时饱和」这个事件上</strong>——这就是非平方损失下稀疏性的完整机制，与平方损失下的 KKT（§3.5 的 (3.58)(3.59)）是同一件事。</p>
+<p><strong>(iii) 与平方损失的关系。</strong> 平方损失下 $p_j=-\frac1N\langle x_j,y-X\beta\rangle$（线性部分残差）；对数损失下</p>
+<div class="eq long"><div class="escroll">
+$$
+p_j=\frac{\partial R}{\partial\beta_j}=\sum_{i=1}^{N}\frac{\partial L}{\partial\eta_i}\cdot x_{ij}=-\sum_{i=1}^{N}\frac{y_ix_{ij}}{1+e^{y_i\eta_i}}
+$$
+</div></div>
+<p>定义<strong>响应权重</strong> $w_i:=\frac{1}{1+e^{y_i\eta_i}}\in(0,1)$，则 $p_j=-\sum_iw_iy_ix_{ij}$。<strong>这正是 IRLS 的加权最小二乘</strong>（加权版「部分残差」）。所以 lasso 的软阈值结构<strong>不变</strong>，只是「残差」被换成了「加权残差」。这给出 glmnet / IRLS-lasso 的算法：每轮迭代固定 $w_i$，套用一次加权 lasso 的闭式。</p></div>
+<div class="aside key"><p class="hd">结果 · 「$L_1$ 约束 + 凸 $R$」的一般定理</p><p><strong>定理。</strong> 设 $R(\beta_0,\beta)$ 关于 $(\beta_0,\beta)$ 可微且凸，且 (3.89) 的可行集 $\{(\beta_0,\beta):\lVert\beta\rVert_1\le t\}$ 是紧集。则最优解满足</p>
+<div class="eq long"><div class="escroll">
+$$
+\hat\beta_j=S_\mu\big(p_j\big)\quad\forall j,\qquad p_j=\frac{\partial R}{\partial\beta_j}\bigg|_{(\hat\beta_0,\hat\beta)}
+$$
+</div></div>
+<p><strong>证明</strong>（三行）：凸 ⟹ KKT 必要充分（O2）。KKT 的平稳性 + 互补松弛 $\mu_j^+\beta_j^+=0$、$\mu_j^-\beta_j^-=0$ 给出 $\mu_j^\pm$ 的取值只可能是 $(0,\mu)$、$(\mu,0)$、$(\mu,\mu)$ 三种（当 $\mu&gt;0$），分别对应 $\beta_j&lt;0$、$\beta_j&gt;0$、$\beta_j=0$。代回平稳性 $\mu_j^+-\mu_j^-=-p_j$ 解出 $\lvert\beta_j\rvert=\lvert p_j\rvert-\mu$（在 $\lvert p_j\rvert&gt;\mu$ 时）。∎</p>
+<p><strong>为什么这个定理重要</strong>：它说 $\ell_1$ 的稀疏性与「损失是二次」<strong>完全无关</strong>，只与「$J=\lVert\beta\rVert_1$」和「$R$ 凸」有关。第 12 章的 SVM（$R$ 是铰链损失，凸）、第 4 章的逻辑回归（$R$ 是对数损失，凸）都能直接套。</p></div>
+<div class="aside warn"><p class="hd">坑</p><ol><li>$y_i$ 必须取 $\pm1$；$y_i\in\{0,1\}$ 时要换成 $\log(1+e^{\eta_i})$ 或 $-\log p(y_i)$。</li><li>凸但<strong>不严格</strong>凸（$\lVert\beta\rVert_1\le t$ 的顶点上 $R$ 沿某些方向平坦）时最优解不唯一。</li><li>IRLS 每轮固定 $w_i$，但 $w_i$ 依赖当前的 $\eta_i$ ⟹ 整体不是单个凸问题，必须迭代到收敛（每次迭代目标下降，所以收敛）。</li></ol></div>
+<h3 id="s-3-8-11" class="anchored"><span class="num">3.8.11</span> LARS 轨迹、elastic net 与方法对比</h3>
+<p><strong>问题</strong>：LARS 之所以快，是因为整条 lasso 路径是<strong>分段线性</strong>的；elastic net 之所以有用，是因为它改掉了「只沿坐标轴收缩」这件事。最后把 (3.90)(3.91) 写清楚，并给出收缩类方法的统一比较。</p>
+<div class="aside basis"><p class="hd">基础知识 · 线性方程组的参数敏感性（见预备知识 C2）</p><p>$Az=b(\lambda)$ 在 $A$ 可逆时给出 $\mathrm{d}z/\mathrm{d}\lambda=-A^{-1}\mathrm{d}b/\mathrm{d}\lambda$，对 $\lambda$ 线性。要件只有两个：$A$ <strong>可逆</strong>、$b$ 对 $\lambda$ <strong>线性</strong>。lasso 的 KKT 在支撑集固定时恰好把 $b$ 写成 $X_{\mathcal A}^\top y-N\lambda\mathrm{s}_{\mathcal A}$（对 $\lambda$ 线性），$A=X_{\mathcal A}^\top X_{\mathcal A}$；elastic net 的 $A$ 变成 $X_{\mathcal A}^\top X_{\mathcal A}+2N\lambda_2I$。<strong>这就是 (3.90) 与 (3.91) 分段线性的唯一根据。</strong></p>
+<p>对照：$\ell_0$ 罚的「支撑集」$\mathcal A$ 一变，$A$ 就换成另一个矩阵，且 $b$ 不再对 $\lambda$ 线性（罚是常数 1），所以最佳子集路径<strong>不是</strong>分段线性，也没有像 (3.90) 这样的公式。</p></div>
+<div class="eq"><div class="escroll">
+$$
+\hat\beta(\lambda)=\hat\beta(\lambda_0)-\big(\lambda-\lambda_0\big)\gamma_0\
+$$
+</div><span class="tag">(3.90)</span></div>
+<p>$\hat\beta(\lambda_0)$ 是路径上的一个已知解（在 $\lambda_0$ 处的支撑集为 $\mathcal A$），$\gamma_0$ 是「$\hat\beta$ 对 $\lambda$ 的斜率」向量（只依赖设计矩阵，与 $y$ 无关）。</p>
+<div class="aside"><p class="hd">推导 · (3.90) 为什么成立</p><p>在支撑集 $\mathcal A$ 固定、符号固定的<strong>开区间</strong> $(\lambda_a,\lambda_b)\subset(\lambda_0,\infty)$ 内，lasso 的 KKT 平稳性（对 $j\in\mathcal A$，用 §3.8.6 的形式，$\mu=\lambda$）是</p>
+<div class="eq long"><div class="escroll">
+$$
+-\frac1N X_{\mathcal A}^\top\big(y-X_{\mathcal A}\hat\beta_{\mathcal A}\big)+\lambda\,\operatorname{sign}(\hat\beta_{\mathcal A})=0
+$$
+</div></div>
+<p>整理成关于 $\hat\beta_{\mathcal A}$ 的<strong>线性</strong>方程（$\operatorname{sign}$ 在固定符号下是常数向量 $\mathrm{s}_{\mathcal A}$，$\lambda$ 线性）：</p>
+<div class="eq long"><div class="escroll">
+$$
+X_{\mathcal A}^\top X_{\mathcal A}\hat\beta_{\mathcal A}=X_{\mathcal A}^\top y-N\lambda\,\mathrm{s}_{\mathcal A}
+$$
+</div></div>
+<p>对 $\lambda$ 求导（$X_{\mathcal A}^\top X_{\mathcal A}$ 在此区间内可逆，否则区间要切得更短）：</p>
+<div class="eq verylong"><div class="escroll">
+$$
+X_{\mathcal A}^\top X_{\mathcal A}\,\frac{d\hat\beta_{\mathcal A}}{d\lambda}=-N\,\mathrm{s}_{\mathcal A}\ \Longrightarrow\ \gamma_{0,\mathcal A}:=-N\,\big(X_{\mathcal A}^\top X_{\mathcal A}\big)^{-1}\mathrm{s}_{\mathcal A}
+$$
+</div></div>
+<p>从 $\lambda_a$ 积到 $\lambda_b$：</p>
+<div class="eq long"><div class="escroll">
+$$
+\hat\beta_{\mathcal A}(\lambda_b)=\hat\beta_{\mathcal A}(\lambda_a)-N(\lambda_b-\lambda_a)\big(X_{\mathcal A}^\top X_{\mathcal A}\big)^{-1}\mathrm{s}_{\mathcal A}
+$$
+</div></div>
+<p>取 $\lambda_a=\lambda_0$、$\lambda_b=\lambda$，就得到 (3.90)（$\gamma_0$ 的 $\mathcal A$ 分量为上式，$\mathcal A$ 外分量为 0）。<strong>逐坐标写</strong>：</p>
+<div class="eq long"><div class="escroll">
+$$
+\hat\beta_j(\lambda)=\hat\beta_j(\lambda_0)+\gamma_j(\lambda-\lambda_0)\quad(j\in\mathcal A),\qquad \hat\beta_j(\lambda)=0\quad(j\notin\mathcal A)
+$$
+</div></div>
+<p><strong>这解释了 LARS 轨迹的三个几何性质（图 3.11）：</strong></p>
+<ol><li><strong>分段线性</strong>：每个区间上 $\hat\beta(\lambda)$ 是 $\lambda$ 的仿射函数；</li><li><strong>单调性</strong>：若 $x_j$ 与当前所有激活变量的 $\hat x_j^{\star}=\sum_{k\in\mathcal A}\hat\beta_kx_k$ 内积为正，则 $\gamma_j&lt;0$，$\lambda$ 减小时 $\hat\beta_j$ 增大（且始终为正）。这是 LARS 的单调性定理（Efron–Murtagh–Tibshirani）；</li><li><strong>节点是「相关对」的进入点</strong>：$\lambda$ 减到某个值时，某个未激活变量 $j$ 满足 $\lvert\langle x_j,y-X_{\mathcal A}\hat\beta_{\mathcal A}\rangle\rvert=N\lambda\lVert x_j\rVert^2$（KKT 的零阈值条件），它被加入 $\mathcal A$，路径进入新的一段。</li></ol>
+<p><strong>为什么这让 lasso 可行。</strong> 扫过整条路径只需 $O(p)$ 次坐标更新（每段一次），而不是为每个 $\lambda$ 从零开始解一次（$O(p)$ 次迭代）。对比最佳子集的 $2^p$：<strong>这是「lasso = 可行的子集选择」的算法根据</strong>。</p></div>
+<div class="eq"><div class="escroll">
+$$
+\hat\beta=\arg\min_{\beta}\ \Big\{R(\beta)+\lambda_1\lVert\beta\rVert_1+\lambda_2\lVert\beta\rVert_2^2\Big\}\
+$$
+</div><span class="tag">(3.91)</span></div>
+<div class="aside"><p class="hd">推导</p><p>elastic net = lasso + ridge 的正确混合方式</p>
+<p>朴素混合（$\hat\beta_{\rm ridge}\cdot\frac{\hat\beta_{\rm lasso}}{\hat\beta_{\rm ridge}}$，逐坐标相乘）在数学上无意义。正确做法是直接写 (3.91) 并求解。</p>
+<p><strong>一阶条件。</strong> 对 $j$：</p>
+<div class="eq long"><div class="escroll">
+$$
+-\frac1N\big\langle x_j,\ y-\beta_0\mathbf 1-X\beta\big\rangle+\lambda_2\beta_j+\lambda_1\partial\lVert\beta_j\rVert=0
+$$
+</div></div>
+<p>记 $\kappa_j=\lVert x_j\rVert^2$、$\hat c_j=\frac1N\langle x_j,y-X\beta\rangle$，逐情形解：</p>
+<div class="eq long"><div class="escroll">
+$$
+\beta_j\leftarrow\frac{S_{\lambda_1/\kappa_j}\big(\hat c_j\big)}{1+2\lambda_2/\kappa_j},\qquad S_\theta(c)=\operatorname{sign}(c)\max(0,\lvert c\rvert-\theta)
+$$
+</div></div>
+<p>（把 $\lVert\beta\rVert_2^2=\sum_j\beta_j^2$ 逐坐标展开故得 $\lambda_2\beta_j$；$\lambda_1\partial\lVert\beta\rVert$ 的解就是软阈值。）<strong>分子是 lasso 的软阈值、分母是 ridge 的收缩</strong>——这就是 elastic net 的全部内容。</p>
+<p><strong>为什么它与 (3.90) 兼容。</strong> 固定 $\mathcal A$ 与符号后，(3.91) 的 KKT 是</p>
+<div class="eq long"><div class="escroll">
+$$
+X_{\mathcal A}^\top X_{\mathcal A}\hat\beta_{\mathcal A}+2N\lambda_2\hat\beta_{\mathcal A}=X_{\mathcal A}^\top y-N\lambda_1\,\mathrm{s}_{\mathcal A}
+$$
+</div></div>
+<p>对 $\lambda_1$ 线性 ⟹ <strong>整条 elastic net 路径也分段线性</strong>，斜率</p>
+<div class="eq"><div class="escroll">
+$$
+\gamma_0=-N\big(X_{\mathcal A}^\top X_{\mathcal A}+2N\lambda_2I\big)^{-1}\mathrm{s}_{\mathcal A}
+$$
+</div></div>
+<p>注意分母多了 $2N\lambda_2I$：这是与 lasso 的唯一差别。</p>
+<p><strong>联合惩罚（logistic + elastic net）推导。</strong> 把 $R$ 换成对数损失（§3.8.6）并做 IRLS：</p>
+<div class="eq verylong"><div class="escroll">
+$$
+\hat\beta^{(t)}=\arg\min_{\beta}\ \Big\{-\sum_{i=1}^{N}w_i^{(t)}\log\big(1+e^{-y_i(\beta_0+x_i^\top\beta)}\big)+\lambda_1\lVert\beta\rVert_1+\lambda_2\lVert\beta\rVert_2^2\Big\},\qquad w_i^{(t)}=\frac{1}{1+e^{y_ix_i^\top\beta^{(t-1)}}}
+$$
+</div></div>
+<p>加权后 $\frac{\partial^2L}{\partial\eta^2}=w_ie^{y_i\eta}/(1+e^{y_i\eta})^2\ge0$（$w_i&gt;0$）⟹ 仍是凸。<strong>内层是凸问题</strong>，可套用 (3.91) 的逐坐标解（把 $X$ 换成 $W^{1/2}X$、$y$ 换成 $W^{1/2}y$，$W=\mathrm{diag}(w_1,\ldots,w_N)$）与 (3.90) 的分段线性路径。</p>
+<p><strong>为什么 elastic net 解决「成组效应」。</strong> 两个近乎重复的预测子 $x_2\approx cx_1$：</p>
+<ul><li>lasso：$\hat\beta^{\rm ls}=(c,-c)^\top$ 沿对比方向，$\ell_1$ 球在这个方向上的支撑点是顶点 ⟹ 随机挑一个保留，另一个归零，<strong>符号/大小比被破坏</strong>；</li><li>elastic net：$\ell_2$ 项提供「在对比方向上的支撑是光滑的球面而非顶点」，于是最优解沿 $(1,1)^\top$ 方向移动，两个系数<strong>成比例保留</strong>。</li></ul>
+<p>数值验证：取 $\lambda_1=0$，则 (3.91) 退化为 ridge，$\hat\beta\propto(X^\top X+2N\lambda_2I)^{-1}X^\top y$，两个系数正比于 $X^\top y$ 在 $(x_1,x_1)$ 与 $(cx_1,cx_1)$ 方向上的分量之比，即成组保留 ✓。取 $\lambda_2=0,\lambda_1&gt;0$，退化为 lasso，随机挑一个 ✓。取 $\lambda_1,\lambda_2&gt;0$，插在两者之间 ✓。</p></div>
+<div class="aside key"><p class="hd">结果 · 收缩 vs 选择：计算量的对比</p></div>
+<div class="tscroll-x"><table class="fx"><thead><tr><th></th><th>最佳子集（$\ell_0$）</th><th>lasso（$\ell_1$）</th><th>elastic net</th><th>ridge</th></tr></thead><tbody><tr><td>搜索复杂度</td><td>$2^p$</td><td>$O(p)$（沿路径扫一遍）</td><td>$O(p)$</td><td>$O(p)$</td></tr><tr><td>解的形式</td><td>无闭式</td><td>分段线性软阈值</td><td>软阈值 $+$ 二次收缩</td><td>谱形式</td></tr><tr><td>稀疏</td><td>是（精确）</td><td>是（精确）</td><td>是（精确）</td><td>否</td></tr><tr><td>相关变量</td><td><strong>不稳定</strong>（任意挑一个）</td><td>任意挑一个（成组效应被破坏）</td><td>成组保留（$\lambda_2&gt;0$）</td><td>全部保留、均匀收缩</td></tr><tr><td>需要 $N\ge p$</td><td>是</td><td>否（KKT/坐标下降可行）</td><td>否</td><td>否</td></tr><tr><td>选择一致性</td><td>是（$p$ 小时）</td><td>是（信号稀疏 + irreps 条件）</td><td>是</td><td>否（$\lVert\hat\beta\rVert_2^2$ 永不为 0）</td></tr></tbody></table></div>
+<p><strong>两个关键对比数字</strong>：</p>
+<ol><li><strong>搜索量</strong>：最佳子集要评 $2^p$ 个子集（$p=20$ 已经 $10^6$、$p=40$ 不可行）；lasso 只需沿路径走 $p$ 次坐标更新（$p=10^6$ 也能做，glmnet 就是这么干的）。这是「lasso = 可行的子集选择」的算法根据。</li><li><strong>成组效应</strong>：相关系数 $\rho\to1$ 时，$\hat\beta^{\rm ridge}_1/\hat\beta^{\rm ridge}_2\to1$（都保留），而 $\hat\beta^{\rm lasso}$ 只留一个。elastic net 取 $\lambda_2&gt;0$ 后比值趋于 $1$，即<strong>近似于「先对该组做单变量回归再按比例分配」</strong>。</li></ol>
+<div class="aside warn"><p class="hd">坑</p><ol><li>(3.90) 的分段线性只在 $\mathcal A$ 不变、$\operatorname{sign}$ 不变的区间内成立。断点处斜率跳变，插值跨断点会给出错误的 $\hat\beta$。</li><li>elastic net 的两个参数含义不同：$\lambda_1$ 控<strong>稀疏度</strong>（几组系数非零），$\lambda_2$ 控<strong>组内收缩</strong>。软件常只暴露一个混合参数（如 glmnet 的 $\alpha=\lambda_2/(\lambda_1+\lambda_2)$），这会隐含「组大小」的先验，改 $\alpha$ 时稀疏度与成组效应同时变。</li><li>lasso 的选择一致性需要「信号稀疏 $+$ 信号与噪声条件独立」（irrepresentable condition）。$p\gg N$ 时若有相关噪声项，lasso 会<strong>乱选</strong>而不是全不选——这是 §3.8.3 引入 (3.81)、(3.91) 的根本动机。</li></ol></div>
+<h3 id="s-3-8-12" class="anchored"><span class="num">3.8.12</span> 本章小结</h3>
+<div class="tscroll-x"><table class="fx"><thead><tr><th>方法</th><th>$R(\beta)$</th><th>$J(\beta)$</th><th>方向由谁定</th><th>稀疏</th></tr></thead><tbody><tr><td>最小二乘 (3.6)</td><td>$\lVert y-X\beta\rVert^2$</td><td>无</td><td>$X^\top X$（全部 $p$ 个）</td><td>否</td></tr><tr><td>ridge</td><td>同上</td><td>$\lVert\beta\rVert_2^2$</td><td>$X^\top X$（每个 $v_j$ 等权收缩）</td><td>否</td></tr><tr><td>lasso (3.78)</td><td>同上</td><td>$\lVert\beta\rVert_1$</td><td>坐标轴</td><td>是</td></tr><tr><td>adaptive lasso (3.81)</td><td>同上</td><td>$\sum_j\mathcal N_j\lvert\beta_j\rvert$</td><td>坐标轴 $+$ 先验</td><td>是</td></tr><tr><td>group lasso (3.80)</td><td>同上</td><td>$\sum_\ell\lVert\beta^{(\ell)}\rVert_2$</td><td>组</td><td>组级</td></tr><tr><td>elastic net (3.91)</td><td>同上</td><td>$\lambda_1\lVert\beta\rVert_1+\lambda_2\lVert\beta\rVert_2^2$</td><td>坐标轴 $+$ 等权</td><td>是</td></tr><tr><td>非凸罚 (3.82)</td><td>同上</td><td>有界斜率分段线性</td><td>坐标轴</td><td>是</td></tr><tr><td>PCR (3.62)</td><td>$\lVert y-\sum_{m\le m}\hat\theta_mz_m\rVert^2$</td><td>只准 $m$ 个分量</td><td>$X^\top X$（前 $m$ 个）</td><td>否</td></tr><tr><td>PLS (3.71)</td><td>交替最小化残差</td><td>只准 $m$ 个得分</td><td>$X$ 与 $Y$（$=$ CCA，见 (3.67c)）</td><td>否</td></tr><tr><td>CCA</td><td>$\mathrm{Corr}^2$ 最大化</td><td>同上</td><td>$S_{YY}^{-1}S_{YX}S_{XX}^{-1}S_{XY}$</td><td>否</td></tr><tr><td>logistic lasso (3.89)</td><td>$\sum_i\log(1+e^{-y_ix_i^\top\beta})$</td><td>$\lVert\beta\rVert_1$</td><td>坐标轴</td><td>是</td></tr></tbody></table></div>
+<p><strong>三条把整节串起来的话：</strong></p>
+<ol><li><strong>一切都是「沿某些方向收缩」。</strong> 方向只有两个来源：$X$ 自己的协方差（PCR、ridge 的谱形式）、$X$ 与 $Y$ 的关系（CCA、PLS、lasso 的坐标轴）。(3.86)(3.87) 证明这些选择可以统一成一个 SVD。</li><li><strong>凸性买来三样东西</strong>：KKT 的充分性（不用怕局部极小）、解的唯一性、沿 $\lambda$ 的单调路径 $+$ 分段线性（(3.90)）。丢了凸性（(3.82)）就得用二分 $+$ 下界法重新买回来。</li><li><strong>稀疏性只有一个来源：把 $\beta$ 逼到约束集的极端结构上。</strong> $\ell_1$ 球（极端点在坐标轴）、$\ell_0$ 罚（极端结构 = 子集）、MCP/SCAD 的零点阈值，都是这件事的三种写法；group lasso 换成「逼到组的极端结构」；$\ell_2$ 罚与 PCA 没有极端结构，所以永远不稀疏。</li></ol>
+<p><a class="src" href="../esl/ch03-linear-methods-for-regression.html#s-3-8">原文 §3.8</a></p>
+<p><strong>练习</strong>：下面三道题对应的推导框架本节都已给出，需要你自己补齐中间式。</p>
+<ol><li><strong>(3.82) 非凸罚的分段一阶条件。</strong> 取 $N=1$、$x_1=1$、$\beta_0=0$、$y=1$。目标函数是 $\tfrac12(1-\beta)^2+\lambda J(\lvert\beta\rvert)$，$J$ 取 MCP 且 $a=\tfrac12$。画出 $\beta$ 关于 $\lambda$ 的曲线，找出「$\beta=0$ 与 $\beta\ne0$ 局部极小点共存」的临界 $\lambda^\star$，并验证 §3.8.4 单调性证明里的不等式在什么时刻取等号（提示：$\sum_jJ(\lvert\beta_{2j}\rvert)=0$ 当且仅当 $\beta_2=0$）。</li><li><strong>(3.87) SVD 解的手算。</strong> 取 $N=4$，$X,Y$ 都是 $4\times2$，$X^\top X=\begin{pmatrix}4&amp;1\\1&amp;2\end{pmatrix}$，$Y^\top Y=\begin{pmatrix}3&amp;0.5\\0.5&amp;1\end{pmatrix}$，$Y^\top X=\begin{pmatrix}2&amp;0\\1&amp;0.5\end{pmatrix}$。逐项算出 $(Y^\top Y)^{-1/2}$、$(X^\top X)^{-1/2}$、$M$、$M^\top M$ 的特征值与特征向量，验证 $v_\star^{\star}=(X^\top X)^{-1/2}V_\star u_\star$ 满足 Cauchy–Schwarz 的等号条件 $u_\star\parallel Y^\top Xv_\star^{\star}$，并核对 §3.7.3 的 (3.67c) 在 $S_{YY}=Y^\top Y$、$S_{XX}=X^\top X$ 下给出同一个 $u_\star$。</li><li><strong>(3.91) elastic net 与 logistic 的联合惩罚。</strong> 取 $N=6$、$p=2$，$X$ 的一列是常数、另一列是 $\{-2,-1,0,1,2,3\}$（记得中心化后重算 $\kappa_j$），$y\in\{\pm1\}^6$。手算对数损失 $+$ elastic net 的一阶条件，验证逐坐标解 $\beta_j\leftarrow S_{\lambda_1/\kappa_j}(\hat c_j)/(1+2\lambda_2/\kappa_j)$ 与「在 $p=2$ 的格点上枚举最小值」给出同一个解；再解释为什么 $\kappa_j$ 必须用中心化后的 $\tilde x_j$ 重算（这直接关系到 §3.8.6 的「标准化 $\ne$ 中心化」那条坑）。</li></ol>
+</main>
+<nav class="chapnav"><div class="inner">
+<a class="prev" href="m02.html"><span class="lbl">← 上一章</span><span class="nm">第 2 章 监督学习概述</span></a>
+<a class="next" href="m04.html"><span class="lbl">下一章 →</span><span class="nm">第 4 章 线性分类方法</span></a>
+</div></nav>
+</body>
+</html>

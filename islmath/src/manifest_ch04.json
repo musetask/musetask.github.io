@@ -1,0 +1,569 @@
+{
+ "chapter": "4",
+ "cn": "分类",
+ "en": "Classification",
+ "book": "05-classification.html",
+ "count": 56,
+ "equations": [
+  {
+   "id": "eq-4-1",
+   "num": "(4.1)",
+   "page": 148,
+   "img": "eq-p148-399y413-208x385.png",
+   "section": "4.3 Logistic Regression › 4.3.1 The Logistic Model",
+   "link": "../isl/05-classification.html#eq-4-1",
+   "before": "To fit the model (4.2), we use a method called maximum likelihood, which we discuss in the next section. The right-hand panel of Figure 4.2 illustrates the fit of the logistic regression model to the Default data. Notice that for low balances we now predict the probability of default as close to, but never below, zero. Likewise, for high balances we predict a default probability close to, but never above, one. The logistic function will always produce an S-shaped curve of this form, and so regar…",
+   "after": "If we use this approach to predict default=Yes using balance, then we obtain the model shown in the left-hand panel of Figure 4.2. Here we see the problem with this approach: for balances close to zero we predict a negative probability of default; if we were to predict for very large balances, we would get values bigger than 1. These predictions are not sensible, since of course the true probability of default, regardless of credit card balance, must fall between 0 and 1. This problem is not unique to the credit default data. Any time a straight line is fit to a binary response that is coded as 0 or 1, in principle we can always predict p(X) < 0 for some values of X and p(X) > 1 for others (…"
+  },
+  {
+   "id": "eq-4-2",
+   "num": "(4.2)",
+   "page": 148,
+   "img": "eq-p148-588y611-201x385.png",
+   "section": "4.3 Logistic Regression › 4.3.1 The Logistic Model",
+   "link": "../isl/05-classification.html#eq-4-2",
+   "before": "How should we model the relationship between p(X) = Pr(Y = 1|X) and X? (For convenience we are using the generic 0/1 coding for the response.) In Section 4.2 we considered using a linear regression model to represent these probabilities: (4.1) If we use this approach to predict default=Yes using balance, then we obtain the model shown in the left-hand panel of Figure 4.2. Here we see the problem with this approach: for balances close to zero we predict a negative probability of default; if we we…",
+   "after": "The coefficients β0 and β1 in (4.2) are unknown, and must be estimated based on the available training data. In Chapter 3, we used the least squares approach to estimate the unknown linear regression coefficients. Although we could use (non-linear) least squares to fit the model (4.4), the more general method of maximum likelihood is preferred, since it has better statistical properties. The basic intuition behind using maximum likelihood to fit a logistic regression model is as follows: we seek estimates for β0 and β1 such that the predicted probability p̂(xi) of default for each individual, using (4.2), corresponds as closely as possible to the individual’s observed default status. In othe…"
+  },
+  {
+   "id": "eq-4-3",
+   "num": "(4.3)",
+   "page": 149,
+   "img": "eq-p149-180y208-202x385.png",
+   "section": "4.3 Logistic Regression › 4.3.1 The Logistic Model",
+   "link": "../isl/05-classification.html#eq-4-3",
+   "before": "To avoid this problem, we must model p(X) using a function that gives outputs between 0 and 1 for all values of X. Many functions meet this description. In logistic regression, we use the logistic function, (4.2) The coefficients β0 and β1 in (4.2) are unknown, and must be estimated based on the available training data. In Chapter 3, we used the least squares approach to estimate the unknown linear regression coefficients. Although we could use (non-linear) least squares to fit the model (4.4), …",
+   "after": "The quantity p(X)/[1−p(X)] is called the odds, and can take on any value between 0 and ∞. Values of the odds close to 0 and ∞indicate very low and very high probabilities of default, respectively. For example, on average 1 in 5 people with an odds of 1/4 will default, since p(X) = 0.2 implies an odds of 1−0.2 = 1/4. Likewise, on average nine out of every ten people with an odds of 9 will default, since p(X) = 0.9 implies an odds of 1−0.9 = 9. Odds are traditionally used instead of probabilities in horse-racing, since they relate more naturally to the correct betting strategy. By taking the logarithm of both sides of (4.3), we arrive at"
+  },
+  {
+   "id": "eq-4-4",
+   "num": "(4.4)",
+   "page": 149,
+   "img": "eq-p149-323y351-184x385.png",
+   "section": "4.3 Logistic Regression › 4.3.1 The Logistic Model",
+   "link": "../isl/05-classification.html#eq-4-4",
+   "before": "The quantity p(X)/[1−p(X)] is called the odds, and can take on any value between 0 and ∞. Values of the odds close to 0 and ∞indicate very low and very high probabilities of default, respectively. For example, on average 1 in 5 people with an odds of 1/4 will default, since p(X) = 0.2 implies an odds of 1−0.2 = 1/4. Likewise, on average nine out of every ten people with an odds of 9 will default, since p(X) = 0.9 implies an odds of 1−0.9 = 9. Odds are traditionally used instead of probabilities …",
+   "after": "The left-hand side is called the log odds or logit. We see that the logistic regression model (4.2) has a logit that is linear in X. Recall from Chapter 3 that in a linear regression model, β1 gives the average change in Y associated with a one-unit increase in X. By contrast, in a logistic regression model, increasing X by one unit changes the log odds by β1 (4.4). Equivalently, it multiplies the odds by eβ1 (4.3). However, because the relationship between p(X) and X in (4.2) is not a straight line, β1 does not correspond to the change in p(X) associated with a one-unit increase in X. The amount that p(X) changes due to a one-unit change in X depends on the current value of X. But regardles…"
+  },
+  {
+   "id": "eq-4-5",
+   "num": "(4.5)",
+   "page": 150,
+   "img": "eq-p150-198y206-159x385.png",
+   "section": "4.3 Logistic Regression › 4.3.1 The Logistic Model › 4.3.2 Estimating the Regression Coefficients",
+   "link": "../isl/05-classification.html#eq-4-5",
+   "before": "The left-hand side is called the log odds or logit. We see that the logistic regression model (4.2) has a logit that is linear in X. Recall from Chapter 3 that in a linear regression model, β1 gives the average change in Y associated with a one-unit increase in X. By contrast, in a logistic regression model, increasing X by one unit changes the log odds by β1 (4.4). Equivalently, it multiplies the odds by eβ1 (4.3). However, because the relationship between p(X) and X in (4.2) is not a straight …",
+   "after": "Maximum likelihood is a very general approach that is used to fit many of the non-linear models that we examine throughout this book. In the linear regression setting, the least squares approach is in fact a special case of maximum likelihood. The mathematical details of maximum likelihood are beyond the scope of this book. However, in general, logistic regression and other models can be easily fit using statistical software such as R, and so we do not need to concern ourselves with the details of the maximum likelihood fitting procedure. Once the coefficients have been estimated, we can compute the probability of default for any given credit card balance. For example, using the coefficient …"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 151,
+   "img": "eq-p151-264y295-117x388.png",
+   "section": "4.3 Logistic Regression › 4.3.1 The Logistic Model › 4.3.2 Estimating the Regression Coefficients › 4.3.3 Making Predictions",
+   "link": "../isl/05-classification.html",
+   "before": "4.3.3Making Predictions# TABLE 4.1 For the Default data, estimated coefficients of the logistic regres- sion model that predicts the probability of default using balance. A one-unit increase in balance is associated with an increase in the log odds of default by TABLE 4.2 For the Default data, estimated coefficients of the logistic regression model that predicts the probability of default using student status. Student status is encoded as a dummy variable, with a value of 1 for a student and a v…",
+   "after": "which is below 1%. In contrast, the predicted probability of default for an individual with a balance of $2, 000 is much higher, and equals 0.586 or 58.6%. One can use qualitative predictors with the logistic regression model using the dummy variable approach from Section 3.3.1. As an example, the Default data set contains the qualitative variable student. To fit a model that uses student status as a predictor variable, we simply create a dummy variable that takes on a value of 1 for students and 0 for non-students. The logistic regression model that results from predicting probability of default from student status can be seen in Table 4.2. The coefficient associated with the dummy variable…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 151,
+   "img": "eq-p151-455y463-108x343.png",
+   "section": "4.3 Logistic Regression › 4.3.1 The Logistic Model › 4.3.2 Estimating the Regression Coefficients › 4.3.3 Making Predictions",
+   "link": "../isl/05-classification.html",
+   "before": "where X = (X1,⋯, Xp) are p predictors. Equation 4.6 can be rewritten as Just as in Section 4.3.2, we use the maximum likelihood method to estimate β0, β1,⋯, βp. which is below 1%. In contrast, the predicted probability of default for an individual with a balance of $2, 000 is much higher, and equals 0.586 or 58.6%. One can use qualitative predictors with the logistic regression model using the dummy variable approach from Section 3.3.1. As an example, the Default data set contains the qualitativ…",
+   "after": "CopyPr(default=Yes|student=Yes) = CopyPr(default=Yes|student=No) ="
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 151,
+   "img": "eq-p151-485y493-113x397.png",
+   "section": "4.3 Logistic Regression › 4.3.1 The Logistic Model › 4.3.2 Estimating the Regression Coefficients › 4.3.3 Making Predictions",
+   "link": "../isl/05-classification.html",
+   "before": "which is below 1%. In contrast, the predicted probability of default for an individual with a balance of $2, 000 is much higher, and equals 0.586 or 58.6%. One can use qualitative predictors with the logistic regression model using the dummy variable approach from Section 3.3.1. As an example, the Default data set contains the qualitative variable student. To fit a model that uses student status as a predictor variable, we simply create a dummy variable that takes on a value of 1 for students an…",
+   "after": "CopyPr(default=Yes|student=No) = 4.3.4Multiple Logistic Regression# We now consider the problem of predicting a binary response using multiple predictors. By analogy with the extension from simple to multiple linear regression in Chapter 3, we can generalize (4.4) as follows:"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 151,
+   "img": "eq-p151-511y519-253x397.png",
+   "section": "4.3 Logistic Regression › 4.3.1 The Logistic Model › 4.3.2 Estimating the Regression Coefficients › 4.3.3 Making Predictions",
+   "link": "../isl/05-classification.html",
+   "before": "CopyPr(default=Yes|student=Yes) = CopyPr(default=Yes|student=No) =",
+   "after": "4.3.4Multiple Logistic Regression# We now consider the problem of predicting a binary response using multiple predictors. By analogy with the extension from simple to multiple linear regression in Chapter 3, we can generalize (4.4) as follows: (4.6) (4.7)"
+  },
+  {
+   "id": "eq-4-6",
+   "num": "(4.6)",
+   "page": 151,
+   "img": "eq-p151-584y613-153x385.png",
+   "section": "4.3 Logistic Regression › 4.3.1 The Logistic Model › 4.3.2 Estimating the Regression Coefficients › 4.3.3 Making Predictions › 4.3.4 Multiple Logistic Regression",
+   "link": "../isl/05-classification.html#eq-4-6",
+   "before": "CopyPr(default=Yes|student=No) = 4.3.4Multiple Logistic Regression# We now consider the problem of predicting a binary response using multiple predictors. By analogy with the extension from simple to multiple linear regression in Chapter 3, we can generalize (4.4) as follows:",
+   "after": "(4.7) TABLE 4.3 For the Default data, estimated coefficients of the logistic regression model that predicts the probability of default using balance, income, and student status. Student status is encoded as a dummy variable student[Yes], with a value of 1 for a student and a value of 0 for a non-student. In fitting this model, income was measured in thousands of dollars. Table 4.3 shows the coefficient estimates for a logistic regression model that uses balance, income (in thousands of dollars), and student status to predict probability of default. There is a surprising result here. The pvalues associated with balance and the dummy variable for student status are very small, indicating that …"
+  },
+  {
+   "id": "eq-4-7",
+   "num": "(4.7)",
+   "page": 151,
+   "img": "eq-p151-630y657-180x385.png",
+   "section": "4.3 Logistic Regression › 4.3.1 The Logistic Model › 4.3.2 Estimating the Regression Coefficients › 4.3.3 Making Predictions › 4.3.4 Multiple Logistic Regression",
+   "link": "../isl/05-classification.html#eq-4-7",
+   "before": "4.3.4Multiple Logistic Regression# We now consider the problem of predicting a binary response using multiple predictors. By analogy with the extension from simple to multiple linear regression in Chapter 3, we can generalize (4.4) as follows: (4.6)",
+   "after": "TABLE 4.3 For the Default data, estimated coefficients of the logistic regression model that predicts the probability of default using balance, income, and student status. Student status is encoded as a dummy variable student[Yes], with a value of 1 for a student and a value of 0 for a non-student. In fitting this model, income was measured in thousands of dollars. Table 4.3 shows the coefficient estimates for a logistic regression model that uses balance, income (in thousands of dollars), and student status to predict probability of default. There is a surprising result here. The pvalues associated with balance and the dummy variable for student status are very small, indicating that each o…"
+  },
+  {
+   "id": "eq-4-8",
+   "num": "(4.8)",
+   "page": 153,
+   "img": "eq-p153-424y454-107x385.png",
+   "section": "4.3 Logistic Regression › 4.3.1 The Logistic Model › 4.3.2 Estimating the Regression Coefficients › 4.3.3 Making Predictions › 4.3.4 Multiple Logistic Regression",
+   "link": "../isl/05-classification.html#eq-4-8",
+   "before": "The right-hand panel of Figure 4.3 provides an explanation for this discrepancy. The variables student and balance are correlated. Students tend to hold higher levels of debt, which is in turn associated with higher probability of default. In other words, students are more likely to have large credit card balances, which, as we know from the left-hand panel of Figure 4.3, tend to be associated with high default rates. Thus, even though an individual student with a given credit card balance will …",
+   "after": "A non-student with the same balance and income has an estimated probability of default of (4.9) (Here we multiply the income coefficient estimate from Table 4.3 by 40, rather than by 40,000, because in that table the model was fit with income measured in units of $1, 000.) 4.3.5Multinomial Logistic Regression#"
+  },
+  {
+   "id": "eq-4-9",
+   "num": "(4.9)",
+   "page": 153,
+   "img": "eq-p153-484y515-107x385.png",
+   "section": "4.3 Logistic Regression › 4.3.1 The Logistic Model › 4.3.2 Estimating the Regression Coefficients › 4.3.3 Making Predictions › 4.3.4 Multiple Logistic Regression",
+   "link": "../isl/05-classification.html#eq-4-9",
+   "before": "This simple example illustrates the dangers and subtleties associated with performing regressions involving only a single predictor when other predictors may also be relevant. As in the linear regression setting, the results obtained using one predictor may be quite different from those obtained using multiple predictors, especially when there is correlation among the predictors. In general, the phenomenon seen in Figure 4.3 is known as confounding. By substituting estimates for the regression c…",
+   "after": "(Here we multiply the income coefficient estimate from Table 4.3 by 40, rather than by 40,000, because in that table the model was fit with income measured in units of $1, 000.) 4.3.5Multinomial Logistic Regression# We sometimes wish to classify a response variable that has more than two classes. For example, in Section 4.2 we had three categories of medical condition in the emergency room: stroke, drug overdose, epileptic seizure. However, the logistic regression approach that we have seen in this section only allows for K = 2 classes for the response variable. It turns out that it is possible to extend the two-class logistic regression approach to the setting of K > 2 classes. This extensi…"
+  },
+  {
+   "id": "eq-4-10",
+   "num": "(4.10)",
+   "page": 154,
+   "img": "eq-p154-122y155-139x380.png",
+   "section": "4.3 Logistic Regression › 4.3.1 The Logistic Model › 4.3.2 Estimating the Regression Coefficients › 4.3.3 Making Predictions › 4.3.4 Multiple Logistic Regression › 4.3.5 Multinomial Logistic Regression",
+   "link": "../isl/05-classification.html#eq-4-10",
+   "before": "4.3.5Multinomial Logistic Regression# We sometimes wish to classify a response variable that has more than two classes. For example, in Section 4.2 we had three categories of medical condition in the emergency room: stroke, drug overdose, epileptic seizure. However, the logistic regression approach that we have seen in this section only allows for K = 2 classes for the response variable. It turns out that it is possible to extend the two-class logistic regression approach to the setting of K > 2…",
+   "after": "for k = 1,⋯, K−1, and (4.11) It is not hard to show that for k = 1,⋯, K−1, (4.12)"
+  },
+  {
+   "id": "eq-4-11",
+   "num": "(4.11)",
+   "page": 154,
+   "img": "eq-p154-179y205-124x380.png",
+   "section": "4.3 Logistic Regression › 4.3.1 The Logistic Model › 4.3.2 Estimating the Regression Coefficients › 4.3.3 Making Predictions › 4.3.4 Multiple Logistic Regression › 4.3.5 Multinomial Logistic Regression",
+   "link": "../isl/05-classification.html#eq-4-11",
+   "before": "It turns out that it is possible to extend the two-class logistic regression approach to the setting of K > 2 classes. This extension is sometimes known as multinomial logistic regression. To do this, we first select a single class to serve as the baseline; without loss of generality, we select the Kth class for this role. Then we replace the model (4.7) with the model We now briefly present an alternative coding for multinomial logistic regression, known as the softmax coding. The softmax codin…",
+   "after": "It is not hard to show that for k = 1,⋯, K−1, (4.12) Notice that (4.12) is quite similar to (4.6). Equation 4.12 indicates that once again, the log odds between any pair of classes is linear in the features. It turns out that in (4.10)–(4.12), the decision to treat the Kth class as the baseline is unimportant. For example, when classifying emergency room visits into stroke, drug overdose, and epileptic seizure, suppose that we fit two multinomial logistic regression models: one treating stroke as the baseline, another treating drug overdose as the baseline. The coefficient estimates will differ between the two fitted models due to the differing choice of baseline, but the fitted values (pred…"
+  },
+  {
+   "id": "eq-4-12",
+   "num": "(4.12)",
+   "page": 154,
+   "img": "eq-p154-229y254-116x380.png",
+   "section": "4.3 Logistic Regression › 4.3.1 The Logistic Model › 4.3.2 Estimating the Regression Coefficients › 4.3.3 Making Predictions › 4.3.4 Multiple Logistic Regression › 4.3.5 Multinomial Logistic Regression",
+   "link": "../isl/05-classification.html#eq-4-12",
+   "before": "(4.10) for k = 1,⋯, K−1, and (4.11) It is not hard to show that for k = 1,⋯, K−1,",
+   "after": "Notice that (4.12) is quite similar to (4.6). Equation 4.12 indicates that once again, the log odds between any pair of classes is linear in the features. It turns out that in (4.10)–(4.12), the decision to treat the Kth class as the baseline is unimportant. For example, when classifying emergency room visits into stroke, drug overdose, and epileptic seizure, suppose that we fit two multinomial logistic regression models: one treating stroke as the baseline, another treating drug overdose as the baseline. The coefficient estimates will differ between the two fitted models due to the differing choice of baseline, but the fitted values (predictions), the log odds between any pair of classes, a…"
+  },
+  {
+   "id": "eq-4-13",
+   "num": "(4.13)",
+   "page": 154,
+   "img": "eq-p154-621y657-148x380.png",
+   "section": "4.3 Logistic Regression › 4.3.1 The Logistic Model › 4.3.2 Estimating the Regression Coefficients › 4.3.3 Making Predictions › 4.3.4 Multiple Logistic Regression › 4.3.5 Multinomial Logistic Regression",
+   "link": "../isl/05-classification.html#eq-4-13",
+   "before": "Nonetheless, interpretation of the coefficients in a multinomial logistic regression model must be done with care, since it is tied to the choice of baseline. For example, if we set epileptic seizure to be the baseline, then we can interpret βstroke0 as the log odds of stroke versus epileptic seizure, given that x1 = ⋯ = xp = 0. Furthermore, a one-unit increase in Xj is associated with a βstrokej increase in the log odds of stroke over epileptic seizure. Stated another way, if Xj increases by on…",
+   "after": "Suppose that we wish to classify an observation into one of K classes, where K ≥2. In other words, the qualitative response variable Y can take on K possible distinct and unordered values. Let πk represent the overall or prior probability that a randomly chosen observation comes from the kth class. Let fk(X) ≡Pr(X|Y = k)1 denote the density function of X for an observation that comes from the kth class. In other words, fk(x) is relatively large if there is a high probability that an observation in the kth class has X ≈x, and fk(x) is small if it is very unlikely that an observation in the kth class has X ≈x. Then Bayes’ theorem states that In accordance with our earlier notation, we will use…"
+  },
+  {
+   "id": "eq-4-14",
+   "num": "(4.14)",
+   "page": 155,
+   "img": "eq-p155-96y140-88x382.png",
+   "section": "4.3 Logistic Regression › 4.3.1 The Logistic Model › 4.3.2 Estimating the Regression Coefficients › 4.3.3 Making Predictions › 4.3.4 Multiple Logistic Regression › 4.3.5 Multinomial Logistic Regression",
+   "link": "../isl/05-classification.html#eq-4-14",
+   "before": "CopyPr(Y = epileptic seizure|X = x) increases by eβstrokej. (4.13) Suppose that we wish to classify an observation into one of K classes, where K ≥2. In other words, the qualitative response variable Y can take on K possible distinct and unordered values. Let πk represent the overall or prior probability that a randomly chosen observation comes from the kth class. Let fk(X) ≡Pr(X|Y = k)1 denote the density function of X for an observation that comes from the kth class. In other words, fk(x) is r…",
+   "after": "4.4Generative Models for Classification# Logistic regression involves directly modeling Pr(Y = k|X = x) using the logistic function, given by (4.7) for the case of two response classes. In statistical jargon, we model the conditional distribution of the response Y, given the predictor(s) X. We now consider an alternative and less direct approach to estimating these probabilities. In this new approach, we model the distribution of the predictors X separately in each of the response classes (i.e. for each value of Y). We then use Bayes’ theorem to flip these around into estimates for Pr(Y = k|X = x). When the distribution of X within each class is assumed to be normal, it turns out that the mo…"
+  },
+  {
+   "id": "eq-4-15",
+   "num": "(4.15)",
+   "page": 156,
+   "img": "eq-p156-54y85-173x380.png",
+   "section": "4.4 Generative Models for Classification",
+   "link": "../isl/05-classification.html#eq-4-15",
+   "before": "When there is substantial separation between the two classes, the parameter estimates for the logistic regression model are surprisingly unstable. The methods that we consider in this section do not suffer from this problem. If the distribution of the predictors X is approximately normal in each of the classes and the sample size is small, then the approaches in this section may be more accurate than logistic regression. The methods in this section can be naturally extended to the case of more t…",
+   "after": "Equation 4.15 suggests that instead of directly computing the posterior probability pk(x) as in Section 4.3.1, we can simply plug in estimates of πk and fk(x) into (4.15). In general, estimating πk is easy if we have a random sample from the population: we simply compute the fraction of the training observations that belong to the kth class. However, estimating the density function fk(x) is much more challenging. As we will see, to estimate fk(x), we will typically have to make some simplifying assumptions. We know from Chapter 2 that the Bayes classifier, which classifies an observation x to the class for which pk(x) is largest, has the lowest possible error rate out of all classifiers. (Of…"
+  },
+  {
+   "id": "eq-4-16",
+   "num": "(4.16)",
+   "page": 156,
+   "img": "eq-p156-464y489-161x380.png",
+   "section": "4.4 Generative Models for Classification › 4.4.1 Linear Discriminant Analysis for p = 1",
+   "link": "../isl/05-classification.html#eq-4-16",
+   "before": "In the following sections, we discuss three classifiers that use different estimates of fk(x) in (4.15) to approximate the Bayes classifier: linear discriminant analysis, quadratic discriminant analysis, and naive Bayes. 4.4.1Linear Discriminant Analysis for p = 1# For now, assume that p = 1—that is, we have only one predictor. We would like to obtain an estimate for fk(x) that we can plug into (4.15) in order to estimate pk(x). We will then classify an observation to the class for which pk(x) i…",
+   "after": "where µk and σk2 are the mean and variance parameters for the kth class. For now, let us further assume that σ2 1 =⋯ = σK2: that is, there is a shared variance term across all K classes, which for simplicity we can denote by σ2. Plugging (4.16) into (4.15), we find that (4.17) 注2 Recall that the Bayes classifier assigns an observation to the class for which pk(x) is largest. This is different from Bayes’ theorem in (4.15), which allows us to manipulate"
+  },
+  {
+   "id": "eq-4-17",
+   "num": "(4.17)",
+   "page": 156,
+   "img": "eq-p156-542y579-143x380.png",
+   "section": "4.4 Generative Models for Classification › 4.4.1 Linear Discriminant Analysis for p = 1",
+   "link": "../isl/05-classification.html#eq-4-17",
+   "before": "In particular, we assume that fk(x) is normal or Gaussian. In the onedimensional setting, the normal density takes the form (4.16) where µk and σk2 are the mean and variance parameters for the kth class. For now, let us further assume that σ2 1 =⋯ = σK2: that is, there is a shared variance term across all K classes, which for simplicity we can denote by σ2. Plugging (4.16) into (4.15), we find that",
+   "after": "注2 Recall that the Bayes classifier assigns an observation to the class for which pk(x) is largest. This is different from Bayes’ theorem in (4.15), which allows us to manipulate In practice, even if we are quite certain of our assumption that X is drawn from a Gaussian distribution within each class, to apply the Bayes classifier we still have to estimate the parameters µ1,⋯, µK, π1,⋯, πK, and σ2. The linear discriminant analysis (LDA) method approximates the Bayes classifier by plugging estimates for πk, µk, and σ2 into (4.18). In particular, the following estimates are used: FIGURE 4.4 Left: Two one-dimensional normal density functions are shown. The dashed vertical line represents the Ba…"
+  },
+  {
+   "id": "eq-4-18",
+   "num": "(4.18)",
+   "page": 157,
+   "img": "eq-p157-308y334-180x380.png",
+   "section": "4.4 Generative Models for Classification › 4.4.1 Linear Discriminant Analysis for p = 1",
+   "link": "../isl/05-classification.html#eq-4-18",
+   "before": "(4.17) 注2 Recall that the Bayes classifier assigns an observation to the class for which pk(x) is largest. This is different from Bayes’ theorem in (4.15), which allows us to manipulate In practice, even if we are quite certain of our assumption that X is drawn from a Gaussian distribution within each class, to apply the Bayes classifier we still have to estimate the parameters µ1,⋯, µK, π1,⋯, πK, and σ2. The linear discriminant analysis (LDA) method approximates the Bayes classifier by plugging…",
+   "after": "is largest. For instance, if K = 2 and π1 = π2, then the Bayes classifier assigns an observation to class 1 if 2x (µ1 −µ2) > µ21 −µ22, and to class 2 otherwise. The Bayes decision boundary is the point for which δ1(x) = δ2(x); one can show that this amounts to (4.19) An example is shown in the left-hand panel of Figure 4.4. The two normal density functions that are displayed, f1(x) and f2(x), represent two distinct classes. The mean and variance parameters for the two density functions are µ1 = −1.25, µ2 = 1.25, and σ12 = σ22 = 1. The two densities overlap, and so given that X = x, there is some uncertainty about the class to which the observation belongs. If we assume that an observation is…"
+  },
+  {
+   "id": "eq-4-19",
+   "num": "(4.19)",
+   "page": 157,
+   "img": "eq-p157-387y416-188x380.png",
+   "section": "4.4 Generative Models for Classification › 4.4.1 Linear Discriminant Analysis for p = 1",
+   "link": "../isl/05-classification.html#eq-4-19",
+   "before": "In practice, even if we are quite certain of our assumption that X is drawn from a Gaussian distribution within each class, to apply the Bayes classifier we still have to estimate the parameters µ1,⋯, µK, π1,⋯, πK, and σ2. The linear discriminant analysis (LDA) method approximates the Bayes classifier by plugging estimates for πk, µk, and σ2 into (4.18). In particular, the following estimates are used: FIGURE 4.4 Left: Two one-dimensional normal density functions are shown. The dashed vertical l…",
+   "after": "An example is shown in the left-hand panel of Figure 4.4. The two normal density functions that are displayed, f1(x) and f2(x), represent two distinct classes. The mean and variance parameters for the two density functions are µ1 = −1.25, µ2 = 1.25, and σ12 = σ22 = 1. The two densities overlap, and so given that X = x, there is some uncertainty about the class to which the observation belongs. If we assume that an observation is equally likely to come from either class—that is, π1 = π2 = 0.5—then by inspection of (4.19), we see that the Bayes classifier assigns the observation to class 1 if x < 0 and class 2 otherwise. Note that in this case, we can compute the Bayes classifier because we kn…"
+  },
+  {
+   "id": "eq-4-20",
+   "num": "(4.20)",
+   "page": 158,
+   "img": "eq-p158-72y142-171x380.png",
+   "section": "4.4 Generative Models for Classification › 4.4.1 Linear Discriminant Analysis for p = 1",
+   "link": "../isl/05-classification.html#eq-4-20",
+   "before": "is largest. For instance, if K = 2 and π1 = π2, then the Bayes classifier assigns an observation to class 1 if 2x (µ1 −µ2) > µ21 −µ22, and to class 2 otherwise. The Bayes decision boundary is the point for which δ1(x) = δ2(x); one can show that this amounts to (4.19) An example is shown in the left-hand panel of Figure 4.4. The two normal density functions that are displayed, f1(x) and f2(x), represent two distinct classes. The mean and variance parameters for the two density functions are µ1 = …",
+   "after": "where n is the total number of training observations, and nk is the number of training observations in the kth class. The estimate for µk is simply the average of all the training observations from the kth class, while σ̂2 can be seen as a weighted average of the sample variances for each of the K classes. Sometimes we have knowledge of the class membership probabilities π1,⋯, πK, which can be used directly. In the absence of any additional information, LDA estimates πk using the proportion of the training observations that belong to the kth class. In other words, (4.21) The LDA classifier plugs the estimates given in (4.20) and (4.21) into (4.18), and assigns an observation X = x to the cla…"
+  },
+  {
+   "id": "eq-4-21",
+   "num": "(4.21)",
+   "page": 158,
+   "img": "eq-p158-243y261-223x380.png",
+   "section": "4.4 Generative Models for Classification › 4.4.1 Linear Discriminant Analysis for p = 1",
+   "link": "../isl/05-classification.html#eq-4-21",
+   "before": "An example is shown in the left-hand panel of Figure 4.4. The two normal density functions that are displayed, f1(x) and f2(x), represent two distinct classes. The mean and variance parameters for the two density functions are µ1 = −1.25, µ2 = 1.25, and σ12 = σ22 = 1. The two densities overlap, and so given that X = x, there is some uncertainty about the class to which the observation belongs. If we assume that an observation is equally likely to come from either class—that is, π1 = π2 = 0.5—the…",
+   "after": "The LDA classifier plugs the estimates given in (4.20) and (4.21) into (4.18), and assigns an observation X = x to the class for which (4.22) is largest. The word linear in the classifier’s name stems from the fact that the discriminant functions δ̂k(x) in (4.22) are linear functions of x (as opposed to a more complex function of x). The right-hand panel of Figure 4.4 displays a histogram of a random sample of 20 observations from each class. To implement LDA, we began by estimating πk, µk, and σ2 using (4.20) and (4.21). We then computed the decision boundary, shown as a black solid line, that results from assigning an observation to the class for which (4.22) is largest. All points to the …"
+  },
+  {
+   "id": "eq-4-22",
+   "num": "(4.22)",
+   "page": 158,
+   "img": "eq-p158-290y317-180x380.png",
+   "section": "4.4 Generative Models for Classification › 4.4.1 Linear Discriminant Analysis for p = 1",
+   "link": "../isl/05-classification.html#eq-4-22",
+   "before": "(4.20) where n is the total number of training observations, and nk is the number of training observations in the kth class. The estimate for µk is simply the average of all the training observations from the kth class, while σ̂2 can be seen as a weighted average of the sample variances for each of the K classes. Sometimes we have knowledge of the class membership probabilities π1,⋯, πK, which can be used directly. In the absence of any additional information, LDA estimates πk using the proporti…",
+   "after": "is largest. The word linear in the classifier’s name stems from the fact that the discriminant functions δ̂k(x) in (4.22) are linear functions of x (as opposed to a more complex function of x). The right-hand panel of Figure 4.4 displays a histogram of a random sample of 20 observations from each class. To implement LDA, we began by estimating πk, µk, and σ2 using (4.20) and (4.21). We then computed the decision boundary, shown as a black solid line, that results from assigning an observation to the class for which (4.22) is largest. All points to the left of this line will be assigned to the green class, while points to the right of this line are assigned to the purple class. In this case, …"
+  },
+  {
+   "id": "eq-4-23",
+   "num": "(4.23)",
+   "page": 159,
+   "img": "eq-p159-551y577-118x380.png",
+   "section": "4.4 Generative Models for Classification › 4.4.1 Linear Discriminant Analysis for p = 1 › 4.4.2 Linear Discriminant Analysis for p >1",
+   "link": "../isl/05-classification.html#eq-4-23",
+   "before": "In the case of p > 1 predictors, the LDA classifier assumes that the observations in the kth class are drawn from a multivariate Gaussian distribution N(µk, Σ), where µk is a class-specific mean vector, and Σ is a covariance matrix that is common to all K classes. Plugging the density function for the kth class, fk(X = x), into (4.15) and performing a little bit of algebra reveals that the Bayes classifier assigns an observation X = x 95% of the probability for each of the three classes are show…",
+   "after": "FIGURE 4.6 An example with three classes. The observations from each class are drawn from a multivariate Gaussian distribution with p = 2, with a class-spe- cific mean vector and a common covariance matrix. Left: Ellipses that contain Once again, we need to estimate the unknown parameters µ1,⋯, µK, π1,⋯, πK, and Σ; the formulas are similar to those used in the onedimensional case, given in (4.20). To assign a new observation X = x, LDA plugs these estimates into (4.24) to obtain quantities δ̂k(x), and classifies to the class for which δ̂k(x) is largest. Note that in (4.24) δk(x) is a linear function of x; that is, the LDA decision rule depends on x only through a linear combination of its el…"
+  },
+  {
+   "id": "eq-4-24",
+   "num": "(4.24)",
+   "page": 160,
+   "img": "eq-p160-330y352-159x380.png",
+   "section": "4.4 Generative Models for Classification › 4.4.1 Linear Discriminant Analysis for p = 1 › 4.4.2 Linear Discriminant Analysis for p >1",
+   "link": "../isl/05-classification.html#eq-4-24",
+   "before": "(4.23) FIGURE 4.6 An example with three classes. The observations from each class are drawn from a multivariate Gaussian distribution with p = 2, with a class-spe- cific mean vector and a common covariance matrix. Left: Ellipses that contain Once again, we need to estimate the unknown parameters µ1,⋯, µK, π1,⋯, πK, and Σ; the formulas are similar to those used in the onedimensional case, given in (4.20). To assign a new observation X = x, LDA plugs these estimates into (4.24) to obtain quantitie…",
+   "after": "is largest. This is the vector/matrix version of (4.18). An example is shown in the left-hand panel of Figure 4.6. Three equallysized Gaussian classes are shown with class-specific mean vectors and a common covariance matrix. The three ellipses represent regions that contain 95% of the probability for each of the three classes. The dashed lines are the Bayes decision boundaries. In other words, they represent the set of values x for which δk(x) = δℓ(x); i.e. (4.25) for k̸ = l. (The log πk term from (4.24) has disappeared because each of the three classes has the same number of training observations; i.e. πk is the same for each class.) Note that there are three lines representing the Bayes d…"
+  },
+  {
+   "id": "eq-4-25",
+   "num": "(4.25)",
+   "page": 160,
+   "img": "eq-p160-441y466-139x380.png",
+   "section": "4.4 Generative Models for Classification › 4.4.1 Linear Discriminant Analysis for p = 1 › 4.4.2 Linear Discriminant Analysis for p >1",
+   "link": "../isl/05-classification.html#eq-4-25",
+   "before": "to the class for which (4.24) is largest. This is the vector/matrix version of (4.18). An example is shown in the left-hand panel of Figure 4.6. Three equallysized Gaussian classes are shown with class-specific mean vectors and a common covariance matrix. The three ellipses represent regions that contain 95% of the probability for each of the three classes. The dashed lines are the Bayes decision boundaries. In other words, they represent the set of values x for which δk(x) = δℓ(x); i.e.",
+   "after": "for k̸ = l. (The log πk term from (4.24) has disappeared because each of the three classes has the same number of training observations; i.e. πk is the same for each class.) Note that there are three lines representing the Bayes decision boundaries because there are three pairs of classes among the three classes. That is, one Bayes decision boundary separates class 1 from class 2, one separates class 1 from class 3, and one separates class 2 from class 3. These three Bayes decision boundaries divide the predictor space into three regions. The Bayes classifier will classify an observation according to the region in which it is located. TABLE 4.4 A confusion matrix compares the LDA predictions…"
+  },
+  {
+   "id": "eq-4-26",
+   "num": "(4.26)",
+   "page": 162,
+   "img": "eq-p162-479y496-176x380.png",
+   "section": "4.4 Generative Models for Classification › 4.4.1 Linear Discriminant Analysis for p = 1 › 4.4.2 Linear Discriminant Analysis for p >1",
+   "link": "../isl/05-classification.html#eq-4-26",
+   "before": "Class-specific performance is also important in medicine and biology, where the terms sensitivity and specificity characterize the performance of a classifier or screening test. In this case the sensitivity is the percentage of true defaulters that are identified; it equals 24.3%. The specificity is the percentage of non-defaulters that are correctly identified; it equals (1 −23/9667) = 99.8%. Why does LDA do such a poor job of classifying the customers who default? In other words, why does it h…",
+   "after": "Thus, the Bayes classifier, and by extension LDA, uses a threshold of 50% for the posterior probability of default in order to assign an observation to the default class. However, if we are concerned about incorrectly predicting the default status for individuals who default, then we can consider lowering this threshold. For instance, we might label any customer with a posterior probability of default above 20% to the default class. In other words, instead of assigning an observation to the default class if (4.26) holds, we could instead assign an observation to this class if (4.27) TABLE 4.5 A confusion matrix compares the LDA predictions to the true default statuses for the 10,000 training…"
+  },
+  {
+   "id": "eq-4-27",
+   "num": "(4.27)",
+   "page": 162,
+   "img": "eq-p162-596y613-176x380.png",
+   "section": "4.4 Generative Models for Classification › 4.4.1 Linear Discriminant Analysis for p = 1 › 4.4.2 Linear Discriminant Analysis for p >1",
+   "link": "../isl/05-classification.html#eq-4-27",
+   "before": "The error rates that result from taking this approach are shown in Table 4.5. Now LDA predicts that 430 individuals will default. Of the 333 individuals who default, LDA correctly predicts all but 138, or 41.4%. This is a vast improvement over the error rate of 75.7% that resulted from using the threshold of 50%. However, this improvement comes at a cost: now 235 individuals who do not default are incorrectly classified. As a result, the overall error rate has increased slightly to 3.73%. But a …",
+   "after": "TABLE 4.5 A confusion matrix compares the LDA predictions to the true default statuses for the 10,000 training observations in the Default data set, using a modified threshold value that predicts default for any individuals whose posterior default probability exceeds 20%. FIGURE 4.7 For the Default data set, error rates are shown as a function of the threshold value for the posterior probability that is used to perform the assign- ment. The black solid line displays the overall error rate. The blue dashed line represents the fraction of defaulting customers that are incorrectly classified, and the orange dotted line indicates the fraction of errors among the non-defaulting customers. Figure …"
+  },
+  {
+   "id": "eq-4-28",
+   "num": "(4.28)",
+   "page": 165,
+   "img": "eq-p165-526y587-93x380.png",
+   "section": "4.4 Generative Models for Classification › 4.4.1 Linear Discriminant Analysis for p = 1 › 4.4.2 Linear Discriminant Analysis for p >1 › 4.4.3 Quadratic Discriminant Analysis",
+   "link": "../isl/05-classification.html#eq-4-28",
+   "before": "Table 4.7 lists many of the popular performance measures that are used in this context. The denominators for the false positive and true positive rates are the actual population counts in each class. In contrast, the denominators for the positive predictive value and the negative predictive value are the total predicted counts for each class. Why does it matter whether or not we assume that the K classes share a QDA, or vice-versa? The answer lies in the bias-variance trade-off. When there are p…",
+   "after": "is largest. So the QDA classifier involves plugging estimates for Σk, µk, and πk into (4.28), and then assigning an observation X = x to the class for which this quantity is largest. Unlike in (4.24), the quantity x appears as a quadratic function in (4.28). This is where QDA gets its name. FIGURE 4.9 Left: The Bayes (purple dashed), LDA (black dotted), and QDA (green solid) decision boundaries for a two-class problem with Σ1 = Σ2. The shading indicates the QDA decision rule. Since the Bayes decision boundary is linear, it is more accurately approximated by LDA than by QDA. Right: Details are as given in the left-hand panel, except that Σ1̸ = Σ2. Since the Bayes decision boundary is non-line…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 166,
+   "img": "eq-p166-118y127-85x275.png",
+   "section": "4.4 Generative Models for Classification › 4.4.1 Linear Discriminant Analysis for p = 1 › 4.4.2 Linear Discriminant Analysis for p >1 › 4.4.3 Quadratic Discriminant Analysis",
+   "link": "../isl/05-classification.html",
+   "before": "As we have discussed, LDA assumes that the observations within each class are drawn from a multivariate Gaussian distribution with a class-specific mean vector and a covariance matrix that is common to all K classes. Quadratic discriminant analysis (QDA) provides an alternative approach. Like LDA, the QDA classifier results from assuming that the observations from each class are drawn from a Gaussian distribution, and plugging estimates for the parameters into Bayes’ theorem in order to perform …",
+   "after": "FIGURE 4.9 Left: The Bayes (purple dashed), LDA (black dotted), and QDA (green solid) decision boundaries for a two-class problem with Σ1 = Σ2. The shading indicates the QDA decision rule. Since the Bayes decision boundary is linear, it is more accurately approximated by LDA than by QDA. Right: Details are as given in the left-hand panel, except that Σ1̸ = Σ2. Since the Bayes decision boundary is non-linear, it is more accurately approximated by QDA than by LDA. Figure 4.9 illustrates the performances of LDA and QDA in two scenarios. In the left-hand panel, the two Gaussian classes have a common correlation of 0.7 between X1 and X2. As a result, the Bayes decision boundary is linear and is a…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 166,
+   "img": "eq-p166-202y217-171x361.png",
+   "section": "4.4 Generative Models for Classification › 4.4.1 Linear Discriminant Analysis for p = 1 › 4.4.2 Linear Discriminant Analysis for p >1 › 4.4.3 Quadratic Discriminant Analysis",
+   "link": "../isl/05-classification.html",
+   "before": "is largest. So the QDA classifier involves plugging estimates for Σk, µk, and πk into (4.28), and then assigning an observation X = x to the class for which this quantity is largest. Unlike in (4.24), the quantity x appears as a quadratic function in (4.28). This is where QDA gets its name. FIGURE 4.9 Left: The Bayes (purple dashed), LDA (black dotted), and QDA (green solid) decision boundaries for a two-class problem with Σ1 = Σ2. The shading indicates the QDA decision rule. Since the Bayes dec…",
+   "after": "Figure 4.9 illustrates the performances of LDA and QDA in two scenarios. In the left-hand panel, the two Gaussian classes have a common correlation of 0.7 between X1 and X2. As a result, the Bayes decision boundary is linear and is accurately approximated by the LDA decision boundary. The QDA decision boundary is inferior, because it suffers from higher variance without a corresponding decrease in bias. In contrast, the right-hand panel displays a situation in which the orange class has a correlation of 0.7 between the variables and the blue class has a correlation of −0.7. Now the Bayes decision boundary is quadratic, and so QDA more accurately approximates this boundary than does LDA. 4.4.…"
+  },
+  {
+   "id": "eq-4-29",
+   "num": "(4.29)",
+   "page": 167,
+   "img": "eq-p167-437y454-156x380.png",
+   "section": "4.4 Generative Models for Classification › 4.4.1 Linear Discriminant Analysis for p = 1 › 4.4.2 Linear Discriminant Analysis for p >1 › 4.4.3 Quadratic Discriminant Analysis › 4.4.4 Naive Bayes",
+   "link": "../isl/05-classification.html#eq-4-29",
+   "before": "Recall that Bayes’ theorem (4.15) provides an expression for the posterior probability pk(x) = Pr(Y = k|X = x) in terms of π1,⋯, πK and f1(x),⋯, fK(x). To use (4.15) in practice, we need estimates for π1,⋯, πK and f1(x),⋯, fK(x). As we saw in previous sections, estimating the prior probabilities π1,⋯, πK is typically straightforward: for instance, we can estimate π̂k as the proportion of training observations belonging to the kth class, for k = 1,⋯, K. However, estimating f1(x),⋯, fK(x) is more …",
+   "after": "where fkj is the density function of the jth predictor among observations in the kth class. Why is this assumption so powerful? Essentially, estimating a p-dimensional density function is challenging because we must consider not only the marginal distribution of each predictor — that is, the distribution of each predictor on its own — but also the joint distribution of the predictors — that is, the association between the different predictors. In the case of a multivariate normal distribution, the association between the different predictors is summarized by the off-diagonal elements of the covariance matrix. However, in general, this association can be very hard to characterize, and exceedi…"
+  },
+  {
+   "id": "eq-4-30",
+   "num": "(4.30)",
+   "page": 168,
+   "img": "eq-p168-173y208-98x380.png",
+   "section": "4.4 Generative Models for Classification › 4.4.1 Linear Discriminant Analysis for p = 1 › 4.4.2 Linear Discriminant Analysis for p >1 › 4.4.3 Quadratic Discriminant Analysis › 4.4.4 Naive Bayes",
+   "link": "../isl/05-classification.html#eq-4-30",
+   "before": "(4.29) where fkj is the density function of the jth predictor among observations in the kth class. Why is this assumption so powerful? Essentially, estimating a p-dimensional density function is challenging because we must consider not only the marginal distribution of each predictor — that is, the distribution of each predictor on its own — but also the joint distribution of the predictors — that is, the association between the different predictors. In the case of a multivariate normal distribu…",
+   "after": "for k = 1,⋯, K. To estimate the one-dimensional density function fkj using training data x1j,⋯, xnj, we have a few options. If Xj is quantitative, then we can assume that Xj|Y = k ∼N(µjk, σjk2). In other words, we assume that within each class, the jth predictor is drawn from a (univariate) normal distribution. While this may sound a bit like QDA, there is one key difference, in that here we are assuming that the predictors are independent; this amounts to QDA with an additional assumption that the class-specific covariance matrix is diagonal. If Xj is quantitative, then another option is to use a non-parametric estimate for fkj. A very simple way to do this is by making a histogram for the …"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 168,
+   "img": "eq-p168-563y571-197x329.png",
+   "section": "4.4 Generative Models for Classification › 4.4.1 Linear Discriminant Analysis for p = 1 › 4.4.2 Linear Discriminant Analysis for p >1 › 4.4.3 Quadratic Discriminant Analysis › 4.4.4 Naive Bayes",
+   "link": "../isl/05-classification.html",
+   "before": "If Xj is quantitative, then we can assume that Xj|Y = k ∼N(µjk, σjk2). In other words, we assume that within each class, the jth predictor is drawn from a (univariate) normal distribution. While this may sound a bit like QDA, there is one key difference, in that here we are assuming that the predictors are independent; this amounts to QDA with an additional assumption that the class-specific covariance matrix is diagonal. If Xj is quantitative, then another option is to use a non-parametric esti…",
+   "after": "We now consider the naive Bayes classifier in a toy example with p = 3 predictors and K = 2 classes. The first two predictors are quantitative, and the third predictor is qualitative with three levels. Suppose further that π̂1 = π̂2 = 0.5. The estimated density functions f̂kj for k = 1, 2 and j = 1, 2, 3 are displayed in Figure 4.10. Now suppose that we wish to classify a new observation, x∗= (0.4, 1.5, 1)T . It turns out that in this Density estimates for class k=1"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 169,
+   "img": "eq-p169-73y94-127x377.png",
+   "section": "4.4 Generative Models for Classification › 4.4.1 Linear Discriminant Analysis for p = 1 › 4.4.2 Linear Discriminant Analysis for p >1 › 4.4.3 Quadratic Discriminant Analysis › 4.4.4 Naive Bayes",
+   "link": "../isl/05-classification.html",
+   "before": "We now consider the naive Bayes classifier in a toy example with p = 3 predictors and K = 2 classes. The first two predictors are quantitative, and the third predictor is qualitative with three levels. Suppose further that π̂1 = π̂2 = 0.5. The estimated density functions f̂kj for k = 1, 2 and j = 1, 2, 3 are displayed in Figure 4.10. Now suppose that we wish to classify a new observation, x∗= (0.4, 1.5, 1)T . It turns out that in this Density estimates for class k=1",
+   "after": "Table 4.8 provides the confusion matrix resulting from applying the naive Bayes classifier to the Default data set, where we predict a default if the posterior probability of a default — that is, P(Y = default|X = x) — exceeds 0.5. Comparing this to the results for LDA in Table 4.4, our findings correctly predicts a higher fraction of the true defaulters. In this implementation of naive Bayes, we have assumed that each quantitative predictor is drawn from a Gaussian distribution (and, of course, that within each class, each predictor is independent). Density estimates for class k=2"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 169,
+   "img": "eq-p169-227y248-127x377.png",
+   "section": "4.4 Generative Models for Classification › 4.4.1 Linear Discriminant Analysis for p = 1 › 4.4.2 Linear Discriminant Analysis for p >1 › 4.4.3 Quadratic Discriminant Analysis › 4.4.4 Naive Bayes",
+   "link": "../isl/05-classification.html",
+   "before": "Table 4.8 provides the confusion matrix resulting from applying the naive Bayes classifier to the Default data set, where we predict a default if the posterior probability of a default — that is, P(Y = default|X = x) — exceeds 0.5. Comparing this to the results for LDA in Table 4.4, our findings correctly predicts a higher fraction of the true defaulters. In this implementation of naive Bayes, we have assumed that each quantitative predictor is drawn from a Gaussian distribution (and, of course,…",
+   "after": "FIGURE 4.10 In the toy example in Section 4.4.4, we generate data with p = 3 predictors and K = 2 classes. The first two predictors are quantitative, and the third predictor is qualitative with three levels. In each class, the estimated density for each of the three predictors is displayed. If the prior probabilities for the two classes are equal, then the observation x∗ = (0.4, 1.5, 1)T has a 94.4% posterior probability of belonging to the first class. TABLE 4.8 Comparison of the naive Bayes predictions to the true default status for the 10, 000 training observations in the Default data set, when we predict default for any observation for which P (Y = default|X = x) > 0.5. example, f̂11(0.4…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 169,
+   "img": "eq-p169-601y609-86x215.png",
+   "section": "4.4 Generative Models for Classification › 4.4.1 Linear Discriminant Analysis for p = 1 › 4.4.2 Linear Discriminant Analysis for p >1 › 4.4.3 Quadratic Discriminant Analysis › 4.4.4 Naive Bayes",
+   "link": "../isl/05-classification.html",
+   "before": "FIGURE 4.10 In the toy example in Section 4.4.4, we generate data with p = 3 predictors and K = 2 classes. The first two predictors are quantitative, and the third predictor is qualitative with three levels. In each class, the estimated density for each of the three predictors is displayed. If the prior probabilities for the two classes are equal, then the observation x∗ = (0.4, 1.5, 1)T has a 94.4% posterior probability of belonging to the first class. TABLE 4.8 Comparison of the naive Bayes pr…",
+   "after": "TABLE 4.9 Comparison of the naive Bayes predictions to the true default status for the 10, 000 training observations in the Default data set, when we predict default for any observation for which P (Y = default|X = x) > 0.2. First, for LDA, we can make use of Bayes’ theorem (4.15) as well as the assumption that the predictors within each class are drawn from a multivariate normal density (4.23) with class-specific mean and shared covariance matrix in order to show that Just as with LDA, we can easily adjust the probability threshold for predicting a default. For example, Table 4.9 provides the confusion matrix resulting from predicting a default if P(Y = default|X = x) > 0.2. Again, the resu…"
+  },
+  {
+   "id": "eq-4-31",
+   "num": "(4.31)",
+   "page": 170,
+   "img": "eq-p170-540y586-193x380.png",
+   "section": "4.5 A Comparison of Classification Methods › 4.5.1 An Analytical Comparison",
+   "link": "../isl/05-classification.html#eq-4-31",
+   "before": "In this example, it should not be too surprising that naive Bayes does not convincingly outperform LDA: this data set has n = 10,000 and p = 2, and so the reduction in variance resulting from the naive Bayes assumption is not necessarily worthwhile. We expect to see a greater pay-off to using naive Bayes relative to LDA or QDA in instances where p is larger or n is smaller, so that reducing the variance is very important. 4.5A Comparison of Classification Methods# 4.5.1An Analytical Comparison# …",
+   "after": "for k = 1,⋯, K. Examining the specific form of (4.31) for each method provides a clear understanding of their similarities and differences. (4.32) where ak = log−12(µk + µK)T Σ−1(µk −µK) and bkj is the jth component of Σ−1(µk −µK). Hence LDA, like logistic regression, assumes that the log odds of the posterior probabilities is linear in x. Using similar calculations, in the QDA setting (4.31) becomes"
+  },
+  {
+   "id": "eq-4-32",
+   "num": "(4.32)",
+   "page": 171,
+   "img": "eq-p171-72y275-86x390.png",
+   "section": "4.5 A Comparison of Classification Methods › 4.5.1 An Analytical Comparison",
+   "link": "../isl/05-classification.html#eq-4-32",
+   "before": "4.5.1An Analytical Comparison# We now perform an analytical (or mathematical) comparison of LDA, QDA, naive Bayes, and logistic regression. We consider these approaches in a setting with K classes, so that we assign an observation to the class that maximizes Pr(Y = k|X = x). Equivalently, we can set K as the baseline class and assign an observation to the class that maximizes (4.31) for k = 1,⋯, K. Examining the specific form of (4.31) for each method provides a clear understanding of their simi…",
+   "after": "where ak = log−12(µk + µK)T Σ−1(µk −µK) and bkj is the jth component of Σ−1(µk −µK). Hence LDA, like logistic regression, assumes that the log odds of the posterior probabilities is linear in x. Using similar calculations, in the QDA setting (4.31) becomes (4.33) where ak, bkj, and ckjl are functions of πk, πK, µk, µK, Σk and ΣK. Again, as the name suggests, QDA assumes that the log odds of the posterior probabilities is quadratic in x."
+  },
+  {
+   "id": "eq-4-33",
+   "num": "(4.33)",
+   "page": 171,
+   "img": "eq-p171-341y386-102x380.png",
+   "section": "4.5 A Comparison of Classification Methods › 4.5.1 An Analytical Comparison",
+   "link": "../isl/05-classification.html#eq-4-33",
+   "before": "for k = 1,⋯, K. Examining the specific form of (4.31) for each method provides a clear understanding of their similarities and differences. (4.32) where ak = log−12(µk + µK)T Σ−1(µk −µK) and bkj is the jth component of Σ−1(µk −µK). Hence LDA, like logistic regression, assumes that the log odds of the posterior probabilities is linear in x. Using similar calculations, in the QDA setting (4.31) becomes",
+   "after": "where ak, bkj, and ckjl are functions of πk, πK, µk, µK, Σk and ΣK. Again, as the name suggests, QDA assumes that the log odds of the posterior probabilities is quadratic in x. Finally, we examine (4.31) in the naive Bayes setting. Recall that in this setting, fk(x) is modeled as a product of p one-dimensional functions fkj(xj) for j = 1,⋯, p. Hence, (4.34) where ak = logand gkj(xj) = log. Hence, the right-hand side of (4.34) takes the form of a generalized additive model, a topic that is discussed further in Chapter 7."
+  },
+  {
+   "id": "eq-4-34",
+   "num": "(4.34)",
+   "page": 171,
+   "img": "eq-p171-463y608-108x380.png",
+   "section": "4.5 A Comparison of Classification Methods › 4.5.1 An Analytical Comparison",
+   "link": "../isl/05-classification.html#eq-4-34",
+   "before": "Using similar calculations, in the QDA setting (4.31) becomes (4.33) where ak, bkj, and ckjl are functions of πk, πK, µk, µK, Σk and ΣK. Again, as the name suggests, QDA assumes that the log odds of the posterior probabilities is quadratic in x. Finally, we examine (4.31) in the naive Bayes setting. Recall that in this setting, fk(x) is modeled as a product of p one-dimensional functions fkj(xj) for j = 1,⋯, p. Hence,",
+   "after": "where ak = logand gkj(xj) = log. Hence, the right-hand side of (4.34) takes the form of a generalized additive model, a topic that is discussed further in Chapter 7. 注πK fKj(xj) Inspection of (4.32), (4.33), and (4.34) yields the following observations about LDA, QDA, and naive Bayes: LDA is a special case of QDA with ckjl = 0 for all j = 1,⋯, p, l = 1,⋯, p, and k = 1,⋯, K. (Of course, this is not surprising, since LDA is simply a restricted version of QDA with Σ1 =⋯ = ΣK = Σ.)"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 172,
+   "img": "eq-p172-488y534-150x354.png",
+   "section": "4.5 A Comparison of Classification Methods › 4.5.1 An Analytical Comparison",
+   "link": "../isl/05-classification.html",
+   "before": "If we model fkj(xj) in the naive Bayes classifier using a one-dimensional Gaussian distribution N(µkj, σj2 ), then we end up with gkj(xj) = bkjxj where bkj = (µkj−µKj)/σj2 . In this case, naive Bayes is actually a special case of LDA with Σ restricted to be a diagonal matrix with jth diagonal element equal to σ2 j . Neither QDA nor naive Bayes is a special case of the other. Naive Bayes can produce a more flexible fit, since any choice can be made for gkj(xj). However, it is restricted to a pure…",
+   "after": "This is identical to the linear form of LDA (4.32): in both cases, efficients in this linear function are functions of estimates for πk, πK, µk, µK, and Σ obtained by assuming that X1,⋯, Xp follow a normal distribution within each class. By contrast, in logistic regression, the coefficients are chosen to maximize the likelihood function (4.5). Thus, we expect LDA to outperform logistic regression when the normality assumption (approximately) holds, and we expect logistic regression to perform better when it does not. We close with a brief discussion of K-nearest neighbors (KNN), introduced in Chapter 2. Recall that KNN takes a completely different approach from the classifiers seen in this c…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 178,
+   "img": "eq-p178-322y358-198x307.png",
+   "section": "4.6 Generalized Linear Models › 4.6.1 Linear Regression on the Bikeshare Data",
+   "link": "../isl/05-classification.html",
+   "before": "Finally, the response bikers is integer-valued. But under a linear model, Y = β0 + )pj=1 Xjβj + ϵ, where ϵ is a continuous-valued error term. This means that in a linear model, the response Y is necessarily continuousvalued (quantitative). Thus, the integer nature of the response bikers suggests that a linear regression model is not entirely satisfactory for this data Suppose that a random variable Y takes on nonnegative integer values, i.e. Y ∈{0, 1, 2,⋯}. If Y follows the Poisson distribution,…",
+   "after": "Transforming the response avoids the possibility of negative predictions, and it overcomes much of the heteroscedasticity in the untransformed data, as is shown in the right-hand panel of Figure 4.14. However, it is not quite a satisfactory solution, since predictions and inference are made in terms of the log of the response, rather than the response. This leads to challenges in interpretation, e.g. “a one-unit increase in Xj is associated with an increase in the mean of the log of Y by an amount βj”. Furthermore, a log transformation of the response cannot be applied in settings where the response can take on a value of 0. Thus, while fitting a linear model to a transformation of the respo…"
+  },
+  {
+   "id": "eq-4-35",
+   "num": "(4.35)",
+   "page": 178,
+   "img": "eq-p178-633y657-162x380.png",
+   "section": "4.6 Generalized Linear Models › 4.6.1 Linear Regression on the Bikeshare Data › 4.6.2 Poisson Regression on the Bikeshare Data",
+   "link": "../isl/05-classification.html#eq-4-35",
+   "before": "Transforming the response avoids the possibility of negative predictions, and it overcomes much of the heteroscedasticity in the untransformed data, as is shown in the right-hand panel of Figure 4.14. However, it is not quite a satisfactory solution, since predictions and inference are made in terms of the log of the response, rather than the response. This leads to challenges in interpretation, e.g. “a one-unit increase in Xj is associated with an increase in the mean of the log of Y by an amou…",
+   "after": "The Poisson distribution is typically used to model counts; this is a natural choice for a number of reasons, including the fact that counts, like the Poisson distribution, take on nonnegative integer values. To see how we might use the Poisson distribution in practice, let Y denote the number of users of the bike sharing program during a particular hour of the day, under a particular set of weather conditions, and during a particular month of the year. We might model Y as a Poisson distribution with mean E(Y) = λ = 5. This means that the probability of no users dur- 0! = 1 by convention). The probability that there is exactly one user Of course, in reality, we expect the mean number of user…"
+  },
+  {
+   "id": "eq-4-36",
+   "num": "(4.36)",
+   "page": 179,
+   "img": "eq-p179-366y382-149x380.png",
+   "section": "4.6 Generalized Linear Models › 4.6.1 Linear Regression on the Bikeshare Data › 4.6.2 Poisson Regression on the Bikeshare Data",
+   "link": "../isl/05-classification.html#eq-4-36",
+   "before": "The Poisson distribution is typically used to model counts; this is a natural choice for a number of reasons, including the fact that counts, like the Poisson distribution, take on nonnegative integer values. To see how we might use the Poisson distribution in practice, let Y denote the number of users of the bike sharing program during a particular hour of the day, under a particular set of weather conditions, and during a particular month of the year. We might model Y as a Poisson distribution…",
+   "after": "or equivalently (4.37) Here, β0, β1,⋯, βp are parameters to be estimated. Together, (4.35) and (4.36) define the Poisson regression model. Notice that in (4.36), we take the log of λ(X1,⋯, Xp) to be linear in X1,⋯, Xp, rather than having λ(X1,⋯, Xp) itself be linear in X1,⋯, Xp; this ensures that λ(X1,⋯, Xp) takes on nonnegative values for all values of the covariates. To estimate the coefficients β0, β1,⋯, βp, we use the same maximum likelihood approach that we adopted for logistic regression in Section 4.3.2. Specifically, given n independent observations from the Poisson regression model, the likelihood takes the form"
+  },
+  {
+   "id": "eq-4-37",
+   "num": "(4.37)",
+   "page": 179,
+   "img": "eq-p179-399y416-170x380.png",
+   "section": "4.6 Generalized Linear Models › 4.6.1 Linear Regression on the Bikeshare Data › 4.6.2 Poisson Regression on the Bikeshare Data",
+   "link": "../isl/05-classification.html#eq-4-37",
+   "before": "Of course, in reality, we expect the mean number of users of the bike sharing program, λ = E(Y), to vary as a function of the hour of the day, the month of the year, the weather conditions, and so forth. So rather than modeling the number of bikers, Y, as a Poisson distribution with a fixed mean value like λ = 5, we would like to allow the mean to vary as a function of the covariates. In particular, we consider the following model for the mean λ = E(Y), which we now write as λ(X1,⋯, Xp) to empha…",
+   "after": "Here, β0, β1,⋯, βp are parameters to be estimated. Together, (4.35) and (4.36) define the Poisson regression model. Notice that in (4.36), we take the log of λ(X1,⋯, Xp) to be linear in X1,⋯, Xp, rather than having λ(X1,⋯, Xp) itself be linear in X1,⋯, Xp; this ensures that λ(X1,⋯, Xp) takes on nonnegative values for all values of the covariates. To estimate the coefficients β0, β1,⋯, βp, we use the same maximum likelihood approach that we adopted for logistic regression in Section 4.3.2. Specifically, given n independent observations from the Poisson regression model, the likelihood takes the form (4.38) where λ(xi) = eβ0+β1xi1+⋯+βpxip, due to (4.37). We estimate the coefficients that maxim…"
+  },
+  {
+   "id": "eq-4-38",
+   "num": "(4.38)",
+   "page": 179,
+   "img": "eq-p179-529y563-166x380.png",
+   "section": "4.6 Generalized Linear Models › 4.6.1 Linear Regression on the Bikeshare Data › 4.6.2 Poisson Regression on the Bikeshare Data",
+   "link": "../isl/05-classification.html#eq-4-38",
+   "before": "or equivalently (4.37) Here, β0, β1,⋯, βp are parameters to be estimated. Together, (4.35) and (4.36) define the Poisson regression model. Notice that in (4.36), we take the log of λ(X1,⋯, Xp) to be linear in X1,⋯, Xp, rather than having λ(X1,⋯, Xp) itself be linear in X1,⋯, Xp; this ensures that λ(X1,⋯, Xp) takes on nonnegative values for all values of the covariates. To estimate the coefficients β0, β1,⋯, βp, we use the same maximum likelihood approach that we adopted for logistic regression i…",
+   "after": "where λ(xi) = eβ0+β1xi1+⋯+βpxip, due to (4.37). We estimate the coefficients that maximize the likelihood ℓ(β0, β1,⋯, βp), i.e. that make the observed data as likely as possible. We now fit a Poisson regression model to the Bikeshare data set. The results are shown in Table 4.11 and Figure 4.15. Qualitatively, the results are similar to those from linear regression in Section 4.6.1. We again see that bike usage is highest in the spring and fall and during rush hour, Coefficient Std. error z-statistic p-value TABLE 4.11 Results for a Poisson regression model fit to predict bikers in the Bikeshare data. The predictors mnth and hr are omitted from this table due to space constraints, and can be…"
+  },
+  {
+   "id": "eq-4-39",
+   "num": "(4.39)",
+   "page": 181,
+   "img": "eq-p181-428y449-163x380.png",
+   "section": "4.6 Generalized Linear Models › 4.6.1 Linear Regression on the Bikeshare Data › 4.6.2 Poisson Regression on the Bikeshare Data › 4.6.3 Generalized Linear Models in Greater Generality",
+   "link": "../isl/05-classification.html#eq-4-39",
+   "before": "4.6.3Generalized Linear Models in Greater Generality# We have now discussed three types of regression models: linear, logistic and Poisson. These approaches share some common characteristics: 1. Each approach uses predictors X1,⋯, Xp to predict a response Y. We assume that, conditional on X1,⋯, Xp, Y belongs to a certain family of distributions. For linear regression, we typically assume that Y follows a Gaussian or normal distribution. For logistic regression, we assume that Y follows a Bernoul…",
+   "after": "i.e. it is a linear function of the predictors. For logistic regression, the mean instead takes the form (4.40) while for Poisson regression it takes the form (4.41)"
+  },
+  {
+   "id": "eq-4-40",
+   "num": "(4.40)",
+   "page": 181,
+   "img": "eq-p181-481y525-160x380.png",
+   "section": "4.6 Generalized Linear Models › 4.6.1 Linear Regression on the Bikeshare Data › 4.6.2 Poisson Regression on the Bikeshare Data › 4.6.3 Generalized Linear Models in Greater Generality",
+   "link": "../isl/05-classification.html#eq-4-40",
+   "before": "1. Each approach uses predictors X1,⋯, Xp to predict a response Y. We assume that, conditional on X1,⋯, Xp, Y belongs to a certain family of distributions. For linear regression, we typically assume that Y follows a Gaussian or normal distribution. For logistic regression, we assume that Y follows a Bernoulli distribution. Finally, for Poisson regression, we assume that Y follows a Poisson distribution. 2. Each approach models the mean of Y as a function of the predictors. In linear regression, …",
+   "after": "while for Poisson regression it takes the form (4.41) Equations (4.39)–(4.41) can be expressed using a link function, η, which 注mean, a situation referred to as overdispersion. This causes the Z-values to be inflated in Table 4.11. A more careful analysis should account for this overdispersion to obtain more accurate Z-values, and there are a variety of methods for doing this. But they are beyond the scope of this book."
+  },
+  {
+   "id": "eq-4-41",
+   "num": "(4.41)",
+   "page": 181,
+   "img": "eq-p181-542y567-127x380.png",
+   "section": "4.6 Generalized Linear Models › 4.6.1 Linear Regression on the Bikeshare Data › 4.6.2 Poisson Regression on the Bikeshare Data › 4.6.3 Generalized Linear Models in Greater Generality",
+   "link": "../isl/05-classification.html#eq-4-41",
+   "before": "(4.39) i.e. it is a linear function of the predictors. For logistic regression, the mean instead takes the form (4.40) while for Poisson regression it takes the form",
+   "after": "Equations (4.39)–(4.41) can be expressed using a link function, η, which 注mean, a situation referred to as overdispersion. This causes the Z-values to be inflated in Table 4.11. A more careful analysis should account for this overdispersion to obtain more accurate Z-values, and there are a variety of methods for doing this. But they are beyond the scope of this book. (4.42) The link functions for linear, logistic and Poisson regression are η(µ) = µ, η(µ) = log(µ/(1 −µ)), and η(µ) = log(µ), respectively."
+  },
+  {
+   "id": "eq-4-42",
+   "num": "(4.42)",
+   "page": 182,
+   "img": "eq-p182-84y101-144x380.png",
+   "section": "4.6 Generalized Linear Models › 4.6.1 Linear Regression on the Bikeshare Data › 4.6.2 Poisson Regression on the Bikeshare Data › 4.6.3 Generalized Linear Models in Greater Generality",
+   "link": "../isl/05-classification.html#eq-4-42",
+   "before": "while for Poisson regression it takes the form (4.41) Equations (4.39)–(4.41) can be expressed using a link function, η, which 注mean, a situation referred to as overdispersion. This causes the Z-values to be inflated in Table 4.11. A more careful analysis should account for this overdispersion to obtain more accurate Z-values, and there are a variety of methods for doing this. But they are beyond the scope of this book.",
+   "after": "The link functions for linear, logistic and Poisson regression are η(µ) = µ, η(µ) = log(µ/(1 −µ)), and η(µ) = log(µ), respectively. The Gaussian, Bernoulli and Poisson distributions are all members of a wider class of distributions, known as the exponential family. Other wellknown members of this family are the exponential distribution, the Gamma distribution, and the negative binomial distribution. In general, we can perform a regression by modeling the response Y as coming from a particular member of the exponential family, and then transforming the mean of the response so that the transformed mean is a linear function of the predictors via (4.42). Any regression approach that follows this…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 205,
+   "img": "eq-p205-215y251-161x369.png",
+   "section": "4.8 Exercises › Conceptual",
+   "link": "../isl/05-classification.html",
+   "before": "Suppose that we take a data set, divide it into equally-sized training and test sets, and then try out two different classification procedures. First we use logistic regression and get an error rate of 20% on the training data and 30% on the test data. Next we use 1-nearest neighbors (i.e. K = 1) and get an average error rate (averaged over both test and training data sets) of 18%. Based on these results, which method should we prefer to use for classification of new observations? Why?This probl…",
+   "after": "Your friend fits a logistic regression model to the same data using the softmax formulation in (4.13), and finds that What is the log odds of orange versus apple in your model?What is the log odds of orange versus apple in your friend’s model?Suppose that in your model, β̂0 = 2 and β̂1 = −1. What are the coefficient estimates in your friend’s model? Be as specific as possible.Now suppose that you and your friend fit the same two models on a different data set. This time, your friend gets the coefficient estimates α̂orange0 = 1.2, α̂orange1 = −2, α̂orange0 = 3, α̂orange1 = 0.6. What are the coefficient estimates in your model?Finally, suppose you apply both models from (d) to a data set with …"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 205,
+   "img": "eq-p205-285y336-114x415.png",
+   "section": "4.8 Exercises › Conceptual",
+   "link": "../isl/05-classification.html",
+   "before": "setting where p > 1, so that the mean for the kth class, µk, is a pdimensional vector, and the shared covariance Σ is a p × p matrix. However, in the setting with p = 1, (4.32) takes a simpler form, since the means µ1,⋯, µK and the variance σ2 are scalars. In this simpler setting, repeat the calculation in (4.32), and provide expressions for ak and bkj in terms of πk, πK, µk, µK, and σ2. Work out the detailed forms of ak, bkj, and bkjl in (4.33). Your answer should involve πk, πK, µk, µK, Σk, an…",
+   "after": "What is the log odds of orange versus apple in your model?What is the log odds of orange versus apple in your friend’s model?Suppose that in your model, β̂0 = 2 and β̂1 = −1. What are the coefficient estimates in your friend’s model? Be as specific as possible.Now suppose that you and your friend fit the same two models on a different data set. This time, your friend gets the coefficient estimates α̂orange0 = 1.2, α̂orange1 = −2, α̂orange0 = 3, α̂orange1 = 0.6. What are the coefficient estimates in your model?Finally, suppose you apply both models from (d) to a data set with 2,000 test observations. What fraction of the time do you expect the predicted class labels from your model to agree w…"
+  }
+ ]
+}

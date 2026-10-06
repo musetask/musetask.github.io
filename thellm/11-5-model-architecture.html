@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>5 Model Architecture · Large Language Models</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23a11f27'/%3E%3Cpath d='M9 8h9a4.5 4.5 0 0 1 0 9H9zm0 9h9a4.5 4.5 0 0 1 0 9H9z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<script>(function(){try{var t=localStorage.getItem('pdf2html-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn" href="index.html" aria-label="Contents">&#9776;</a>
+  <a class="brand" href="index.html">Large Language Models</a>
+  <button class="btn" id="themeToggle" aria-label="Toggle dark mode">&#9788;</button>
+</header>
+<main id="main">
+<article>
+<h1 id="model-architecture"><span class="chno">Chapter 5</span>Model Architecture</h1>
+<p><strong>Abstract</strong> Large language models (LLMs) are advanced neural networks pre-trained on extensive text corpora. A critical aspect of developing LLMs lies in designing effective network architectures that enable the creation of powerful and scalable models. This chapter delves into the architectural foundations of LLMs, with a particular emphasis on the Transformer model, which has become the cornerstone of modern LLMs. We begin by systematically dissecting the Transformer model, examining its components in detail, and explaining how the encoder and decoder modules are constructed and integrated into a unified architecture.</p>
+<p>Next, we provide a comprehensive overview of the key configurations that define these models, including normalization techniques, positional encoding, activation functions, attention mechanisms, and mixture-of-experts models. Building on these foundational elements, we present a complete configuration of the LLaMA model, accompanied by practical code demonstrations to illustrate its implementation.</p>
+<p>Furthermore, we explore three prominent architectural paradigms for constructing language models: the encoder–decoder architecture, the causal decoder architecture, and the prefix decoder architecture. To address the challenges of processing long texts, we discuss strategies for extending LLMs to handle longer contexts, including scaling positional embeddings or expanding the context window.</p>
+<p>Finally, we introduce alternative model architectures based on parameterized state space models, highlighting emerging approaches like Mamba and other variants. This chapter aims to provide a thorough understanding of the architectural principles underlying LLMs, equipping readers with the knowledge to design, implement, and adapt these models for diverse applications.</p>
+<p>In Chap. 4, this book provides a detailed introduction to the process of preparing pre-training data. This chapter will explore the architecture of large language models</p>
+<p>(LLMs), with a primary focus on the Transformer model (Sect. 5.1). It will also cover detailed <em>configurations</em> (Sect. 5.2), mainstream <em>architectures</em> (Sect. 5.3), long context <em>models</em> (Sect. 5.4), and alternative model <em>architectures</em> (Sect. 5.5). Table 5.1 provides detailed configurations of representative LLMs.</p>
+<figure class="tbl"><div class="tablewrap"><img src="assets/fig-0041.png" alt="Table 5.1 Architecture configurations of LLMs. PE denotes positional encoding, A" loading="lazy"></div><figcaption>Table 5.1 Architecture configurations of LLMs. PE denotes positional encoding, ACT denotes activation function, L denotes the number of layers, N denotes the number of attention heads, and H denotes the size of the hidden state. (Table source: [8])</figcaption></figure>
+<p><strong>Category</strong></p>
+<p><strong>Size</strong> <strong>Normalization</strong></p>
+<figure class="eq"><img src="assets/fig-0042.png" alt="equation " loading="lazy"></figure>
+<p><strong>Model</strong></p>
+<p>Causal</p>
+<p>Pre Layer</p>
+<p>Learned</p>
+<p>GELU</p>
+<figure class="eq"><img src="assets/fig-0043.png" alt="equation " loading="lazy"></figure>
+<p>96 12288 GPT-3</p>
+<p>175B</p>
+<p>Causal</p>
+<p>Pre Layer</p>
+<p>Learned</p>
+<p>GELU</p>
+<p>64 128 16384</p>
+<p>207B</p>
+<p>Causal</p>
+<p>Pre Layer</p>
+<p>Learned</p>
+<p>96 12288 OPT</p>
+<p>175B</p>
+<p>ReLU</p>
+<p>Causal</p>
+<p>Pre Layer</p>
+<p>RoPE</p>
+<p>SwiGLU 118</p>
+<p>48 18432 PaLM</p>
+<p>540B</p>
+<p>Causal</p>
+<p>Pre Layer</p>
+<p>ALiBi</p>
+<p>GELU</p>
+<p>70 112 14336 BLOOM</p>
+<p>176B</p>
+<p>Causal</p>
+<p>105 128 20480 MT-NLG</p>
+<p>530B</p>
+<figure class="eq"><img src="assets/fig-0044.png" alt="equation " loading="lazy"></figure>
+<p>Causal</p>
+<p>Pre RMS</p>
+<p>80 128 16384 Gopher</p>
+<p>280B</p>
+<p>Relative</p>
+<p>Pre RMS</p>
+<p>8192 Chinchilla</p>
+<p>Causal</p>
+<p>Relative</p>
+<p>Causal</p>
+<p>Pre Layer</p>
+<p>Learned</p>
+<p>GELU</p>
+<p>80 10240 Galactica</p>
+<p>120B</p>
+<p>Causal</p>
+<p>Relative</p>
+<p>GeGLU</p>
+<p>64 128</p>
+<p>8192 LaMDA</p>
+<p>137B</p>
+<p>Causal</p>
+<p>Pre Layer</p>
+<p>Learned</p>
+<p>GELU</p>
+<p>96 13824 Jurassic-1</p>
+<p>178B</p>
+<p>Pre RMS</p>
+<p>RoPE</p>
+<p>SwiGLU</p>
+<p>8192 LLaMA-2</p>
+<p>Causal</p>
+<p>Pre Layer</p>
+<p>RoPE</p>
+<p>GELU</p>
+<p>5120 Pythia</p>
+<p>Causal</p>
+<p>Baichuan-2</p>
+<p>Pre RMS</p>
+<p>ALiBi</p>
+<p>SwiGLU</p>
+<p>5120</p>
+<p>Causal</p>
+<p>8192</p>
+<p>Pre RMS</p>
+<p>RoPE</p>
+<p>SwiGLU</p>
+<p>Qwen-1.5</p>
+<p>Causal</p>
+<p>InternLM-2</p>
+<p>Pre RMS</p>
+<p>RoPE</p>
+<p>SwiGLU</p>
+<p>6144</p>
+<p>Causal</p>
+<p>Causal</p>
+<p>Pre Layer</p>
+<p>RoPE</p>
+<p>GELU</p>
+<p>80 232 14848 Falcon</p>
+<p>180B</p>
+<p>Pre Layer</p>
+<p>ALiBi</p>
+<p>GELU</p>
+<figure class="eq"><img src="assets/fig-0045.png" alt="equation " loading="lazy"></figure>
+<p>7168 MPT</p>
+<p>Causal</p>
+<p>Pre RMS</p>
+<p>RoPE</p>
+<p>SwiGLU</p>
+<p>4096 Mistral</p>
+<p>Causal</p>
+<p>Pre RMS</p>
+<p>RoPE</p>
+<p>GELU</p>
+<p>3072 Gemma</p>
+<p>Causal</p>
+<p>Pre RMS</p>
+<p>RoPE</p>
+<p>SwiGLU</p>
+<p>8192 DeepSeek</p>
+<p>Causal</p>
+<p>Pre RMS</p>
+<p>RoPE</p>
+<p>SwiGLU</p>
+<p>7168 Yi</p>
+<p>Causal</p>
+<p>Pre RMS</p>
+<p>RoPE</p>
+<p>SwiGLU</p>
+<p>4864 YuLan</p>
+<p>Causal</p>
+<p>GLM-130B</p>
+<p>Prefix</p>
+<p>Post Deep</p>
+<p>RoPE</p>
+<p>GeGLU</p>
+<p>96 12288</p>
+<p>130B</p>
+<p>Enc-Dec</p>
+<p>Pre RMS</p>
+<p>Relative</p>
+<p>24 128</p>
+<p>1024 T5</p>
+<p>ReLU</p>
+<h2 id="5-1-transformer-models"><span class="num">5.1</span>Transformer Models<a class="anchor" href="#5-1-transformer-models">#</a></h2>
+<p>Most existing LLMs are currently designed and developed using the Transformer architecture. Transformer is a neural network model consisting of stacked sub-modules, including multi-head attention and feed-forward network layers. The original Transformer model is composed of two components: the encoder and the decoder, which can be</p>
+<p>used independently. For instance, BERT employs an encoder-only architecture, while GPT-1 utilizes a decoder-only architecture. Compared to early pre-trained language models like BERT, LLMs retain the core structure of Transformer but expand primarily in the representation dimension and the number of stacked layers, leading to a substantial increase in model parameters. This section will first introduce the basic components of the Transformer model, including the input encoding layer, the multi-head attention layer, and the feed-forward network layer, followed by an introduction to the encoder and decoder components of the Transformer model.</p>
+<h3 id="5-1-1-input-encoding-layer"><span class="num">5.1.1</span>Input Encoding Layer<a class="anchor" href="#5-1-1-input-encoding-layer">#</a></h3>
+<p>In the Transformer model, the input token sequence (<span class="m">u</span> <span class="m">=</span> <span class="m">[</span><em>u</em>1<span class="m">,</span> <em>u</em>2<span class="m">, . . .</span> <span class="m">,</span> <em>u</em><span class="m">T</span><span class="m">]</span>.) is first transformed into a sequence of embedding vectors through an input embedding module. Specifically, to model the semantic information, each input token is mapped to a learnable token vector <span class="m">v</span><span class="m">t</span> <span class="m">∈</span> R<span class="m">H</span> . in the input embedding module. Since the self-attention mechanism cannot inherently model the order of elements in the sequence, the Transformer model introduces <em>position</em> <em>embedding</em> (PE) to represent the positional information within the sequence. Given a token <em>u</em><span class="m">t</span> .,it will be assigned a corresponding position vector <span class="m">p</span><span class="m">t</span> <span class="m">∈</span> R<span class="m">H</span> . based on its absolute position in the input. The token vector and its corresponding position vector are then directly added to obtain the input embedding representation</p>
+<figure class="eq"><img src="assets/fig-0046.png" alt="equation " loading="lazy"></figure>
+<figure class="eq"><img src="assets/fig-0047.png" alt="equation 5.1" loading="lazy"></figure>
+<p>The Transformer model uses <span class="m">p</span><span class="m">t</span> . to encode the positional information of tokens. Since the positional encoding is determined solely by each token’s position, this method is known as <em>absolute</em> <em>positional</em> <em>encoding</em>. However, constrained by the maximum length of training samples, absolute positional encoding cannot represent positions not encountered in the training data, thereby limiting the Transformer model’s ability to handle long contexts. This book will introduce various positional encoding methods in Sect. 5.2.4 and discuss long context modeling strategies in Sect. 5.4.</p>
+<h3 id="5-1-2-multi-head-attention-layer"><span class="num">5.1.2</span>Multi-Head Attention Layer<a class="anchor" href="#5-1-2-multi-head-attention-layer">#</a></h3>
+<p>Multi-head attention is the core mechanism of the Transformer model, enabling it to model interactions between inputs at any distance. In contrast, recurrent neural</p>
+<p>network (RNN) iteratively updates the current state using the previous state, which can lead to gradient explosion or vanishing gradient problems when handling long sequences. Convolutional neural network (CNN) allows interactions only among tokens within the convolutional kernel, necessitating stacked convolutional layers to achieve long-distance information interaction.</p>
+<p>A multi-head attention layer typically consists of multiple attention modules. In each attention module, the input embedding sequence is mapped to corresponding <em>query</em> (<span class="m">Q</span>.), <em>key</em> (<span class="m">K</span> .), and <em>value</em> (<span class="m">V</span> .) matrices. Each query then performs a dot product with all keys, and the softmax function is used to compute the attention scores. These scores are subsequently used to compute the weighted sum of the value vectors, resulting in the final output. Formally, the above process can be expressed as:</p>
+<figure class="eq"><img src="assets/fig-0048.png" alt="equation 5.2" loading="lazy"></figure>
+<figure class="eq"><img src="assets/fig-0049.png" alt="equation 5.3" loading="lazy"></figure>
+<figure class="eq"><img src="assets/fig-0050.png" alt="equation 5.4" loading="lazy"></figure>
+<figure class="eq"><img src="assets/fig-0051.png" alt="equation 5.5" loading="lazy"></figure>
+<p>In the above formula, <span class="m">W</span> <span class="m">Q</span>., <span class="m">W</span> <span class="m">K</span> ., and <span class="m">W</span><span class="m">V</span> . are the mapping matrices, and the numerical <span class="m">√</span> scaling is performed by dividing</p>
+<p><em>D</em>., where <em>D</em> is the dimension of the key vectors.</p>
+<p>The multi-head attention mechanism incorporates <em>N</em> attention modules (attention heads), each having the same structure but different parameters. In each attention head, the input sequence is mapped into distinct sets of queries, keys, and values, and the output is computed independently. Finally, the outputs of different attention heads are then concatenated and mapped to the final output through a weight matrix <span class="m">W</span> <span class="m">O</span> <span class="m">∈</span> R<span class="m">H</span><span class="m">×</span><span class="m">H</span> .:</p>
+<figure class="eq"><img src="assets/fig-0052.png" alt="equation 5.6" loading="lazy"></figure>
+<figure class="eq"><img src="assets/fig-0053.png" alt="equation 5.7" loading="lazy"></figure>
+<p>The attention mechanism can directly model relationships between any two positions in a sequence, offering superior capabilities to modeling long sequences than traditional RNN and its variants such as LSTM and GRU. Additionally, the attention computation process is well-suited for parallel computing and benefits from high-performance hardware like GPUs and TPUs, enabling the efficient optimization of large-scale Transformer models.</p>
+<h3 id="5-1-3-feed-forward-network-layer"><span class="num">5.1.3</span>Feed-Forward Network Layer<a class="anchor" href="#5-1-3-feed-forward-network-layer">#</a></h3>
+<p>To model complex mapping relationships, the Transformer model incorporates a feed-forward network (FFN) layer, which applies nonlinear transformations to the embedding sequence. Specifically, given an input <span class="m">x</span> <span class="m">∈</span> R<span class="m">H</span> ., the FFN layer in the Transformer consists of two linear transformations and a nonlinear activation function:</p>
+<figure class="eq"><img src="assets/fig-0054.png" alt="equation 5.8" loading="lazy"></figure>
+<p>where <span class="m">W</span><span class="m">U</span> <span class="m">∈</span> R<span class="m">H</span><span class="m">×</span><span class="m">H</span> . and <span class="m">W</span> <span class="m">D</span> <span class="m">∈</span> R<span class="m">H</span> <span class="m">×</span><span class="m">H</span> . are the linear transformation weight matrices, respectively, <span class="m">b</span>1 <span class="m">∈</span> R<span class="m">H</span> . and <span class="m">b</span>2 <span class="m">∈</span> R<span class="m">H</span> . are the bias terms, and <span class="m">σ</span>. is the activation function (with ReLU used in the original Transformer). The FFN layer introduces the nonlinear transformation through the activation function, thereby enhancing the model’s ability to represent complex data and capture intricate interaction relationships.</p>
+<h3 id="5-1-4-encoder"><span class="num">5.1.4</span>Encoder<a class="anchor" href="#5-1-4-encoder">#</a></h3>
+<p>In the Transformer model, the role of the encoder (Fig. 5.1a) is to encode each input token into a contextualized embedding. The encoder is composed of stacking multiple identical layers, each containing an MHA module and an FFN module. Additionally, layer normalization and residual connections are applied after the attention and FFN modules to enhance training stability. Specifically, the residual connection adds the input to the layer’s output, facilitating information flow across different layers and mitigating issues such as gradient explosion or vanishing, while layer normalization (LayerNorm) rescales the output of each module to enhance the stability of the model’s training (see Sect. 5.2.1 for more details).</p>
+<p>The encoder takes as input a sequence of token embeddings <span class="m">X</span>. that have been integrated with positional encoding. It models contextual semantic information through multiple stacked encoding layers to generate the encoded representation for the given input. The attention module in the encoder typically employs bidirectional attention, allowing all input embeddings to be fully visible to each other. This enables the token</p>
+<figure><img src="assets/fig-0055.png" alt="" loading="lazy"><figcaption>Figure 5.1 Illustration of the Transformer model architecture</figcaption></figure>
+<p>representations at each position to aggregate semantic information from the entire context. Formally, the computation in the <em>l</em>-th layer (<em>l</em> <span class="m">∈</span> <span class="m">{</span>1<span class="m">, . . .</span> <span class="m">,</span> <em>L</em><span class="m">}</span>.) of the encoder is as follows:</p>
+<figure class="eq"><img src="assets/fig-0056.png" alt="equation 5.9" loading="lazy"></figure>
+<p>where <span class="m">X</span><span class="m">l</span><span class="m">-</span>1. and <span class="m">X</span><span class="m">l</span>. represent the input and output of the Transformer layer, respectively, while ˜<span class="m">X</span><span class="m">l</span>. denotes the intermediate representation of the input after passing through the multi-head attention module within this layer.</p>
+<h3 id="5-1-5-decoder"><span class="num">5.1.5</span>Decoder<a class="anchor" href="#5-1-5-decoder">#</a></h3>
+<p>The decoder in the Transformer architecture (Fig. 5.1b) generates subsequent content based on the last layer’s outputs of the encoder and the already generated token sequence. Unlike the encoder, the decoder incorporates the masking mechanism during attention</p>
+<p>computation to prevent future information from being leaked while generating the target sequence. Additionally, the decoder introduces a cross-attention module to enable the hidden states <span class="m">X</span> <span class="m">L</span>. to focus on the output from the encoder (Eq. 5.9). Similar to the encoder, each module in the decoder also uses layer normalization and residual connections. After the decoder, the model maps its output to a probability distribution over the target vocabulary through a fully connected layer. It can then generate a token sequence by applying specific decoding strategies. During training, the decoder can process the input and target sequences in parallel. However, during generation, the decoder must generate the entire target sequence step by step in an autoregressive manner (see Chap. 9 for more details). The computation process in the decoder is as follows:</p>
+<figure class="eq"><img src="assets/fig-0057.png" alt="equation " loading="lazy"></figure>
+<figure class="eq"><img src="assets/fig-0058.png" alt="equation 5.10" loading="lazy"></figure>
+<figure class="eq"><img src="assets/fig-0059.png" alt="equation " loading="lazy"></figure>
+<p>where <span class="m">Y</span><span class="m">l</span><span class="m">-</span>1. and <span class="m">Y</span><span class="m">l</span>. represent the input and output of the decoder layer, respectively, while ˜<span class="m">Y</span><span class="m">l</span>. and ˆ<span class="m">Y</span><span class="m">l</span>. are the intermediate representations of the input after passing through the masked multi-head attention module ( MaskedMHA.) and multi-head cross-attention module ( CrossMHA.), respectively. Subsequently, the output of the final layer, <span class="m">Y</span> <span class="m">L</span>., is mapped to the dimension of the token vocabulary:</p>
+<figure class="eq"><img src="assets/fig-0060.png" alt="equation 5.11" loading="lazy"></figure>
+<p>where <span class="m">O</span> <span class="m">∈</span> R<span class="m">T</span><span class="m">×</span><span class="m">V</span> . represents the final output of the model (<em>V</em> denotes the size of the vocabulary), indicating the probability distribution of the next token over the vocabulary. The matrix <span class="m">W</span> <span class="m">L</span> <span class="m">∈</span> R<span class="m">H</span><span class="m">×</span><span class="m">V</span> . is the parameter matrix for mapping.</p>
+<h2 id="5-2-detailed-configuration"><span class="num">5.2</span>Detailed Configuration<a class="anchor" href="#5-2-detailed-configuration">#</a></h2>
+<p>Based on the Transformer model [10], researchers have proposed various improvements in training stability, model performance, and computational efficiency. This section introduces the configurations of the four core modules of the Transformer model— normalization, activation functions, positional encoding, and attention mechanisms— along with the mixture-of-experts structure. Finally, the implementation of the LLaMA model will be demonstrated through code examples.</p>
+<h3 id="5-2-1-normalization-methods"><span class="num">5.2.1</span>Normalization Methods<a class="anchor" href="#5-2-1-normalization-methods">#</a></h3>
+<p>LLMs often encounter issues with the unstable training loss during pre-training. To alleviate this issue, <em>normalization</em> methods are widely used to improve the stability of the training process. The original Transformer model primarily employs layer normalization (LayerNorm or LN) [146], while several improved normalization methods have emerged, such as Root Mean Square Layer Normalization (RMSNorm) [147] and DeepNorm [148]. The following part provides a detailed introduction to these methods.</p>
+<ul><li><em>LayerNorm.</em> In earlier work, batch normalization (BN) [149] is a widely adopted normalization method. However, it is not effective for handling sequence data with variable length or small batch sizes. To address this, researchers introduce layer normalization [146], which performs normalization layer by layer. Specifically, layer normalization calculates the mean <span class="m">μ</span>. and variance <span class="m">σ</span>. of all activation values within each layer and then adjusts the activations’ center and scaling factor:</li></ul>
+<figure class="eq"><img src="assets/fig-0061.png" alt="equation 5.12" loading="lazy"></figure>
+<figure class="eq"><img src="assets/fig-0062.png" alt="equation 5.13" loading="lazy"></figure>
+<ul><li><em>RMSNorm.</em> RMSNorm [147] scales the activation using the root mean square RMS<span class="m">(·)</span>. on the activation values. Transformer models using RMSNorm show certain advantages in both training speed and performance compared to models trained with LayerNorm. Early representative models, such as Gopher [114] and Chinchilla [19], both employ RMSNorm. The computation formula is as follows:</li></ul>
+<figure class="eq"><img src="assets/fig-0063.png" alt="equation 5.14" loading="lazy"></figure>
+<figure class="eq"><img src="assets/fig-0064.png" alt="equation 5.15" loading="lazy"></figure>
+<div class="codeblock"><pre><code><span class="t-kw">class</span> <span class="t-kw">LlamaRMSNorm</span>(nn.Module):
+        <span class="t-kw">def</span> __init__(<span class="t-kw">self</span>, hidden_size, eps=1e-6):
+            <span class="t-kw">super</span>().__init__()
+            <span class="t-kw">self</span>.weight = nn.Parameter(torch.ones(hidden_size))
+            <span class="t-kw">self</span>.variance_epsilon = eps</code></pre></div>
+<p>The following provides the implementation code for RMSNorm in LLaMA from the Huggingface Transformers codebase:</p>
+<div class="codeblock"><pre><code><span class="t-kw">def</span> forward(<span class="t-kw">self</span>, hidden_states):
+    input_dtype = hidden_states.dtype
+    hidden_states = hidden_states.to(torch.float32)
+    <span class="t-com">#</span> <span class="t-com">Calculate</span> <span class="t-com">the</span> <span class="t-com">root</span> <span class="t-com">mean</span> <span class="t-com">square</span> <span class="t-com">of</span> <span class="t-com">the</span> <span class="t-com">hidden</span> <span class="t-com">states</span>
+    variance = hidden_states.pow(2).mean(-1, keepdim=<span class="t-kw">True</span>)
+    <span class="t-com">#</span> <span class="t-com">Rescale</span> <span class="t-com">the</span> <span class="t-com">hidden</span> <span class="t-com">states</span> <span class="t-com">after</span> <span class="t-com">dividing</span> <span class="t-com">by</span> <span class="t-com">their</span> <span class="t-com">root</span> <span class="t-com">mean</span> <span class="t-com">square</span> hidden_states = hidden_states * torch.rsqrt(variance +
+        <span class="t-kw">self</span>.variance_epsilon)</code></pre></div>
+<div class="codeblock"><pre><code><span class="t-kw">return</span> <span class="t-kw">self</span>.weight * hidden_states.to(input_dtype)</code></pre></div>
+<p><span class="m">→</span></p>
+<ul><li><em>DeepNorm.</em> To further stabilize the training of deep Transformers, DeepNorm [148] enhances LayerNorm by scaling the activation values <span class="m">x</span>. through a certain proportion <span class="m">α</span>. within the residual connections. This approach supports greater depth expansion. The computational formula is as follows:</li></ul>
+<figure class="eq"><img src="assets/fig-0065.png" alt="equation 5.16" loading="lazy"></figure>
+<p>where Sublayer. denotes the FFN or attention module within a Transformer layer. For example, GLM-130B [150] employs DeepNorm in its architecture.</p>
+<h3 id="5-2-2-normalization-position"><span class="num">5.2.2</span>Normalization Position<a class="anchor" href="#5-2-2-normalization-position">#</a></h3>
+<p>The position of normalization modules also has a significant impact on training</p>
+<p>As shown in Fig. 5.2a, there are typically three options for the position of stability.</p>
+<p>normalization modules: post-layer normalization (Post-Norm), pre-layer normalization (Pre-Norm), and sandwich-layer normalization (Sandwich-Norm).</p>
+<ul><li><em>Post-Norm.</em> The vanilla Transformer model employs the Post-Norm technique, which places the normalization module after the residual connection. The calculation formula is given by:</li></ul>
+<figure class="eq"><img src="assets/fig-0066.png" alt="equation 5.17" loading="lazy"></figure>
+<p>where Norm. represents any normalization method. In principle, Post-Norm offers several advantages. First, it helps accelerate the convergence speed of neural network training and prevents issues like gradient explosion or gradient vanishing, thereby reducing training time. Second, Post-Norm can decrease the sensitivity of the neural network to hyperparameters (such as learning rate and initialization parameters), making the network easier to tune. However, due to the potentially large gradients near the input layer, Post-Norm can sometimes result in training instability [151]. Consequently, in existing LLMs, Post-</p>
+<p>Norm is typically combined with other strategies. For example, GLM-130B employs both Post-Norm and DeepNorm.</p>
+<ul><li><em>Pre-Norm.</em> Unlike Post-Norm, Pre-Norm [152] applies the normalization module before each sublayer. The computational formula is as follows:</li></ul>
+<figure class="eq"><img src="assets/fig-0067.png" alt="equation 5.18" loading="lazy"></figure>
+<p>where Norm. refers to any normalization method. Pre-Norm introduces a normalization module before each sublayer, normalizing only the input representations fed into each module, which can help alleviate issues of gradient explosion or gradient vanishing. Additionally, Pre-Norm adds an extra LayerNorm after the final Transformer layer. Although it might be slightly less performant than Post-Norm, Pre-Norm provides greater stability during training. As a result, most mainstream LLMs use Pre-Norm.</p>
+<ul><li><em>Sandwich-Norm.</em> Building on Pre-Norm, Sandwich-Norm [153] introduces an additional LayerNorm before residual connection, primarily to prevent numerical explosion in the outputs of Transformer layers. It is implemented as follows:</li></ul>
+<figure class="eq"><img src="assets/fig-0068.png" alt="equation 5.19" loading="lazy"></figure>
+<p>Essentially, Sandwich-Norm can be seen as a combination of the Pre-Norm and Post- Norm methods, theoretically offering better normalization effects. However, researchers have found that Sandwich-Norm sometimes fails to ensure stable training of LLMs and may even result in training collapse issues [150].</p>
+<h3 id="5-2-3-activation-function"><span class="num">5.2.3</span>Activation Function<a class="anchor" href="#5-2-3-activation-function">#</a></h3>
+<p>In FFN, the choice of activation function is crucial to the performance of LLMs. Typically, activation functions are used to introduce non-linear transformations in neural networks, thereby enhancing the model’s capacity. The vanilla Transformer architecture employs the ReLU (Rectified Linear Unit) activation function, which is computationally simple. Its specific form is as follows:</p>
+<figure class="eq"><img src="assets/fig-0069.png" alt="equation 5.20" loading="lazy"></figure>
+<p>However, ReLU may lead to the issue of inactive neurons, where neurons set to 0 fail to learn useful information. To address it, researchers have explored variants of the ReLU function to achieve better performance. The Swish activation function multiplies</p>
+<p>neurons by their sigmoid activated outputs. GELU (Gaussian Error Linear Unit) [154] uses the standard Gaussian cumulative distribution function as the activation function and is widely used in existing Transformer models. Compared to the ReLU function, these new activation functions generally offer better convergence and performance. The comparison of Swish and GELU with ReLU is illustrated in Fig. 5.2b. The mathematical forms of Swish and GELU are given by the following equations:</p>
+<figure class="eq"><img src="assets/fig-0070.png" alt="equation 5.21" loading="lazy"></figure>
+<figure class="eq"><img src="assets/fig-0071.png" alt="equation 5.22" loading="lazy"></figure>
+<p>In addition to the activation functions mentioned above, LLMs (such as PaLM and LaMDA) frequently use GLU (Gated Linear Unit) and its variants [155] as activation functions, including SwiGLU and GeGLU. These methods introduce gating mechanisms into existing activation functions, often resulting in better performance [156]. The computation formulas for the SwiGLU and GeGLU activation functions are as follows:</p>
+<figure class="eq"><img src="assets/fig-0072.png" alt="equation 5.23" loading="lazy"></figure>
+<figure class="eq"><img src="assets/fig-0073.png" alt="equation 5.24" loading="lazy"></figure>
+<figure><img src="assets/fig-0074.png" alt="" loading="lazy"><figcaption>Figure 5.2 Illustrations of normalization and activation functions</figcaption></figure>
+<h3 id="5-2-4-position-encoding"><span class="num">5.2.4</span>Position Encoding<a class="anchor" href="#5-2-4-position-encoding">#</a></h3>
+<p>Due to the permutation invariance of the attention mechanism in Transformer models, sequential relationships within the data cannot be directly captured using the attention mechanism alone. To address this issue, position embeddings (PE) are introduced to</p>
+<p>model the sequence information, which integrate either absolute or relative positional information into the model.</p>
+<ul><li><em>Absolute</em> <em>position</em> <em>encoding.</em> To capture sequential information in input data, the vanilla Transformer model uses absolute position encoding. Specifically, position embeddings are generated based on the absolute positions of tokens in the sequence, and these embeddings are added to the input token embeddings of both the encoder and decoder to inject positional information. The formula for absolute position encoding is as follows:</li></ul>
+<figure class="eq"><img src="assets/fig-0075.png" alt="equation 5.25" loading="lazy"></figure>
+<p>where <span class="m">p</span><span class="m">t</span> . represents the position embedding at position <em>t</em>, and <span class="m">v</span><span class="m">t</span> . is the embedding corresponding to the token at that position. The vanilla Transformer uses sine and cosine functions for position encoding, with distinct sine and cosine functions predefined for different dimensions. The absolute position is then fed into these functions to compute the corresponding position encoding. For a position embedding with dimensionality <em>H</em>, the value for dimension <em>i</em> <span class="m">∈</span> <span class="m">{</span>1<span class="m">, . . .</span> <span class="m">,</span> <em>H</em><span class="m">}</span>. is set as follows:</p>
+<p>⎧⎪⎪⎪⎨</p>
+<figure class="eq"><img src="assets/fig-0076.png" alt="equation 5.26" loading="lazy"></figure>
+<p>⎪⎪⎪⎩</p>
+<p>Additionally, absolute position encoding can also use learnable embedding representations, which have been widely adopted by early pre-trained language models (e.g., BERT).</p>
+<ul><li><em>Relative</em> <em>position</em> <em>encoding.</em> Unlike absolute position encoding, which is typically applied only at the input layer, relative position encoding is computed at each layer based on the offset between keys and queries. It is usually used to adjust attention scores rather than being added to the token embeddings. To highlight the differences and connections between these two approaches, we decompose the calculated attention score in the model’s first layer, using absolute position encoding as an example:</li></ul>
+<figure class="eq"><img src="assets/fig-0077.png" alt="equation 5.27" loading="lazy"></figure>
+<p>.</p>
+<p>In contrast to the methods mentioned above, Transformer-XL [157] incorporates relative positional information when computing the attention scores between keys and queries. The specific formula is as follows:</p>
+<figure class="eq"><img src="assets/fig-0078.png" alt="equation 5.28" loading="lazy"></figure>
+<p>where <span class="m">r</span><span class="m">i</span><span class="m">-</span><span class="m">j</span><span class="m">W</span> <span class="m">R</span>. represents the relative position encoding, and <span class="m">f</span>. and <span class="m">g</span>. are parameters representing the global information. Compared to absolute position encoding, in the second and fourth terms of the attention values, the absolute position encoding <span class="m">p</span><span class="m">j</span><span class="m">W</span> <span class="m">K</span> . corresponding to keys is replaced by the relative position encoding <span class="m">r</span><span class="m">i</span><span class="m">-</span><span class="m">j</span><span class="m">W</span> <span class="m">R</span>. to incorporate the relative positional information; while in the third and fourth terms, the global parameters <span class="m">f</span>. and <span class="m">g</span>. replace the absolute position encoding <span class="m">p</span><span class="m">i</span><span class="m">W</span> <span class="m">Q</span>. corresponding to queries, which are used to measure the importance of the keys and relative positional information, respectively.</p>
+<p>As another representative method, T5 [67] introduces a simplified relative position encoding called <em>T5</em> <em>bias</em>. Specifically, it incorporates learnable scalars into the attention scores, which are computed based on the position distances between the queries and keys. Compared to absolute position encoding, Transformer models that use relative position encoding can generally model longer texts than those seen during training, exhibiting a certain degree of length extrapolation ability [158]. The calculation of T5 relative position encoding can be expressed as:</p>
+<figure class="eq"><img src="assets/fig-0079.png" alt="equation 5.29" loading="lazy"></figure>
+<p>where <em>r</em><span class="m">i</span><span class="m">-</span><span class="m">j</span> . represents a learnable scalar based on the offset between queries and keys. Note that relative position encoding needs to be applied to every layer of the Transformer model. For simplicity, we will use <span class="m">x</span><span class="m">i</span>. to denote the input representation of each layer in the following discussion.</p>
+<ul><li><em>Rotary position embedding (RoPE).</em> RoPE utilizes rotation matrices, derived from absolute positional information, to represent relative positional information in attention. It assigns a unique rotation matrix to each absolute position in the sequence and multiplies it with the queries and keys. Formally, the rotation matrix corresponding to the position index <em>t</em> is as follows: ⎡⎢⎢⎢⎢⎢⎢⎢⎢⎢⎢⎢⎢⎢⎢⎢⎢⎢⎢⎣ ⎤⎥⎥⎥⎥⎥⎥⎥⎥⎥⎥⎥⎥⎥⎥⎥⎥⎥⎥⎦</li></ul>
+<figure class="eq"><img src="assets/fig-0080.png" alt="equation " loading="lazy"></figure>
+<figure class="eq"><img src="assets/fig-0081.png" alt="equation " loading="lazy"></figure>
+<figure class="eq"><img src="assets/fig-0082.png" alt="equation " loading="lazy"></figure>
+<p>0</p>
+<figure class="eq"><img src="assets/fig-0083.png" alt="equation 5.30" loading="lazy"></figure>
+<p>0</p>
+<figure class="eq"><img src="assets/fig-0084.png" alt="equation " loading="lazy"></figure>
+<p>0</p>
+<figure class="eq"><img src="assets/fig-0085.png" alt="equation " loading="lazy"></figure>
+<p>0</p>
+<p>Based on the properties of trigonometric functions, the product of the rotation matrix with index <em>i</em> and the transpose of the rotation matrix with index <em>j</em> is equivalent to the rotation matrix with index corresponding to the relative distance <em>i</em> <span class="m">-</span> <em>j</em>., i.e., <span class="m">R</span><span class="m">θ,</span><span class="m">i</span> <span class="m">R</span><span class="m">θ,</span> <span class="m">j</span> <span class="m">=</span> <span class="m">R</span><span class="m">θ,</span><span class="m">i</span><span class="m">-</span><span class="m">j</span> . In this way, relative positional information can be incorporated into the attention scores, with the computation formula as follows:</p>
+<figure class="eq"><img src="assets/fig-0086.png" alt="equation 5.31" loading="lazy"></figure>
+<p>According to the definition of the rotation matrix, RoPE treats every pair of consecutive elements as a <em>subspace</em> when processing query and key vectors.</p>
+<p>As a result, for a vector of length <em>H</em>, <em>H</em><span class="m">/</span>2. subspaces will be formed. In these subspaces, each subspace <em>i</em> <span class="m">∈</span> 1<span class="m">, . . .</span> <span class="m">,</span> <em>H</em><span class="m">/</span>2. corresponds to two elements that are rotated by a specific angle <em>t</em> <span class="m">·</span> <span class="m">θ</span><span class="m">i</span>., where <em>t</em> represents the position index, and <span class="m">θ</span><span class="m">i</span>. denotes the rotation basis in that subspace. Similar to sinusoidal positional encoding [10], RoPE defines the <em>rotation basis</em> <span class="m">θ</span><span class="m">i</span>. as an exponent of the <em>base</em> <em>b</em> (with the default value of 10000):</p>
+<figure class="eq"><img src="assets/fig-0087.png" alt="equation 5.32" loading="lazy"></figure>
+<p>Furthermore, each subspace defines a <em>wavelength</em> <span class="m">λ</span><span class="m">i</span>., which is the distance required to complete one full cycle (2<span class="m">π</span>.) rotation in that subspace:</p>
+<figure class="eq"><img src="assets/fig-0088.png" alt="equation 5.33" loading="lazy"></figure>
+<div class="codeblock"><pre><code><span class="t-kw">def</span> rotate_half(x):
+        <span class="t-com">#</span> <span class="t-com">Treat</span> <span class="t-com">every</span> <span class="t-com">two</span> <span class="t-com">elements</span> <span class="t-com">of</span> <span class="t-com">the</span> <span class="t-com">vector</span> <span class="t-com">as</span> <span class="t-com">a</span> <span class="t-com">subspace</span>
+        x1 = x[..., : x.shape[-1] // 2]
+        x2 = x[..., x.shape[-1] // 2 :]
+        <span class="t-kw">return</span> torch.cat((-x2, x1), dim=-1)
+<span class="t-kw">def</span> apply_rotary_pos_emb(q, k, cos, sin, position_ids):
+        <span class="t-com">#</span> <span class="t-com">Get</span> <span class="t-com">the</span> <span class="t-com">cosine</span> <span class="t-com">values</span> <span class="t-com">of</span> <span class="t-com">rotations</span> <span class="t-com">in</span> <span class="t-com">each</span> <span class="t-com">subspace</span>
+        cos = cos[position_ids].unsqueeze(1)
+        sin = sin[position_ids].unsqueeze(1)
+        <span class="t-com">#</span> <span class="t-com">Rotate</span> <span class="t-com">each</span> <span class="t-com">subspace</span> <span class="t-com">by</span> <span class="t-com">a</span> <span class="t-com">specific</span> <span class="t-com">angle</span>
+        q_embed = (q * cos) + (rotate_half(q) * sin)
+        k_embed = (k * cos) + (rotate_half(k) * sin)
+        <span class="t-kw">return</span> q_embed, k_embed</code></pre></div>
+<p>Due to its strong performance and long-term decay properties, RoPE is widely adopted in LLMs, such as PaLM [107] and LLaMA [46]. Below is the implementation code of RoPE for LLaMA from the Transformers library:</p>
+<ul><li><em>ALiBi</em> <em>position</em> <em>encoding.</em> ALiBi [158] is a specialized form of relative positional encoding designed to enhance the length extrapolation capability of Transformer models. Specifically, ALiBi introduces a penalty factor proportional to the relative distance to adjust the attention scores in the original attention computation formula:</li></ul>
+<figure class="eq"><img src="assets/fig-0089.png" alt="equation 5.34" loading="lazy"></figure>
+<div class="codeblock"><pre><code><span class="t-kw">def</span> build_alibi_tensor(attention_mask: torch.Tensor, num_heads: <span class="t-kw">int</span>, dtype: torch.dtype) -&gt; torch.Tensor:</code></pre></div>
+<div class="codeblock"><pre><code>batch_size, seq_length = attention_mask.shape
+<span class="t-com">#</span> <span class="t-com">Calculate</span> <span class="t-com">the</span> <span class="t-com">penalty</span> <span class="t-com">coefficients</span> <span class="t-com">for</span> <span class="t-com">each</span> <span class="t-com">head</span>
+closest_power_of_2 = 2 ** math.floor(math.log2(num_heads))
+base = torch.tensor(
+    2 ** (-(2 ** -(math.log2(closest_power_of_2) - 3))),
+        device=attention_mask.device, dtype=torch.float32</code></pre></div>
+<div class="codeblock"><pre><code>)
+powers = torch.arange(1, 1 + closest_power_of_2,
+    device=attention_mask.device, dtype=torch.int32)</code></pre></div>
+<div class="codeblock"><pre><code>slopes = torch.pow(base, powers)
+<span class="t-kw">if</span> closest_power_of_2 != num_heads:
+    <span class="t-com">#</span> <span class="t-com">If</span> <span class="t-com">the</span> <span class="t-com">number</span> <span class="t-com">of</span> <span class="t-com">heads</span> <span class="t-com">is</span> <span class="t-com">not</span> <span class="t-com">a</span> <span class="t-com">power</span> <span class="t-com">of</span> <span class="t-com">2,</span> <span class="t-com">modify</span> <span class="t-com">the</span> <span class="t-com">penalty</span>
+        <span class="t-com">coefficient</span></code></pre></div>
+<div class="codeblock"><pre><code>extra_base = torch.tensor(</code></pre></div>
+<p>where <em>i</em> <span class="m">-</span> <em>j</em>. is the positional offset between the query and key, and <em>m</em> is a unique penalty coefficient for each attention head. Unlike the relative positional encodings in models such as T5 [67], the penalty scores in ALiBi are preset and do not require additional training parameters. ALiBi exhibits excellent compatibility for length extrapolation and can effectively model text that exceeds the context window length for training. The following code presents the implementation of ALiBi in the BLOOM model from the Transformers library: <span class="m">→</span> <span class="m">→</span> <span class="m">→</span> <span class="m">→</span></p>
+<div class="codeblock"><pre><code>2 ** (-(2 ** -(math.log2(2 * closest_power_of_2) - 3))),
+    device=attention_mask.device, dtype=torch.float32</code></pre></div>
+<div class="codeblock"><pre><code>)
+num_remaining_heads = <span class="t-kw">min</span>(closest_power_of_2, num_heads -
+    closest_power_of_2)</code></pre></div>
+<div class="codeblock"><pre><code>extra_powers = torch.arange(1, 1 + 2 * num_remaining_heads, 2,
+    device=attention_mask.device, dtype=torch.int32)</code></pre></div>
+<div class="codeblock"><pre><code>slopes = torch.cat([slopes, torch.pow(extra_base, extra_powers)],
+    dim=0)</code></pre></div>
+<div class="codeblock"><pre><code><span class="t-com">#</span> <span class="t-com">Calculate</span> <span class="t-com">relative</span> <span class="t-com">distance</span>
+arange_tensor = ((attention_mask.cumsum(dim=-1) - 1) *
+    attention_mask)[:, <span class="t-kw">None</span>, :]</code></pre></div>
+<div class="codeblock"><pre><code><span class="t-com">#</span> <span class="t-com">Calculate</span> <span class="t-com">the</span> <span class="t-com">attention</span> <span class="t-com">bias</span> <span class="t-com">applied</span> <span class="t-com">by</span> <span class="t-com">ALiBi</span>
+alibi = slopes[..., <span class="t-kw">None</span>] * arange_tensor
+<span class="t-kw">return</span> alibi.reshape(batch_size * num_heads, 1, seq_length).to(dtype)</code></pre></div>
+<p><span class="m">→</span> <span class="m">→</span> <span class="m">→</span> <span class="m">→</span> <span class="m">→</span></p>
+<h3 id="5-2-5-attention-mechanism"><span class="num">5.2.5</span>Attention Mechanism<a class="anchor" href="#5-2-5-attention-mechanism">#</a></h3>
+<p>The attention mechanism is a core component of the Transformer architecture, enabling it to model interactions between tokens in the input sequence and aggregate semantic information from various positions. Below are details of four commonly used attention mechanisms.</p>
+<ul><li><em>Full</em> <em>attention.</em> In the original Transformer model, the attention mechanism captures the semantics of sequence data in a pairwise way, considering the interactions between all tokens in the sequence. During the calculation of attention scores, each token attends to all preceding tokens, resulting in a computational complexity of <em>O</em><span class="m">(</span><em>T</em>2<span class="m">)</span>. for a sequence of length <em>T</em>. Additionally, Transformer introduces multi-head attention, which projects queries, keys, and values into different semantic spaces through linear transformations and then aggregates the outputs of each head to form the final output. For a detailed introduction to full attention, please refer to Sect. 5.1.2.</li><li><em>Sparse</em> <em>attention.</em> Although the full attention mechanism offers strong modeling capability, it incurs quadratic computational complexity. To address this, researchers have proposed several efficient attention variants. Among them, sliding window attention is a widely adopted sparse attention method in LLMs. Unlike the full attention mechanism, this method sets a window of length <span class="m">w</span>, and for each token <em>u</em><span class="m">t</span> ., it only focuses on the tokens within its corresponding window <span class="m">[</span><em>u</em><span class="m">t</span><span class="m">-</span><span class="m">w</span><span class="m">+</span>1<span class="m">, . . .</span> <span class="m">,</span> <em>u</em><span class="m">t</span><span class="m">]</span>. using a masking mechanism, thereby reducing the complexity to <em>O</em><span class="m">(</span><span class="m">w</span><em>T</em><span class="m">)</span>. Moreover, through layer-wise information</li></ul>
+<figure><img src="assets/fig-0090.png" alt="" loading="lazy"><figcaption>Figure 5.3 Illustration of the masking matrix and information transmission in sliding window attention</figcaption></figure>
+<p>propagation, the model’s receptive field grows linearly with the number of layers, enabling it to acquire information from distant tokens. Figure 5.3 illustrates the sliding window attention mechanism.</p>
+<ul><li><em>Multi-query/Grouped-query</em> <em>attention.</em> To improve the efficiency of the attention mechanism, multi-query attention (MQA) proposes sharing the same key and value transformation matrices among different heads [159]. This approach increases the computational speed by reducing memory access, with relatively small impact on model performance (see Sect. 9.2.1). Representative LLMs using MQA include PaLM [107] and StarCoder [86]. To combine the efficiency of MQA with the performance of multi-head attention, researchers further propose the grouped-query attention mechanism (GQA) [160]. GQA divides all heads into several groups, with heads in the same group sharing the same transformation matrices, effectively balancing efficiency and performance. The LLaMA- 2 model employs the GQA mechanism. Figure 5.4 illustrates the differences between these two attention mechanisms and the standard multi-head attention mechanism.</li><li><em>Hardware</em> <em>optimization.</em> In addition to algorithmic improvements, the efficiency of attention modules and memory consumption can be optimized at the system level. Two prominent works in this area are FlashAttention [161] and PagedAttention [162]. FlashAttention improves the efficiency of attention score calculations by using matrix block computation and reducing memory read-write operations. In contrast, PagedAttention optimizes key-value cache (KV Cache) storage during the decoding phase, enhancing computational efficiency. These techniques will be discussed in detail in Sect. 9.2.2.</li></ul>
+<figure class="eq"><img src="assets/fig-0091.png" alt="equation " loading="lazy"></figure>
+<figure class="eq"><img src="assets/fig-0092.png" alt="equation " loading="lazy"></figure>
+<figure><img src="assets/fig-0093.png" alt="" loading="lazy"><figcaption>Figure 5.4 A comparison of multi-head attention, grouped-query attention, and multiquery attention</figcaption></figure>
+<figure><img src="assets/fig-0094.png" alt="" loading="lazy"><figcaption>Figure 5.5 Illustration of the mixture of experts model</figcaption></figure>
+<h3 id="5-2-6-mixture-of-experts-model"><span class="num">5.2.6</span>Mixture of Experts Model<a class="anchor" href="#5-2-6-mixture-of-experts-model">#</a></h3>
+<p>As discussed in Sect. 2.2, LLMs can improve performance by increasing the number of parameters. However, scaling up model parameters also leads to higher computational costs. To mitigate this issue, researchers have introduced the mixture-of-experts (MoE) architecture by leveraging sparse activation in LLMs (Fig. 5.5). This approach allows for a significant increase in model parameters without a corresponding rise in infernece cost.</p>
+<p>In the MoE architecture, each MoE layer contains <em>K</em> expert components, denoted as <span class="m">[</span><em>E</em>1<span class="m">,</span> <em>E</em>2<span class="m">, . . .</span> <span class="m">,</span> <em>E</em><span class="m">K</span> <span class="m">]</span>., where each expert component <em>E</em><span class="m">i</span>. is a FFN module. For each input token embedding <span class="m">x</span><span class="m">t</span> ., the model calculates its weights for each expert through a routing network (also known as a gating function) <em>G</em>. In the routing process, the token’s scores for <em>K</em> experts are first computed through a linear transformation with a weight matrix <span class="m">W</span> <span class="m">G</span> <span class="m">∈</span> R<span class="m">H</span><span class="m">×</span><span class="m">K</span> ., and the top <em>k</em> experts with the highest scores are selected for activation.</p>
+<p>The scores of these selected experts are then passed through a softmax function to compute their respective weights <em>G</em><span class="m">(</span><span class="m">x</span><span class="m">t</span><span class="m">)</span> <span class="m">=</span> <span class="m">[</span><em>G</em><span class="m">(</span><span class="m">x</span><span class="m">t</span><span class="m">)</span>1<span class="m">, . . .</span> <span class="m">,</span> <em>G</em><span class="m">(</span><span class="m">x</span><span class="m">t</span><span class="m">)</span><span class="m">k</span><span class="m">]</span>., while the weights of unselected experts are set to 0. The computation process of the above routing network is as follows:</p>
+<figure class="eq"><img src="assets/fig-0095.png" alt="equation 5.35" loading="lazy"></figure>
+<p>Finally, the weighted sum of the outputs from the selected experts will serve as the final output <span class="m">o</span><span class="m">t</span> . of the mixture of experts layer:</p>
+<figure class="eq"><img src="assets/fig-0096.png" alt="equation 5.36" loading="lazy"></figure>
+<div class="codeblock"><pre><code><span class="t-kw">class</span> <span class="t-kw">MoeLayer</span>(nn.Module):
+        <span class="t-kw">def</span> __init__(<span class="t-kw">self</span>, experts: List[nn.Module], gate: nn.Module,
+            num_experts_per_tok: <span class="t-kw">int</span>):
+            <span class="t-kw">super</span>().__init__()
+            <span class="t-kw">assert</span> <span class="t-kw">len</span>(experts) &gt; 0
+            <span class="t-com">#</span> <span class="t-com">List</span> <span class="t-com">of</span> <span class="t-com">all</span> <span class="t-com">experts</span>
+            <span class="t-kw">self</span>.experts = nn.ModuleList(experts)
+            <span class="t-com">#</span> <span class="t-com">Routing</span> <span class="t-com">network</span>
+            <span class="t-kw">self</span>.gate = gate
+            <span class="t-com">#</span> <span class="t-com">Number</span> <span class="t-com">of</span> <span class="t-com">experts</span> <span class="t-com">selected</span> <span class="t-com">per</span> <span class="t-com">token</span>
+            <span class="t-kw">self</span>.num_experts_per_tok = num_experts_per_tok
+        <span class="t-kw">def</span> forward(<span class="t-kw">self</span>, inputs: torch.Tensor):
+            gate_logits = <span class="t-kw">self</span>.gate(inputs)
+            <span class="t-com">#</span> <span class="t-com">Select</span> <span class="t-com">the</span> <span class="t-com">top-k</span> <span class="t-com">experts</span> <span class="t-com">using</span> <span class="t-com">the</span> <span class="t-com">routing</span> <span class="t-com">network</span>
+            weights, selected_experts = torch.topk(gate_logits,
+                                            <span class="t-kw">self</span>.num_experts_per_tok)
+            <span class="t-com">#</span> <span class="t-com">Calculate</span> <span class="t-com">the</span> <span class="t-com">weights</span> <span class="t-com">of</span> <span class="t-com">the</span> <span class="t-com">selected</span> <span class="t-com">experts</span>
+            weights = F.softmax(weights, dim=1,
+                dtype=torch.float).to(inputs.dtype)</code></pre></div>
+<div class="codeblock"><pre><code>results = torch.zeros_like(inputs)
+<span class="t-com">#</span> <span class="t-com">The</span> <span class="t-com">final</span> <span class="t-com">output</span> <span class="t-com">is</span> <span class="t-com">the</span> <span class="t-com">weighted</span> <span class="t-com">sum</span> <span class="t-com">of</span> <span class="t-com">the</span> <span class="t-com">outputs</span> <span class="t-com">of</span> <span class="t-com">each</span> <span class="t-com">expert</span> <span class="t-kw">for</span> i, expert <span class="t-kw">in</span> <span class="t-kw">enumerate</span>(<span class="t-kw">self</span>.experts):
+    batch_idx, nth_expert = torch.where(selected_experts == i)
+    results[batch_idx] += weights[batch_idx, nth_expert, <span class="t-kw">None</span>] *
+        expert(</code></pre></div>
+<div class="codeblock"><pre><code>        inputs[batch_idx]
+    )
+<span class="t-kw">return</span> results</code></pre></div>
+<p>As a representative MoE model, Mixtral (8<span class="m">×</span>.7B) sets eight experts (7B parameters each) at each layer, selecting two experts for each token for subsequent computations (resulting in an activation parameter of 13B). This approach leads to significant improvements in model performance. Below is an example of code for the Mixtral MoE layer: <span class="m">→</span> <span class="m">→</span></p>
+<h3 id="5-2-7-detailed-configuration-of-llama"><span class="num">5.2.7</span>Detailed Configuration of LLaMA<a class="anchor" href="#5-2-7-detailed-configuration-of-llama">#</a></h3>
+<p>Based on the discussion in this section, we offer the following recommendations for model configuration. First, to enhance training stability, we advise using pre-layer RMSNorm as the normalization method. Second, when selecting activation functions, it is recommended to prioritize SwiGLU or GeGLU for improving model performance. Finally, for positional encoding, RoPE or ALiBi is recommended, as these positional encoding methods typically perform well in modeling long sequence data.</p>
+<div class="codeblock"><pre><code><span class="t-kw">class</span> <span class="t-kw">LlamaModel</span>(LlamaPreTrainedModel):
+        <span class="t-kw">def</span> __init__(<span class="t-kw">self</span>, config: LlamaConfig):
+            <span class="t-kw">super</span>().__init__(config)
+            <span class="t-com">#</span> <span class="t-com">The</span> <span class="t-com">vocabulary</span> <span class="t-com">size</span> <span class="t-com">of</span> <span class="t-com">LLaMA</span>
+            <span class="t-kw">self</span>.vocab_size = config.vocab_size
+            <span class="t-com">#</span> <span class="t-com">The</span> <span class="t-com">word</span> <span class="t-com">embedding</span> <span class="t-com">matrix</span> <span class="t-com">of</span> <span class="t-com">LLaMA,</span> <span class="t-com">transforming</span> <span class="t-com">the</span> <span class="t-com">input</span> <span class="t-com">id</span>
+                <span class="t-com">sequence</span> <span class="t-com">into</span> <span class="t-com">a</span> <span class="t-com">sequence</span> <span class="t-com">of</span> <span class="t-com">token</span> <span class="t-com">embeddings</span></code></pre></div>
+<div class="codeblock"><pre><code><span class="t-kw">self</span>.embed_tokens = nn.Embedding(config.vocab_size,
+    config.hidden_size, <span class="t-kw">self</span>.padding_idx)</code></pre></div>
+<div class="codeblock"><pre><code><span class="t-com">#</span> <span class="t-com">All</span> <span class="t-com">Transformer</span> <span class="t-com">decoder</span> <span class="t-com">layers</span>
+<span class="t-kw">self</span>.layers = nn.ModuleList(
+    [LlamaDecoderLayer(config, layer_idx) <span class="t-kw">for</span> layer_idx <span class="t-kw">in</span>
+        <span class="t-kw">range</span>(config.num_hidden_layers)]</code></pre></div>
+<div class="codeblock"><pre><code>)
+<span class="t-kw">self</span>.norm = LlamaRMSNorm(config.hidden_size,
+    eps=config.rms_norm_eps)</code></pre></div>
+<div class="codeblock"><pre><code>causal_mask = torch.full(
+    (config.max_position_embeddings,
+        config.max_position_embeddings), fill_value=<span class="t-kw">True</span>,</code></pre></div>
+<p>Next, we will introduce the specific implementation of the decoder model architecture and the forward computation process using the LLaMA model’s code to enhance the reader’s understanding of the configurations discussed earlier in this chapter. The LLaMA model first converts the input token sequence into a sequence of token embeddings, processes it through <em>L</em> decoder layers, and finally, applies RMSNorm for normalization to produce the final output. The overall implementation of LLaMA in the Transformers library is as follows: <span class="m">→</span> <span class="m">→</span> <span class="m">→</span> <span class="m">→</span></p>
+<figure class="eq"><img src="assets/fig-0097.png" alt="equation " loading="lazy"></figure>
+<div class="codeblock"><pre><code>            dtype=torch.bool
+    )
+@add_start_docstrings_to_model_forward(Llama_INPUTS_DOCSTRING)
+<span class="t-kw">def</span> forward(
+    <span class="t-kw">self</span>,
+    input_ids: torch.LongTensor = <span class="t-kw">None</span>,
+    attention_mask: Optional[torch.Tensor] = <span class="t-kw">None</span>,
+    position_ids: Optional[torch.LongTensor] = <span class="t-kw">None</span>,
+    **kwargs,</code></pre></div>
+<div class="codeblock"><pre><code>) -&gt; Union[Tuple, BaseModelOutputWithPast]:
+    <span class="t-kw">if</span> inputs_embeds <span class="t-kw">is</span> <span class="t-kw">None</span>:
+        <span class="t-com">#</span> <span class="t-com">Transform</span> <span class="t-com">the</span> <span class="t-com">input</span> <span class="t-com">id</span> <span class="t-com">sequence</span> <span class="t-com">into</span> <span class="t-com">a</span> <span class="t-com">token</span> <span class="t-com">embedding</span>
+            <span class="t-com">sequence</span></code></pre></div>
+<div class="codeblock"><pre><code>    inputs_embeds = <span class="t-kw">self</span>.embed_tokens(input_ids)
+<span class="t-com">#</span> <span class="t-com">Create</span> <span class="t-com">an</span> <span class="t-com">attention</span> <span class="t-com">mask</span> <span class="t-com">matrix</span> <span class="t-com">for</span> <span class="t-com">unidirectional</span> <span class="t-com">attention</span>
+causal_mask = <span class="t-kw">self</span>._update_causal_mask(attention_mask,
+    inputs_embeds)</code></pre></div>
+<div class="codeblock"><pre><code>hidden_states = inputs_embeds
+<span class="t-kw">for</span> decoder_layer <span class="t-kw">in</span> <span class="t-kw">self</span>.layers:
+    <span class="t-com">#</span> <span class="t-com">Map</span> <span class="t-com">the</span> <span class="t-com">hidden</span> <span class="t-com">states</span> <span class="t-com">of</span> <span class="t-com">the</span> <span class="t-com">tokens</span> <span class="t-com">using</span> <span class="t-com">LLaMA</span> <span class="t-com">decoder</span> <span class="t-com">layers</span> hidden_states = decoder_layer(
+        hidden_states,
+        attention_mask=causal_mask,
+        position_ids=position_ids,
+    )[0]
+<span class="t-com">#</span> <span class="t-com">Normalize</span> <span class="t-com">each</span> <span class="t-com">token's</span> <span class="t-com">hidden</span> <span class="t-com">state</span> <span class="t-com">using</span> <span class="t-com">RMSNorm</span>
+hidden_states = <span class="t-kw">self</span>.norm(hidden_states)
+<span class="t-kw">return</span> BaseModelOutputWithPast(
+    last_hidden_state=hidden_states,
+)</code></pre></div>
+<div class="codeblock"><pre><code><span class="t-kw">class</span> <span class="t-kw">LlamaDecoderLayer</span>(nn.Module):
+        <span class="t-kw">def</span> __init__(<span class="t-kw">self</span>, config: LlamaConfig, layer_idx: <span class="t-kw">int</span>):
+            <span class="t-kw">super</span>().__init__()
+            <span class="t-kw">self</span>.hidden_size = config.hidden_size
+            <span class="t-com">#</span> <span class="t-com">Attention</span> <span class="t-com">layer</span>
+            <span class="t-kw">self</span>.self_attn = LlamaAttention(config=config, layer_idx=layer_idx) <span class="t-com">#</span> <span class="t-com">Feed-forward</span> <span class="t-com">network</span> <span class="t-com">layer</span>
+            <span class="t-kw">self</span>.mlp = LlamaMLP(config)
+            <span class="t-com">#</span> <span class="t-com">RMSNorm</span> <span class="t-com">before</span> <span class="t-com">the</span> <span class="t-com">attention</span> <span class="t-com">layer</span> <span class="t-com">and</span> <span class="t-com">feed-forward</span> <span class="t-com">network</span> <span class="t-com">layer</span> <span class="t-kw">self</span>.input_layernorm = LlamaRMSNorm(config.hidden_size,
+                eps=config.rms_norm_eps)</code></pre></div>
+<div class="codeblock"><pre><code><span class="t-kw">self</span>.post_attention_layernorm = LlamaRMSNorm(config.hidden_size,
+    eps=config.rms_norm_eps)</code></pre></div>
+<div class="codeblock"><pre><code><span class="t-kw">def</span> forward(
+    <span class="t-kw">self</span>,
+    hidden_states: torch.Tensor,
+    attention_mask: Optional[torch.Tensor] = <span class="t-kw">None</span>,
+    position_ids: Optional[torch.LongTensor] = <span class="t-kw">None</span>,</code></pre></div>
+<p><span class="m">→</span> <span class="m">→</span> In each decoder layer, the hidden states are first normalized using RMSNorm before being fed into the attention module. The output of the attention module is then connected to the pre-normalized hidden states via a residual connection, followed by a subsequent use of RMSNorm before being sent into the FFN layer. Similarly, the output of the FFN layer also undergoes a residual connection and serves as the output of the decoder layer. The implementation of an LLaMA layer in the Transformers library is shown below: <span class="m">→</span> <span class="m">→</span></p>
+<div class="codeblock"><pre><code>    **kwargs,
+) -&gt; Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor,
+    torch.FloatTensor]]]:</code></pre></div>
+<div class="codeblock"><pre><code>residual = hidden_states
+<span class="t-com">#</span> <span class="t-com">Use</span> <span class="t-com">RMSNorm</span> <span class="t-com">for</span> <span class="t-com">normalization</span> <span class="t-com">before</span> <span class="t-com">the</span> <span class="t-com">attention</span> <span class="t-com">layer</span>
+hidden_states = <span class="t-kw">self</span>.input_layernorm(hidden_states)
+<span class="t-com">#</span> <span class="t-com">Perform</span> <span class="t-com">calculations</span> <span class="t-com">in</span> <span class="t-com">the</span> <span class="t-com">attention</span> <span class="t-com">module</span>
+hidden_states, self_attn_weights, present_key_value =
+    <span class="t-kw">self</span>.self_attn(</code></pre></div>
+<div class="codeblock"><pre><code>    hidden_states=hidden_states,
+    attention_mask=attention_mask,
+    position_ids=position_ids,
+    **kwargs,
+)
+<span class="t-com">#</span> <span class="t-com">Residual</span> <span class="t-com">connection</span>
+hidden_states = residual + hidden_states
+residual = hidden_states
+<span class="t-com">#</span> <span class="t-com">Use</span> <span class="t-com">RMSNorm</span> <span class="t-com">for</span> <span class="t-com">normalization</span> <span class="t-com">before</span> <span class="t-com">the</span> <span class="t-com">feed-forward</span> <span class="t-com">network</span>
+    <span class="t-com">layer</span></code></pre></div>
+<div class="codeblock"><pre><code>hidden_states = <span class="t-kw">self</span>.post_attention_layernorm(hidden_states)
+<span class="t-com">#</span> <span class="t-com">Perform</span> <span class="t-com">calculations</span> <span class="t-com">in</span> <span class="t-com">the</span> <span class="t-com">feed-forward</span> <span class="t-com">network</span> <span class="t-com">layer</span>
+hidden_states = <span class="t-kw">self</span>.mlp(hidden_states)
+<span class="t-com">#</span> <span class="t-com">Residual</span> <span class="t-com">connection</span>
+hidden_states = residual + hidden_states
+outputs = (hidden_states,)
+<span class="t-kw">return</span> outputs</code></pre></div>
+<p><span class="m">→</span> <span class="m">→</span> <span class="m">→</span></p>
+<h2 id="5-3-mainstream-architectures"><span class="num">5.3</span>Mainstream Architectures<a class="anchor" href="#5-3-mainstream-architectures">#</a></h2>
+<p>In the era of pre-trained language models, the “<em>pre-training</em> <em>+</em> <em>fine-tuning</em>” learning paradigm is widely adopted in the NLP field, leading to the emergence of large-scale pre-trained language models with different architectures: <em>encoder-only</em> architectures represented by BERT, <em>decoder-only</em> architectures exemplified by GPT-1/2, and <em>encoderdecoder</em> architectures such as T5. Following the success of the GPT models, this field has transitioned into the era of generative language models, where the decoder-only architecture has become the mainstream approach for LLMs. Furthermore, the decoder-only architecture can be categorized into two variants: the <em>causal decoder</em> architecture and the <em>prefix</em> <em>decoder</em> architecture. It is important to note that the term decoder-only architecture generally refers to the causal decoder architecture in academic literature. Figure 5.6 provides a comparison of these three architectures.</p>
+<figure><img src="assets/fig-0098.png" alt="" loading="lazy"><figcaption>Figure 5.6 Comparison of attention patterns in three mainstream architectures (the blue, green, yellow, and gray blocks represent attention between prefix tokens, attention between prefix tokens and target tokens, attention between target tokens, and masked attention, respectively. Image source: [8])</figcaption></figure>
+<h3 id="5-3-1-encoder-decoder-architecture"><span class="num">5.3.1</span>Encoder–Decoder Architecture<a class="anchor" href="#5-3-1-encoder-decoder-architecture">#</a></h3>
+<p>The encoder–decoder architecture is a classic model structure in the NLP field, widely used in tasks such as machine translation and text summarization. The vanilla Transformer model also adopts this architecture, consisting of an encoder and a decoder (for a detailed introduction, see Sect. 5.1). As shown in Fig. 5.6, the encoder–decoder architecture employs a bidirectional attention mechanism on the encoder module to encode input information. In the decoder module, it utilizes cross-attention and masked attention mechanisms to generate target text autoregressively. In the early stages, pre-trained language models based on the encoder-decoder design, such as T5 [67], demonstrate excellent performance in various natural language understanding and generation tasks. However, currently, only a few LLMs, such as FLAN-T5 [30], adopt the encoder–decoder architecture.</p>
+<h3 id="5-3-2-causal-decoder-architecture"><span class="num">5.3.2</span>Causal Decoder Architecture<a class="anchor" href="#5-3-2-causal-decoder-architecture">#</a></h3>
+<p>To date, LLMs primarily adopt a causal decoder architecture. The causal decoder is based on the Transformer decoder with two major modifications. First, the causal decoder does not explicitly distinguish between input and output segments. As shown in Fig. 5.6, this architecture employs a unidirectional masked attention mechanism, allowing each input token to attend only to preceding tokens and itself, and generates output text in an autoregressive manner. Moreover, since it does not include an encoder, the causal decoder</p>
+<p>removes the cross-attention module that attends to encoder representations. Instead, the token representations after the attention module are directly fed into the FFN module. The GPT models released by OpenAI adopt the causal decoder architecture. Notably, GPT-3 expands the model parameters to the hundreds of billions and demonstrates zero-shot and few-shot learning capabilities. Following the success of GPT-3, the causal decoder has been widely used in various LLMs, including BLOOM, LLaMA, and Mistral.</p>
+<h3 id="5-3-3-prefix-decoder-architecture"><span class="num">5.3.3</span>Prefix Decoder Architecture<a class="anchor" href="#5-3-3-prefix-decoder-architecture">#</a></h3>
+<p>The prefix decoder architecture, also known as the non-causal decoder architecture, modifies the masking mechanism of the causal decoder. Similar to the causal decoder, the prefix decoder also only uses decoder components. However, it is inspired by the encoderdecoder design and applies special strategies to the input and output parts, respectively. As shown in Fig. 5.6, the prefix decoder uses bidirectional attention to encode the input (prefix) part, while employing unidirectional masked attention for the output part to perform autoregressive predictions based on each token and its predecessors. The prefix decoder can also be adapted from existing causal decoders through continued pre-training, which accelerates the training of the model. For example, U-PaLM [163] is derived from continued pre-training PaLM [107]. Currently, representative LLMs based on the prefix decoder architecture include GLM-130B and U-PaLM.</p>
+<h2 id="5-4-long-context-models"><span class="num">5.4</span>Long Context Models<a class="anchor" href="#5-4-long-context-models">#</a></h2>
+<p>In practical applications, the capability of LLMs to handle long text data is increasingly essential, particularly in scenarios such as long document analysis and retrieval-augmented generation. In these cases, the text length that the model needs to process may exceed the predefined context window size. For instance, LLaMA-2 has a context window limit of 4096 tokens. To support long text processing, LLMs (or APIs) with extended context windows have been developed. For example, OpenAI released GPT-4 Turbo with a 128K context window, while Anthropic launched Claude-2.1 with a 200K context window. During pre-training, it is typical to set a limited context window size. To handle longer text data, it is necessary to extend the context window of LLMs. This research problem</p>
+<p>has garnered significant attention from the academic community. Currently, the research on enhancing the long text modeling capability of LLMs mainly focuses on two directions: <em>scaling</em> <em>positional</em> <em>encodings</em> and <em>adapting</em> <em>context</em> <em>window</em>. This section will introduce these two methods and discuss the text data required for training long context models.</p>
+<h3 id="5-4-1-scaling-positional-encodings"><span class="num">5.4.1</span>Scaling Positional Encodings<a class="anchor" href="#5-4-1-scaling-positional-encodings">#</a></h3>
+<p>For Transformer-based LLMs, the context modeling capability is often constrained by the length distribution of the training corpus. If the text length exceeds this distribution range, the model’s positional encoding may not be sufficiently trained, leading to the performance degradation when handling long texts. Therefore, when an LLM encounters text inputs that exceed the maximum training length, it is necessary to extend the positional encoding to accommodate longer absolute or relative positions.</p>
+<p>In practice, several positional encoding methods demonstrate the modeling capability on texts that exceed the original context window. This capability is often referred to as <em>length</em> <em>extrapolation</em>. For example, methods such as T5 Bias [67], ALiBi [158], and xPos [164] have shown varying degrees of length extrapolation capability. It is important to note that although these models with length extrapolation capability can generate relatively fluent long texts, their ability to understand such texts may not be at the same level as it is for normal-length texts. To enhance long text modeling capabilities, it is still necessary to train the model on longer text data.</p>
+<p>Without specific modifications, the mainstream positional encoding method, RoPE, does not inherently possess length extrapolation capability. Specifically, when handling longer texts, RoPE requires processing larger rotation angles in each subspace, and these angles may exceed the range of angles encountered during training. Consequently, a surge of research work aims to improve RoPE to enhance its long text modeling capability without additional training or fine-tuning. The following part provides a unified formal introduction to these improved methods. For a detailed introduction to RoPE, please refer to Sect. 5.2.4.</p>
+<p>Formally, for a model with an original context window of <em>T</em>max., the goal is to extend its context window to <em>T</em>max. (where <em>T</em>max <span class="m">&gt;</span> <em>T</em>max.). In each subspace <em>i</em> of RoPE, the rotation</p>
+<p>angle for a relative position <em>t</em> can be decomposed into the product of the distance <em>t</em> and the rotation base <span class="m">θ</span><span class="m">i</span>.:</p>
+<figure class="eq"><img src="assets/fig-0099.png" alt="equation 5.37" loading="lazy"></figure>
+<p>The methods for adjusting the rotation angle primarily involve modifications to the distance <em>t</em> and the rotation base <span class="m">θ</span><span class="m">i</span>. To provide a unified representation of these adjustment methods, we introduce the distance modification function <span class="m">g</span><span class="m">(</span><em>t</em><span class="m">)</span>. and the rotation base modification function <em>h</em><span class="m">(</span><em>i</em><span class="m">)</span>. The modified rotation angle can then be expressed as follows:</p>
+<figure class="eq"><img src="assets/fig-0100.png" alt="equation 5.38" loading="lazy"></figure>
+<p><strong>Direct Fine-Tuning</strong></p>
+<p>To adapt LLMs to longer context lengths, a straightforward strategy is to fine-tune the model using long text data. In this approach, the model can directly compute the corresponding positional encoding based on relative positions without any modifications to RoPE. The calculation of the rotation angle remains the same as in Eq. 5.37. However, training on longer text data without modifying RoPE may result in rotation angles that exceed the original context window, leading to abnormal attention distributions. This phenomenon typically causes slow convergence and requires a substantial amount of data for continual pre-training.</p>
+<p><strong>Position Index Modification</strong></p>
+<p>Due to the potential anomalies in attention distribution caused by excessively large rotation angles during direct fine-tuning, it is necessary to impose constraints on the rotation angles to ensure adequate adaptation to the context with extended window length. To achieve this goal, the rotation angles of all subspaces can be adjusted by modifying the positional indices <span class="m">g</span><span class="m">(</span><em>t</em><span class="m">)</span>., ensuring that the angles do not exceed the maximum values permitted by the original context window. Specifically, the modification of positional indices can be implemented using the following two methods:</p>
+<ul><li><em>Position</em> <em>interpolation.</em> The positional interpolation method [165] scales the positional indices by a specific ratio, to ensure that the rotation angles do not exceed the maximum values of the original context window. Specifically, this strategy multiplies all positional indices by a coefficient smaller than 1, given by <em>T</em>max<span class="m">/</span><em>T</em>max. (<em>T</em>max <span class="m">&lt;</span> <em>T</em>max.), where <em>T</em>max. and <em>T</em>max. represent the lengths of the original and extended context window, respectively. By applying this scaling strategy, the new formula for calculating the rotation angles becomes:</li></ul>
+<figure class="eq"><img src="assets/fig-0101.png" alt="equation 5.39" loading="lazy"></figure>
+<p><em>T</em>max</p>
+<p>Generally, the training cost of fine-tuning with the positional interpolation method is relatively low. For instance, it only requires about several thousand training steps to extend the context window length of LLaMA-33B model from 2K to 8K [165]. However, when dealing with relatively short texts, the scaling of positional indices may have a certain negative impact on the model’s performance.</p>
+<ul><li><em>Position</em> <em>truncation.</em> Compared to position interpolation, position truncation handles different distances using a segmentation approach. This method is based on the principle of locality in language modeling, preserving position indices for short distances, while truncating or interpolating position indices for longer distances to avoid exceeding the predefined maximum rotation angle. Specifically, the position truncation methods ReRoPE and LeakyReRoPE [166] first set a threshold <span class="m">w</span> <span class="m">(</span><span class="m">w</span> <span class="m">≤</span> <em>T</em>max<span class="m">)</span>. that is not greater than the original context window length. Within this threshold, the original relative position indices are retained. However, once this threshold is exceeded, the position indices are truncated to the threshold size (<span class="m">g</span><span class="m">(</span><em>t</em><span class="m">)</span> <span class="m">=</span> <span class="m">w</span>.) or scaled through linear interpolation, growing linearly with a factor of <span class="m">T</span>max<span class="m">-</span><span class="m">w</span> <span class="m">T</span>max<span class="m">-</span><span class="m">w</span> . up to the original context window</li></ul>
+<figure class="eq"><img src="assets/fig-0102.png" alt="equation " loading="lazy"></figure>
+<p>the following formula:</p>
+<p>⎧⎪⎪⎪⎪⎪⎪⎨</p>
+<figure class="eq"><img src="assets/fig-0103.png" alt="equation " loading="lazy"></figure>
+<figure class="eq"><img src="assets/fig-0104.png" alt="equation 5.40" loading="lazy"></figure>
+<p>⎪⎪⎪⎪⎪⎪⎩</p>
+<figure class="eq"><img src="assets/fig-0105.png" alt="equation " loading="lazy"></figure>
+<p>With these modifications to RoPE, the model can be directly applied to longer contexts without retraining while still maintaining its modeling capability for normal-length texts. However, this method still requires an additional calculation of the attention matrix, which increases the computational overhead.</p>
+<p><strong>Rotation Base Modification</strong></p>
+<p>Based on the introduction of RoPE in Sect. 5.2.4, each subspace <em>i</em> has a corresponding wavelength <span class="m">λ</span><span class="m">i</span>., which represents the required distance to complete a full rotation within</p>
+<p>the subspace. However, the wavelength of some subspaces may exceed the length of the context window (<span class="m">λ</span><span class="m">i</span> <span class="m">&gt;</span> <em>T</em>max.), making it impossible for the model to learn the complete rotation cycle in these subspaces. These subspaces are typically referred to as <em>critical</em> <em>subspaces</em> [167]. When dealing with longer texts, the sine and cosine values corresponding to the rotation angles of these critical subspaces are not encountered during the training phase, which may lead to anomalies in attention values. Therefore, another approach to adjust the rotation angles in the subspaces is to scale the rotation basis <em>h</em><span class="m">(</span><em>i</em><span class="m">)</span>.:</p>
+<figure class="eq"><img src="assets/fig-0106.png" alt="equation 5.41" loading="lazy"></figure>
+<p>Modifications to the rotation basis can be achieved by altering the rotation basis and truncating the rotation basis.</p>
+<p>The following part introduces these two modification methods.</p>
+<ul><li><em>Base</em> <em>adjustment.</em> According to the formula <span class="m">θ</span><span class="m">i</span> <span class="m">=</span> <em>b</em><span class="m">-</span>2<span class="m">(</span><span class="m">i</span><span class="m">-</span>1<span class="m">)/</span><span class="m">H</span> . (see Eq. (5.32)), adjusting the base can alter the rotation angle. Specifically, increasing the base by a certain ratio can reduce the rotation basis, thereby decreasing the rotation angle. This adjustment allows the model to handle longer context windows without additional training [168]. In this setting, the rotation angle of each subspace is given by:</li></ul>
+<figure class="eq"><img src="assets/fig-0107.png" alt="equation 5.42" loading="lazy"></figure>
+<p>where <span class="m">α</span> <span class="m">≥</span> 1. By increasing the base, the rotation basis is reduced, allowing the model to handle longer texts. In practice, different methods typically adopt varying <span class="m">α</span>. values. For example, NTK-RoPE sets <span class="m">α</span>. as <span class="m">(</span><em>T</em>max<span class="m">/</span><em>T</em>max<span class="m">)</span><span class="m">H</span><span class="m">/(</span><span class="m">H</span><span class="m">-</span>2<span class="m">)</span>. based on the target context window, while Dynamic-NTK-RoPE dynamically adjusts <span class="m">α</span>. based on the input text length <em>T</em> (<span class="m">α</span> <span class="m">=</span> max<span class="m">(</span>1<span class="m">,</span><em>T</em><span class="m">/</span><em>T</em>max<span class="m">)</span>.), thereby achieving context window expansion. To further enhance the model’s long text modeling capability, fine-tuning on long text data can be performed. In this case, using a larger base (e.g., <em>b</em> <span class="m">=</span> 108.) typically yields better performance.</p>
+<ul><li><em>Rotation</em> <em>basis</em> <em>truncation.</em> Similar to base adjustment, we can also modify the rotary basis by using a truncation method to avoid excessive rotation angles [169]. This method first sets two thresholds, <em>a</em> and <em>c</em>. Depending on the comparison of the rotation basis <span class="m">θ</span><span class="m">i</span>. in each subspace with these two thresholds, a corresponding strategy for adjusting the rotation basis is chosen: when <span class="m">θ</span><span class="m">i</span> <span class="m">≥</span> <em>c</em>., the value of the rotary basis remains unchanged; when <span class="m">θ</span><span class="m">i</span> <span class="m">≤</span> <em>a</em>., the rotary basis is set to zero; and when <em>a</em> <span class="m">&lt;</span> <span class="m">θ</span><span class="m">i</span> <span class="m">&lt;</span> <em>c</em>., the rotary basis is truncated to a smaller fixed value. By performing rotary basis truncation as described above, it is possible to effectively prevent rotation angles from exceeding the expected distribution at larger position indices, thereby enhancing length extrapolation performance. However, this approach somewhat diminishes the subspace’s ability to distinguish different position indices, which may adversely affect the model’s performance. This method is defined as follows: ⎧⎪⎪⎪⎪⎪⎪⎨</li></ul>
+<figure class="eq"><img src="assets/fig-0108.png" alt="equation " loading="lazy"></figure>
+<figure class="eq"><img src="assets/fig-0109.png" alt="equation 5.43" loading="lazy"></figure>
+<p>⎪⎪⎪⎪⎪⎪⎩</p>
+<figure class="eq"><img src="assets/fig-0110.png" alt="equation " loading="lazy"></figure>
+<h3 id="5-4-2-adapting-context-window"><span class="num">5.4.2</span>Adapting Context Window<a class="anchor" href="#5-4-2-adapting-context-window">#</a></h3>
+<p>To address the limitation of the context window in the Transformer architecture, alongside extending positional encodings, another effective strategy is to employ restricted attention mechanisms to adjust the original context window, thereby enabling effective modeling of long texts. Below, we will introduce three methods for adjusting the context window (Fig. 5.7).</p>
+<figure><img src="assets/fig-0111.png" alt="" loading="lazy"><figcaption>Figure 5.7 Comparison of the three methods for adjusting the context window, where white represents masked tokens, blue represents tokens participating in attention calculation, and numbers indicate the relative positions of positional encodings. (a) Parallel Context Window (b) Λ.-shaped Context Window (c)Token Selection</figcaption></figure>
+<p><strong>Parallel Context Window</strong></p>
+<p>The parallel context window method [170] employs a divide-and-conquer strategy to handle input text. Specifically, this method divides the input text into several segments, each independently encoded while sharing the same positional encoding information.</p>
+<p>During the generation phase, attention masks are adjusted so that subsequent generated tokens can access all preceding tokens. However, this method cannot effectively distinguish the sequential relationships of different segments, potentially limiting its modeling capability on certain tasks.</p>
+<p>“Λ.<strong>-Shaped” Context Window</strong></p>
+<p>When processing long texts, LLMs sometimes exhibit an uneven attention phenomenon: they tend to assign higher attention weights to tokens at the beginning of the sequence and nearby tokens. Based on this observation, approaches like StreamingLLM [171] introduced the “Λ.-shaped” attention mask method, which selectively focuses on tokens near each query token as well as the initial tokens of the sequence, while ignoring those beyond this range. Under limited memory resources, this approach can efficiently achieve length extrapolation. However, due to the inability to effectively utilize the ignored token information, the context modeling capability of this method would be potentially impacted.</p>
+<p><strong>Token Selection</strong></p>
+<p>In the Transformer, not all preceding tokens contribute equally to the generation of each token. In fact, the sum of the attention scores for a few closely related tokens can approximate the total attention score of all tokens. Based on this observation, researchers have proposed token selection methods aimed at selecting the most important <em>k</em> tokens to effectively approximate the full attention. Below, we introduce two token selection methods.</p>
+<ul><li><em>Token-level</em> <em>method.</em> In this approach, tokens are divided into near-distance tokens within the window and far-distance tokens outside the window based on positional indices and the context window. For far-distance tokens, additional vector databases are typically used to store their key-value pairs, and the <em>k</em>-nearest neighbors search method (e.g., Faiss) is then adopted to retrieve the <em>T</em>max. most relevant tokens needed for current generation [142]. Specifically, in a Transformer model, certain layers are selected where relevant key-value pairs of tokens are retrieved from the external vector database and are fed into the attention computation module. This supplements the model with distant semantic information. In other layers, the model still performs attention computations on the tokens within the context window.</li><li><em>Chunk-level method.</em> The chunk-level token selection method divides the sequence into fixed-length chunks and selects the most relevant chunks from them [172]. Specifically, the model first compresses all hidden states within each chunk into a single vector representation, then uses the <em>k</em>-nearest neighbors method to select the <em>k</em> most relevant chunks to the query, ensuring that the total number of tokens in these chunks does not exceed <em>T</em>max. Subsequently, the tokens from the selected chunks are sorted according to their original order in the input sequence and are assigned corresponding position encodings, after which they are fed into the attention module for computation. Unlike token-level selection methods, chunk-level selection methods generally do not require an additional vector database, as all data is stored in the key-value cache. Furthermore, different layers and heads can select distinct token sets accordingly, allowing more flexible utilization of the entire long sequence information. Chunk-level token selection can reduce computational complexity and memory requirements while maintaining performance.</li></ul>
+<h3 id="5-4-3-long-text-data"><span class="num">5.4.3</span>Long Text Data<a class="anchor" href="#5-4-3-long-text-data">#</a></h3>
+<p>To effectively enhance the model’s capability for long text modeling, it is often necessary to use specially prepared data for continually pre-training the model. This subsection will introduce how to construct the corresponding training data to strengthen the model’s long text modeling ability.</p>
+<ul><li><em>Data</em> <em>volume.</em> Standard pre-training tasks typically require large amounts of text data. In contrast, for extending the context window, it is feasible to continue pre-training with a small amount of long text data. This approach assumes that the model has already learned to leverage distant token information during the initial pre-training phase and only needs to adapt to a longer context window. Typically, training for several hundred steps on datasets with billions of tokens can extend the context window of 7B or 13B LLaMA models to over 100K, demonstrating a moderate capacity to utilize long contexts [173, 174]. However, to establish a robust long context modeling capability, it is recommended to train language models with sufficiently long text data. When extending the long context capacity, developers should also be mindful of the model’s performance on normal-length texts, which may be somewhat affected during this process.</li><li><em>Data</em> <em>composition.</em> In addition to data amount, the domain distribution and expression characteristics of long text data are also key factors influencing the performance of long context modeling. However, the distribution of long text data often varies across domains. Generally, domains such as books, scientific papers, and code repositories contain a larger amount of long text data. Directly sampling from these sources for continual pre-training may result in a mismatch with the overall pre-training data distribution, causing the model to overemphasize certain domains, which could impair its performance in others. To enhance the model’s generalization ability, it is suggested to select long text data from diverse domains and maintain a distribution similar to the pre-training data [174]. In addition to the domain distribution, the expression characteristics of the data itself should be considered in data mix. Based on the LongWanjuan dataset [175], researchers categorized long text data into <em>holistic</em> (complete and meaningful long texts), <em>aggregated</em> (aggregation of multiple related texts), and <em>disordered</em> (chaotic texts) based on coherence, cohesion, and complexity. Experimental results show that by removing disordered texts, retaining aggregated texts (which can be further upsampled) and holistic texts, the model’s ability to model long texts can be substantially improved.</li></ul>
+<h2 id="5-5-alternative-model-architecture"><span class="num">5.5</span>Alternative Model Architecture<a class="anchor" href="#5-5-alternative-model-architecture">#</a></h2>
+<p>Nowadays, the Transformer model is widely applied across various domains, such as natural language processing and computer vision, demonstrating strong capabilities in data representation and modeling. However, the original attention mechanism requires a time and space complexity proportional to the square of the sequence length, which leads to substantial computational and memory consumption when processing long sequences. To address this issue, researchers have focused on designing new efficient model architectures. Among these, a surge of models is developed based on parameterized state space models, which offer significant improvements in efficiency for long sequence modeling compared to Transformers, while still maintaining effective sequence modeling capabilities. This section will first introduce parameterized state space models, followed by a discussion of the variants of state space models. To help readers better understand the differences among these models, Table 5.2 compares their parallelizability and computational complexity.</p>
+<figure class="tbl"><div class="tablewrap"><img src="assets/fig-0112.png" alt="Table 5.2 Comparison of complexity across different models. T represents sequenc" loading="lazy"></div><figcaption>Table 5.2 Comparison of complexity across different models. T represents sequence length, H represents the dimension of input representation, N represents the dimension of the state space model after compression, M represents the number of filters in each module of Hyena</figcaption></figure>
+<p>Decoding complexity</p>
+<p>Training complexity</p>
+<p>Model</p>
+<figure class="eq"><img src="assets/fig-0113.png" alt="equation " loading="lazy"></figure>
+<p>Transformer</p>
+<p>Standard SSM</p>
+<p>Mamba</p>
+<p>RWKV</p>
+<p>RetNet</p>
+<p>Hyena</p>
+<h3 id="5-5-1-parameterized-state-space-model"><span class="num">5.5.1</span>Parameterized State Space Model<a class="anchor" href="#5-5-1-parameterized-state-space-model">#</a></h3>
+<p>State space models are dynamic time-domain models widely used in fields such as control systems and economics. Recently, parameterized state space models have been introduced in deep learning for modeling sequential data. These models can be viewed as an integration of recurrent neural networks and convolutional neural networks. On the one hand, they leverage convolutional computations to encode inputs in parallel. On the other hand, they can make predictions autoregressively without requiring access to all preceding tokens, relying instead on information from previous time steps. This approach maintains high computational efficiency during decoding. Given that natural language texts are inherently discrete sequential data, this book will focus on discrete state space models.</p>
+<p>To achieve both parallel computation and sequential decoding, state space models introduce additional state variables between the inputs and outputs. During sequential computation, the state space model first computes the current state <span class="m">S</span><span class="m">t</span> . using the current input <span class="m">x</span><span class="m">t</span> . and the state from the previous time step <span class="m">S</span><span class="m">t</span><span class="m">-</span>1 <span class="m">∈</span> R<span class="m">H</span><span class="m">×</span><span class="m">N</span> . The model then maps the current state <span class="m">S</span><span class="m">t</span> . to the output <span class="m">y</span><span class="m">t</span> . This process can be mathematically represented as follows:</p>
+<figure class="eq"><img src="assets/fig-0114.png" alt="equation 5.44" loading="lazy"></figure>
+<p>.</p>
+<figure class="eq"><img src="assets/fig-0115.png" alt="equation " loading="lazy"></figure>
+<p>“<span class="m">⊗</span>.” denotes batch matrix multiplication. Based on the above equations, the output at</p>
+<p>the current time step can be recursively decomposed and represented in the following mathematical form:</p>
+<figure class="eq"><img src="assets/fig-0116.png" alt="equation 5.45" loading="lazy"></figure>
+<p>.</p>
+<p>According to the definition of convolution computation, the calculation of the output <span class="m">y</span><span class="m">t</span> . in Eq. 5.45 can be regarded as a convolution of the input with the convolution kernel <span class="m">K</span> . This computation process can be expressed as follows:</p>
+<figure class="eq"><img src="assets/fig-0117.png" alt="equation 5.46" loading="lazy"></figure>
+<p>.</p>
+<figure class="eq"><img src="assets/fig-0118.png" alt="equation " loading="lazy"></figure>
+<p>where “<span class="m">∗</span>.” represents the convolution calculation.</p>
+<p>The above describes a standard state space model. In practical applications, to better model sequential information, new architectures based on state space models, such as S4 [176], often employ an alternating stacking approach of state space models and FFN layers. When using convolutional computations, such architectures can leverage the Fast Fourier Transform to improve computational efficiency, allowing them to model the entire sequence with a complexity of <em>O</em><span class="m">(</span><em>T</em> <em>H</em> log <em>T</em> <span class="m">+</span> <em>T</em> <em>HN</em>2 <span class="m">+</span> <em>T</em> <em>H</em>2<span class="m">)</span>. In recurrent computations, the model requires access only to the state from the previous time step, rather than all previous states. Consequently, the model can complete the entire sequence modeling with a complexity of <em>O</em><span class="m">(</span><em>N</em>2<em>H</em> <span class="m">+</span> <em>H</em>2<span class="m">)</span>. Due to the superior computational efficiency, state space models are widely used to handle long sequence data.</p>
+<h3 id="5-5-2-variants-of-the-state-space-model"><span class="num">5.5.2</span>Variants of the State Space Model<a class="anchor" href="#5-5-2-variants-of-the-state-space-model">#</a></h3>
+<p>Although state space models have relatively high computational efficiency, their performance still lags behind Transformer models. Consequently, significant improvements have been made to state space models to enhance their language modeling capabilities while maintaining their original computational efficiency. Representative models include Mamba [177], RWKV (Receptance Weighted Key Value) [178], RetNet (Retentive Network) [179], and Hyena [180]. The following part provides a brief introduction to these models.</p>
+<ul><li><em>Mamba.</em> Mamba [177] is a variant of state space models that adopts an information selection mechanism to update the state of the model (Eq. 5.44). This mechanism deter-mines how to extract information from the previous state and the current input, thereby enhancing the model’s language modeling capability. In a standard state space model, the same linear mapping parameters are used to process both the input <span class="m">x</span><span class="m">t</span> . and the previous state <span class="m">S</span><span class="m">t</span><span class="m">-</span>1. when updating the state <span class="m">S</span><span class="m">t</span> . (Eq. 5.44). To achieve better context representation, Mamba proposes representing the parameter matrices <span class="m">(</span><span class="m">A</span><span class="m">,</span> <span class="m">B</span><span class="m">,</span> <span class="m">C</span><span class="m">)</span>. in Eq. 5.44 as nonlinear functions of the input <span class="m">x</span><span class="m">t</span> ., which allows to selectively filter the information from the previous state <span class="m">S</span><span class="m">t</span><span class="m">-</span>1. and the current input <span class="m">x</span><span class="m">t</span> . based on the present input <span class="m">x</span><span class="m">t</span> . Compared to the standard state space model, Mamba exhibits superior text modeling performance. However, due to the introduction of nonlinear transformations in the state computation process, Mamba cannot utilize Fast Fourier Transforms for efficient convolutional computation.</li><li><em>RWKV.</em> RWKV [178] attempts to combine the advantages of RNNs and Transformers, aiming to achieve both the modeling performance of Transformers and the computational efficiency of RNNs. As the core technology, RWKV performs token shift in each layer of computation in place of token embeddings. At each step, the linear interpolation between the representations of two adjacent tokens <span class="m">x</span><span class="m">t</span> . and <span class="m">x</span><span class="m">t</span><span class="m">-</span>1. is performed to obtain the current state. Furthermore, RWKV replaces the multi-head attention module and the FFN module from Transformer with time-mixing and channel-mixing modules, respectively. The time-mixing module is a gated-like RNN network that updates the state using token shift, while the channel-mixing module extends the FFN module by incorporating token shift for mapping.</li><li><em>RetNet.</em> RetNet [179] proposes using a multi-scale retention mechanism as a replacement for the multi-head attention module to improve computational efficiency. This mechanism enhances sequence modeling capability by incorporating input-related information into the linear mapping of state updates. In each retention module, input tokens are mapped to query vectors <span class="m">q</span><span class="m">t</span> ., key vectors <span class="m">k</span><span class="m">t</span> ., and value vectors <span class="m">v</span><span class="m">t</span> .</li></ul>
+<figure class="eq"><img src="assets/fig-0119.png" alt="equation " loading="lazy"></figure>
+<p> product <span class="m">k</span><span class="m">t</span> <span class="m">v</span><span class="m">t</span> . is linearly added to the previous state <span class="m">S</span><span class="m">t</span><span class="m">-</span>1. to obtain the current state: <span class="m">S</span><span class="m">t</span> <span class="m">=</span> <span class="m">AS</span><span class="m">t</span><span class="m">-</span>1 <span class="m">+</span> <span class="m">k</span><span class="m">t</span> <span class="m">v</span><span class="m">t</span> . Furthermore, RetNet uses the query <span class="m">q</span><span class="m">t</span> . to map the current state <span class="m">S</span><span class="m">t</span> . to the output <span class="m">o</span><span class="m">t</span> <span class="m">=</span> <span class="m">q</span><span class="m">t</span><span class="m">S</span><span class="m">t</span> . Additionally, RetNet supports parallel computation for all token</p>
+<p>states using matrix multiplication, similar to attention operations. Like standard state space models, RetNet retains the advantages of both recurrent and parallel computation.</p>
+<section class="footnotes"><h2>Notes</h2><ol class="fnlist"><li><span class='fnnum'>5</span> <sup class="fnref">5</sup></li><li><span class='fnnum'>12</span> <sup class="fnref">12</sup></li><li><span class='fnnum'>24</span> <sup class="fnref">24</sup></li><li><span class='fnnum'>19</span> <sup class="fnref">19</sup></li></ol></section>
+</article>
+</main>
+<nav class="chapnav" aria-label="Chapter navigation"><div class="chapnav-inner">
+<a class="prev" href="10-4-data-preparation.html"><span class="lbl">上一页</span><span class="nm">4 Data Preparation</span></a><a class="next" href="12-6-model-pre-training.html"><span class="lbl">下一页</span><span class="nm">6 Model Pre-training</span></a>
+</div></nav>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,350 @@
+{
+ "chapter": "6",
+ "cn": "线性模型选择与正则化",
+ "en": "Linear Model Selection and Regularization",
+ "book": "07-linear-model-selection-and-regularization.html",
+ "count": 34,
+ "equations": [
+  {
+   "id": "eq-6-1",
+   "num": "(6.1)",
+   "page": 237,
+   "img": "eq-p237-314y339-177x385.png",
+   "section": "",
+   "link": "../isl/07-linear-model-selection-and-regularization.html#eq-6-1",
+   "before": "原书 p.237–296第 6 章 Linear Model Selection and Regularization# In the regression setting, the standard linear model",
+   "after": "is commonly used to describe the relationship between a response Y and a set of variables X1, X2,⋯, Xp. We have seen in Chapter 3 that one typically fits this model using least squares. In the chapters that follow, we consider some approaches for extending the linear model framework. In Chapter 7 we generalize (6.1) in order to accommodate non-linear, but still additive, relationships, while in Chapters 8 and 10 we consider even more general non-linear models. However, the linear model has distinct advantages in terms of inference and, on realworld problems, is often surprisingly competitive in relation to non-linear methods. Hence, before moving to the non-linear world, we discuss in this c…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 239,
+   "img": "eq-p239-344y352-168x272.png",
+   "section": "6.1 Subset Selection › 6.1.1 Best Subset Selection",
+   "link": "../isl/07-linear-model-selection-and-regularization.html",
+   "before": "The problem of selecting the best model from among the 2p possibilities considered by best subset selection is not trivial. This is usually broken up into two stages, as described in Algorithm 6.1. Algorithm 6.1 Best subset selection 1. Let M0 denote the null model, which contains no predictors. This model simply predicts the sample mean for each observation.",
+   "after": "is defined as having the smallest RSS, or equivalently largest R2. 3. Select a single best model from among M0,⋯, Mp using using the prediction error on a validation set, Cp (AIC), BIC, or adjusted R2. Or use the cross-validation method. In Algorithm 6.1, Step 2 identifies the best model (on the training data) for each subset size, in order to reduce the problem from one of 2p possible models to one of p + 1 possible models. In Figure 6.1, these models form the lower frontier depicted in red. Now in order to select a single best model, we must simply choose among these p + 1 options. This task must be performed with care, because the RSS of these p + 1 models decreases monotonically, and the…"
+  },
+  {
+   "id": "eq-6-2",
+   "num": "(6.2)",
+   "page": 244,
+   "img": "eq-p244-514y523-198x385.png",
+   "section": "6.1 Subset Selection › 6.1.1 Best Subset Selection › 6.1.2 Stepwise Selection › 6.1.3 Choosing the Optimal Model",
+   "link": "../isl/07-linear-model-selection-and-regularization.html#eq-6-2",
+   "before": "' where σ̂2 is an estimate of the variance of the error ϵ associated with each response measurement in (6.1).4 Typically σ̂2 is estimated using the full model containing all predictors. Essentially, the Cp statistic adds a penalty of 2dσ̂2 to the training RSS in order to adjust for the fact that the training error tends to underestimate the test error. Clearly, the penalty increases as the number of predictors in the model increases; this is intended to adjust for the corresponding decrease in t…",
+   "after": "注4 Mallow’s Cp is sometimes defined as Cp′ = RSS/σ̂2 + 2d − n. This is equivalent to the definition given above in the sense that Cp = 1 p + n), and so the model with n σ̂2(C′ smallest Cp also has smallest Cp′. FIGURE 6.2 Cp, BIC, and adjusted R2 are shown for the best models of each size for the Credit data set (the lower frontier in Figure 6.1). Cp and BIC are estimates of test MSE. In the middle plot we see that the BIC estimate of test error shows an increase after four variables are selected. The other two plots are rather flat after four variables are included. Like Cp, the BIC will tend to take on a small value for a model with a low test error, and so generally we select the model th…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 245,
+   "img": "eq-p245-387y417-194x311.png",
+   "section": "6.1 Subset Selection › 6.1.1 Best Subset Selection › 6.1.2 Stepwise Selection › 6.1.3 Choosing the Optimal Model",
+   "link": "../isl/07-linear-model-selection-and-regularization.html",
+   "before": "注4 Mallow’s Cp is sometimes defined as Cp′ = RSS/σ̂2 + 2d − n. This is equivalent to the definition given above in the sense that Cp = 1 p + n), and so the model with n σ̂2(C′ smallest Cp also has smallest Cp′. FIGURE 6.2 Cp, BIC, and adjusted R2 are shown for the best models of each size for the Credit data set (the lower frontier in Figure 6.1). Cp and BIC are estimates of test MSE. In the middle plot we see that the BIC estimate of test error shows an increase after four variables are selecte…",
+   "after": "where, for simplicity, we have omitted irrelevant constants.5 Hence for least squares models, Cp and AIC are proportional to each other, and so only Cp is displayed in Figure 6.2. BIC is derived from a Bayesian point of view, but ends up looking similar to Cp (and AIC) as well. For the least squares model with d predictors, the BIC is, up to irrelevant constants, given by (6.3) 注5 There are two formulas for AIC for least squares regression. The formula that we provide here requires an expression for σ2, which we obtain using the full model con- taining all predictors. The second formula is appropriate when σ2 is unknown and we do not want to explicitly estimate it; that formula has a log(RSS…"
+  },
+  {
+   "id": "eq-6-3",
+   "num": "(6.3)",
+   "page": 245,
+   "img": "eq-p245-500y532-184x385.png",
+   "section": "6.1 Subset Selection › 6.1.1 Best Subset Selection › 6.1.2 Stepwise Selection › 6.1.3 Choosing the Optimal Model",
+   "link": "../isl/07-linear-model-selection-and-regularization.html#eq-6-3",
+   "before": "The AIC criterion is defined for a large class of models fit by maximum likelihood. In the case of the model (6.1) with Gaussian errors, maximum likelihood and least squares are the same thing. In this case AIC is given by where, for simplicity, we have omitted irrelevant constants.5 Hence for least squares models, Cp and AIC are proportional to each other, and so only Cp is displayed in Figure 6.2. BIC is derived from a Bayesian point of view, but ends up looking similar to Cp (and AIC) as well…",
+   "after": "注5 There are two formulas for AIC for least squares regression. The formula that we provide here requires an expression for σ2, which we obtain using the full model con- taining all predictors. The second formula is appropriate when σ2 is unknown and we do not want to explicitly estimate it; that formula has a log(RSS) term instead of an RSS term. Detailed derivations of these two formulas are outside of the scope of this book. The adjusted R2 statistic is another popular approach for selecting among a set of models that contain different numbers of variables. Recall from Chapter 3 that the usual R2 is defined as 1 −RSS/TSS, where TSS = )(yi −y)2 is the total sum of squares for the response.…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 248,
+   "img": "eq-p248-437y485-170x335.png",
+   "section": "6.2 Shrinkage Methods › 6.2.1 Ridge Regression",
+   "link": "../isl/07-linear-model-selection-and-regularization.html",
+   "before": "j β2 j , called a shrinkage penalty, is small when β1,⋯, βp are close to zero, and so it has the effect of shrinking the estimates of βj towards zero. The tuning parameter λ serves to control the relative impact of these two terms on the regression coefficient estimates. When λ = 0, the penalty term has no effect, and ridge regression will produce the least squares estimates. However, as λ →∞, the impact of the shrinkage penalty grows, and the ridge regression coefficient estimates will approach…",
+   "after": "Ridge regression is very similar to least squares, except that the coefficients are estimated by minimizing a slightly different quantity. In particular, the ridge regression coefficient estimates β̂R are the values that minimize (6.5) where λ ≥0 is a tuning parameter, to be determined separately. Equation 6.5 trades off two different criteria. As with least squares, ridge regression seeks coefficient estimates that fit the data well, by making the RSS small. However, the second term, λ ) FIGURE 6.4 The standardized ridge regression coefficients are displayed for the Credit data set, as a function of λ and ∥β̂λR ∥2/∥β̂∥2."
+  },
+  {
+   "id": "eq-6-5",
+   "num": "(6.5)",
+   "page": 248,
+   "img": "eq-p248-526y575-115x385.png",
+   "section": "6.2 Shrinkage Methods › 6.2.1 Ridge Regression",
+   "link": "../isl/07-linear-model-selection-and-regularization.html#eq-6-5",
+   "before": "6.2.1Ridge Regression# Recall from Chapter 3 that the least squares fitting procedure estimates β0, β1,⋯, βp using the values that minimize Ridge regression is very similar to least squares, except that the coefficients are estimated by minimizing a slightly different quantity. In particular, the ridge regression coefficient estimates β̂R are the values that minimize",
+   "after": "where λ ≥0 is a tuning parameter, to be determined separately. Equation 6.5 trades off two different criteria. As with least squares, ridge regression seeks coefficient estimates that fit the data well, by making the RSS small. However, the second term, λ ) FIGURE 6.4 The standardized ridge regression coefficients are displayed for the Credit data set, as a function of λ and ∥β̂λR ∥2/∥β̂∥2. λ , for each value of λ. Selecting a good value for λ is critical; we defer this discussion to Section 6.2.3, where we use cross-validation. Note that in (6.5), the shrinkage penalty is applied to β1,⋯, βp, but not to the intercept β0. We want to shrink the estimated association of each variable with the …"
+  },
+  {
+   "id": "eq-6-6",
+   "num": "(6.6)",
+   "page": 250,
+   "img": "eq-p250-434y474-187x385.png",
+   "section": "6.2 Shrinkage Methods › 6.2.1 Ridge Regression",
+   "link": "../isl/07-linear-model-selection-and-regularization.html#eq-6-6",
+   "before": "G)p “ell 2”) of a vector, and is defined as ∥β∥2 =j=1 βj2. It measures the distance of β from zero. As λ increases, the ℓ2 norm of β̂λR will always decrease, and so will ∥β̂R λ ∥2/∥β̂∥2. The latter quantity ranges from 1 (when λ = 0, in which case the ridge regression coefficient estimate is the same as the least squares estimate, and so their ℓ2 norms are the same) to 0 (when λ = ∞, in which case the ridge regression coefficient estimate is a vector of zeros, with ℓ2 norm equal to zero). Theref…",
+   "after": "so that they are all on the same scale. In (6.6), the denominator is the estimated standard deviation of the jth predictor. Consequently, all of the standardized predictors will have a standard deviation of one. As a result the final fit will not depend on the scale on which the predictors are measured. In Figure 6.4, the y-axis displays the standardized ridge regression coefficient estimates—that is, the coefficient estimates that result from performing ridge regression using standardized predictors. In general, in situations where the relationship between the response and the predictors is close to linear, the least squares estimates will have low bias but may have high variance. This mean…"
+  },
+  {
+   "id": "eq-6-7",
+   "num": "(6.7)",
+   "page": 252,
+   "img": "eq-p252-411y456-108x385.png",
+   "section": "6.2 Shrinkage Methods › 6.2.1 Ridge Regression › 6.2.2 The Lasso",
+   "link": "../isl/07-linear-model-selection-and-regularization.html#eq-6-7",
+   "before": "Ridge regression does have one obvious disadvantage. Unlike best subset, forward stepwise, and backward stepwise selection, which will generally select models that involve just a subset of the variables, ridge regression will include all p predictors in the final model. The penalty λ ) β2 j in (6.5) will shrink all of the coefficients towards zero, but it will not set any of them exactly to zero (unless λ = ∞). This may not be a problem for prediction accuracy, but it can create a challenge in m…",
+   "after": "Comparing (6.7) to (6.5), we see that the lasso and ridge regression have similar formulations. The only difference is that the β2 j term in the ridge regression penalty (6.5) has been replaced by |βj| in the lasso penalty (6.7). In statistical parlance, the lasso uses an ℓ1 (pronounced “ell 1”) penalty instead of an ℓ2 penalty. The ℓ1 norm of a coefficient vector β is given by ∥β∥1 = ) |βj|. As with ridge regression, the lasso shrinks the coefficient estimates towards zero. However, in the case of the lasso, the ℓ1 penalty has the effect of forcing some of the coefficient estimates to be exactly equal to zero when the tuning parameter λ is sufficiently large. Hence, much like best subset se…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 253,
+   "img": "eq-p253-468y487-142x370.png",
+   "section": "6.2 Shrinkage Methods › 6.2.1 Ridge Regression › 6.2.2 The Lasso",
+   "link": "../isl/07-linear-model-selection-and-regularization.html",
+   "before": "As with ridge regression, the lasso shrinks the coefficient estimates towards zero. However, in the case of the lasso, the ℓ1 penalty has the effect of forcing some of the coefficient estimates to be exactly equal to zero when the tuning parameter λ is sufficiently large. Hence, much like best subset selection, the lasso performs variable selection. As a result, models generated from the lasso are generally much easier to interpret than those produced by ridge regression. We say that the lasso y…",
+   "after": "minimizeyi −β0 −βjxijsubject to|βj| ≤s and (6.8) minimizeyi −β0 −βjxijsubject toβ2 respectively. In other words, for every value of λ, there is some s such that the Equations (6.7) and (6.8) will give the same lasso coefficient estimates. Similarly, for every value of λ there is a corresponding s such that Equations (6.5) and (6.9) will give the same ridge regression coefficient estimates."
+  },
+  {
+   "id": "eq-6-8",
+   "num": "(6.8)",
+   "page": 253,
+   "img": "eq-p253-529y537-119x385.png",
+   "section": "6.2 Shrinkage Methods › 6.2.1 Ridge Regression › 6.2.2 The Lasso",
+   "link": "../isl/07-linear-model-selection-and-regularization.html#eq-6-8",
+   "before": "As an example, consider the coefficient plots in Figure 6.6, which are generated from applying the lasso to the Credit data set. When λ = 0, then the lasso simply gives the least squares fit, and when λ becomes sufficiently large, the lasso gives the null model in which all coefficient estimates equal zero. However, in between these two extremes, the ridge regression and lasso models are quite different from each other. Moving from left to right in the right-hand panel of Figure 6.6, we observe …",
+   "after": "minimizeyi −β0 −βjxijsubject toβ2 respectively. In other words, for every value of λ, there is some s such that the Equations (6.7) and (6.8) will give the same lasso coefficient estimates. Similarly, for every value of λ there is a corresponding s such that Equations (6.5) and (6.9) will give the same ridge regression coefficient estimates. (6.9) When p = 2, then (6.8) indicates that the lasso coefficient estimates have the smallest RSS out of all points that lie within the diamond defined by |β1| + |β2| ≤s. Similarly, the ridge regression estimates have the smallest RSS out of all points that lie within the circle defined by β2"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 253,
+   "img": "eq-p253-543y560-142x373.png",
+   "section": "6.2 Shrinkage Methods › 6.2.1 Ridge Regression › 6.2.2 The Lasso",
+   "link": "../isl/07-linear-model-selection-and-regularization.html",
+   "before": "Another Formulation for Ridge Regression and the Lasso One can show that the lasso and ridge regression coefficient estimates solve the problems minimizeyi −β0 −βjxijsubject to|βj| ≤s and (6.8)",
+   "after": "minimizeyi −β0 −βjxijsubject toβ2 respectively. In other words, for every value of λ, there is some s such that the Equations (6.7) and (6.8) will give the same lasso coefficient estimates. Similarly, for every value of λ there is a corresponding s such that Equations (6.5) and (6.9) will give the same ridge regression coefficient estimates. (6.9) When p = 2, then (6.8) indicates that the lasso coefficient estimates have the smallest RSS out of all points that lie within the diamond defined by |β1| + |β2| ≤s. Similarly, the ridge regression estimates have the smallest RSS out of all points that lie within the circle defined by β2 1 + β22 ≤s. We can think of (6.8) as follows. When we perform…"
+  },
+  {
+   "id": "eq-6-9",
+   "num": "(6.9)",
+   "page": 253,
+   "img": "eq-p253-602y610-118x385.png",
+   "section": "6.2 Shrinkage Methods › 6.2.1 Ridge Regression › 6.2.2 The Lasso",
+   "link": "../isl/07-linear-model-selection-and-regularization.html#eq-6-9",
+   "before": "minimizeyi −β0 −βjxijsubject to|βj| ≤s and (6.8) minimizeyi −β0 −βjxijsubject toβ2 respectively. In other words, for every value of λ, there is some s such that the Equations (6.7) and (6.8) will give the same lasso coefficient estimates. Similarly, for every value of λ there is a corresponding s such that Equations (6.5) and (6.9) will give the same ridge regression coefficient estimates.",
+   "after": "When p = 2, then (6.8) indicates that the lasso coefficient estimates have the smallest RSS out of all points that lie within the diamond defined by |β1| + |β2| ≤s. Similarly, the ridge regression estimates have the smallest RSS out of all points that lie within the circle defined by β2 1 + β22 ≤s. We can think of (6.8) as follows. When we perform the lasso we are trying to find the set of coefficient estimates that lead to the smallest RSS, subject to the constraint that there is a budget s for how large )p j=1 |βj| can be. When s is extremely large, then this budget is not very restrictive, and so the coefficient estimates can be large. In fact, if s is large enough that the least squares …"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 254,
+   "img": "eq-p254-264y280-129x356.png",
+   "section": "6.2 Shrinkage Methods › 6.2.1 Ridge Regression › 6.2.2 The Lasso",
+   "link": "../isl/07-linear-model-selection-and-regularization.html",
+   "before": "1 + β22 ≤s. We can think of (6.8) as follows. When we perform the lasso we are trying to find the set of coefficient estimates that lead to the smallest RSS, subject to the constraint that there is a budget s for how large )p j=1 |βj| can be. When s is extremely large, then this budget is not very restrictive, and so the coefficient estimates can be large. In fact, if s is large enough that the least squares solution falls within the budget, then (6.8) will simply yield the least squares solutio…",
+   "after": "Each of the ellipses centered around β̂ represents a contour: this means that all of the points on a particular ellipse have the same RSS value. As |β1|+|β2| ≤s and β12 +β22 ≤s, while the red ellipses are the contours of the RSS. minimizeyi −β0 −βjxijsubject toI(βj̸ = 0) ≤s. Here I(βj̸ = 0) is an indicator variable: it takes on a value of 1 if βj̸ = 0, and equals zero otherwise. Then (6.10) amounts to finding a set of coefficient estimates such that RSS is as small as possible, subject to the constraint that no more than s coefficients can be nonzero. The problem (6.10) is equivalent to best subset selection. Unfortunately, solving (6.10) is com- (6.10) ( 'p putationally infeasible when p i…"
+  },
+  {
+   "id": "eq-6-10",
+   "num": "(6.10)",
+   "page": 254,
+   "img": "eq-p254-322y330-105x380.png",
+   "section": "6.2 Shrinkage Methods › 6.2.1 Ridge Regression › 6.2.2 The Lasso",
+   "link": "../isl/07-linear-model-selection-and-regularization.html#eq-6-10",
+   "before": "j=1 βj2 not exceed the budget s. The formulations (6.8) and (6.9) reveal a close connection between the lasso, ridge regression, and best subset selection. Consider the problem Each of the ellipses centered around β̂ represents a contour: this means that all of the points on a particular ellipse have the same RSS value. As |β1|+|β2| ≤s and β12 +β22 ≤s, while the red ellipses are the contours of the RSS. minimizeyi −β0 −βjxijsubject toI(βj̸ = 0) ≤s. Here I(βj̸ = 0) is an indicator variable: it t…",
+   "after": "( 'p putationally infeasible when p is large, since it requires considering all models containing s predictors. Therefore, we can interpret ridge regression and the lasso as computationally feasible alternatives to best subset selection that replace the intractable form of the budget in (6.10) with forms that are much easier to solve. Of course, the lasso is much more closely related to best subset selection, since the lasso performs feature selection for s sufficiently small in (6.8), while ridge regression does not. The Variable Selection Property of the Lasso Why is it that the lasso, unlike ridge regression, results in coefficient estimates that are exactly equal to zero? The formulation…"
+  },
+  {
+   "id": "eq-6-11",
+   "num": "(6.11)",
+   "page": 257,
+   "img": "eq-p257-442y485-218x380.png",
+   "section": "6.2 Shrinkage Methods › 6.2.1 Ridge Regression › 6.2.2 The Lasso",
+   "link": "../isl/07-linear-model-selection-and-regularization.html#eq-6-11",
+   "before": "FIGURE 6.9 Left: Plots of squared bias (black), variance (green), and test MSE (purple) for the lasso. The simulated data is similar to that in Figure 6.8, except that now only two predictors are related to the response. Right: Comparison of squared bias, variance, and test MSE between lasso (solid) and ridge (dotted). Both are plotted against their R2 on the training data, as a common form of indexing. The crosses in both plots indicate the lasso model for which the MSE is smallest. is minimize…",
+   "after": "In this case, the least squares solution is given by β̂j = yj. And in this setting, ridge regression amounts to finding β1,⋯, βp such that (6.12)"
+  },
+  {
+   "id": "eq-6-12",
+   "num": "(6.12)",
+   "page": 257,
+   "img": "eq-p257-553y595-196x380.png",
+   "section": "6.2 Shrinkage Methods › 6.2.1 Ridge Regression › 6.2.2 The Lasso",
+   "link": "../isl/07-linear-model-selection-and-regularization.html#eq-6-12",
+   "before": "(6.11) In this case, the least squares solution is given by β̂j = yj. And in this setting, ridge regression amounts to finding β1,⋯, βp such that",
+   "after": "(6.13) FIGURE 6.10 The ridge regression and lasso coefficient estimates for a simple setting with n = p and X a diagonal matrix with 1’s on the diagonal. Left: The ridge regression coefficient estimates are shrunken proportionally towards zero, relative to the least squares estimates. Right: The lasso coefficient estimates are soft-thresholded towards zero. We now show that one can view ridge regression and the lasso through a Bayesian lens. A Bayesian viewpoint for regression assumes that the coefficient vector β has some prior distribution, say p(β), where β = (β0, β1,⋯, βp)T . The likelihood of the data can be written as f(Y |X, β), where X = (X1,⋯, Xp). Multiplying the prior distribution…"
+  },
+  {
+   "id": "eq-6-13",
+   "num": "(6.13)",
+   "page": 257,
+   "img": "eq-p257-616y657-194x380.png",
+   "section": "6.2 Shrinkage Methods › 6.2.1 Ridge Regression › 6.2.2 The Lasso",
+   "link": "../isl/07-linear-model-selection-and-regularization.html#eq-6-13",
+   "before": "In this case, the least squares solution is given by β̂j = yj. And in this setting, ridge regression amounts to finding β1,⋯, βp such that (6.12)",
+   "after": "FIGURE 6.10 The ridge regression and lasso coefficient estimates for a simple setting with n = p and X a diagonal matrix with 1’s on the diagonal. Left: The ridge regression coefficient estimates are shrunken proportionally towards zero, relative to the least squares estimates. Right: The lasso coefficient estimates are soft-thresholded towards zero. We now show that one can view ridge regression and the lasso through a Bayesian lens. A Bayesian viewpoint for regression assumes that the coefficient vector β has some prior distribution, say p(β), where β = (β0, β1,⋯, βp)T . The likelihood of the data can be written as f(Y |X, β), where X = (X1,⋯, Xp). Multiplying the prior distribution by the…"
+  },
+  {
+   "id": "eq-6-14",
+   "num": "(6.14)",
+   "page": 258,
+   "img": "eq-p258-294y306-211x380.png",
+   "section": "6.2 Shrinkage Methods › 6.2.1 Ridge Regression › 6.2.2 The Lasso",
+   "link": "../isl/07-linear-model-selection-and-regularization.html#eq-6-14",
+   "before": "(6.12) (6.13) FIGURE 6.10 The ridge regression and lasso coefficient estimates for a simple setting with n = p and X a diagonal matrix with 1’s on the diagonal. Left: The ridge regression coefficient estimates are shrunken proportionally towards zero, relative to the least squares estimates. Right: The lasso coefficient estimates are soft-thresholded towards zero. We now show that one can view ridge regression and the lasso through a Bayesian lens. A Bayesian viewpoint for regression assumes tha…",
+   "after": "and the lasso estimates take the form (6.15) 0if |yj| ≤λ/2. Figure 6.10 displays the situation. We can see that ridge regression and the lasso perform two very different types of shrinkage. In ridge regression, each least squares coefficient estimate is shrunken by the same proportion. In contrast, the lasso shrinks each least squares coefficient towards zero by a constant amount, λ/2; the least squares coefficients that are less than λ/2 in absolute value are shrunken entirely to zero. The type of shrinkage performed by the lasso in this simple setting (6.15) is known as softthresholding. The fact that some lasso coefficients are shrunken entirely to zero explains why the lasso performs fea…"
+  },
+  {
+   "id": "eq-6-15",
+   "num": "(6.15)",
+   "page": 258,
+   "img": "eq-p258-324y356-176x380.png",
+   "section": "6.2 Shrinkage Methods › 6.2.1 Ridge Regression › 6.2.2 The Lasso",
+   "link": "../isl/07-linear-model-selection-and-regularization.html#eq-6-15",
+   "before": "FIGURE 6.10 The ridge regression and lasso coefficient estimates for a simple setting with n = p and X a diagonal matrix with 1’s on the diagonal. Left: The ridge regression coefficient estimates are shrunken proportionally towards zero, relative to the least squares estimates. Right: The lasso coefficient estimates are soft-thresholded towards zero. We now show that one can view ridge regression and the lasso through a Bayesian lens. A Bayesian viewpoint for regression assumes that the coeffici…",
+   "after": "0if |yj| ≤λ/2. Figure 6.10 displays the situation. We can see that ridge regression and the lasso perform two very different types of shrinkage. In ridge regression, each least squares coefficient estimate is shrunken by the same proportion. In contrast, the lasso shrinks each least squares coefficient towards zero by a constant amount, λ/2; the least squares coefficients that are less than λ/2 in absolute value are shrunken entirely to zero. The type of shrinkage performed by the lasso in this simple setting (6.15) is known as softthresholding. The fact that some lasso coefficients are shrunken entirely to zero explains why the lasso performs feature selection. In the case of a more general…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 259,
+   "img": "eq-p259-296y314-143x362.png",
+   "section": "6.2 Shrinkage Methods › 6.2.1 Ridge Regression › 6.2.2 The Lasso",
+   "link": "../isl/07-linear-model-selection-and-regularization.html",
+   "before": "In the case of a more general data matrix X, the story is a little more complicated than what is depicted in Figure 6.10, but the main ideas still hold approximately: ridge regression more or less shrinks every dimension of the data by the same proportion, whereas the lasso more or less shrinks all coefficients toward zero by a similar amount, and sufficiently small coefficients are shrunken all the way to zero. Bayesian Interpretation of Ridge Regression and the Lasso FIGURE 6.11 Left: Ridge re…",
+   "after": "where the proportionality above follows from Bayes’ theorem, and the equality above follows from the assumption that X is fixed. We assume the usual linear model, and suppose that the errors are independent and drawn from a normal distribution. Furthermore, assume that p(β) = Fp"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 259,
+   "img": "eq-p259-359y377-175x330.png",
+   "section": "6.2 Shrinkage Methods › 6.2.1 Ridge Regression › 6.2.2 The Lasso",
+   "link": "../isl/07-linear-model-selection-and-regularization.html",
+   "before": "FIGURE 6.11 Left: Ridge regression is the posterior mode for β under a Gaus- sian prior. Right: The lasso is the posterior mode for β under a double-exponential prior. where the proportionality above follows from Bayes’ theorem, and the equality above follows from the assumption that X is fixed. We assume the usual linear model,",
+   "after": "and suppose that the errors are independent and drawn from a normal distribution. Furthermore, assume that p(β) = Fp j=1 g(βj), for some density function g. It turns out that ridge regression and the lasso follow naturally from two special cases of g: If g is a Gaussian distribution with mean zero and standard deviation a function of λ, then it follows that the posterior mode for β—that is, the most likely value for β, given the data—is given by the ridge regression solution. (In fact, the ridge regression solution is also the posterior mean.) If g is a double-exponential (Laplace) distribution with mean zero and scale parameter a function of λ, then it follows that the posterior mode for β …"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 261,
+   "img": "eq-p261-172y191-151x375.png",
+   "section": "6.2 Shrinkage Methods › 6.2.1 Ridge Regression › 6.2.2 The Lasso › 6.2.3 Selecting the Tuning Parameter",
+   "link": "../isl/07-linear-model-selection-and-regularization.html",
+   "before": "Figure 6.13 provides an illustration of ten-fold cross-validation applied to the lasso fits on the sparse simulated data from Figure 6.9. The left-hand panel of Figure 6.13 displays the cross-validation error, while the right-hand panel displays the coefficient estimates. The vertical dashed lines indicate the point at which the cross-validation error is smallest. The two colored lines in the right-hand panel of Figure 6.13 represent the two predictors that are related to the response, while the…",
+   "after": "The term dimension reduction comes from the fact that this approach reduces the problem of estimating the p+1 coefficients β0, β1,⋯, βp to the simpler problem of estimating the M + 1 coefficients θ0, θ1,⋯, θM, where M < p. In other words, the dimension of the problem has been reduced from p + 1 to M + 1. 6.3Dimension Reduction Methods# The methods that we have discussed so far in this chapter have controlled variance in two different ways, either by using a subset of the original variables, or by shrinking their coefficients toward zero. All of these methods are defined using the original predictors, X1, X2,⋯, Xp. We now explore a class of approaches that transform the predictors and then fi…"
+  },
+  {
+   "id": "eq-6-16",
+   "num": "(6.16)",
+   "page": 261,
+   "img": "eq-p261-497y505-211x380.png",
+   "section": "6.3 Dimension Reduction Methods",
+   "link": "../isl/07-linear-model-selection-and-regularization.html#eq-6-16",
+   "before": "6.3Dimension Reduction Methods# The methods that we have discussed so far in this chapter have controlled variance in two different ways, either by using a subset of the original variables, or by shrinking their coefficients toward zero. All of these methods are defined using the original predictors, X1, X2,⋯, Xp. We now explore a class of approaches that transform the predictors and then fit a least squares model using the transformed variables. We will refer to these techniques as dimension re…",
+   "after": "(6.17) using least squares. Note that in (6.17), the regression coefficients are given by θ0, θ1,⋯, θM. If the constants φ1m, φ2m,⋯, φpm are chosen wisely, then such dimension reduction approaches can often outperform least squares regression. In other words, fitting (6.17) using least squares can lead to better results than fitting (6.1) using least squares. Principal components analysis (PCA) is a popular approach for deriving a low-dimensional set of features from a large set of variables. PCA is discussed in greater detail as a tool for unsupervised learning in Chapter 12. Here we describe its use as a dimension reduction technique for regression. FIGURE 6.14 The population size (pop) an…"
+  },
+  {
+   "id": "eq-6-17",
+   "num": "(6.17)",
+   "page": 261,
+   "img": "eq-p261-524y563-160x380.png",
+   "section": "6.3 Dimension Reduction Methods",
+   "link": "../isl/07-linear-model-selection-and-regularization.html#eq-6-17",
+   "before": "The methods that we have discussed so far in this chapter have controlled variance in two different ways, either by using a subset of the original variables, or by shrinking their coefficients toward zero. All of these methods are defined using the original predictors, X1, X2,⋯, Xp. We now explore a class of approaches that transform the predictors and then fit a least squares model using the transformed variables. We will refer to these techniques as dimension reduction methods. Let Z1, Z2,⋯, Z…",
+   "after": "using least squares. Note that in (6.17), the regression coefficients are given by θ0, θ1,⋯, θM. If the constants φ1m, φ2m,⋯, φpm are chosen wisely, then such dimension reduction approaches can often outperform least squares regression. In other words, fitting (6.17) using least squares can lead to better results than fitting (6.1) using least squares. Principal components analysis (PCA) is a popular approach for deriving a low-dimensional set of features from a large set of variables. PCA is discussed in greater detail as a tool for unsupervised learning in Chapter 12. Here we describe its use as a dimension reduction technique for regression. FIGURE 6.14 The population size (pop) and ad sp…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 262,
+   "img": "eq-p262-321y361-106x399.png",
+   "section": "6.3 Dimension Reduction Methods",
+   "link": "../isl/07-linear-model-selection-and-regularization.html",
+   "before": "using least squares. Note that in (6.17), the regression coefficients are given by θ0, θ1,⋯, θM. If the constants φ1m, φ2m,⋯, φpm are chosen wisely, then such dimension reduction approaches can often outperform least squares regression. In other words, fitting (6.17) using least squares can lead to better results than fitting (6.1) using least squares. Principal components analysis (PCA) is a popular approach for deriving a low-dimensional set of features from a large set of variables. PCA is di…",
+   "after": "where (6.18) Hence (6.17) can be thought of as a special case of the original linear regression model given by (6.1). Dimension reduction serves to constrain the estimated βj coefficients, since now they must take the form (6.18). This constraint on the form of the coefficients has the potential to bias the coefficient estimates. However, in situations where p is large relative to n, selecting a value of M ≪p can significantly reduce the variance of the fitted coefficients. If M = p, and all the Zm are linearly independent, then (6.18) poses no constraints. In this case, no dimension reduction occurs, and so fitting (6.17) is equivalent to performing least squares on the original p predictor…"
+  },
+  {
+   "id": "eq-6-18",
+   "num": "(6.18)",
+   "page": 262,
+   "img": "eq-p262-378y407-210x380.png",
+   "section": "6.3 Dimension Reduction Methods",
+   "link": "../isl/07-linear-model-selection-and-regularization.html#eq-6-18",
+   "before": "FIGURE 6.14 The population size (pop) and ad spending (ad) for 100 different cities are shown as purple circles. The green solid line indicates the first principal component, and the blue dashed line indicates the second principal component. Notice that from (6.16), where",
+   "after": "Hence (6.17) can be thought of as a special case of the original linear regression model given by (6.1). Dimension reduction serves to constrain the estimated βj coefficients, since now they must take the form (6.18). This constraint on the form of the coefficients has the potential to bias the coefficient estimates. However, in situations where p is large relative to n, selecting a value of M ≪p can significantly reduce the variance of the fitted coefficients. If M = p, and all the Zm are linearly independent, then (6.18) poses no constraints. In this case, no dimension reduction occurs, and so fitting (6.17) is equivalent to performing least squares on the original p predictors. All dimens…"
+  },
+  {
+   "id": "eq-6-19",
+   "num": "(6.19)",
+   "page": 263,
+   "img": "eq-p263-322y347-147x380.png",
+   "section": "6.3 Dimension Reduction Methods › 6.3.1 Principal Components Regression",
+   "link": "../isl/07-linear-model-selection-and-regularization.html#eq-6-19",
+   "before": "All dimension reduction methods work in two steps. First, the transformed predictors Z1, Z2,⋯, ZM are obtained. Second, the model is fit using these M predictors. However, the choice of Z1, Z2,⋯, ZM, or equivalently, the selection of the φjm’s, can be achieved in different ways. In this chapter, we will consider two approaches for this task: principal components and partial least squares. 6.3.1Principal Components Regression# An Overview of Principal Components Analysis PCA is a technique for re…",
+   "after": "Here φ11 = 0.839 and φ21 = 0.544 are the principal component loadings, which define the direction referred to above. In (6.19), pop indicates the mean of all pop values in this data set, and ad indicates the mean of all advertising spending. The idea is that out of every possible linear combination of pop and ad such that φ2 11 + φ221 = 1, this particular linear combination yields the highest variance: i.e. this is the linear combination for which Var(φ11 × (pop −pop) + φ21 × (ad −ad)) is maximized. It is necessary to consider only linear combinations of the form φ2 11+φ221 = 1, since otherwise we could increase φ11 and φ21 arbitrarily in order to blow up the variance. In (6.19), the two loa…"
+  },
+  {
+   "id": "eq-6-20",
+   "num": "(6.20)",
+   "page": 263,
+   "img": "eq-p263-511y536-143x380.png",
+   "section": "6.3 Dimension Reduction Methods › 6.3.1 Principal Components Regression",
+   "link": "../isl/07-linear-model-selection-and-regularization.html#eq-6-20",
+   "before": "Here φ11 = 0.839 and φ21 = 0.544 are the principal component loadings, which define the direction referred to above. In (6.19), pop indicates the mean of all pop values in this data set, and ad indicates the mean of all advertising spending. The idea is that out of every possible linear combination of pop and ad such that φ2 11 + φ221 = 1, this particular linear combination yields the highest variance: i.e. this is the linear combination for which Var(φ11 × (pop −pop) + φ21 × (ad −ad)) is maximi…",
+   "after": "The values of z11,⋯, zn1 are known as the principal component scores, and can be seen in the right-hand panel of Figure 6.15. There is also another interpretation of PCA: the first principal component vector defines the line that is as close as possible to the data. For instance, in Figure 6.14, the first principal component line minimizes the sum of the squared perpendicular distances between each point and the line. These distances are plotted as dashed line segments in the left-hand 6This dataset is distinct from the Advertising data discussed in Chapter 3. FIGURE 6.15 A subset of the advertising data. The mean pop and ad budgets are indicated with a blue circle. Left: The first principal…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 265,
+   "img": "eq-p265-321y342-147x358.png",
+   "section": "6.3 Dimension Reduction Methods › 6.3.1 Principal Components Regression",
+   "link": "../isl/07-linear-model-selection-and-regularization.html",
+   "before": "We can think of the values of the principal component Z1 as singlenumber summaries of the joint pop and ad budgets for each location. In this example, if zi1 = 0.839 × (popi −pop) + 0.544 × (adi −ad) < 0, then this indicates a city with below-average population size and belowaverage ad spending. A positive score suggests the opposite. How well can a single number represent both pop and ad? In this case, Figure 6.14 indicates that pop and ad have approximately a linear relationship, and so we mig…",
+   "after": "Since the advertising data has two predictors, the first two principal components contain all of the information that is in pop and ad. However, by construction, the first component will contain the most information. Consider, for example, the much larger variability of zi1 (the x-axis) versus zi2 (the y-axis) in the right-hand panel of Figure 6.15. The fact that the second principal component scores are much closer to zero indicates that this component captures far less information. As another illustration, Figure 6.17 displays zi2 versus pop and ad. There is little relationship between the second principal component and these two predictors, again suggesting that in this case, one only nee…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 292,
+   "img": "eq-p292-84y103-142x352.png",
+   "section": "6.6 Exercises › Conceptual",
+   "link": "../isl/07-linear-model-selection-and-regularization.html",
+   "before": "CV error is minimized at 12, though there is little noticable difference between this point and a much lower number like 2 or 3 components. 6.6Exercises# Conceptual# We perform best subset, forward stepwise, and backward stepwise selection on a single data set. For each approach, we obtain p + 1 models, containing 0, 1, 2,⋯, p predictors. Explain your answers:Which of the three models with k predictors has the smallest training RSS?Which of the three models with k predictors has the smallest tes…",
+   "after": "yi −β0 −βjxijsubject to|βj| ≤s for a particular value of s. For parts (a) through (e), indicate which of i. through v. is correct. Justify your answer. As we increase s from 0, the training RSS will: i. Increase initially, and then eventually start decreasing in an inverted U shape. ii. Decrease initially, and then eventually start increasing in a U shape. iii. Steadily increase. iv. Steadily decrease. v. Remain constant.Repeat (a) for test RSS.Repeat (a) for variance.Repeat (a) for (squared) bias.Repeat (a) for the irreducible error.Suppose we estimate the regression coefficients in a linear regression model by minimizing for a particular value of λ. For parts (a) through (e), indicate whi…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 292,
+   "img": "eq-p292-384y437-177x352.png",
+   "section": "6.6 Exercises › Conceptual",
+   "link": "../isl/07-linear-model-selection-and-regularization.html",
+   "before": "We perform best subset, forward stepwise, and backward stepwise selection on a single data set. For each approach, we obtain p + 1 models, containing 0, 1, 2,⋯, p predictors. Explain your answers:Which of the three models with k predictors has the smallest training RSS?Which of the three models with k predictors has the smallest test RSS?True or False: i. The predictors in the k-variable model identified by forward stepwise are a subset of the predictors in the (k+1)-variable model identified by…",
+   "after": "for a particular value of λ. For parts (a) through (e), indicate which of i. through v. is correct. Justify your answer. As we increase λ from 0, the training RSS will: i. Increase initially, and then eventually start decreasing in an inverted U shape. ii. Decrease initially, and then eventually start increasing in a U shape. iii. Steadily increase. iv. Steadily decrease. v. Remain constant.Repeat (a) for test RSS.Repeat (a) for variance.Repeat (a) for (squared) bias.Repeat (a) for the irreducible error.It is well-known that ridge regression tends to give similar coefficient values to correlated variables, whereas the lasso may give quite different coefficient values to correlated variables.…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 294,
+   "img": "eq-p294-177y200-194x357.png",
+   "section": "6.6 Exercises › Conceptual › Applied",
+   "link": "../isl/07-linear-model-selection-and-regularization.html",
+   "before": "for a particular value of λ. For parts (a) through (e), indicate which of i. through v. is correct. Justify your answer. As we increase λ from 0, the training RSS will: i. Increase initially, and then eventually start decreasing in an inverted U shape. ii. Decrease initially, and then eventually start increasing in a U shape. iii. Steadily increase. iv. Steadily decrease. v. Remain constant.Repeat (a) for test RSS.Repeat (a) for variance.Repeat (a) for (squared) bias.Repeat (a) for the irreducib…",
+   "after": "where β0, β1, β2, and β3 are constants of your choice. Use forward stepwise selection in order to select a model containing the predictors X, X2,⋯, X10. What is the model obtained according to Cp? Report the coefficients of the model obtained.Repeat (c), using backwards stepwise selection. How does your answer compare to the results in (c)?Now fit a lasso model to the simulated data, again using X, X2, ⋯, X10 as predictors. Use cross-validation to select the optimal value of λ. Create plots of the cross-validation error as a function of λ. Report the resulting coefficient estimates, and discuss the results obtained.Now generate a response vector Y according to the model Y = β0 + β7X7 + ϵ, an…"
+  },
+  {
+   "id": "eq-6-4",
+   "num": "(6.4)",
+   "page": 246,
+   "img": null,
+   "section": "（原书有编号，网页版解析器未切图）",
+   "link": "../isl/07-linear-model-selection-and-regularization.html#eq-6-4",
+   "before": "",
+   "after": "",
+   "fromPdf": true
+  }
+ ]
+}

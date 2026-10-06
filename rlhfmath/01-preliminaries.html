@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>§0 数学基础速查 · RLHF 数学推导手册</title>
+<link rel="icon" href="assets/icon.svg">
+<link rel="stylesheet" href="assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('rlhf-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light')}catch(e){}}());</script>
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="bar">
+<a class="ib" href="index.html" aria-label="目录">&#9776;</a>
+<span class="title">§0 数学基础速查</span>
+<button class="ib" id="theme" type="button" aria-label="切换深色模式">&#9681;</button>
+</header>
+<main id="main">
+<h1 class="chapter"><span class="chno">§0</span>数学基础速查</h1>
+<div class="callout"><div class="lab">This chapter covers</div><ul><li>期望、方差、蒙特卡洛：为什么“采样平均”能代替求和</li><li>导数三件套：链式法则、log-derivative trick、sigmoid 求导</li><li>KL 散度、交叉熵、softmax：三个长得很像的概念</li><li>MDP 五元组：本书所有 RL 公式的共同语言</li></ul></div>
+<p>后面所有推导只用这 4 块知识。如果你都还记得，直接跳到 <a href="02-rl-foundation.html">Ch 3</a>。记不清的，把每个 <span class="pill">复习</span> 盒子展开看一遍即可。</p>
+
+<h2 id="exp"><a class="anchor" href="#exp">#</a>0.1 期望：加权平均的另一种写法</h2>
+<div class="recall"><div class="lab">复习 · 期望</div>离散：<b>E<sub>x∼P</sub>[f(x)] ＝ Σ<sub>x</sub> P(x)·f(x)</b>；连续：把 Σ 换成 ∫，P(x) 换成密度 p(x)。<b>线性</b>：E[aX+bY]＝aE[X]+bE[Y]，求导/求和可进期望里面。<b>蒙特卡洛</b>：从 P 中抽 B 个样本 x<sub>i</sub>，则 (1/B)Σf(x<sub>i</sub>) ≈ E[f]，B 越大越准——RL 里所有“empirical average”都是它。</div>
+<p>例子：骰子点数 X，P＝1/6，则 E[X]＝(1+…+6)/6＝3.5。抽 3 次得 2,5,4，蒙特卡洛估计＝(2+5+4)/3＝3.67，已经接近 3.5。</p>
+<div class="math"><span class="eqtag">全书通用</span><br>离散 E ＝ Σ P·f，连续 E ＝ ∫ p·f dτ，样本平均 (1/B)Σ f(τ<sub>i</sub>) → E[f]</div>
+<p>为什么 RL 总在期望和求和之间横跳？因为状态太多算不完 Σ，只能采样 B 条轨迹取平均（见 Eq 6.4→6.6）。记住：<b>看到 E<sub>τ∼π</sub> 就读作“按当前策略多跑几次取平均”</b>。</p>
+
+<h2 id="grad"><a class="anchor" href="#grad">#</a>0.2 梯度三件套</h2>
+<div class="recall"><div class="lab">复习 · 链式法则＋log  trick</div>① 链式：d/dx f(g(x))＝f′(g)·g′(x)。② <b>log-derivative trick</b>：∇p＝p·∇log p，因为 ∇log p＝(∇p)/p。③ sigmoid σ(x)＝1/(1+e<sup>−x</sup>)，导数 σ′(x)＝σ(x)(1−σ(x))，且 σ(−x)＝1−σ(x)，−log σ(x) 求导得 −(1−σ(x))·x′。</div>
+<ol class="steps">
+<li><b>log 为什么能进期望？</b>以后看到 ∇log π(a|s)，把它读作“让这个动作变 fashion 的方向”。log 把乘积变加法（log ab＝log a＋log b），求导后只剩策略项，环境项被消掉——这正是策略梯度 Eq 6.9–6.11 的核心。</li>
+<li><b>sigmoid 速算：</b>σ(0)＝0.5，σ(2)≈0.88，σ(−2)≈0.12。导数在 0 处最大 0.25，往两边迅速变小——这解释了为什么 BT loss 在“已经分得很开”时梯度消失。</li>
+<li><b>小练习：</b>设 p＝e<sup>r<sub>c</sub></sup>/(e<sup>r<sub>c</sub></sup>+e<sup>r<sub>r</sub></sup>)，证明 p＝σ(r<sub>c</sub>−r<sub>r</sub>)。提示：分子分母同除 e<sup>r<sub>c</sub></sup>，得 1/(1+e<sup>−(r<sub>c</sub>−r<sub>r</sub>)</sup>)。这就是 Eq 5.2 / 5.4 的第一步，后面会反复用。</li>
+</ol>
+
+<h2 id="kl"><a class="anchor" href="#kl">#</a>0.3 KL、交叉熵、softmax：一家三口</h2>
+<div class="recall"><div class="lab">复习 · 定义</div>softmax：把任意实数 r<sub>i</sub> 变成概率 e<sup>r<sub>i</sub></sup>/Σe<sup>r<sub>j</sub></sup>。交叉熵 H(P,Q)＝−ΣP log Q（用 Q 去猜 P 的代价）。KL：D<sub>KL</sub>(P‖Q)＝ΣP log(P/Q)＝H(P,Q)−H(P)，≥0 且仅当 P＝Q 取 0（Gibbs 不等式）。<b>方向很重要</b>：D(P‖Q) 对 Q 覆盖不到 P 的地方罚得很重。</div>
+<div class="math"><span class="eqtag">Eq 15.3 / 15.4 同款</span><br>D<sub>KL</sub>(P‖Q) ＝ Σ<sub>x</sub> P(x) log(P(x)/Q(x)) ＝ E<sub>x∼P</sub>[log P(x) − log Q(x)]</div>
+<p>语言模型里 P 常是“正在训的模型 π”，Q 是“参考模型 π<sub>ref</sub>”。采样写法 E<sub>x∼P</sub>[·] 让 KL 只需“从自己采样、查两个模型的 log prob 相减”，不用枚举整个词表（Eq 15.4 的由来）。</p>
+<div class="warnbox"><div class="lab">易错</div>KL 不是距离（不对称）！书里 <b>reverse KL ＝ D(π‖π<sub>ref</sub>)</b>（从自己采样，保守、不敢去参考模型没见过的地方）；<b>forward KL ＝ D(π<sub>ref</sub>‖π)</b>（要覆盖参考模型，常用于蒸馏）。RLHF 默认 reverse。</div>
+
+<h2 id="mdp"><a class="anchor" href="#mdp">#</a>0.4 MDP：s, a, r, p, γ 五个字母</h2>
+<dl class="kv">
+<dt>s 状态 state</dt><dd>你在哪。机器人是位置速度；语言模型是“prompt＋已生成的前缀”。</dd>
+<dt>a 动作 action</dt><dd>你干什么。机器人是推力；语言模型是“下一个 token”，整条回复是动作序列。</dd>
+<dt>r 奖励 reward</dt><dd>干得好不好。RLHF 里是奖励模型打分 r<sub>θ</sub>(x,y)。</dd>
+<dt>p 转移 transition</dt><dd>干了之后世界怎么变：p(s′|s,a)。语言模型单轮 RLHF 常没有转移（bandit）。</dd>
+<dt>γ 折扣 discount</dt><dd>0–1，越小越短视。LM 的 RLHF 常取 γ＝1（整句只看最终分）。</dd>
+</dl>
+<p>策略 π(a|s)：给定状态出动作的概率表，就是语言模型本身。轨迹 τ＝(s<sub>0</sub>,a<sub>0</sub>,r<sub>0</sub>,…)。值函数 V(s)＝E[未来折扣回报|从 s 出发]，Q(s,a) 是“在 s 强制先做 a”的版本，优势 A＝Q−V（“比平均好多少”）。这三个字母贯穿 Ch 6。</p>
+
+<h2 id="calc"><a class="anchor" href="#calc">#</a>0.5 微积分速记：后面推导只用这几行</h2>
+<ul class="lst">
+<li>d/dx log x＝1/x；d/dx e<sup>x</sup>＝e<sup>x</sup>；d/dx clip(x) 在界内＝1，界外＝0（PPO/B 截断的梯度开关就这么来的）。</li>
+<li>min(a,b) 求导＝跟随较小者。PPO 的 min(rA, clip(r)A) 本质是“ pessimistic：哪个好就信哪个里更保守的”。</li>
+<li>Σ 与 ∇ 可交换：∇Σ＝Σ∇；E 与 ∇ 在“采样分布与 θ 无关时”可交换，<b>有关时必须用 log trick</b>（Eq 6.9 的全部难点）。</li>
+<li>几何平均 ⇔ 算术平均的 log：(∏p<sub>t</sub>)<sup>1/n</sup>＝exp((1/n)Σlog p<sub>t</sub>)——GSPO Eq 6.34 一行就靠它防溢出。</li>
+</ul>
+<p>准备好了。下一章我们用这套语言重写 Ch 3 的四个目标函数。</p>
+</main>
+<nav class="pager" aria-label="翻页">
+<a class="pv" href="index.html"><span class="dir">上一章</span><span class="t">目录</span></a>
+<a class="nx" href="02-rl-foundation.html"><span class="dir">下一章</span><span class="t">Ch 3 RL 与 RLHF 目标</span></a>
+</nav>
+<script src="assets/app.js"></script>
+</body>
+</html>

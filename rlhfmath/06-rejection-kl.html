@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Ch 9+15 拒绝采样与 KL · RLHF 数学推导手册</title>
+<link rel="icon" href="assets/icon.svg">
+<link rel="stylesheet" href="assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('rlhf-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light')}catch(e){}}());</script>
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="bar">
+<a class="ib" href="index.html" aria-label="目录">&#9776;</a>
+<span class="title">Ch 9+15 拒绝采样与 KL</span>
+<button class="ib" id="theme" type="button" aria-label="切换深色模式">&#9681;</button>
+</header>
+<main id="main">
+<h1 class="chapter"><span class="chno">Ch 9+15</span>拒绝采样与正则化</h1>
+<div class="callout"><div class="lab">This chapter covers</div><ul><li>Ch 9：X/Y/R 三个矩阵＋两种选法（per-prompt argmax／全局 top-K＋flatten 索引）</li><li>Eq 15.1–15.4 KL 惩罚：r＝r<sub>θ</sub>−λr<sub>reg</sub>、求和式与期望式互化</li><li>Eq 15.5–15.8 pretrain 梯度＋DPO+NLL（长度归一化）</li><li>Eq 15.9 margin（同 5.7）与实现代码读法</li></ul></div>
+
+<h2 id="rs"><a class="anchor" href="#rs">#</a>Ch 9 拒绝采样：三个矩阵</h2>
+<div class="math"><span class="eqtag">原书 9.1.1–9.1.2</span><br>X＝[x<sub>1</sub>…x<sub>M</sub>]；Y＝[y<sub>i,j</sub>]<sub>M×N</sub>（i prompt, j 第几个采样）；R＝[r<sub>i,j</sub>]，r<sub>i,j</sub>＝R(y<sub>i,j</sub>|x<sub>i</sub>)</div>
+<ol class="steps">
+<li><b>采样：</b>每 prompt 采 N 个（常用 10–30，温度 0.7–1.0＋top-p/top-k）。N 太小＝噪声大学偏。</li>
+<li><b>打分：</b>全过奖励模型得 R。只在 EOS 处打分；超长截断的要罚（否则 RM 见到截断外分布乱打分）。</li>
+<li><b>两种选法：</b>① per-prompt：S(R)<sub>i</sub>＝argmax<sub>j</sub>r<sub>i,j</sub>，Y<sub>chosen</sub>＝[y<sub>1,S1</sub>…y<sub>M,SM</sub>]（每 prompt 留 1 个）；② 全局 top-K：R<sub>flat</sub> 拉平（行优先），S<sub>K</sub>＝argsort(R<sub>flat</sub>)[−K:]（最大 K 个下标），再映回 (i,j)。</li>
+</ol>
+<h3>Flatten 索引换算（0 起）</h3>
+<div class="math">k ↦ i＝⌊k/N⌋＋1，j＝(k mod N)＋1（＋1 只因书里 1 起；代码 0 起则不加）</div>
+<p>例子（原书 5×4 矩阵）：R<sub>flat</sub>＝[0.7,0.3,0.5,0.2,0.4,0.8,…]，top-5 下标 [8,5,14,0,11]：k＝8→i＝⌊8/4⌋＋1＝3，j＝(8 mod 4)＋1＝1，即 prompt3-completion1（0.9 全场最高）。其余同理：5→(2,2,0.8)，14→(4,3,0.8)，0→(1,1,0.7)，11→(3,4,0.7)。per-prompt 则每行取最大：[1,2,1,3,4]。</p>
+<p>选完即标准 SFT（见 Ch 4）。超参：温度、N、SFT 学习率、RM 好坏（RM 决定天花板）、是否混多模型生成。</p>
+
+<h2 id="k1514"><a class="anchor" href="#k1514">#</a>Eq 15.1–15.4 KL：从求和到期望</h2>
+<div class="math"><span class="eqtag">Eq 15.1 / 15.2</span><br>r＝r<sub>θ</sub>−λr<sub>reg</sub>；r＝r<sub>θ</sub>−λ<sub>KL</sub>D<sub>KL</sub>(π<sub>RL</sub>(y|x)‖π<sub>ref</sub>(y|x))<br><span class="eqtag">Eq 15.3 / 15.4</span><br>D<sub>KL</sub>(P‖Q)＝ΣP(x)log(P(x)/Q(x))＝E<sub>x∼P</sub>[logP(x)−logQ(x)]</div>
+<ol class="steps">
+<li><b>15.3→15.4：</b>ΣP·[logP−logQ] 正是“按 P 加权平均”，即 E<sub>x∼P</sub>[·]。采样版不用枚举词表：从自己生成、查两个模型 log prob 相减取平均即可。</li>
+<li><b>方向：</b>reverse（P＝RL 模型）对“自己大、ref 小”重罚——保守；forward 反之（蒸馏味）。RLHF 默认 reverse；PPO trust region 内部算的是另一方向（见 Ch 6）。</li>
+<li><b>代码读法：</b><code>seq_logprob＝token_logprobs.sum(−1)</code>（自回归连乘→log 连加），<code>kl≈seq−ref_seq</code> 即 15.4 的单样本版；<code>F.kl_div(ref,logp)</code> 是全分布版（贵）。</li>
+</ol>
+
+<h2 id="k1558"><a class="anchor" href="#k1558">#</a>Eq 15.5–15.8 pretrain 梯度与 DPO+NLL</h2>
+<div class="math"><span class="eqtag">Eq 15.5 / 15.6（InstructGPT）</span><br>J＝E<sub>(x,y)∼Dπ</sub>[r<sub>θ</sub>−λr<sub>reg</sub>]；＋γE<sub>x∼Dpretrain</sub>[logπ(x)]（防公共 NLP 退化）<br><span class="eqtag">Eq 15.7 / 15.8 DPO+NLL</span><br>L＝−logσ(βlog(P<sub>θ</sub>(w)/P<sub>ref</sub>(w))−βlog(P<sub>θ</sub>(l)/P<sub>ref</sub>(l))) −α·logP<sub>θ</sub>(w)/(|c<sub>w</sub>|＋|y<sub>w</sub>|)</div>
+<ol class="steps">
+<li><b>15.6 第二项：</b>在 pretrain 语料上加 log-likelihood（γ 加权），让模型别忘“说人话”。DPO 版同理：第二项是 chosen 的长度归一化 NLL（除总长度防长句占优），α 加权。</li>
+<li><b>为什么 DPO 要加 NLL？</b>纯 DPO 只管 margin（c−r 之差），c、r 绝对值双双掉（displacement）。加 NLL 把 chosen 绝对概率拽住——“相对赢还不够，绝对也要像人话”。</li>
+<li><b>符号：</b>c<sub>w</sub>/y<sub>w</sub>＝chosen 的 context/completion（w＝win），c<sub>l</sub>/y<sub>l</sub>＝rejected；P<sub>θ</sub> 训的，P<sub>ref</sub>  frozen（常 SFT）。第一项即 Eq 8.2，第二项是 SFT loss 的长度平均版。</li>
+</ol>
+
+<h2 id="k159"><a class="anchor" href="#k159">#</a>Eq 15.9 margin（重逢 5.7）</h2>
+<div class="math"><span class="eqtag">Eq 15.9（Llama 2）</span><br>L＝−logσ(r<sub>c</sub>−r<sub>r</sub>−m(y<sub>c</sub>,y<sub>r</sub>))，m＝标注分差（如 Likert 5−2＝3）</div>
+<p>推导见 <a href="03-reward-modeling.html#e57">Ch 5 §5.7</a>，此处是放在“正则化”视角重述：margin 要求赢够 m 分，属损失层面的正则（别把碾压局和险胜同等对待）。RPO/REBEL 把 RM 分差直接加权进 DPO 是同一思想的延续。</p>
+<div class="warnbox"><div class="lab">KL 预算一句话</div>Ch 3 的 β、Ch 6 的 per-token KL、Ch 8 的 β、Ch 15 的 λ<sub>KL</sub> 是同一个钱袋的四种记账法。调参只问一句：离 ref 走多远换多少 reward？走远了人类评测掉头向下（Ch 16 over-optimization），就是预算花超了。</div>
+</main>
+<nav class="pager" aria-label="翻页">
+<a class="pv" href="05-dpo.html"><span class="dir">上一章</span><span class="t">DPO Eq 8</span></a>
+<a class="nx" href="index.html"><span class="dir">回目录</span><span class="t">RLHF 数学手册</span></a>
+</nav>
+<script src="assets/app.js"></script>
+</body>
+</html>

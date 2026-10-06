@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="generator" content="pdf2html">
+<title>Preface & front matter · The Elements of Statistical Learning</title>
+<link rel="stylesheet" href="assets/style.css">
+<link rel="next" href="ch01-introduction.html">
+
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="bar">
+  <button class="icon" id="themeToggle" type="button" aria-label="切换深色模式">&#9681;</button>
+  <a class="title" href="index.html">The Elements of Statistical Learning</a>
+  <a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<p><span class="figtxt">Springer Series in Statistics</span></p>
+<p><span class="figtxt">Trevor Hastie</span></p>
+<p><span class="figtxt">Robert Tibshirani</span></p>
+<p><span class="figtxt">Jerome Friedman</span></p>
+<p><span class="figtxt">The Elements of</span></p>
+<p><span class="figtxt">Statistical Learning</span> <span class="figtxt">Data Mining,Inference,and Prediction</span></p>
+<p><span class="figtxt">Second Edition</span></p>
+<p><span class="figtxt">Corrected 12th printing -Jan 13, 2017</span></p>
+<p><em>To</em> <em>our</em> <em>parents:</em></p>
+<p><em>Valerie</em> <em>and</em> <em>Patrick</em> <em>Hastie</em></p>
+<p><em>Vera</em> <em>and</em> <em>Sami</em> <em>Tibshirani</em></p>
+<p><em>Florence</em> <em>and</em> <em>Harry</em> <em>Friedman</em></p>
+<p><em>and</em> <em>to</em> <em>our</em> <em>families:</em></p>
+<p><em>Samantha,</em> <em>Timothy,</em> <em>and</em> <em>Lynda</em></p>
+<p><em>Charlie,</em> <em>Ryan,</em> <em>Julie,</em> <em>and</em> <em>Cheryl</em></p>
+<p><em>Melanie,</em> <em>Dora,</em> <em>Monika,</em> <em>and</em> <em>Ildiko</em></p>
+<h1 id="s-preface-to-the-second-editio" class="ch">Preface to the Second Edition</h1>
+<p><em>In</em> <em>God</em> <em>we</em> <em>trust,</em> <em>all</em> <em>others</em> <em>bring</em> <em>data.</em></p>
+<p>–William Edwards Deming (1900-1993)<sup>1</sup></p>
+<p>We have been gratified by the popularity of the first edition of <em>The</em> <em>Elements</em> <em>of</em> <em>Statistical</em> <em>Learning.</em> This, along with the fast pace of research in the statistical learning field, motivated us to update our book with a second edition.</p>
+<p>We have added four new chapters and updated some of the existing chapters. Because many readers are familiar with the layout of the first edition, we have tried to change it as little as possible. Here is a summary of the main changes:</p>
+<p><sup>1</sup>On the Web, this quote has been widely attributed to both Deming and Robert W.</p>
+<p>Hayden; however Professor Hayden told us that he can claim no credit for this quote,</p>
+<p>and ironically we could find no “data” confirming that Deming actually said this.</p>
+<p>Chapter What’s new</p>
+<p><strong>1.</strong> Introduction</p>
+<p><strong>2.</strong> Overview of Supervised Learning</p>
+<p><strong>3.</strong> Linear Methods for Regression LAR algorithm and generalizations</p>
+<p>of the lasso</p>
+<p><strong>4.</strong> Linear Methods for Classification Lasso path for logistic regression</p>
+<p><strong>5.</strong> Basis Expansions and Regulariza-Additional illustrations of RKHS</p>
+<p>tion</p>
+<p><strong>6.</strong> Kernel Smoothing Methods</p>
+<p><strong>7.</strong> Model Assessment and Selection Strengths and pitfalls of cross-</p>
+<p>validation</p>
+<p><strong>8.</strong> Model Inference and Averaging</p>
+<p><strong>9.</strong> Additive Models, Trees, and</p>
+<p>Related Methods</p>
+<p><strong>10.</strong> Boosting and Additive Trees New example from ecology; some</p>
+<p>material split offto Chapter 16.</p>
+<p><strong>11.</strong> Neural Networks Bayesian neural nets and the NIPS</p>
+<p>2003 challenge</p>
+<p><strong>12.</strong> Support Vector Machines and Path algorithm for SVM classifier</p>
+<p>Flexible Discriminants</p>
+<p><strong>13.</strong> Prototype Methods and</p>
+<p>Nearest-Neighbors</p>
+<p><strong>14.</strong> Unsupervised Learning Spectral clustering, kernel PCA,</p>
+<p>sparse PCA, non-negative matrix</p>
+<p>factorization archetypal analysis,</p>
+<p>nonlinear dimension reduction,</p>
+<p>Google page rank algorithm, a</p>
+<p>direct approach to ICA</p>
+<p><strong>15.</strong> Random Forests New</p>
+<p><strong>16.</strong> Ensemble Learning New</p>
+<p><strong>17.</strong> Undirected Graphical Models New</p>
+<p><strong>18.</strong> High-Dimensional Problems New</p>
+<p>Some further notes:</p>
+<ul><li><span class="sym">•</span> Our first edition was unfriendly to colorblind readers; in particular, we tended to favor red/green contrasts which are particularly trou- blesome. We have changed the color palette in this edition to a large extent, replacing the above with an orange/blue contrast.</li><li><span class="sym">•</span> We have changed the name of Chapter 6 from “Kernel Methods” to “Kernel Smoothing Methods”, to avoid confusion with the machine- learning kernel method that is discussed in the context of support vec- tor machines (Chapter 12) and more generally in Chapters 5 and 14.</li><li><span class="sym">•</span> In the first edition, the discussion of error-rate estimation in Chap- ter 7 was sloppy, as we did not clearly differentiate the notions of conditional error rates (conditional on the training set) and uncondi- tional rates. We have fixed this in the new edition.</li></ul>
+<ul><li><span class="sym">•</span> Chapters 15 and 16 follow naturally from Chapter 10, and the chap- ters are probably best read in that order.</li><li><span class="sym">•</span> In Chapter 17, we have not attempted a comprehensive treatment of graphical models, and discuss only undirected models and some new methods for their estimation. Due to a lack of space, we have specifically omitted coverage of directed graphical models.</li><li><span class="sym">•</span> Chapter 18 explores the “<i class="mi">p</i><span class="sym"> ≫</span> <i class="mi">N</i>” problem, which is learning in high- dimensional feature spaces. These problems arise in many areas, in- cluding genomic and proteomic studies, and document classification.</li></ul>
+<p>We thank the many readers who have found the (too numerous) errors in the first edition. We apologize for those and have done our best to avoid errors in this new edition. We thank Mark Segal, Bala Rajaratnam, and Larry Wasserman for comments on some of the new chapters, and many Stanford graduate and post-doctoral students who offered comments, in particular Mohammed AlQuraishi, John Boik, Holger Hoefling, Arian Maleki, Donal McMahon, Saharon Rosset, Babak Shababa, Daniela Witten, Ji Zhu and Hui Zou. We thank John Kimmel for his patience in guiding us through this new edition. RT dedicates this edition to the memory of Anna McPhee.</p>
+<p><em>Trevor</em> <em>Hastie</em></p>
+<p><em>Robert</em> <em>Tibshirani</em></p>
+<p><em>Jerome</em> <em>Friedman</em></p>
+<p>Stanford, California</p>
+<p>August 2008</p>
+<h1 id="s-preface-to-the-first-edition" class="ch">Preface to the First Edition</h1>
+<p><em>We</em> <em>are</em> <em>drowning</em> <em>in</em> <em>information</em> <em>and</em> <em>starving</em> <em>for</em> <em>knowledge.</em></p>
+<p>–Rutherford D. Roger</p>
+<p>The field of Statistics is constantly challenged by the problems that science and industry brings to its door. In the early days, these problems often came from agricultural and industrial experiments and were relatively small in scope. With the advent of computers and the information age, statistical problems have exploded both in size and complexity. Challenges in the areas of data storage, organization and searching have led to the new field of “data mining”; statistical and computational problems in biology and medicine have created “bioinformatics.” Vast amounts of data are being generated in many fields, and the statistician’s job is to make sense of it all: to extract important patterns and trends, and understand “what the data says.” We call this <em>learning</em> <em>from</em> <em>data</em>.</p>
+<p>The challenges in learning from data have led to a revolution in the statistical sciences. Since computation plays such a key role, it is not surprising that much of this new development has been done by researchers in other fields such as computer science and engineering.</p>
+<p>The learning problems that we consider can be roughly categorized as either<em> supervised</em> or<em> unsupervised</em>. In supervised learning, the goal is to predict the value of an outcome measure based on a number of input measures; in unsupervised learning, there is no outcome measure, and the goal is to describe the associations and patterns among a set of input measures.</p>
+<p>This book is our attempt to bring together many of the important new ideas in learning, and explain them in a statistical framework. While some mathematical details are needed, we emphasize the methods and their conceptual underpinnings rather than their theoretical properties. As a result, we hope that this book will appeal not just to statisticians but also to researchers and practitioners in a wide variety of fields.</p>
+<p>Just as we have learned a great deal from researchers outside of the field of statistics, our statistical viewpoint may help others to better understand different aspects of learning:</p>
+<p><em>There</em> <em>is</em> <em>no</em> <em>true</em> <em>interpretation</em> <em>of</em> <em>anything;</em> <em>interpretation</em> <em>is</em> <em>a</em></p>
+<p><em>vehicle</em> <em>in</em> <em>the</em> <em>service</em> <em>of</em> <em>human</em> <em>comprehension.</em> <em>The</em> <em>value</em> <em>of</em></p>
+<p><em>interpretation</em> <em>is</em> <em>in</em> <em>enabling</em> <em>others</em> <em>to</em> <em>fruitfully</em> <em>think</em> <em>about</em> <em>an</em></p>
+<p><em>idea.</em></p>
+<p>–Andreas Buja</p>
+<p>We would like to acknowledge the contribution of many people to the conception and completion of this book. David Andrews, Leo Breiman, Andreas Buja, John Chambers, Bradley Efron, Geoffrey Hinton, Werner Stuetzle, and John Tukey have greatly influenced our careers. Balasubramanian Narasimhan gave us advice and help on many computational problems, and maintained an excellent computing environment. Shin-Ho Bang helped in the production of a number of the figures. Lee Wilkinson gave valuable tips on color production. Ilana Belitskaya, Eva Cantoni, Maya Gupta, Michael Jordan, Shanti Gopatam, Radford Neal, Jorge Picazo, Bogdan Popescu, Olivier Renaud, Saharon Rosset, John Storey, Ji Zhu, Mu Zhu, two reviewers and many students read parts of the manuscript and offered helpful suggestions. John Kimmel was supportive, patient and helpful at every phase; MaryAnn Brickner and Frank Ganz headed a superb production team at Springer. Trevor Hastie would like to thank the statistics department at the University of Cape Town for their hospitality during the final stages of this book. We gratefully acknowledge NSF and NIH for their support of this work. Finally, we would like to thank our families and our parents for their love and support.</p>
+<p><em>Trevor</em> <em>Hastie</em></p>
+<p><em>Robert</em> <em>Tibshirani</em></p>
+<p><em>Jerome</em> <em>Friedman</em></p>
+<p>Stanford, California</p>
+<p>May 2001</p>
+<p><em>The</em> <em>quiet</em> <em>statisticians</em> <em>have</em> <em>changed</em> <em>our</em> <em>world;</em> <em>not</em> <em>by</em> <em>discov-</em></p>
+<p><em>ering</em> <em>new</em> <em>facts</em> <em>or</em> <em>technical</em> <em>developments,</em> <em>but</em> <em>by</em> <em>changing</em> <em>the</em></p>
+<p><em>ways</em> <em>that</em> <em>we</em> <em>reason,</em> <em>experiment</em> <em>and</em> <em>form</em> <em>our</em> <em>opinions</em> <em>....</em></p>
+<p>–Ian Hacking</p>
+<p>Contents</p>
+<p><strong>Preface</strong> <strong>to</strong> <strong>the</strong> <strong>Second</strong> <strong>Edition</strong> <strong>vii</strong> <strong>Preface</strong> <strong>to</strong> <strong>the</strong> <strong>First</strong> <strong>Edition</strong> <strong>xi</strong> <strong>1</strong> <strong>Introduction</strong> <strong>1</strong> <strong>2</strong> <strong>Overview</strong> <strong>of</strong> <strong>Supervised</strong> <strong>Learning</strong> <strong>9</strong></p>
+<p>2.1 Introduction . . . . . . . . . . . . . . . . . . . . . . . . . 9</p>
+<p>2.2 Variable Types and Terminology . . . . . . . . . . . . . . 9</p>
+<p>2.3 Two Simple Approaches to Prediction:</p>
+<p>Least Squares and Nearest Neighbors . . . . . . . . . . . 11</p>
+<p>2.3.1 Linear Models and Least Squares . . . . . . . . 11</p>
+<p>2.3.2 Nearest-Neighbor Methods . . . . . . . . . . . . 14</p>
+<p>2.3.3 From Least Squares to Nearest Neighbors . . . . 16</p>
+<p>2.4 Statistical Decision Theory . . . . . . . . . . . . . . . . . 18</p>
+<p>2.5 Local Methods in High Dimensions . . . . . . . . . . . . . 22</p>
+<p>2.6 Statistical Models, Supervised Learning</p>
+<p>and Function Approximation . . . . . . . . . . . . . . . . 28</p>
+<p>2.6.1 A Statistical Model</p>
+<p>for the Joint Distribution Pr(<i class="mi">X, Y</i> ) . . . . . . . 28</p>
+<p>2.6.2 Supervised Learning . . . . . . . . . . . . . . . . 29</p>
+<p>2.6.3 Function Approximation . . . . . . . . . . . . . 29</p>
+<p>2.7 Structured Regression Models . . . . . . . . . . . . . . . 32</p>
+<p>2.7.1 Difficulty of the Problem . . . . . . . . . . . . . 32</p>
+<p>2.8 Classes of Restricted Estimators . . . . . . . . . . . . . . 33</p>
+<p>2.8.1 Roughness Penalty and Bayesian Methods . . . 34</p>
+<p>2.8.2 Kernel Methods and Local Regression . . . . . . 34</p>
+<p>2.8.3 Basis Functions and Dictionary Methods . . . . 35</p>
+<p>2.9 Model Selection and the Bias–Variance Tradeoff . . . . . 37</p>
+<p>Bibliographic Notes . . . . . . . . . . . . . . . . . . . . . . . . . 39</p>
+<p>Exercises . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 39 <strong>3</strong> <strong>Linear</strong> <strong>Methods</strong> <strong>for</strong> <strong>Regression</strong> <strong>43</strong></p>
+<p>3.1 Introduction . . . . . . . . . . . . . . . . . . . . . . . . . 43</p>
+<p>3.2 Linear Regression Models and Least Squares . . . . . . . 44</p>
+<p>3.2.1 Example: Prostate Cancer . . . . . . . . . . . . 49</p>
+<p>3.2.2 The Gauss–Markov Theorem . . . . . . . . . . . 51</p>
+<p>3.2.3 Multiple Regression</p>
+<p>from Simple Univariate Regression . . . . . . . . 52</p>
+<p>3.2.4 Multiple Outputs . . . . . . . . . . . . . . . . . 56</p>
+<p>3.3 Subset Selection . . . . . . . . . . . . . . . . . . . . . . . 57</p>
+<p>3.3.1 Best-Subset Selection . . . . . . . . . . . . . . . 57</p>
+<p>3.3.2 Forward-and Backward-Stepwise Selection . . . 58</p>
+<p>3.3.3 Forward-Stagewise Regression . . . . . . . . . . 60</p>
+<p>3.3.4 Prostate Cancer Data Example (Continued) . . 61</p>
+<p>3.4 Shrinkage Methods . . . . . . . . . . . . . . . . . . . . . . 61</p>
+<p>3.4.1 Ridge Regression . . . . . . . . . . . . . . . . . 61</p>
+<p>3.4.2 The Lasso . . . . . . . . . . . . . . . . . . . . . 68</p>
+<p>3.4.3 Discussion: Subset Selection, Ridge Regression</p>
+<p>and the Lasso . . . . . . . . . . . . . . . . . . . 69</p>
+<p>3.4.4 Least Angle Regression . . . . . . . . . . . . . . 73</p>
+<p>3.5 Methods Using Derived Input Directions . . . . . . . . . 79</p>
+<p>3.5.1 Principal Components Regression . . . . . . . . 79</p>
+<p>3.5.2 Partial Least Squares . . . . . . . . . . . . . . . 80</p>
+<p>3.6 Discussion: A Comparison of the Selection</p>
+<p>and Shrinkage Methods . . . . . . . . . . . . . . . . . . . 82</p>
+<p>3.7 Multiple Outcome Shrinkage and Selection . . . . . . . . 84</p>
+<p>3.8 More on the Lasso and Related Path Algorithms . . . . . 86</p>
+<p>3.8.1 Incremental Forward Stagewise Regression . . . 86</p>
+<p>3.8.2 Piecewise-Linear Path Algorithms . . . . . . . . 89</p>
+<p>3.8.3 The Dantzig Selector . . . . . . . . . . . . . . . 89</p>
+<p>3.8.4 The Grouped Lasso . . . . . . . . . . . . . . . . 90</p>
+<p>3.8.5 Further Properties of the Lasso . . . . . . . . . . 91</p>
+<p>3.8.6 Pathwise Coordinate Optimization . . . . . . . . 92</p>
+<p>3.9 Computational Considerations . . . . . . . . . . . . . . . 93</p>
+<p>Bibliographic Notes . . . . . . . . . . . . . . . . . . . . . . . . . 94</p>
+<p>Exercises . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 94</p>
+<p><strong>4</strong> <strong>Linear</strong> <strong>Methods</strong> <strong>for</strong> <strong>Classification</strong> <strong>101</strong></p>
+<p>4.1 Introduction . . . . . . . . . . . . . . . . . . . . . . . . . 101</p>
+<p>4.2 Linear Regression of an Indicator Matrix . . . . . . . . . 103</p>
+<p>4.3 Linear Discriminant Analysis . . . . . . . . . . . . . . . . 106</p>
+<p>4.3.1 Regularized Discriminant Analysis . . . . . . . . 112</p>
+<p>4.3.2 Computations for LDA . . . . . . . . . . . . . . 113</p>
+<p>4.3.3 Reduced-Rank Linear Discriminant Analysis . . 113</p>
+<p>4.4 Logistic Regression . . . . . . . . . . . . . . . . . . . . . . 119</p>
+<p>4.4.1 Fitting Logistic Regression Models . . . . . . . . 120</p>
+<p>4.4.2 Example: South African Heart Disease . . . . . 122</p>
+<p>4.4.3 Quadratic Approximations and Inference . . . . 124</p>
+<p>4.4.4 <i class="mi">L</i><sub>1</sub> Regularized Logistic Regression . . . . . . . . 125</p>
+<p>4.4.5 Logistic Regression or LDA? . . . . . . . . . . . 127</p>
+<p>4.5 Separating Hyperplanes . . . . . . . . . . . . . . . . . . . 129</p>
+<p>4.5.1 Rosenblatt’s Perceptron Learning Algorithm . . 130</p>
+<p>4.5.2 Optimal Separating Hyperplanes . . . . . . . . . 132</p>
+<p>Bibliographic Notes . . . . . . . . . . . . . . . . . . . . . . . . . 135</p>
+<p>Exercises . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 135 <strong>5</strong> <strong>Basis</strong> <strong>Expansions</strong> <strong>and</strong> <strong>Regularization</strong> <strong>139</strong></p>
+<p>5.1 Introduction . . . . . . . . . . . . . . . . . . . . . . . . . 139</p>
+<p>5.2 Piecewise Polynomials and Splines . . . . . . . . . . . . . 141</p>
+<p>5.2.1 Natural Cubic Splines . . . . . . . . . . . . . . . 144</p>
+<p>5.2.2 Example: South African Heart Disease (Continued)146</p>
+<p>5.2.3 Example: Phoneme Recognition . . . . . . . . . 148</p>
+<p>5.3 Filtering and Feature Extraction . . . . . . . . . . . . . . 150</p>
+<p>5.4 Smoothing Splines . . . . . . . . . . . . . . . . . . . . . . 151</p>
+<p>5.4.1 Degrees of Freedom and Smoother Matrices . . . 153</p>
+<p>5.5 Automatic Selection of the Smoothing Parameters . . . . 156</p>
+<p>5.5.1 Fixing the Degrees of Freedom . . . . . . . . . . 158</p>
+<p>5.5.2 The Bias–Variance Tradeoff. . . . . . . . . . . . 158</p>
+<p>5.6 Nonparametric Logistic Regression . . . . . . . . . . . . . 161</p>
+<p>5.7 Multidimensional Splines . . . . . . . . . . . . . . . . . . 162</p>
+<p>5.8 Regularization and Reproducing Kernel Hilbert Spaces . 167</p>
+<p>5.8.1 Spaces of Functions Generated by Kernels . . . 168</p>
+<p>5.8.2 Examples of RKHS . . . . . . . . . . . . . . . . 170</p>
+<p>5.9 Wavelet Smoothing . . . . . . . . . . . . . . . . . . . . . 174</p>
+<p>5.9.1 Wavelet Bases and the Wavelet Transform . . . 176</p>
+<p>5.9.2 Adaptive Wavelet Filtering . . . . . . . . . . . . 179</p>
+<p>Bibliographic Notes . . . . . . . . . . . . . . . . . . . . . . . . . 181</p>
+<p>Exercises . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 181</p>
+<p>Appendix: Computational Considerations for Splines . . . . . . 186</p>
+<p>Appendix: <i class="mi">B</i>-splines . . . . . . . . . . . . . . . . . . . . . 186</p>
+<p>Appendix: Computations for Smoothing Splines . . . . . 189</p>
+<p><strong>6</strong> <strong>Kernel</strong> <strong>Smoothing</strong> <strong>Methods</strong> <strong>191</strong></p>
+<p>6.1 One-Dimensional Kernel Smoothers . . . . . . . . . . . . 192</p>
+<p>6.1.1 Local Linear Regression . . . . . . . . . . . . . . 194</p>
+<p>6.1.2 Local Polynomial Regression . . . . . . . . . . . 197</p>
+<p>6.2 Selecting the Width of the Kernel . . . . . . . . . . . . . 198</p>
+<p>6.3 Local Regression in ℝ<sup>p</sup> . . . . . . . . . . . . . . . . . . . 200</p>
+<p>6.4 Structured Local Regression Models in ℝ<sup>p</sup> . . . . . . . . 201</p>
+<p>6.4.1 Structured Kernels . . . . . . . . . . . . . . . . . 203</p>
+<p>6.4.2 Structured Regression Functions . . . . . . . . . 203</p>
+<p>6.5 Local Likelihood and Other Models . . . . . . . . . . . . 205</p>
+<p>6.6 Kernel Density Estimation and Classification . . . . . . . 208</p>
+<p>6.6.1 Kernel Density Estimation . . . . . . . . . . . . 208</p>
+<p>6.6.2 Kernel Density Classification . . . . . . . . . . . 210</p>
+<p>6.6.3 The Naive Bayes Classifier . . . . . . . . . . . . 210</p>
+<p>6.7 Radial Basis Functions and Kernels . . . . . . . . . . . . 212</p>
+<p>6.8 Mixture Models for Density Estimation and Classification 214</p>
+<p>6.9 Computational Considerations . . . . . . . . . . . . . . . 216</p>
+<p>Bibliographic Notes . . . . . . . . . . . . . . . . . . . . . . . . . 216</p>
+<p>Exercises . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 216 <strong>7</strong> <strong>Model</strong> <strong>Assessment</strong> <strong>and</strong> <strong>Selection</strong> <strong>219</strong></p>
+<p>7.1 Introduction . . . . . . . . . . . . . . . . . . . . . . . . . 219</p>
+<p>7.2 Bias, Variance and Model Complexity . . . . . . . . . . . 219</p>
+<p>7.3 The Bias–Variance Decomposition . . . . . . . . . . . . . 223</p>
+<p>7.3.1 Example: Bias–Variance Tradeoff . . . . . . . . 226</p>
+<p>7.4 Optimism of the Training Error Rate . . . . . . . . . . . 228</p>
+<p>7.5 Estimates of In-Sample Prediction Error . . . . . . . . . . 230</p>
+<p>7.6 The Effective Number of Parameters . . . . . . . . . . . . 232</p>
+<p>7.7 The Bayesian Approach and BIC . . . . . . . . . . . . . . 233</p>
+<p>7.8 Minimum Description Length . . . . . . . . . . . . . . . . 235</p>
+<p>7.9 Vapnik–Chervonenkis Dimension . . . . . . . . . . . . . . 237</p>
+<p>7.9.1 Example (Continued) . . . . . . . . . . . . . . . 239</p>
+<p>7.10 Cross-Validation . . . . . . . . . . . . . . . . . . . . . . . 241</p>
+<p>7.10.1 <i class="mi">K</i>-Fold Cross-Validation . . . . . . . . . . . . . 241</p>
+<p>7.10.2 The Wrong and Right Way</p>
+<p>to Do Cross-validation . . . . . . . . . . . . . . . 245</p>
+<p>7.10.3 Does Cross-Validation Really Work? . . . . . . . 247</p>
+<p>7.11 Bootstrap Methods . . . . . . . . . . . . . . . . . . . . . 249</p>
+<p>7.11.1 Example (Continued) . . . . . . . . . . . . . . . 252</p>
+<p>7.12 Conditional or Expected Test Error? . . . . . . . . . . . . 254</p>
+<p>Bibliographic Notes . . . . . . . . . . . . . . . . . . . . . . . . . 257</p>
+<p>Exercises . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 257 <strong>8</strong> <strong>Model</strong> <strong>Inference</strong> <strong>and</strong> <strong>Averaging</strong> <strong>261</strong></p>
+<p>8.1 Introduction . . . . . . . . . . . . . . . . . . . . . . . . . 261</p>
+<p>8.2 The Bootstrap and Maximum Likelihood Methods . . . . 261</p>
+<p>8.2.1 A Smoothing Example . . . . . . . . . . . . . . 261</p>
+<p>8.2.2 Maximum Likelihood Inference . . . . . . . . . . 265</p>
+<p>8.2.3 Bootstrap versus Maximum Likelihood . . . . . 267</p>
+<p>8.3 Bayesian Methods . . . . . . . . . . . . . . . . . . . . . . 267</p>
+<p>8.4 Relationship Between the Bootstrap</p>
+<p>and Bayesian Inference . . . . . . . . . . . . . . . . . . . 271</p>
+<p>8.5 The EM Algorithm . . . . . . . . . . . . . . . . . . . . . 272</p>
+<p>8.5.1 Two-Component Mixture Model . . . . . . . . . 272</p>
+<p>8.5.2 The EM Algorithm in General . . . . . . . . . . 276</p>
+<p>8.5.3 EM as a Maximization–Maximization Procedure 277</p>
+<p>8.6 MCMC for Sampling from the Posterior . . . . . . . . . . 279</p>
+<p>8.7 Bagging . . . . . . . . . . . . . . . . . . . . . . . . . . . . 282</p>
+<p>8.7.1 Example: Trees with Simulated Data . . . . . . 283</p>
+<p>8.8 Model Averaging and Stacking . . . . . . . . . . . . . . . 288</p>
+<p>8.9 Stochastic Search: Bumping . . . . . . . . . . . . . . . . . 290</p>
+<p>Bibliographic Notes . . . . . . . . . . . . . . . . . . . . . . . . . 292</p>
+<p>Exercises . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 293 <strong>9</strong> <strong>Additive</strong> <strong>Models,</strong> <strong>Trees,</strong> <strong>and</strong> <strong>Related</strong> <strong>Methods</strong> <strong>295</strong></p>
+<p>9.1 Generalized Additive Models . . . . . . . . . . . . . . . . 295</p>
+<p>9.1.1 Fitting Additive Models . . . . . . . . . . . . . . 297</p>
+<p>9.1.2 Example: Additive Logistic Regression . . . . . 299</p>
+<p>9.1.3 Summary . . . . . . . . . . . . . . . . . . . . . . 304</p>
+<p>9.2 Tree-Based Methods . . . . . . . . . . . . . . . . . . . . . 305</p>
+<p>9.2.1 Background . . . . . . . . . . . . . . . . . . . . 305</p>
+<p>9.2.2 Regression Trees . . . . . . . . . . . . . . . . . . 307</p>
+<p>9.2.3 Classification Trees . . . . . . . . . . . . . . . . 308</p>
+<p>9.2.4 Other Issues . . . . . . . . . . . . . . . . . . . . 310</p>
+<p>9.2.5 Spam Example (Continued) . . . . . . . . . . . 313</p>
+<p>9.3 PRIM: Bump Hunting . . . . . . . . . . . . . . . . . . . . 317</p>
+<p>9.3.1 Spam Example (Continued) . . . . . . . . . . . 320</p>
+<p>9.4 MARS: Multivariate Adaptive Regression Splines . . . . . 321</p>
+<p>9.4.1 Spam Example (Continued) . . . . . . . . . . . 326</p>
+<p>9.4.2 Example (Simulated Data) . . . . . . . . . . . . 327</p>
+<p>9.4.3 Other Issues . . . . . . . . . . . . . . . . . . . . 328</p>
+<p>9.5 Hierarchical Mixtures of Experts . . . . . . . . . . . . . . 329</p>
+<p>9.6 Missing Data . . . . . . . . . . . . . . . . . . . . . . . . . 332</p>
+<p>9.7 Computational Considerations . . . . . . . . . . . . . . . 334</p>
+<p>Bibliographic Notes . . . . . . . . . . . . . . . . . . . . . . . . . 334</p>
+<p>Exercises . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 335 <strong>10</strong> <strong>Boosting</strong> <strong>and</strong> <strong>Additive</strong> <strong>Trees</strong> <strong>337</strong></p>
+<p>10.1 Boosting Methods . . . . . . . . . . . . . . . . . . . . . . 337</p>
+<p>10.1.1 Outline of This Chapter . . . . . . . . . . . . . . 340</p>
+<p>10.2 Boosting Fits an Additive Model . . . . . . . . . . . . . . 341</p>
+<p>10.3 Forward Stagewise Additive Modeling . . . . . . . . . . . 342</p>
+<p>10.4 Exponential Loss and AdaBoost . . . . . . . . . . . . . . 343</p>
+<p>10.5 Why Exponential Loss? . . . . . . . . . . . . . . . . . . . 345</p>
+<p>10.6 Loss Functions and Robustness . . . . . . . . . . . . . . . 346</p>
+<p>10.7 “Off-the-Shelf” Procedures for Data Mining . . . . . . . . 350</p>
+<p>10.8 Example: Spam Data . . . . . . . . . . . . . . . . . . . . 352</p>
+<p>10.9 Boosting Trees . . . . . . . . . . . . . . . . . . . . . . . . 353</p>
+<p>10.10 Numerical Optimization via Gradient Boosting . . . . . . 358</p>
+<p>10.10.1 Steepest Descent . . . . . . . . . . . . . . . . . . 358</p>
+<p>10.10.2 Gradient Boosting . . . . . . . . . . . . . . . . . 359</p>
+<p>10.10.3 Implementations of Gradient Boosting . . . . . . 360</p>
+<p>10.11 Right-Sized Trees for Boosting . . . . . . . . . . . . . . . 361</p>
+<p>10.12 Regularization . . . . . . . . . . . . . . . . . . . . . . . . 364</p>
+<p>10.12.1 Shrinkage . . . . . . . . . . . . . . . . . . . . . . 364</p>
+<p>10.12.2 Subsampling . . . . . . . . . . . . . . . . . . . . 365</p>
+<p>10.13 Interpretation . . . . . . . . . . . . . . . . . . . . . . . . 367</p>
+<p>10.13.1 Relative Importance of Predictor Variables . . . 367</p>
+<p>10.13.2 Partial Dependence Plots . . . . . . . . . . . . . 369</p>
+<p>10.14 Illustrations . . . . . . . . . . . . . . . . . . . . . . . . . . 371</p>
+<p>10.14.1 California Housing . . . . . . . . . . . . . . . . . 371</p>
+<p>10.14.2 New Zealand Fish . . . . . . . . . . . . . . . . . 375</p>
+<p>10.14.3 Demographics Data . . . . . . . . . . . . . . . . 379</p>
+<p>Bibliographic Notes . . . . . . . . . . . . . . . . . . . . . . . . . 380</p>
+<p>Exercises . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 384 <strong>11</strong> <strong>Neural</strong> <strong>Networks</strong> <strong>389</strong></p>
+<p>11.1 Introduction . . . . . . . . . . . . . . . . . . . . . . . . . 389</p>
+<p>11.2 Projection Pursuit Regression . . . . . . . . . . . . . . . 389</p>
+<p>11.3 Neural Networks . . . . . . . . . . . . . . . . . . . . . . . 392</p>
+<p>11.4 Fitting Neural Networks . . . . . . . . . . . . . . . . . . . 395</p>
+<p>11.5 Some Issues in Training Neural Networks . . . . . . . . . 397</p>
+<p>11.5.1 Starting Values . . . . . . . . . . . . . . . . . . . 397</p>
+<p>11.5.2 Overfitting . . . . . . . . . . . . . . . . . . . . . 398</p>
+<p>11.5.3 Scaling of the Inputs . . . . . . . . . . . . . . . 398</p>
+<p>11.5.4 Number of Hidden Units and Layers . . . . . . . 400</p>
+<p>11.5.5 Multiple Minima . . . . . . . . . . . . . . . . . . 400</p>
+<p>11.6 Example: Simulated Data . . . . . . . . . . . . . . . . . . 401</p>
+<p>11.7 Example: ZIP Code Data . . . . . . . . . . . . . . . . . . 404</p>
+<p>11.8 Discussion . . . . . . . . . . . . . . . . . . . . . . . . . . 408</p>
+<p>11.9 Bayesian Neural Nets and the NIPS 2003 Challenge . . . 409</p>
+<p>11.9.1 Bayes, Boosting and Bagging . . . . . . . . . . . 410</p>
+<p>11.9.2 Performance Comparisons . . . . . . . . . . . . 412</p>
+<p>11.10 Computational Considerations . . . . . . . . . . . . . . . 414</p>
+<p>Bibliographic Notes . . . . . . . . . . . . . . . . . . . . . . . . . 415</p>
+<p>Exercises . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 415 <strong>12</strong> <strong>Support</strong> <strong>Vector</strong> <strong>Machines</strong> <strong>and</strong></p>
+<p><strong>Flexible</strong> <strong>Discriminants</strong> <strong>417</strong></p>
+<p>12.1 Introduction . . . . . . . . . . . . . . . . . . . . . . . . . 417</p>
+<p>12.2 The Support Vector Classifier . . . . . . . . . . . . . . . . 417</p>
+<p>12.2.1 Computing the Support Vector Classifier . . . . 420</p>
+<p>12.2.2 Mixture Example (Continued) . . . . . . . . . . 421</p>
+<p>12.3 Support Vector Machines and Kernels . . . . . . . . . . . 423</p>
+<p>12.3.1 Computing the SVM for Classification . . . . . . 423</p>
+<p>12.3.2 The SVM as a Penalization Method . . . . . . . 426</p>
+<p>12.3.3 Function Estimation and Reproducing Kernels . 428</p>
+<p>12.3.4 SVMs and the Curse of Dimensionality . . . . . 431</p>
+<p>12.3.5 A Path Algorithm for the SVM Classifier . . . . 432</p>
+<p>12.3.6 Support Vector Machines for Regression . . . . . 434</p>
+<p>12.3.7 Regression and Kernels . . . . . . . . . . . . . . 436</p>
+<p>12.3.8 Discussion . . . . . . . . . . . . . . . . . . . . . 438</p>
+<p>12.4 Generalizing Linear Discriminant Analysis . . . . . . . . 438</p>
+<p>12.5 Flexible Discriminant Analysis . . . . . . . . . . . . . . . 440</p>
+<p>12.5.1 Computing the FDA Estimates . . . . . . . . . . 444</p>
+<p>12.6 Penalized Discriminant Analysis . . . . . . . . . . . . . . 446</p>
+<p>12.7 Mixture Discriminant Analysis . . . . . . . . . . . . . . . 449</p>
+<p>12.7.1 Example: Waveform Data . . . . . . . . . . . . . 451</p>
+<p>Bibliographic Notes . . . . . . . . . . . . . . . . . . . . . . . . . 455</p>
+<p>Exercises . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 455 <strong>13</strong> <strong>Prototype</strong> <strong>Methods</strong> <strong>and</strong> <strong>Nearest-Neighbors</strong> <strong>459</strong></p>
+<p>13.1 Introduction . . . . . . . . . . . . . . . . . . . . . . . . . 459</p>
+<p>13.2 Prototype Methods . . . . . . . . . . . . . . . . . . . . . 459</p>
+<p>13.2.1 <i class="mi">K</i>-means Clustering . . . . . . . . . . . . . . . . 460</p>
+<p>13.2.2 Learning Vector Quantization . . . . . . . . . . 462</p>
+<p>13.2.3 Gaussian Mixtures . . . . . . . . . . . . . . . . . 463</p>
+<p>13.3 <i class="mi">k</i>-Nearest-Neighbor Classifiers . . . . . . . . . . . . . . . 463</p>
+<p>13.3.1 Example: A Comparative Study . . . . . . . . . 468</p>
+<p>13.3.2 Example: <i class="mi">k</i>-Nearest-Neighbors</p>
+<p>and Image Scene Classification . . . . . . . . . . 470</p>
+<p>13.3.3 Invariant Metrics and Tangent Distance . . . . . 471</p>
+<p>13.4 Adaptive Nearest-Neighbor Methods . . . . . . . . . . . . 475</p>
+<p>13.4.1 Example . . . . . . . . . . . . . . . . . . . . . . 478</p>
+<p>13.4.2 Global Dimension Reduction</p>
+<p>for Nearest-Neighbors . . . . . . . . . . . . . . . 479</p>
+<p>13.5 Computational Considerations . . . . . . . . . . . . . . . 480</p>
+<p>Bibliographic Notes . . . . . . . . . . . . . . . . . . . . . . . . . 481</p>
+<p>Exercises . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 481</p>
+<p><strong>14</strong> <strong>Unsupervised</strong> <strong>Learning</strong> <strong>485</strong></p>
+<p>14.1 Introduction . . . . . . . . . . . . . . . . . . . . . . . . . 485</p>
+<p>14.2 Association Rules . . . . . . . . . . . . . . . . . . . . . . 487</p>
+<p>14.2.1 Market Basket Analysis . . . . . . . . . . . . . . 488</p>
+<p>14.2.2 The Apriori Algorithm . . . . . . . . . . . . . . 489</p>
+<p>14.2.3 Example: Market Basket Analysis . . . . . . . . 492</p>
+<p>14.2.4 Unsupervised as Supervised Learning . . . . . . 495</p>
+<p>14.2.5 Generalized Association Rules . . . . . . . . . . 497</p>
+<p>14.2.6 Choice of Supervised Learning Method . . . . . 499</p>
+<p>14.2.7 Example: Market Basket Analysis (Continued) . 499</p>
+<p>14.3 Cluster Analysis . . . . . . . . . . . . . . . . . . . . . . . 501</p>
+<p>14.3.1 Proximity Matrices . . . . . . . . . . . . . . . . 503</p>
+<p>14.3.2 Dissimilarities Based on Attributes . . . . . . . 503</p>
+<p>14.3.3 Object Dissimilarity . . . . . . . . . . . . . . . . 505</p>
+<p>14.3.4 Clustering Algorithms . . . . . . . . . . . . . . . 507</p>
+<p>14.3.5 Combinatorial Algorithms . . . . . . . . . . . . 507</p>
+<p>14.3.6 <i class="mi">K</i>-means . . . . . . . . . . . . . . . . . . . . . . 509</p>
+<p>14.3.7 Gaussian Mixtures as Soft <i class="mi">K</i>-means Clustering . 510</p>
+<p>14.3.8 Example: Human Tumor Microarray Data . . . 512</p>
+<p>14.3.9 Vector Quantization . . . . . . . . . . . . . . . . 514</p>
+<p>14.3.10 <i class="mi">K</i>-medoids . . . . . . . . . . . . . . . . . . . . . 515</p>
+<p>14.3.11 Practical Issues . . . . . . . . . . . . . . . . . . 518</p>
+<p>14.3.12 Hierarchical Clustering . . . . . . . . . . . . . . 520</p>
+<p>14.4 Self-Organizing Maps . . . . . . . . . . . . . . . . . . . . 528</p>
+<p>14.5 Principal Components, Curves and Surfaces . . . . . . . . 534</p>
+<p>14.5.1 Principal Components . . . . . . . . . . . . . . . 534</p>
+<p>14.5.2 Principal Curves and Surfaces . . . . . . . . . . 541</p>
+<p>14.5.3 Spectral Clustering . . . . . . . . . . . . . . . . 544</p>
+<p>14.5.4 Kernel Principal Components . . . . . . . . . . . 547</p>
+<p>14.5.5 Sparse Principal Components . . . . . . . . . . . 550</p>
+<p>14.6 Non-negative Matrix Factorization . . . . . . . . . . . . . 553</p>
+<p>14.6.1 Archetypal Analysis . . . . . . . . . . . . . . . . 554</p>
+<p>14.7 Independent Component Analysis</p>
+<p>and Exploratory Projection Pursuit . . . . . . . . . . . . 557</p>
+<p>14.7.1 Latent Variables and Factor Analysis . . . . . . 558</p>
+<p>14.7.2 Independent Component Analysis . . . . . . . . 560</p>
+<p>14.7.3 Exploratory Projection Pursuit . . . . . . . . . . 565</p>
+<p>14.7.4 A Direct Approach to ICA . . . . . . . . . . . . 565</p>
+<p>14.8 Multidimensional Scaling . . . . . . . . . . . . . . . . . . 570</p>
+<p>14.9 Nonlinear Dimension Reduction</p>
+<p>and Local Multidimensional Scaling . . . . . . . . . . . . 572</p>
+<p>14.10 The Google PageRank Algorithm . . . . . . . . . . . . . 576</p>
+<p>Bibliographic Notes . . . . . . . . . . . . . . . . . . . . . . . . . 578</p>
+<p>Exercises . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 579</p>
+<p><strong>15</strong> <strong>Random</strong> <strong>Forests</strong> <strong>587</strong></p>
+<p>15.1 Introduction . . . . . . . . . . . . . . . . . . . . . . . . . 587</p>
+<p>15.2 Definition of Random Forests . . . . . . . . . . . . . . . . 587</p>
+<p>15.3 Details of Random Forests . . . . . . . . . . . . . . . . . 592</p>
+<p>15.3.1 Out of Bag Samples . . . . . . . . . . . . . . . . 592</p>
+<p>15.3.2 Variable Importance . . . . . . . . . . . . . . . . 593</p>
+<p>15.3.3 Proximity Plots . . . . . . . . . . . . . . . . . . 595</p>
+<p>15.3.4 Random Forests and Overfitting . . . . . . . . . 596</p>
+<p>15.4 Analysis of Random Forests . . . . . . . . . . . . . . . . . 597</p>
+<p>15.4.1 Variance and the De-Correlation Effect . . . . . 597</p>
+<p>15.4.2 Bias . . . . . . . . . . . . . . . . . . . . . . . . . 600</p>
+<p>15.4.3 Adaptive Nearest Neighbors . . . . . . . . . . . 601</p>
+<p>Bibliographic Notes . . . . . . . . . . . . . . . . . . . . . . . . . 602</p>
+<p>Exercises . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 603 <strong>16</strong> <strong>Ensemble</strong> <strong>Learning</strong> <strong>605</strong></p>
+<p>16.1 Introduction . . . . . . . . . . . . . . . . . . . . . . . . . 605</p>
+<p>16.2 Boosting and Regularization Paths . . . . . . . . . . . . . 607</p>
+<p>16.2.1 Penalized Regression . . . . . . . . . . . . . . . 607</p>
+<p>16.2.2 The “Bet on Sparsity” Principle . . . . . . . . . 610</p>
+<p>16.2.3 Regularization Paths, Over-fitting and Margins . 613</p>
+<p>16.3 Learning Ensembles . . . . . . . . . . . . . . . . . . . . . 616</p>
+<p>16.3.1 Learning a Good Ensemble . . . . . . . . . . . . 617</p>
+<p>16.3.2 Rule Ensembles . . . . . . . . . . . . . . . . . . 622</p>
+<p>Bibliographic Notes . . . . . . . . . . . . . . . . . . . . . . . . . 623</p>
+<p>Exercises . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 624 <strong>17</strong> <strong>Undirected</strong> <strong>Graphical</strong> <strong>Models</strong> <strong>625</strong></p>
+<p>17.1 Introduction . . . . . . . . . . . . . . . . . . . . . . . . . 625</p>
+<p>17.2 Markov Graphs and Their Properties . . . . . . . . . . . 627</p>
+<p>17.3 Undirected Graphical Models for Continuous Variables . 630</p>
+<p>17.3.1 Estimation of the Parameters</p>
+<p>when the Graph Structure is Known . . . . . . . 631</p>
+<p>17.3.2 Estimation of the Graph Structure . . . . . . . . 635</p>
+<p>17.4 Undirected Graphical Models for Discrete Variables . . . 638</p>
+<p>17.4.1 Estimation of the Parameters</p>
+<p>when the Graph Structure is Known . . . . . . . 639</p>
+<p>17.4.2 Hidden Nodes . . . . . . . . . . . . . . . . . . . 641</p>
+<p>17.4.3 Estimation of the Graph Structure . . . . . . . . 642</p>
+<p>17.4.4 Restricted Boltzmann Machines . . . . . . . . . 643</p>
+<p>Exercises . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 645 <strong>18</strong> <strong>High-Dimensional</strong> <strong>Problems:</strong> <i class="mi">p</i><span class="sym"> ≫</span> <i class="mi">N</i> <strong>649</strong></p>
+<p>18.1 When <i class="mi">p</i> is Much Bigger than <i class="mi">N</i> . . . . . . . . . . . . . . 649</p>
+<p>18.2 Diagonal Linear Discriminant Analysis</p>
+<p>and Nearest Shrunken Centroids . . . . . . . . . . . . . . 651</p>
+<p>18.3 Linear Classifiers with Quadratic Regularization . . . . . 654</p>
+<p>18.3.1 Regularized Discriminant Analysis . . . . . . . . 656</p>
+<p>18.3.2 Logistic Regression</p>
+<p>with Quadratic Regularization . . . . . . . . . . 657</p>
+<p>18.3.3 The Support Vector Classifier . . . . . . . . . . 657</p>
+<p>18.3.4 Feature Selection . . . . . . . . . . . . . . . . . . 658</p>
+<p>18.3.5 Computational Shortcuts When <i class="mi">p</i><span class="sym"> ≫</span> <i class="mi">N</i> . . . . . 659</p>
+<p>18.4 Linear Classifiers with <i class="mi">L</i><sub>1</sub> Regularization . . . . . . . . . 661</p>
+<p>18.4.1 Application of Lasso</p>
+<p>to Protein Mass Spectroscopy . . . . . . . . . . 664</p>
+<p>18.4.2 The Fused Lasso for Functional Data . . . . . . 666</p>
+<p>18.5 Classification When Features are Unavailable . . . . . . . 668</p>
+<p>18.5.1 Example: String Kernels</p>
+<p>and Protein Classification . . . . . . . . . . . . . 668</p>
+<p>18.5.2 Classification and Other Models Using</p>
+<p>Inner-Product Kernels and Pairwise Distances . 670</p>
+<p>18.5.3 Example: Abstracts Classification . . . . . . . . 672</p>
+<p>18.6 High-Dimensional Regression:</p>
+<p>Supervised Principal Components . . . . . . . . . . . . . 674</p>
+<p>18.6.1 Connection to Latent-Variable Modeling . . . . 678</p>
+<p>18.6.2 Relationship with Partial Least Squares . . . . . 680</p>
+<p>18.6.3 Pre-Conditioning for Feature Selection . . . . . 681</p>
+<p>18.7 Feature Assessment and the Multiple-Testing Problem . . 683</p>
+<p>18.7.1 The False Discovery Rate . . . . . . . . . . . . . 687</p>
+<p>18.7.2 Asymmetric Cutpoints and the SAM Procedure 690</p>
+<p>18.7.3 A Bayesian Interpretation of the FDR . . . . . . 692</p>
+<p>18.8 Bibliographic Notes . . . . . . . . . . . . . . . . . . . . . 693</p>
+<p>Exercises . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 694</p>
+<p><strong>References</strong> <strong>699</strong></p>
+<p><strong>Author</strong> <strong>Index</strong> <strong>729</strong></p>
+<p><strong>Index</strong> <strong>737</strong></p>
+<nav class="chapnav"><div class="inner">
+<span class="prev void"></span><a class="next" href="ch01-introduction.html"><span class="lbl">下一章</span><span class="nm">Introduction</span></a>
+</div></nav>
+<script src="assets/app.js"></script>
+</body>
+</html>

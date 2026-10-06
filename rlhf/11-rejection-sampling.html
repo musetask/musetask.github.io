@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="author" content="Nathan Lambert">
+<meta name="generator" content="pdf2html">
+<title>Rejection Sampling · The RLHF Book</title>
+<link rel="icon" href="assets/icon.svg">
+<link rel="stylesheet" href="assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('rlhf-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light')}catch(e){}}());</script>
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="bar">
+<a class="ib" href="index.html" aria-label="目录">&#9776;</a>
+<span class="title">Rejection Sampling</span>
+<button class="ib" id="theme" type="button" aria-label="切换深色模式">&#9681;</button>
+</header>
+<main id="main">
+<h1 class="chapter"><span class="chno">9</span>Rejection Sampling</h1>
+<div class="callout"><div class="lab">This chapter covers</div><ul><li>What rejection sampling is</li><li>Why rejection sampling may be used instead of RL</li></ul></div>
+<p>Rejection Sampling (RS) is a popular and simple baseline for performing preference fine-tuning. This makes it one of a handful of methods that are used after a first round of instruction tuning in order to further refine the model to human preferences. Rejection sampling operates by curating new candidate completions, filtering them based on a trained reward model, and then instruction fine-tuning the original model only on the top completions (same loss function as when doing a dedicated training stage for learning to follow instructions).</p>
+<p>The name originates from computational statistics [1], where one wishes to sample from a complex distribution, but does not have a direct method to do so. To alleviate this, one samples from a simpler distribution to model and uses a heuristic to check if the sample is permissible. With language models, the target distribution is high-quality completions to prompts, the filter is a reward model, and the sampling distribution is the current model.</p>
+<p>Many prominent RLHF and preference fine-tuning papers have used rejection sampling as a baseline, but a canonical implementation and documentation does not exist.</p>
+<p>WebGPT [2], Anthropic’s Helpful and Harmless agent [3], OpenAI’s popular paper on process reward models [4], Llama 2 Chat models [5], and other seminal works all use this baseline; more recent work has formalized it directly (e.g., RAFT [6] for applying it to <a href="11-rejection-sampling.html">alignment in multiple modalities and Statistical Rejection Sampling Optimization (RSO) [7]</a> that gives a principled overview on how rejection sampling relates to other preference learning objectives).</p>
+<p><em>Throughout this chapter, we use </em>x<em> to denote prompts and </em>y<em> to denote completions. This</em> <em>notation is common in the language model literature, where methods operate on full</em> <em>prompt-completion pairs rather than individual tokens.</em></p>
+<h2 id="9-1-training-process"><a class="anchor" href="#9-1-training-process">#</a>9.1 Training Process</h2>
+<p>Rejection sampling overall follows a few stages.</p>
+<ol class="lst"><li><strong>Prompt and reward model selection:</strong> First, you must select the prompts you want to train on, relative to other stages of training. The simplest method is to re-use every prompt from the first SFT/IFT stage, but this can cause some overfitting. Before doing rejection sampling, you must also have trained a reward model (see Chapter 5 for more <a href="https://livebook.manning.com/book/the-rlhf-book/chapter-9?potentialInternalRefId=11---book-markup-container">information). </a></li><li><strong>Generate completions from the starting checkpoint:</strong> Next, one must generate completions to the selected prompts with the model they want to optimize. This can involve tweaking many settings, such as sampling temperature, top-p, max sequence length, number of completions per <a href="https://livebook.manning.com/book/the-rlhf-book/chapter-9?potentialInternalRefId=12---book-markup-container">prompt, etc. </a></li><li><strong>Select top completions with a reward model</strong>: All completions are ranked by a reward model. This can include deduplication to only have one prompt per completion after this stage, or not, as a lot of the <a href="https://livebook.manning.com/book/the-rlhf-book/chapter-9?potentialInternalRefId=13---book-markup-container">decisions become based on empirical ablation studies. </a></li><li><strong>SFT on top completions:</strong> To finish rejection sampling, one instruction <a href="https://livebook.manning.com/book/the-rlhf-book/chapter-9?potentialInternalRefId=14---book-markup-container">fine-tunes the starting checkpoint on the selected completions. </a></li></ol>
+<p><a href="11-rejection-sampling.html">A visual overview of the rejection sampling process is included below in fig. 9.1.</a></p>
+<figure class="fig"><a class="zoom" href="assets/0105.png"><img src="assets/0105.png" alt="插图" loading="lazy"></a></figure>
+<figcaption><span class="lbl">Figure 9.1</span> Rejection sampling overview.</figcaption>
+<p>The actual details on which prompts to use, how to select a reward model, how to sequence rejection sampling, etc. are not well documented in the literature. This chapter provides an overview of the methods and leaves further experimentation to the reader.</p>
+<h3 id="9-1-1-generating-completions"><a class="anchor" href="#9-1-1-generating-completions">#</a>9.1.1 Generating Completions</h3>
+<p>To generate a set of multiple candidate completions per prompt, let’s define a set of M prompts as a vector:</p>
+<p>X = [x<sub>1</sub>, x<sub>2</sub>, . . . , x<sub>M</sub>]</p>
+<p>These prompts can come from many sources, but most commonly they come from the instruction training set.</p>
+<p>For each prompt x<sub>i</sub>, we generate N completions. We can represent this as a matrix:</p>
+<figure class="eq"><a class="zoom" href="assets/0106.png"><img src="assets/0106.png" alt="公式" loading="lazy"></a></figure>
+<p>the j-th sampled completion across all prompts.</p>
+<h3 id="9-1-2-scoring-completions"><a class="anchor" href="#9-1-2-scoring-completions">#</a>9.1.2 Scoring Completions</h3>
+<figure class="eq"><a class="zoom" href="assets/0107.png"><img src="assets/0107.png" alt="公式" loading="lazy"></a></figure>
+<p>of rewards. We’ll represent the rewards as a matrix R:</p>
+<p>Each reward r is computed by passing the completion y<sub>i</sub><sub>,</sub><sub>j</sub> and its corresponding prompt x<sub>i</sub> through a reward model R:</p>
+<p>r<sub>i</sub><sub>,</sub><sub>j</sub> = R(y<sub>i</sub><sub>,</sub><sub>j</sub> ∣x<sub>i</sub>)</p>
+<p>There are multiple methods to select the top completions to train on.</p>
+<p>To formalize the process of selecting the best completions based on our reward matrix, we can define a selection function S that operates on the reward matrix R.</p>
+<h3 id="top-per-prompt"><a class="anchor" href="#top-per-prompt">#</a>TOP PER PROMPT</h3>
+<p>The first potential selection function takes the max reward per prompt.</p>
+<p>This function S returns a vector of indices, where each index corresponds to the column with the maximum reward for each row in R. We can then use these indices to select our chosen completions:</p>
+<p>Y<sub>c</sub><sub>h</sub><sub>o</sub><sub>s</sub><sub>e</sub><sub>n</sub> = [y<sub>1</sub><sub>,</sub><sub>S</sub><sub>(</sub><sub>R</sub><sub>)</sub><sub>1</sub>, y<sub>2</sub><sub>,</sub><sub>S</sub><sub>(</sub><sub>R</sub><sub>)</sub><sub>2</sub>, . . . , y<sub>M</sub><sub>,</sub><sub>S</sub><sub>(</sub><sub>R</sub><sub>)</sub><sub>M</sub>]</p>
+<h3 id="top-overall-pairs"><a class="anchor" href="#top-overall-pairs">#</a>TOP OVERALL PAIRS</h3>
+<p>Alternatively, we can select the top K prompt-completion pairs from the entire set. First, let’s flatten our reward matrix R into a single vector:</p>
+<p>This R</p>
+<p>number of completions per prompt.</p>
+<p>Now, we can define a selection function S<sub>K</sub> that selects the indices of the K highest values in R<sub>f</sub><sub>l</sub><sub>a</sub><sub>t</sub>:</p>
+<p>S<sub>K</sub>(R<sub>f</sub><sub>l</sub><sub>a</sub><sub>t</sub>) = argsort(R<sub>f</sub><sub>l</sub><sub>a</sub><sub>t</sub>)[−K :]</p>
+<p>where argsort returns the indices that would sort the array in ascending order, and we take the last K indices to get the K highest values.</p>
+<p>To get our selected completions, we need to map these flattened indices back to our original completion matrix Y. To recover the corresponding (prompt, completion) pair, you can map a zero-indexed flattened index k to (i, j) via i = ⌊k/N⌋+ 1 and j = (k mod N) + 1.</p>
+<h3 id="selection-example"><a class="anchor" href="#selection-example">#</a>SELECTION EXAMPLE</h3>
+<p>Consider the case where we have the following situation, with 5 prompts and 4 completions. We will show two ways of selecting the completions based on reward.</p>
+<figure class="eq"><a class="zoom" href="assets/0108.png"><img src="assets/0108.png" alt="公式" loading="lazy"></a></figure>
+<p>Using the argmax method, we select the best completion for each prompt:</p>
+<figure class="eq"><a class="zoom" href="assets/0109.png"><img src="assets/0109.png" alt="公式" loading="lazy"></a></figure>
+<p>This means we would select:</p>
+<ul class="lst"><li><a href="https://livebook.manning.com/book/the-rlhf-book/chapter-9?potentialInternalRefId=54---book-markup-container">For prompt 1: completion 1 (reward 0.7) </a></li><li><a href="https://livebook.manning.com/book/the-rlhf-book/chapter-9?potentialInternalRefId=55---book-markup-container">For prompt 2: completion 2 (reward 0.8) </a></li><li><a href="https://livebook.manning.com/book/the-rlhf-book/chapter-9?potentialInternalRefId=56---book-markup-container">For prompt 3: completion 1 (reward 0.9) </a></li><li><a href="https://livebook.manning.com/book/the-rlhf-book/chapter-9?potentialInternalRefId=57---book-markup-container">For prompt 4: completion 3 (reward 0.8) </a></li><li><a href="https://livebook.manning.com/book/the-rlhf-book/chapter-9?potentialInternalRefId=58---book-markup-container">For prompt 5: completion 4 (reward 0.6) </a></li></ul>
+<figure class="eq"><a class="zoom" href="assets/0110.png"><img src="assets/0110.png" alt="公式" loading="lazy"></a></figure>
+<p>First, we flatten the reward matrix:</p>
+<p>R<sub>f</sub><sub>l</sub><sub>a</sub><sub>t</sub> = [0.7, 0.3, 0.5, 0.2, 0.4, 0.8, 0.6, 0.5, 0.9, 0.3, 0.4, 0.7, 0.2, 0.5, 0.8, 0.6, 0.5, 0.4, 0.3, 0.6]</p>
+<p>Now, we select the indices of the 5 highest values:</p>
+<p>S<sub>5</sub>(R<sub>f</sub><sub>l</sub><sub>a</sub><sub>t</sub>) = [8, 5, 14, 0, 11]</p>
+<p>Mapping these back to our original matrix:</p>
+<ul class="lst"><li><a href="https://livebook.manning.com/book/the-rlhf-book/chapter-9?potentialInternalRefId=65---book-markup-container">Index 8 → prompt 3, completion 1 (reward 0.9) </a></li><li><a href="https://livebook.manning.com/book/the-rlhf-book/chapter-9?potentialInternalRefId=66---book-markup-container">Index 5 → prompt 2, completion 2 (reward 0.8) </a></li><li><a href="https://livebook.manning.com/book/the-rlhf-book/chapter-9?potentialInternalRefId=67---book-markup-container">Index 14 → prompt 4, completion 3 (reward 0.8) </a></li><li><a href="https://livebook.manning.com/book/the-rlhf-book/chapter-9?potentialInternalRefId=68---book-markup-container">Index 0 → prompt 1, completion 1 (reward 0.7) </a></li><li><a href="https://livebook.manning.com/book/the-rlhf-book/chapter-9?potentialInternalRefId=69---book-markup-container">Index 11 → prompt 3, completion 4 (reward 0.7) </a></li></ul>
+<h3 id="implementation-example"><a class="anchor" href="#implementation-example">#</a>IMPLEMENTATION EXAMPLE</h3>
+<p>Here is a code snippet showing how the selection methods could be implemented.</p>
+<div class="codeblock"><div class="bar2"><span class="lang">python</span><button class="copy" type="button">复制</button></div><pre><code><span class="c-kw">import</span> numpy <span class="c-kw">as</span> np
+x = np.random.randint(<span class="c-num">10</span>, size=<span class="c-num">10</span>)
+<span class="c-kw">print</span>(f<span class="c-str">"{x=}"</span>)
+sorted_indices = np.argsort(x)
+x_sorted = x[sorted_indices]
+<span class="c-kw">print</span>(f<span class="c-str">"{x_sorted=}"</span>)
+ <span class="c-com">#1</span>
+i_rev = np.zeros(<span class="c-num">10</span>, dtype=int)
+i_rev[sorted_indices] = np.arange(<span class="c-num">10</span>)
+np.allclose(x, x_sorted[i_rev])
+ <span class="c-com">#2</span>
+np.allclose(x, x_sorted[np.argsort(sorted_indices)])</code></pre></div>
+<h3 id="9-1-3-fine-tuning"><a class="anchor" href="#9-1-3-fine-tuning">#</a>9.1.3 Fine-tuning</h3>
+<p>With the selected completions, you then perform standard instruction fine-tuning on the <a href="https://rlhfbook.com/c/09-instruction-tuning">current rendition of the model. More details can be found in the chapter on instruction</a> <a href="https://rlhfbook.com/c/09-instruction-tuning">tuning.</a></p>
+<h2 id="9-2-implementation-details"><a class="anchor" href="#9-2-implementation-details">#</a>9.2 Implementation Details</h2>
+<p>The core hyperparameters for performing this training are very intuitive:</p>
+<ul class="lst"><li><strong>Sampling parameters</strong>: Rejection sampling is directly dependent on the completions received from the model. Common settings for rejection sampling include temperatures above zero, e.g. between 0.7 and 1.0, with other modifications to parameters such as top-p (nucleus sampling, which samples from the smallest set of tokens whose cumulative probability exceeds p) or top-k sampling (which samples from only the k <a href="https://livebook.manning.com/book/the-rlhf-book/chapter-9?potentialInternalRefId=77---book-markup-container">most likely tokens). </a></li><li><strong>Completions per prompt</strong>: Successful implementations of rejection sampling have included 10 to 30 or more completions for each prompt. <a href="https://livebook.manning.com/book/the-rlhf-book/chapter-9?potentialInternalRefId=78---book-markup-container">Using too few completions will make training biased and/or noisy. </a></li><li><strong>Instruction tuning details</strong>: No clear training details for the instruction tuning during rejection sampling have been released. It is likely that they use slightly different settings than the initial instruction tuning phase of <a href="https://livebook.manning.com/book/the-rlhf-book/chapter-9?potentialInternalRefId=79---book-markup-container">the model. </a></li><li><strong>Heterogeneous model generations</strong>: Some implementations of rejection sampling include generations from multiple models rather than just the current model that is going to be trained. Best practices on how <a href="https://livebook.manning.com/book/the-rlhf-book/chapter-9?potentialInternalRefId=80---book-markup-container">to do this are not established. </a></li><li><strong>Reward model training</strong>: The reward model used will heavily impact the final result. For more resources on reward model training, see the <a href="https://livebook.manning.com/book/the-rlhf-book/chapter-9?potentialInternalRefId=81---book-markup-container">relevant chapter. </a></li></ul>
+<p>When doing batch reward model inference, you can sort the tokenized completions by length so that the batches are of similar lengths. This eliminates the need to run inference on as many padding tokens and will improve throughput in exchange for minor implementation complexity.</p>
+<h2 id="9-3-related-best-of-n-sampling"><a class="anchor" href="#9-3-related-best-of-n-sampling">#</a>9.3 Related: Best-of-N Sampling</h2>
+<p>Best-of-N (BoN) is a close relative of rejection sampling, where the same generate-and-score procedure is followed, but you do <strong>not</strong> fine-tune the model on the selected completions. Instead, BoN is a way of computing a best possible completion to a static prompt (or set of prompts) at inference time, and related techniques are often used in “Pro” tiers of chat models that spend extra compute to get an answer to your query.</p>
+<p>Best-of-N sampling is often included as a baseline relative to RLHF training methods. It is important to remember that BoN <em>does not</em> modify the underlying model, but is a sampling technique. For this reason, comparisons for BoN sampling to online training methods, such as PPO, are still valid in some contexts. For example, you can still measure the KL distance when running BoN sampling relative to any other policy.</p>
+<p>Here, we will show that when using simple BoN sampling over one prompt, both selection criteria shown above are equivalent.</p>
+<p>Let R be a reward vector for our single prompt with N completions:</p>
+<figure class="eq"><div class="eqno">Equation 9.1</div><a class="zoom" href="assets/0111.png"><img src="assets/0111.png" alt="公式 9.1" loading="lazy"></a></figure>
+<p>Where r<sub>j</sub> represents the reward for the j-th completion.</p>
+<p>Using the argmax method, we select the best completion for the prompt:</p>
+<figure class="eq"><div class="eqno">Equation 9.2</div><a class="zoom" href="assets/0112.png"><img src="assets/0112.png" alt="公式 9.2" loading="lazy"></a></figure>
+<p>Using the Top-K method with K = 1 reduces to the same method, which is common practice.</p>
+<p>[1]W. R. Gilks and P. Wild, “Adaptive rejection sampling for gibbs sampling,” <em>Journal of</em> <em>the Royal Statistical Society: Series C (Applied Statistics)</em>, vol. 41, no. 2, pp. 337– 348, 1992.</p>
+<p>[2]R. Nakano <em>et al.</em>, “Webgpt: Browser-assisted question-answering with human</p>
+<p>feedback,” <em>arXiv preprint arXiv:2112.09332</em>, 2021.</p>
+<p>[3]Y. Bai <em>et al.</em>, “Training a helpful and harmless assistant with reinforcement learning from human feedback,” <em>arXiv preprint arXiv:2204.05862</em>, 2022.</p>
+<p>[4]H. Lightman <em>et al.</em>, “Let’s verify step by step,” in <em>International conference on</em></p>
+<p><em>learning representations (ICLR)</em>, 2024.</p>
+<p>[5]H. Touvron <em>et al.</em>, “Llama 2: Open foundation and fine-tuned chat models,” <em>arXiv</em></p>
+<p><em>preprint arXiv:2307.09288</em>, 2023.</p>
+<p>[6]H. Dong <em>et al.</em>, “RAFT: Reward rAnked FineTuning for generative foundation model alignment,” <em>Transactions on Machine Learning Research (TMLR)</em>, 2023.</p>
+<p>[7]T. Liu <em>et al.</em>, “Statistical rejection sampling improves preference optimization,” in</p>
+<p><em>International conference on learning representations (ICLR)</em>, 2024.</p>
+</main>
+<nav class="pager" aria-label="翻页">
+<a class="pv" href="10-direct-alignment-algorithms.html"><span class="dir">上一章</span><span class="t">Direct Alignment Algorithms</span></a>
+<a class="nx" href="12-the-nature-of-preferences.html"><span class="dir">下一章</span><span class="t">The Nature of Preferences</span></a>
+</nav>
+<div class="lightbox" id="lb" hidden><img alt="放大查看"><button class="x" type="button" aria-label="关闭">&#10005;</button></div>
+<script src="assets/app.js"></script>
+</body>
+</html>

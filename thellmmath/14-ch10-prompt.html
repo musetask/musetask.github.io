@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>第 10 章 · 提示工程 · 《Large Language Models》公式推导手册</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23a11f27'/%3E%3Ctext x='16' y='23' font-size='20' font-family='Georgia,serif' fill='%23fff' text-anchor='middle'%3E%E2%88%91%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="style.css">
+<script>(function(){try{var t=localStorage.getItem('thellmmath-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn idxbtn" href="index.html" aria-label="目录"><span aria-hidden="true">&#9776;</span> <span class="lbl">目录</span></a>
+  <a class="brand" href="index.html">《Large Language Models》公式推导手册</a>
+  <button class="btn" id="themeToggle" aria-label="切换深色模式">&#9788;</button>
+</header>
+<main id="main">
+<article>
+<h1><span class="chno">Chapter 10</span>第 10 章 · 提示工程</h1>
+<p class="lead">本章只有一个编号公式（10.1），但它是整个提示工程的"宪法"：提示不是"咒语"，而是一个<strong>条件</strong>。所以这一页把 10.1 反复拆开——先把它读成"字符串拼装 + 一次前向计算"，再读成"一次条件概率的采样"，然后用<strong>链式法则</strong>把它展开成自回归分解，证明 ICL 的输出分布就是一个条件分布，示例通过<strong>改变条件</strong>而改变分布，<strong>全程没有任何梯度更新</strong>。最后三节分别用贝叶斯推断、统计学（期望风险 / Jensen 不等式）、信息论（条件熵）三个视角把这条公式推到 RAG 与"位置偏置"的解释上。</p>
+<p class="where"><b>原书位置</b>第 10 章 <a href="../thellm/18-10-prompt-engineering.html#10-2-1-formulation-of-icl">10.2.1 Formulation of ICL</a>（延伸讨论：<a href="../thellm/18-10-prompt-engineering.html#10-2-2-demonstration-design">10.2.2 Demonstration Design</a>、<a href="../thellm/18-10-prompt-engineering.html#10-2-3-underlying-mechanism">10.2.3 Underlying Mechanism</a>、<a href="../thellm/18-10-prompt-engineering.html#10-4-1-basic-process-of-rag">10.4.1 Basic Process of RAG</a>）</p>
+
+<h2 id="toc">本页公式一览</h2>
+<table class="sym">
+<tr><th>编号</th><th>一句话</th><th>核心数学工具</th></tr>
+<tr><td><a href="#eq-10-1">10.1</a></td><td>ICL 的形式化定义：提示串 \(\to\) 输出</td><td>字符串拼接、条件概率</td></tr>
+<tr><td>（展开）</td><td><a href="#autoregressive">ICL 输出的自回归分解</a></td><td>概率链式法则</td></tr>
+<tr><td>（引申）</td><td><a href="#bayes">ICL 作为推断时条件化</a></td><td>贝叶斯公式、Bernoulli-Beta 共轭</td></tr>
+<tr><td>（引申）</td><td><a href="#example-stats">示例选择的期望风险</a></td><td>全期望公式、偏差-方差分解、Jensen 不等式</td></tr>
+<tr><td>（引申）</td><td><a href="#rag">RAG 作为外部条件</a></td><td>全期望公式、互信息非负性</td></tr>
+<tr><td>（引申）</td><td><a href="#order-bias">位置偏置的正确解读</a></td><td>条件概率对条件的依赖性</td></tr>
+</table>
+
+<h2 id="notation">本页符号约定</h2>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>类型 / 量纲</th></tr>
+<tr><td>\(\mathcal I\)</td><td>任务描述（Instruction / Task Description），自然语言</td><td>字符串，随机与否取决于评测协议</td></tr>
+<tr><td>\(f(\cdot,\cdot)\)</td><td>格式化函数，把 \((x,y)\) 对渲染成自然语言片段</td><td>确定性映射 \(\mathbb{R}^d\times\mathcal Y\to\Sigma^*\)</td></tr>
+<tr><td>\(D_k\)</td><td>由 \(k\) 个示例组成的演示集（demonstrations）</td><td>\(\{f(x_i,y_i)\}_{i=1}^k\)</td></tr>
+<tr><td>\(x_i,y_i\)</td><td>第 \(i\) 个示例的输入与标注</td><td>\((x,y)\sim D\)，\(D\) 是任务分布</td></tr>
+<tr><td>\(\oplus\)</td><td><strong>拼接</strong>（concatenation），非加法</td><td>二元运算 \(\Sigma^*\times\Sigma^*\to\Sigma^*\)</td></tr>
+<tr><td>\(s\)</td><td>拼装出的提示串（prompt）</td><td>\(\Sigma^*\)，长度以 token 计</td></tr>
+<tr><td>\(\Theta\)</td><td>LLM 的<strong>冻结</strong>参数</td><td>\(\mathbb{R}^{d_{\text{model}}}\)，推断期不变</td></tr>
+<tr><td>\(p_\Theta(\cdot\mid s)\)</td><td>给定提示串后下一个 token 的条件分布</td><td>\(\Delta^{|\mathcal V|-1}\)（概率单纯形）</td></tr>
+<tr><td>\(\hat y_{k+1}\)</td><td>模型对第 \(k+1\) 个输入给出的答案</td><td>随机变量（由解码策略决定）</td></tr>
+<tr><td>\(\ell(\hat y,y)\)</td><td>损失函数，评测用 0-1 损失或交叉熵</td><td>\(\mathbb R_{\ge 0}\)</td></tr>
+</table>
+<div class="note">
+<b>先记住这一页的一句话</b>
+参数 \(\Theta\) 在整个过程中<strong>一个字节都没变</strong>。变的只有 \(s\)。所以"提示工程"的数学本质是<strong>条件概率工程</strong>：你在设计 \(p_\Theta(y\mid s)\) 的条件 \(s\)。
+</div>
+
+<!-- ============================== 公式 10.1 ============================== -->
+<section class="fml" id="eq-10-1">
+<h2><span class="num">(10.1)</span>ICL 的形式化定义：演示 + 输入 \(\to\) 输出<a class="anchor" href="#eq-10-1">#</a></h2>
+<p class="where"><b>出处</b>第 10 章 10.2.1 节 Formulation of ICL　<a href="../thellm/18-10-prompt-engineering.html#10-2-1-formulation-of-icl">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0286.png" alt="原书公式 10.1"><span class="cap">原书公式 10.1</span></div>
+
+<h3>① 公式</h3>
+<p>原书的 10.1 是一张"流程示意式"的公式：四个被花括号标注的片段用逗号串起来，箭头指向答案。</p>
+<div class="eq">
+\[
+\underbrace{\mathcal I}_{\text{Task Description}},\quad
+\underbrace{f(x_1,y_1),\ \dots,\ f(x_k,y_k)}_{\text{Examples}},\quad
+\underbrace{f\!\left(x_{k+1},\ \_\right)}_{\text{Input}\ \mid\ \text{Answer}}
+\;\longrightarrow\;
+\hat y_{k+1}.
+\]
+</div>
+<p>为了推导方便，我们把这条箭头两边写成显式的函数形式。记提示串</p>
+<div class="eq">
+\[
+s \;=\; \mathcal I \;\oplus\; f(x_1,y_1) \;\oplus\; \cdots \;\oplus\; f(x_k,y_k) \;\oplus\; f\!\left(x_{k+1},\_\right)
+\]
+</div>
+<p>则 10.1 等价于下面两行——第一行是<strong>确定性</strong>的拼装，第二行是<strong>随机</strong>的采样：</p>
+<div class="eq">
+\[
+\begin{aligned}
+s &amp;\;=\; \mathcal I \oplus f(x_1,y_1) \oplus \cdots \oplus f(x_k,y_k) \oplus f\!\left(x_{k+1},\_\right) \\[3pt]
+\hat y_{k+1} &amp;\;\sim\; p_\Theta\!\left(\,\cdot\;\middle|\;s\,\right)
+\;=\; \mathrm{Sample}\Big(\operatorname{softmax}\big(T^{-1} W_\text{out} h_{\text{last}}(s)\big)\Big)
+\end{aligned}
+\]
+</div>
+<p style="font-size:.9em;color:#666">（若用贪心解码，把上式中的 \(\mathrm{Sample}\) 换成 \(\arg\max\)）</p>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\mathcal I\)</td><td>任务描述。自然语言串，可以是一句 "Classify the sentiment of the review:"</td><td>\(\Sigma^*\)，\(O(10)\) token</td></tr>
+<tr><td>\(f(\cdot,\cdot)\)</td><td>格式化函数。GPT-3 论文里是 <code>"x1 -&gt; y1"</code> 之类的模板</td><td>\((\mathcal X\times\mathcal Y)\to\Sigma^*\)</td></tr>
+<tr><td>\(D_k=\{f(x_i,y_i)\}_{i=1}^k\}\)</td><td>演示集，\(k\) 个已标注样本</td><td>\(\subset\Sigma^*\)，\(|D_k|=k\)</td></tr>
+<tr><td>\(x_{k+1}\)</td><td>测试输入，<strong>没有标签</strong></td><td>\(\mathcal X\)</td></tr>
+<tr><td>\(\_\)</td><td>答案位置的空槽。等价于把"下一个 token 该写什么"这个问题直接摆给模型</td><td>占位符</td></tr>
+<tr><td>\(\oplus\)</td><td>字符串拼接。满足结合律，<strong>不满足交换律</strong></td><td>\(\Sigma^*\times\Sigma^*\to\Sigma^*\)</td></tr>
+<tr><td>\(p_\Theta(\cdot\mid s)\)</td><td>冻结参数下的条件分布</td><td>\(\Delta^{|\mathcal V|-1}\)，\(|\mathcal V|\approx 10^5\)</td></tr>
+<tr><td>\(T\)</td><td>解码温度</td><td>标量，\(T\to0\) 为贪心</td></tr>
+<tr><td>\(\hat y_{k+1}\)</td><td>输出。是<strong>随机变量</strong>（除非 \(T=0\)）</td><td>\(\mathcal Y\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<p>我们分四步把上面这两行从"约定"推到"定理"。</p>
+<ol class="steps">
+<li><strong>第一步：把 \(\oplus\) 定义清楚。</strong>设 \(\Sigma^*\) 是 token 字符串的集合，\(|w|\) 记 token 数。定义拼接为
+<div class="eq">\[ (a\oplus b)_\ell = \big(a_{1:|a|},\; b_{1:|b|}\big),\qquad |a\oplus b|=|a|+|b| \]</div>
+于是提示串长度<strong>可加</strong>：\(|s|=|\mathcal I|+\sum_{i=1}^{k}|f(x_i,y_i)|+|f(x_{k+1},\_)|\)。这条可加性后面在讨论"上下文预算"和"示例越多越贵"时会直接用到。</li>
+<li><strong>第二步：拼接不是加法。</strong>向量加法有交换律和分配律，拼接两条都没有：\(a\oplus b\neq b\oplus a\)（除非巧合），且一般情况下 \(g(a\oplus b)\neq g(a)\oplus g(b)\)——因为 \(g\) 是<strong>非线性</strong>的字符级映射。更要紧的是：<strong>不存在"把 token embedding 相加"这种等价写法</strong>。若强行记成 \(e_a+e_b\)，那么 \(e_{\text{emb}}+e_{\text{ing}}\) 会把 "embedding" 和 "ing" 的字符合并成一个不存在的词。所以 \(\oplus\) 只能理解为"把字符串首尾接好再分词"，而分词本身（tokenizer）又是拼接<strong>之后</strong>才做的。
+<div class="warn"><b>易错点</b>
+看到箭头就以为"把示例的向量加进输入 embedding"是彻底错误的。10.1 里的箭头表示的是<strong>把字符串送进模型</strong>，而 token 化与 embedding 查表发生在模型内部，是拼接的结果而非前提。这也解释了为什么改一个标点符号就能让输出翻盘——你改的是 token 序列本身。</div></li>
+<li><strong>第三步：箭头右侧是一次前向计算。</strong>模型把 \(s\) 正向传播，末位隐状态 \(h_{\text{last}}(s)\in\mathbb R^{d}\)，再过输出头 \(W_\text{out}\in\mathbb R^{d\times|\mathcal V|}\) 得到 logits \(z=W_\text{out}h_{\text{last}}(s)\)。除以温度 \(T\) 再做 softmax：
+<div class="eq">\[ p_\Theta(v\mid s)=\frac{\exp(z_v/T)}{\sum_{v'}\exp(z_{v'}/T)}\quad (v\in\mathcal V) \]</div>
+逐 token 自回归地重复这个过程，直到生成结束标记，得到 \(\hat y_{k+1}\)。<strong>注意 \(p_\Theta\) 的下标 \(\Theta\)：它是训练阶段定下来的常量。</strong></li>
+<li><strong>第四步：把"生成 \(\hat y\)"改写成"从条件分布采样"。</strong>第一步到第三步只说明输出<em>怎么算出来</em>，没说它<em>是什么数学对象</em>。第 5 章已经证明过：softmax 输出层 + 交叉熵训练 ⟹ 模型在条件 \(s\) 下就是 \(p_\Theta(y\mid s)\) 的一个参数化估计。既然如此，输出<strong>就是</strong>一个从这个分布采出来的随机变量：
+<div class="eq">\[ \hat y_{k+1}\sim p_\Theta(\cdot\mid s),\qquad s=\mathcal I\oplus D_k\oplus f(x_{k+1},\_) \]</div>
+写成更常见的条件概率记法：
+<div class="eq">\[ P\big(y_{k+1}\mid x_{k+1},\ \mathcal I,\ D_k\big),\qquad D_k=\{f(x_i,y_i)\}_{i=1}^{k} \]</div>
+<strong>左边是条件，右边是示例。</strong>这条重写是理解 ICL 全部性质的枢纽——下面四节都在推它。</li>
+</ol>
+
+<div class="note">
+<b>直觉</b>
+10.1 就是"老师傅带新人"：\(\mathcal I\) 是岗位说明，\(f(x_i,y_i)\) 是过去处理过的工单，\(f(x_{k+1},\_)\) 是新工单（答案栏空着），\(\hat y_{k+1}\) 是新人填的答案。老师傅的脑子（\(\Theta\)）没被改造过，只是他把脑子里的东西<strong>写在了纸上</strong>，纸上每个字都真的进了新人的输入 token 序列。
+</div>
+<div class="why">
+<b>为什么原书要把 10.1 画成"四个花括号 + 箭头"</b>
+因为这条公式要强调的不是算式，而是<strong>信息流的顺序</strong>：\(\mathcal I\to\) 示例 \(\to\) 空槽答案。顺序是有意义的（见 <a href="#order-bias">位置偏置</a>），所以不能压成一个 \(\mathrm{ICL}(x,y)\) 式的抽象函数调用。
+</div>
+<div class="relnav">延伸：<a href="#autoregressive">把 10.1 展开成自回归乘积</a>　<a href="#bayes">ICL 的贝叶斯解读</a>　<a href="#rag">RAG 的概率解读</a></div>
+</section>
+
+<!-- ============================== 自回归分解 ============================== -->
+<h2 id="autoregressive">把 10.1 展开：ICL 输出是一个条件概率的自回归乘积</h2>
+<p>上面第 10 步说"输出是条件分布"，但条件分布本身还不是一个可计算、可分析的数。用<strong>链式法则</strong>把它展开就能看清示例到底在做什么。</p>
+<div class="eq">
+\[
+P\big(y_{k+1}\mid x_{k+1},\mathcal I,D_k\big)
+\;=\;
+\prod_{t=1}^{L}
+P\!\left(y_t \;\middle|\; y_{&lt;t},\ \mathcal I,\ D_k,\ f(x_{k+1},\_)\right)
+\]
+</div>
+<p>这里 \(L\) 是生成的答案 token 数，\(y_{&lt;t}=(y_1,\dots,y_{t-1})\)。</p>
+<ol class="steps">
+<li><strong>工具：离散随机变量的链式法则。</strong>对任意联合分布，按全概率公式（law of total probability）逐层展开：
+<div class="eq">\[ P(u,v)=P(u)\,P(v\mid u) \]</div>
+这一步的合法性来自"边际化"：\(P(v)=\sum_u P(u,v)\)，于是 \(P(u,v)=P(u)\,P(v\mid u)\)。对三个变量再展开一次得到 \(P(u,v,w)=P(u)P(v\mid u)P(w\mid u,v)\)。一般情形对 \(L\) 归纳即得。</li>
+<li><strong>把条件里的"固定部分"打包。</strong>设 \(s=\mathcal I\oplus D_k\oplus f(x_{k+1},\_)\)，且答案内的第 \(t\) 个 token 只依赖 \(s\) 和已生成的前缀 \(y_{&lt;t}\)（这是 Transformer 因果掩码（causal mask）带来的<strong>结构性质</strong>：位置 \(t\) 看不到位置 \(t\) 之后的任何东西）。链式法则给出
+<div class="eq">\[ P(y_{1:L}\mid s)=\sum_{\text{所有中间前缀}} \ \prod_t P(y_t\mid y_{&lt;t},s) \]</div>
+由于给定前缀后每一步的支撑集就是 \(y_t\) 本身，中间求和退化为对每一步取"那个唯一的可能值"，于是上式就是纯粹的乘积。</li>
+<li><strong>读出关键结论。</strong>在这个乘积里，<strong>没有一个因子是 \(\Theta\) 的函数随示例变化而重算出来的</strong>。改变 \(D_k\) 改变的是<strong>每个因子的条件</strong>：因子本身 \(P_\Theta(y_t\mid\cdot)\) 的函数形式（也就是那个 1000 亿参数的函数）<strong>完全没变</strong>，只是被求值在了新的输入点上。
+<div class="warn"><b>易错点：这是全章最容易被误解的一点</b>
+"示例改变了模型的分布参数"这个说法是错的。正确的是：<strong>示例改变了分布的输入，从而改变了输出分布的值</strong>。参数没动，函数没动，变的是函数的自变量。把 ICL 说成"隐式梯度下降"只是<strong>比喻</strong>（见 <a href="#bayes">下一节</a>的定量版本），不要当成真的优化过程。</div></li>
+<li><strong>换句话说。</strong>微调（fine-tuning）是把 \(\Theta\leftarrow \Theta-\eta\nabla_\Theta L\)，改的是<strong>函数本身</strong>；ICL 是把 \(s\leftarrow s\oplus f(x,y)\)，改的是<strong>函数的输入</strong>。前者需要梯度、样本、算力；后者只需要一段 token。<strong>两者的分界线就是有没有梯度更新。</strong></li>
+</ol>
+<div class="note">
+<b>直觉</b>
+自回归乘积就是一条"连乘链"。每个因子是"已知前面所有内容后，下一个词该是什么"。示例 \(D_k\) 的作用是给这条链换了一套上下文，让每一个因子的取值都更偏向正确答案。<strong>没有链条被重新焊接，只是同一条链条换了个悬挂位置。</strong>
+</div>
+
+<!-- ============================== 贝叶斯视角 ============================== -->
+<h2 id="bayes">ICL 作为"推断时条件化"：贝叶斯视角</h2>
+<p>把 <a href="#autoregressive">上一节</a>的条件概率写成贝叶斯公式的形式，能看到示例的作用相当于"不断往先验上乘证据"。</p>
+<h3>① 工具：贝叶斯公式</h3>
+<div class="eq">
+\[
+p(y\mid s)=\frac{p(s\mid y)\,p(y)}{p(s)},\qquad
+\log\frac{p(y\mid s)}{p(y)}=\log p(s\mid y)-\log p(s)
+\]
+</div>
+<ol class="steps">
+<li>因为 \(p(s)\) 与 \(y\) 无关（它就是把 \(s\) 当事件的总概率），在做 \(\arg\max_y\) 时它被丢掉。于是<strong>最大化后验 = 最大化似然 + 先验</strong>：
+<div class="eq">\[ \arg\max_y\ p(y\mid s)=\arg\max_y\ \big[\log p(s\mid y)+\log p(y)\big] \]</div>
+这就是"上下文像先验"的严格含义：prompt 里的内容进入的是似然项，先验 \(p(y)\) 由预训练语料给定。</li>
+<li>把 \(k\) 个示例依次代入，得到一个"伪似然连乘"：
+<div class="eq">\[ P\big(y_{k+1}\mid \mathcal I, D_k, x_{k+1}\big)\;\propto\;p(y_{k+1})\prod_{i=1}^{k}p\big(f(x_i,y_i)\mid \mathcal I,D_{i-1},f(x_{k+1},\_)\big) \]</div>
+每一项都是一次"如果这件事为真，那么产生这段文本的概率是多少"的条件似然。<strong>所以每加一个示例，就往证据里乘一个因子。</strong></li>
+<li><strong>定量版本：为什么 \(k\) 增大输出更稳。</strong>用一个能算到底的共轭模型说明。设任务为"判断一句话是正面（\(y=1\)）还是负面（\(y=0\)）"，先验取均匀 \(\mathrm{Beta}(1,1)\)，观测到的示例 \((x_i,y_i)\) 似然是 Bernoulli。这里<strong>示例的贡献是乘性的、可累加的</strong>。设已看到 \(k_+\) 个正例、\(k_-\) 个负例，后验为 \(\mathrm{Beta}(1+k_+,\,1+k_-)\)，于是<strong>后验几率（odds）恰好等于先验几率乘上所有观测的似然比</strong>：
+<div class="eq">\[ \frac{P(y\mid \text{数据})}{P(1-y\mid \text{数据})}=\frac{1+k_+}{1+k_-}=\prod_{i=1}^{k}\frac{P(y_i\mid x_i)}{P(1-y_i\mid x_i)} \]</div>
+若前 \(k\) 个全是正例，逐步展开：\(\frac{1}{1}\to\frac{2}{1}\to\frac{3}{1}\to\cdots\to\frac{k+1}{1}=(k+1)!\)。<strong>对数几率</strong>（log-odds）因此以<strong>加法</strong>累积：
+<div class="eq">\[ \log\frac{1+k_+}{1+k_-}=\log\frac{1+k_+}{1}+\log\frac{1}{1+k_-}=\sum_i \log\frac{P(y_i\mid x_i)}{P(1-y_i\mid x_i)} \]</div>
+而"训练一步"做的事恰好也是往 log-odds 上加一项梯度贡献。<strong>这就是"上下文相当于隐式 few-shot 梯度"这个比喻的定量来源</strong>：上下文长度 \(k\) 扮演了"步数"的角色，证据的对数似然比扮演了"梯度"的角色。</li>
+<li>由此得到两个可检验的推论：<ul>
+<li><strong>饱和。</strong>\(k\) 越大后验越尖，输出分布的<strong>条件熵</strong> \(H(y\mid s)\) 越低，采样越确定——这就是"多给几个例子答案就稳了"。</li>
+<li><strong>边际收益递减。</strong>\(k_+\) 每加一，倍数是 \(\frac{k+2}{k+1}\to1\)。<strong>所以第 30 个示例的边际价值远小于第 3 个</strong>；而<strong>有信息量的示例</strong>（与测试样本相似、覆盖决策边界）贡献的 log-odds 增益大得多。这就是 10.2.2 节"示例设计"的全部动机。</li>
+</ul></li>
+</ol>
+<div class="why">
+<b>为什么"隐式梯度"只能是比喻，不能当成真的训练</b>
+真的梯度下降要沿 \(\nabla_\Theta L\) 更新 \(\Theta\)，更新后的 \(\Theta\) 对<strong>所有</strong>输入都变；ICL 更新的是 \(s\)，只对<strong>这一个</strong>输入生效，下一次提问就得重新拼。更根本的是，ICL 的证据累加是<strong>在输出空间</strong>（预测 \(y\) 的分布）上的，而 SGD 的累加是<strong>在参数空间</strong>上的。两者数学形式上都有"乘积/累加"的相似性，但机制完全不同。
+</div>
+<div class="warn">
+<b>易错点</b>
+把 ICL 当成"免费微调"会导出错误结论：既然是隐式训练，那么示例越多越好、示例可以随便乱放。实际上<strong>示例是条件而非参数</strong>，它受上下文长度硬约束、受<strong>顺序</strong>影响（<a href="#order-bias">见下</a>）、且只在<strong>训练分布里见过类似模式</strong>时有效（原书 10.2.3 节说的 MetaICL 就是在预训练阶段专门造这类任务，让模型学会"从演示里推断任务"）。
+</div>
+
+<!-- ============================== 示例选择：统计学视角 ============================== -->
+<h2 id="example-stats">示例选择的统计学视角：期望风险、偏差与多样性</h2>
+<p>把 \(D_k\) 看成从任务分布 \(D\) 中抽出的随机样本集，于是"我随手挑的 5 个示例效果如何"就变成一个可以写公式的问题。设任务分布 \(D\) 定义在 \(\mathcal X\times\mathcal Y\) 上，损失为 \(\ell(\hat y,y)\)。</p>
+<div class="eq">
+\[
+R(D_k)\;=\;\mathbb{E}_{(x,y)\sim D}\;\mathbb{E}_{D_k}\Big[\ell\big(f_{\text{LLM}}(D_k,x),\,y\big)\Big]
+\]
+</div>
+<ol class="steps">
+<li><strong>工具：全期望公式（tower property）。</strong>设 \((X,Y)\sim D\)、\(D_k\) 是定义在另一个概率空间上的随机量（依赖 \(k\) 个样本的抽样过程），且 \(\ell\) 可测。则
+<div class="eq">\[ \mathbb E_{D_k}\Big[\mathbb E_{(X,Y)}\big[\ell(D_k,X,Y)\big]\Big]=\mathbb E_{(D_k,X,Y)}\big[\ell(D_k,X,Y)\big] \]</div>
+理由是右边的双重积分区域就是左边两个积分区域的直积（Tonelli 定理，\(\ell\ge0\) 时无条件成立）。所以 \(R(D_k)\) 的含义非常朴素：<strong>先随机抽一套示例，再随机抽一个测试题，看错了多少</strong>。这是我们真正关心的量——论文里报的那个"准确率"是对这个量的单次实现。</li>
+<li><strong>偏差-方差分解。</strong>把预测器写成 \(g_{D_k}(x)=f_{\text{LLM}}(D_k,x)\)。取平方损失（结论的结构对任何满足"极小化会在均值处取到"的损失都成立，0-1 损失和交叉熵也保留同样的定性结论），对 \(D_k\) 取期望：
+<div class="eq">\[ \mathbb E_{D_k,X,Y}\big[(g_{D_k}(X)-Y)^2\big]=\underbrace{\big(\mathbb E[g_{D_k}(X)]-Y\big)^2}_{\text{偏差}^2}\;+\;\underbrace{\mathbb E\big[(g_{D_k}(X)-\mathbb E g_{D_k}(X))^2\big]}_{\text{方差}} \]</div>
+推导只需对 \((a-b)^2\) 用恒等式 \((a-b)^2=(a-\mathbb Ea-\mathbb Eb+\mathbb Eb-b)^2\)，把交叉项 \(2(\mathbb Ea-\mathbb Eb)(\mathbb Eb-b)\) 取期望时因为 \(\mathbb Ea=\mathbb Eb\) 而为零。</li>
+<li><strong>于是"代表性 vs 多样性"有了数学身份。</strong>要让偏差小，示例必须<strong>有代表性</strong>（覆盖任务分布的高质量区域，让 \(\mathbb E[g_{D_k}(x)]\) 贴近真实映射）；要让方差小，示例集必须<strong>稳定/分散</strong>（换一套示例结论别变太多）。二者的预算 \(k\) 是共享的：把全部 \(k\) 个槽位都用来塞<em>同一类</em>典型样本，方差不降反升（每套示例都高度相关，等效自由度只有 1）；把槽位均匀撒在 \(k\) 个完全不同的子任务上，覆盖度不够，偏差飙升。<strong>这就是提示工程里"顺序要混搭、要覆盖边界、要有反例"的经验法则的来源。</strong></li>
+<li><strong>工具：Jensen 不等式。</strong>若 \(\varphi\) 是凸函数且 \(\mathbb E[\varphi]\) 存在，则 \(\mathbb E[\varphi(Z)]\ge\varphi(\mathbb E[Z])\)。凸性给出 \(\varphi(\lambda a+(1-\lambda)b)\le\lambda\varphi(a)+(1-\lambda)\varphi(b)\)，对测度空间积分即得。取 \(\varphi(z)=-\ln z\)（交叉熵损失，\(z\in(0,1]\)）：
+<div class="eq">\[ \mathbb E_{D_k}\big[-\ln \hat p\big(x;\text{模型输出}\big)\big]\;\ge\;-\ln\mathbb E_{D_k}\big[\hat p\big(x;\text{模型输出}\big)\big] \]</div>
+因为 \(\frac{d^2}{dz^2}(-\ln z)=\frac{1}{z^2}&gt;0\)（严格凸），不等式在非退化时严格成立。</li>
+<li><strong>这条不等式的实践含义：平均表现不能替代最坏表现。</strong>举个数：设三个候选提示对同一道题的正确答案概率分别是 \(0.9,0.5,0.1\)。
+<ul>
+<li>平均损失：\(-\tfrac13\big(\ln 0.9+\ln 0.5+\ln 0.1\big)=-\tfrac13(-0.105-0.693-2.303)=1.034\) nat。</li>
+<li>Jensen 右端：\(-\ln(\tfrac13(0.9+0.5+0.1))=-\ln 0.5=0.693\) nat。确实 \(1.034\ge0.693\)。</li>
+<li>对应困惑度（借第 12 章的定义，\(\mathrm{PPL}=e^{\text{CE}}\)）：平均 \(e^{1.034}\approx2.81\)，Jensen 右端 \(e^{0.693}=2.00\)，而最坏那一次 \(e^{2.303}=10.0\)。</li>
+</ul>
+<strong>你在 A/B 测试里看到的"平均提升 0.3 个点"，完全可能来自中间那一次很温和的提示；最坏情况下的差距是 3 倍。</strong>要报数，就必须同时报方差（或最坏分位数）。</li>
+</ol>
+<div class="note">
+<b>直觉</b>
+Jensen 这条不等式在说一件很朴素的事：<strong>对"还没选定的提示方案"求平均损失，不会比"在平均方案上评估"更乐观</strong>。方差越大，两边的差距越大。所以提示工程的评测如果只报一个平均分，等于在鼓励"广撒网赌一个中间值"，而线上真正承担风险的是最坏情况。
+</div>
+<div class="relnav">衔接：<a href="#bayes">为什么 k 大更稳</a>　<a href="#rag">检索也是一种"条件"</a></div>
+
+<!-- ============================== RAG 的概率视角 ============================== -->
+<h2 id="rag">RAG 的概率视角：检索就是把外部知识塞进条件</h2>
+<p>原书 10.4 节的 RAG（Retrieval-Augmented Generation，检索增强生成）流程是"文档检索 → 提示构造 → 响应生成"。把它翻译成条件概率，只有两处改动：</p>
+<div class="eq">
+\[
+P\big(y\mid x,\ R(x),\ \mathcal I,\ D_k\big)
+\]
+</div>
+<p style="font-size:.9em;color:#666">其中 \(R(x)\) 是检索器（Retriever）返回的文档集合，\(D_k\) 仍是 ICL 的示例</p>
+<ol class="steps">
+<li><strong>工具：条件熵的分链公式（chain rule of entropy）。</strong>与离散情形的概率链式法则完全平行，条件熵满足
+<div class="eq">\[ H(Y\mid X,Z)=H(Y\mid X)+H(Y\mid Z,X)-H(Y\mid X,Z) \]</div>
+推导同概率链式法则：对任意离散分布，\(-\ln p(y\mid x,z)=\ln\frac1{p(y\mid x)}+\ln\frac{p(y\mid x)}{p(y\mid x,z)}\)，取期望并整理即得。</li>
+<li><strong>互信息非负。</strong>记 \(I(Y;Z\mid X)=H(Y\mid X)-H(Y\mid X,Z)\)。它等于条件分布之间的 KL：
+<div class="eq">\[ I(Y;Z\mid X)=D_{P_{Y\mid X}}\big(P_{Y\mid X,Z}\,\big\|\,P_{Y\mid X}\big)\;\ge\;0 \]</div>
+非负性来自 KL 散度 \(\ge0\)，后者由 Jensen 得：\(\mathbb E_p\ln q\le \ln\mathbb E_p q=\ln p\)，故 \(-H(p)-\mathbb E_p\ln q\ge -H(p)+\mathbb E_p\ln p=0\)。</li>
+<li><strong>合并两式：检索一定降低条件熵。</strong>
+<div class="eq">\[ H\big(Y\mid x,R(x)\big)\;=\;H(Y\mid x)\;-\;I\big(Y;R(x)\mid x\big)\;\le\;H(Y\mid x) \]</div>
+读法：把外部知识作为条件，<strong>答案的不确定性单调不增</strong>，减少的量正好是"检索结果与答案之间的互信息"。这就是 RAG 有效的最简统计解释。</li>
+<li><strong>但这里有两个必须点破的限制。</strong><ul>
+<li><strong>信息量 \(\neq\) 被用掉。</strong>上式是关于<strong>真实</strong>条件分布 \(P(Y\mid x,R(x))\) 的陈述，而模型给出的是 \(p_\Theta(Y\mid x,R(x))\)——两者之间的差距 \(\mathrm{KL}(P\|p_\Theta)\) 完全不受互信息非负性保护。如果答案其实写在文档<em>中间</em>（原书引的 "lost in the middle"），那 \(I(Y;R(x)\mid x)\) 明明很大，但模型的互信息 <strong>有效利用</strong>接近 0，于是困惑度一点不降。<strong>"检索到了"不等于"读到了"。</strong></li>
+<li><strong>检索会引入噪声。</strong>若检索器质量差，\(R(x)\) 可能把无关甚至误导性的文档塞进 prompt。此时它相当于往 <a href="#bayes">贝叶斯证据里乘了错误因子</a>，可能把后验推向错误方向；只有在检索使 \(I(Y;R(x)\mid x)\) 的净增益为正时才值得付这个 token 成本。</li>
+</ul></li>
+<li><strong>放到 10.1 的记号里看全貌。</strong>完整的条件是三个可调部件的拼接：
+<div class="eq">\[ s=\underbrace{\mathcal I}_{\text{任务}}\oplus\underbrace{R(x)}_{\text{外部知识}}\oplus\underbrace{D_k}_{\text{示例}}\oplus\underbrace{f(x_{k+1},\_)}_{\text{查询}} \]</div>
+三者的<strong>地位完全相同</strong>：都是往条件里加信息，都不加参数，都受同样的长度预算和顺序敏感性约束。很多"RAG 还是 ICL 更强"的争论，本质是这三段预算怎么分配的问题。</li>
+</ol>
+<div class="note">
+<b>直觉</b>
+条件熵就是"我还不知道多少"。加了条件就少了一部分"不知道"，减掉的量叫互信息。RAG 相当于请人递给你一张纸条，纸条里有多少与答案有关的信息（互信息），你的不确定就少多少；纸条本身是废话还是有毒（噪声），互信息理论不管，得靠实验测。
+</div>
+
+<!-- ============================== 位置偏置 ============================== -->
+<h2 id="order-bias">易错点：位置偏置不是"模型不稳定"，是条件概率本来就敏感</h2>
+<p>实践中一个反复出现的现象：同样 \(k\) 个示例，换个顺序、换个措辞，输出就变。人们通常说这叫"模型不稳定 / 玄学 / prompt 脆弱"。这个说法在数学上是错的。</p>
+<div class="eq">
+\[
+s=\mathcal I\oplus f(x_1,y_1)\oplus\cdots\oplus f(x_k,y_k)\oplus f(x_{k+1},\_)
+\;\ne\;
+s'=\mathcal I\oplus f(x_k,y_k)\oplus\cdots\oplus f(x_1,y_1)\oplus f(x_{k+1},\_)
+\]
+</div>
+<ol class="steps">
+<li><strong>理由一：换顺序就是换了条件。</strong>上面已经证明 \(s\neq s'\)（因为 \(\oplus\) 不满足交换律）。而条件概率 \(P_\Theta(y\mid s)\) 是<strong>条件本身</strong>的函数，不是某个"稳定参数"的函数。所以
+<div class="eq">\[ P_\Theta(y\mid s)\neq P_\Theta(y\mid s')\quad\text{是完全正常的事} \]</div>
+任何条件概率都会对条件敏感——你把 \(x\) 从 1 改成 2，\(P(Y\mid x)\) 当然变。要求它不变的叫"常数函数"，那不是模型。<strong>把"条件变了"记成"模型不稳"，等于把函数对自变量的依赖性误诊为随机性。</strong></li>
+<li><strong>理由二：真正的随机性只来自解码。</strong>把输出的方差拆成两部分：
+<div class="eq">\[ \mathrm{Var}(\hat y)=\underbrace{\mathbb E_s\big[\mathrm{Var}(\hat y\mid s)\big]}_{\text{采样温度带来的}}+\underbrace{\mathrm{Var}_s\big[\mathbb E(\hat y\mid s)\big]}_{\text{提示/顺序带来的}} \]</div>
+（这是全方差公式（law of total variance），推导是对 \(\mathrm{Var}(Y)=\mathbb E[\mathrm{Var}(Y\mid X)]+\mathrm{Var}(\mathbb E[Y\mid X])\) 中的条件分布取平均。）第二项即使在 \(T\to0\)（贪心、完全确定性解码）下也<strong>不为零</strong>——它是条件差异造成的。实验时若没固定 \(T\)、没固定随机种子，就把两项混在一起，报出来的方差无法解释。</li>
+<li><strong>理由三：argmax 会把小扰动放大成跳变。</strong>贪心解码取 \(\hat y=\arg\max_v p_\Theta(v\mid s)\)。这是一个<strong>不连续</strong>的函数：两个候选的概率只差 \(10^{-3}\)，条件稍微一变就可能翻转 argmax，输出<strong>整段</strong>变掉。所以"输出变化幅度远大于条件变化幅度"是解码方式造成的，<strong>不是模型对条件敏感程度的度量</strong>。要度量敏感度，应该看概率分布的距离（比如 \(\mathrm{KL}(p_\Theta(\cdot\mid s)\,\|\,p_\Theta(\cdot\mid s'))\)）而不是看 argmax。</li>
+<li><strong>由此得到正确的实验做法。</strong>位置偏置不该靠"找到一个神奇顺序"来消除，而该靠<strong>对顺序分布取期望</strong>来平均掉：设 \(\mathfrak S_k\) 是 \(k\) 个示例的全部 \(k!\) 种排列（实践中随机采 \(K\) 个），定义
+<div class="eq">\[ \bar P(y\mid x)=\frac1K\sum_{j=1}^{K}p_\Theta\big(y\mid \operatorname{perm}_{\pi_j}(\mathcal I,D_k,x)\big),\qquad \text{方差}=\frac1K\sum_j\big\|p_\Theta(\cdot\mid s_j)-\bar P(\cdot\mid x)\big\|^2 \]</div>
+这与 <a href="#example-stats">上一节</a>的期望风险是同一个式子。<strong>"报告 mean ± std over permutations"之所以成为 ICL 评测的标准做法，就是因为它把位置偏置变成了一个可量化的方差项，而不是一个需要被"调好"的隐藏参数。</strong></li>
+</ol>
+<div class="warn">
+<b>易错点清单（提示工程实验）</b>
+<ul>
+<li>只跑一个顺序就下结论：测到的是<strong>这个顺序的条件概率</strong>，不是方法的能力。</li>
+<li>把 \(T&gt;0\) 的采样方差和顺序方差混报：必须固定 \(T\) 或用同一 \(T\) 对所有变体。</li>
+<li>改了措辞（不只是换了顺序）却不承认这是换了条件：措辞变了就是新的 prompt，两个结果不构成"对照实验"。</li>
+<li>超长 prompt 截断后还说"示例只加到 \(k\)"：被上下文窗口截掉的示例<strong>不是没写，是写了但模型看不到</strong>；此时条件实际上是 \(\tilde s\neq s\)。</li>
+</ul>
+</div>
+<div class="note">
+<b>直觉</b>
+条件概率像一份"给定前提下的结论"。前提变了，结论变了，这叫逻辑；前提没变结论却变了，那才叫不可靠。ICL 的位置偏置属于前者——你把前提重排了，结论当然可以合理地不同。
+</div>
+
+<h2 id="recap">本页小结</h2>
+<ul>
+<li><strong>10.1 是条件，不是优化。</strong>\(\hat y_{k+1}=f_{\text{LLM}}(\mathcal I\oplus\cdots\oplus f(x_{k+1},\_))\)，\(\Theta\) 全程冻结。</li>
+<li><strong>\(\oplus\) 是拼接。</strong>可结合、不可交换、长度可加；不存在"向量相加"的等价写法。</li>
+<li><strong>自回归展开</strong> \(P(y_{k+1}\mid\cdot)=\prod_t P(y_t\mid y_{&lt;t},\text{prompt})\) 说明示例改的是每个因子的<strong>条件</strong>，不是因子对应的函数。</li>
+<li><strong>贝叶斯视角</strong>把示例看成乘法证据：log-odds 随 \(k\) 加法累积并饱和，这就是"隐式 few-shot 梯度"比喻的定量内核。</li>
+<li><strong>统计学视角</strong>给出期望风险 \(R(D_k)\) 与偏差-方差分解，Jensen 不等式 \(\mathbb E[\ell]\ge\ell(\mathbb E)\) 说明"平均分"不能代表"最坏情况"。</li>
+<li><strong>信息论视角</strong>说明 RAG 是"加条件"，\(H(Y\mid x,R(x))=H(Y\mid x)-I(Y;R(x)\mid x)\)，且"检索到"不等于"被利用"。</li>
+<li><strong>位置偏置</strong>是条件概率对条件的正常敏感性 + argmax 的不连续性，正确对策是对顺序分布取期望并报方差。</li>
+</ul>
+</article>
+</main>
+<nav class="chapnav" aria-label="上下页导航"><div class="chapnav-inner">
+<a class="" href="13-ch09-dec-b.html"><span class="lbl">上一章</span><span class="nm">Chapter 9 · 2/2　第 9 章 · 解码与部署（2/2）</span></a><a class="next" href="15-ch12-eval-a.html"><span class="lbl">下一章</span><span class="nm">Chapter 12 · 1/2　第 12 章 · 评测（1/2）</span></a>
+</div></nav>
+<script src="../assets/katex/katex.min.js"></script>
+<script src="../assets/katex/auto-render.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

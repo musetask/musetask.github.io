@@ -1,0 +1,426 @@
+<section class="fml" id="eq-5-17">
+<h2><span class="num">(5.17)</span>Post-LN：归一化放在残差之后<a class="anchor" href="#eq-5-17">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.2.2 节 Normalization Position　<a href="../thellm/11-5-model-architecture.html#5-2-2-normalization-position">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0066.png" alt="原书公式 5.17"><span class="cap">原书公式 5.17</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \operatorname{Post\text{-}Norm}(\mathbf{x})=\operatorname{Norm}\bigl(\mathbf{x}+\operatorname{Sublayer}(\mathbf{x})\bigr) \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\mathbf{x}\)</td><td>子层输入，即第 \(l\) 层的隐藏状态 \(\mathbf{h}_l\)</td><td>\(\mathbb{R}^{H}\)</td></tr>
+<tr><td>\(\operatorname{Sublayer}(\mathbf{x})\)</td><td>子层本身的变换（多头注意力或前馈网络），可含内部非线性</td><td>\(\mathbb{R}^{H}\)</td></tr>
+<tr><td>\(\operatorname{Norm}\)</td><td>任意归一化模块（LayerNorm / RMSNorm），<strong>逐样本沿特征维</strong>做</td><td>把 \(\mathbb{R}^{H}\) 映到 \(\mathbb{R}^{H}\)</td></tr>
+<tr><td>\(\mathbf{h}_{l+1}\)</td><td>本层输出，也就是下一层的输入</td><td>\(\mathbb{R}^{H}\)</td></tr>
+<tr><td>\(f\)</td><td>简写：\(f=\operatorname{Sublayer}\)</td><td>\(\mathbb{R}^{H}\to\mathbb{R}^{H}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<p>本节的核心是<strong>雅可比链式法则的矩阵版本</strong>：若 \(\mathbf{y}=g(\mathbf{z})\) 且 \(\mathbf{z}=f(\mathbf{x})\)，则逐元素展开微分 \(\mathrm{d}\mathbf{y}=J_g\,\mathrm{d}\mathbf{z}=J_g J_f\,\mathrm{d}\mathbf{x}\)，其中 \(J_f=\frac{\partial\mathbf{z}}{\partial\mathbf{x}}\in\mathbb{R}^{H\times H}\) 是 \(f\) 的雅可比矩阵。由此 \(\frac{\partial\mathbf{y}}{\partial\mathbf{x}}=J_gJ_f\)。</p>
+<ol class="steps">
+<li><strong>把残差求和拆成两条支路。</strong>\(\mathbf{h}_l\) 以系数 \(+1\) 走"直连"支路，\(f(\mathbf{h}_l)\) 走"变换"支路，两条支路最后被 <em>同一个</em> \(\operatorname{Norm}\) 作用。因此整层是一个复合函数：\(\mathbf{h}_{l+1}=\operatorname{Norm}\bigl(\mathbf{h}_l+f(\mathbf{h}_l)\bigr)\)。</li>
+<li><strong>按链式法则逐段求导。</strong>令 \(\mathbf{u}=\mathbf{h}_l+f(\mathbf{h}_l)\)。对 \(\mathbf{h}_l\) 有两块贡献：一块来自 \(\mathbf{u}\) 对 \(\mathbf{h}_l\) 的直接偏导（由求导的线性性，等于恒等映射 \(I\)），另一块来自 \(f\)。所以</li>
+</ol>
+<div class="eq">
+\[ \frac{\partial \mathbf{h}_{l+1}}{\partial \mathbf{h}_l}=\underbrace{J_{\mathrm{Norm}}}_{\text{在 }\mathbf{u}\text{ 处求值}}\cdot\Bigl(\underbrace{I}_{\text{残差直连}}+\underbrace{\frac{\partial f}{\partial \mathbf{h}_l}}_{\text{子层支路}}\Bigr) \]
+</div>
+<ol class="steps" start="3">
+<li><strong>关键点：\(I\) 也穿过了 \(\operatorname{Norm}\) 的雅可比。</strong>很多直觉说法把 post-LN 当成"残差有直连，梯度不会消失"，这是错的——因为 \(\operatorname{Norm}\) 加法<strong>在求和之后</strong>，恒等项 \(I\) 并没有绕开归一化，它被 \(J_{\mathrm{Norm}}\) 从左边整体乘了一遍。写成完全展开的形式：\(J_{\mathrm{Norm}}+\;J_{\mathrm{Norm}}\frac{\partial f}{\partial\mathbf{h}_l}\)。</li>
+<li><strong>\(\operatorname{Norm}\) 的雅可比长什么样。</strong>对 LayerNorm，\(\hat x_i=\frac{x_i-\mu}{\sigma}\)、\(y_i=\gamma_i\hat x_i+\beta_i\)。把复合链 \(\mathbf{x}\to\mu,\sigma\to\hat{\mathbf{x}}\to\mathbf{y}\) 逐步求导（\(\mu=\frac{1}{H}\sum_k x_k\)，故 \(\frac{\partial\mu}{\partial x_j}=\frac1H\)；\(\frac{\partial\sigma}{\partial x_j}=\frac{1}{\sigma}\frac{\partial\sigma}{\partial x_j}\) 由 \(\sigma^2=\frac1H\sum_k(x_k-\mu)^2\) 求得 \(\frac{\partial\sigma^2}{\partial x_j}=\frac{2}{H\sigma}(x_j-\mu)\)），最终得到</li>
+</ol>
+<div class="eq">
+\[ \frac{\partial \hat x_i}{\partial x_j}=\frac{1}{\sigma}\Bigl(\delta_{ij}-\frac1H-\hat x_i\hat x_j\Bigr),\qquad J_{\mathrm{LN}}=\frac1H\mathbf{1}\mathbf{1}^{\top}-\frac1H\bigl(\mathbf{1}\hat{\mathbf{x}}^{\top}+\hat{\mathbf{x}}\mathbf{1}^{\top}\bigr)+\frac1{\sigma}\hat{\mathbf{x}}\hat{\mathbf{x}}^{\top} \]
+</div>
+<ol class="steps" start="4">
+<li><strong>这个矩阵的特征值结构（读懂上式最省力的方式）。</strong>把 \(\mathbb{R}^{H}\) 分成两个正交子空间：均值方向 \(\mathbf{1}\) 与去均值子空间 \(\{\mathbf{v}:\mathbf{1}^{\top}\mathbf{v}=0\}\)。在上式中若 \(\mathbf{v}=c\mathbf{1}\)，则 \(J_{\mathrm{LN}}\mathbf{v}=\frac{1}{\sigma}\mathbf{v}\)；若 \(\mathbf{1}^{\top}\mathbf{v}=0\)，直接逐项验证得 \(J_{\mathrm{LN}}\mathbf{v}=0\)。所以</li>
+</ol>
+<div class="eq">
+\[ \lambda(J_{\mathrm{LN}})=\Bigl\{\underbrace{\tfrac1\sigma}_{\text{特征向量 } \mathbf{1}\text{（常数方向）}},\;\underbrace{0}_{\text{特征向量 } \mathbf{1}^{\perp}\text{（去均值方向，共 } H-1 \text{ 个）}}\Bigr\} \]
+</div>
+<ol class="steps" start="5">
+<li><strong>一句话总结 LN 雅可比的作用：</strong>它把梯度里"只改变整体均值、不改变相对结构"的那 \(H-1\) 维分量<strong>完全归零</strong>，只保留"常数方向"上以 \(1/\sigma\) 缩放的那一份。于是 post-LN 里恒等通路的梯度实际被缩放了 \(\frac{1}{\sigma}\)。</li>
+<li><strong>所以深层 post-LN 的梯度要连乘 \(L\) 层。</strong>反向传播时 \(\frac{\partial L}{\partial \mathbf{h}_1}=\frac{\partial L}{\partial\mathbf{h}_{L+1}}\prod_{l=1}^{L}\Bigl(J_{\mathrm{Norm},l}+J_{\mathrm{Norm},l}\frac{\partial f_l}{\partial\mathbf{h}_l}\Bigr)\)。若每层的 \(J_{\mathrm{Norm}}\approx\frac{1}{\sigma}I\) 且 \(\sigma\) 稍大（初始化时归一化输出的方差被后续层放大），则每层恒等通路都乘一个小于 1 的因子，<strong>连乘 \(L\) 层就是指数衰减</strong>——这就是 post-LN 深层模型梯度消失、需要 warmup 与精细学习率调参的根源。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+post-LN 的结构是"先加后归一化"，相当于把残差这条主干<strong>也送进洗衣机洗了一遍</strong>。好处是每层输出都被强制拉回零均值单位方差，数值不会随深度漂移，训练早期收敛快、对超参不敏感；代价是恒等通路被洗过之后<strong>不再是恒等映射</strong>，梯度每层都掉一点，层数一多就撑不住。
+</div>
+<div class="warn"><b>易错点：post-LN 并不是"残差梯度直通"</b>
+常见误解是"有残差连接所以梯度不会消失"。这只对 pre-LN 成立（见 5.18）。post-LN 里 \(\frac{\partial\mathbf{h}_{l+1}}{\partial\mathbf{h}_l}\) 的恒等项被 \(J_{\mathrm{Norm}}\) 整体乘过，<strong>退化到浅层的恒等通路其实是 \(J_{\mathrm{Norm},L}\cdots J_{\mathrm{Norm},1}\neq I\)</strong>。要判断一条归一化位置好不好用，务必看 \(\frac{\partial\mathbf{h}_{l+1}}{\partial\mathbf{h}_l}\) 里 \(I\) 有没有被乘上别的矩阵。
+</div>
+<div class="relnav">相关：<a href="#eq-5-18">(5.18) Pre-LN</a>　<a href="#eq-5-19">(5.19) Sandwich-Norm</a>　<a href="03-ch05-arch-a.html#eq-5-9">(5.9) 编码器一层的残差写法</a>　<a href="03-ch05-arch-a.html#eq-5-12">(5.12) LayerNorm</a></div>
+</section>
+
+<section class="fml" id="eq-5-18">
+<h2><span class="num">(5.18)</span>Pre-LN：归一化放在子层之前<a class="anchor" href="#eq-5-18">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.2.2 节 Normalization Position　<a href="../thellm/11-5-model-architecture.html#5-2-2-normalization-position">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0067.png" alt="原书公式 5.18"><span class="cap">原书公式 5.18</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \operatorname{Pre\text{-}Norm}(\mathbf{x})=\mathbf{x}+\operatorname{Sublayer}\bigl(\operatorname{Norm}(\mathbf{x})\bigr) \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\mathbf{x}\)</td><td>子层输入 \(\mathbf{h}_l\)</td><td>\(\mathbb{R}^{H}\)</td></tr>
+<tr><td>\(\operatorname{Sublayer}\)</td><td>子层变换 \(f\)（MHA 或 FFN）</td><td>\(\mathbb{R}^{H}\to\mathbb{R}^{H}\)</td></tr>
+<tr><td>\(\operatorname{Norm}\)</td><td>只作用在<strong>送进子层的那一路</strong>上</td><td>逐样本沿特征维</td></tr>
+<tr><td>\(\mathbf{J}_l\)</td><td>第 \(l\) 层的整体雅可比 \(\frac{\partial\mathbf{h}_{l+1}}{\partial\mathbf{h}_l}\)</td><td>\(\mathbb{R}^{H\times H}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>唯一的差别：\(\operatorname{Norm}\) 移到了求和的<em>左边</em>、子层的<em>前面</em>。</strong>于是 \(\mathbf{h}_{l+1}=\mathbf{h}_l+f(\operatorname{Norm}(\mathbf{h}_l))\)。链式法则照旧给出三段：\(I\)（残差）、\(\frac{\partial f}{\partial(\cdot)}\)（子层）、\(\frac{\partial\operatorname{Norm}}{\partial(\cdot)}\)（归一化）。</li>
+<li><strong>按从右往左的复合顺序乘起来，\(I\) 落在最左边：</strong></li>
+</ol>
+<div class="eq">
+\[ \frac{\partial \mathbf{h}_{l+1}}{\partial \mathbf{h}_l}=\underbrace{I}_{\text{残差直连，绕开一切}}+\underbrace{\frac{\partial f}{\partial(\cdot)}\Bigr|_{\operatorname{Norm}(\mathbf{h}_l)}}\cdot\frac{\partial\,\operatorname{Norm}}{\partial(\cdot)}\Bigr|_{\mathbf{h}_l} \]
+</div>
+<ol class="steps" start="3">
+<li><strong>注意顺序：这里是 \(f\) 在<em>左</em>、\(\operatorname{Norm}\) 在<em>右</em>，与 post-LN 恰好相反。</strong>这就是本页最关键的一行对比。post-LN 是 \(J_{\mathrm{Norm}}(I+J_f)\)，恒等项被压在左边；pre-LN 是 \(I+J_fJ_{\mathrm{Norm}}\)，<strong>恒等项独立站在外面，完全不与任何雅可比相乘</strong>。</li>
+<li><strong>\(L\) 层连乘，看看会得到什么。</strong>复合函数求导就是把每层雅可比依次右乘：\(\mathbf{J}_{\mathrm{total}}=(\,I+J_L\cdots J_1\,)(\,I+J_{L-1}\cdots J_1\,)\cdots(I+J_1)\)。其中每个因子都含一个 \(I\)，展开乘积时<strong>只有"全选 \(I\)"的那一项等于 \(I\)</strong>，其余 \(2^L-1\) 项都是 \(J\) 的连乘（对应梯度走过了若干层子层）。</li>
+<li><strong>给一个具体数值例子。</strong>设所有层的 \(\mathbf{J}_l\) 都是对角矩阵且每个对角元为 \(-0.2\)（表示子层在数值上把信号反相并略微衰减；取对角是为了能用单个数字说清直觉，\(\mathbf{J}=\mathrm{diag}(-0.2)\) 就是 \(\mathbf{J}=-0.2I\)，允许出现这种一致性假设只为便于对比）。
+<ul>
+<li><strong>单层</strong>：\(\|\mathbf{J}_1\|=\|-0.2\mathbf{I}\|=0.2\)，所以 \(\|I+\mathbf{J}_1\|=\|(1-0.2)\mathbf{I}\|=0.8\)。</li>
+<li><strong>两层</strong>：\(\mathbf{J}_2\mathbf{J}_1=(-0.2)^2\mathbf{I}=0.04\mathbf{I}\)，于是 \(\|I+\mathbf{J}_2\mathbf{J}_1\|=\|(1+0.04)\mathbf{I}\|=1.04\)。</li>
+<li><strong>四层</strong>：\(\|I+\mathbf{J}_4\cdots\mathbf{J}_1\|=\|(1+0.2^{4})\mathbf{I}\|=1.0016\)。</li>
+<li><strong>十层</strong>：\(\|I+(-0.2)^{10}\mathbf{I}\|\approx 1.0000000102\)——<strong>逐层逼近恒等映射 \(I\)</strong>。反向传播到第一层时梯度几乎<strong>原封不动</strong>，这就是 pre-LN 训练稳定的直接原因。</li>
+</ul>
+对应的 post-LN：每层是 \(J_{\mathrm{Norm}}(I+J_l)\)。取 \(\|J_{\mathrm{Norm}}\|=0.5\)（即 \(\sigma\approx2\)，归一化输出的尺度大于 1，这在大模型里很常见），同样取 \(\|J_l\|=0.2\)，则单层 \(\|0.5(1-0.2)\|=0.4\)；两层 \(0.4\cdot0.4=0.16\)；四层 \(0.16^2=0.0256\)；十层 \(0.4^{10}\approx 1.0\times10^{-4}\)。<strong>同样深度下梯度缩了四个数量级</strong>——这就是"指数衰减"。反之若 \(\|J_{\mathrm{Norm}}\|\) 或 \(I+J_l\) 的范数大于 1，连乘 \(L\) 层就是指数爆炸。</li>
+<li><strong>pre-LN 也不是完美无缺：隐藏状态的范数会随深度线性增长。</strong>把层展开：\(\mathbf{h}_{L+1}=\mathbf{h}_1+\sum_{l=1}^{L}f(\operatorname{Norm}(\mathbf{h}_l))\)。每层子层输出都被 \(f(\cdot)\) 归一化<strong>输入</strong>控制住大小，但<strong>累加到残差主干上的绝对量</strong>不受控制，\(L\) 层累积下来 \(\|\mathbf{h}_L\|\) 可能涨到 \(\sqrt{L}\) 量级（若各层贡献近似独立）甚至更大，数值精度与后续层的相对更新量都会受影响。</li>
+<li><strong>解决办法：最后一层后再补一次归一化。</strong>所以 pre-LN 结构是 \(L\) 个 \(\bigl(\mathbf{h}_l+f(\operatorname{Norm}(\mathbf{h}_l))\bigr)\) 之后接一个 final \(\operatorname{LN}\)，LLaMA 用的是它的简化版 RMSNorm。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+把残差想象成一条水管。post-LN 把整条管子（含主干）接上稳压器再往下一层送，所以主干上的信号每层都被缩小一次；pre-LN 只给"支管"（子层）接稳压器，主干那根粗管<strong>直通到最后一层</strong>，中途只被加上一些有界的增量。于是无论多少层，主干都能把最初的信息原样送到出口——训练梯度因此永远够得着第一层。代价是主干水压越积越高，所以出口处要再装一个稳压器（final LayerNorm）。
+</div>
+<div class="warn"><b>易错点：pre-LN 的代价是隐藏状态范数随层增长</b>
+pre-LN 的 \(I\) 干净不代表可以省掉最后的归一化。由于残差不断累加，\(\mathbf{h}_L\) 的范数会随 \(L\) 增长，导致（a）fp16/bf16 下有效精度下降；（b）最终读出层看到的是尺度越来越大的输入。<strong>实现里必须有 final LayerNorm / RMSNorm</strong>，LLaMA 的 <code>self.norm</code> 就是它。另外，pre-LN 的输出分布"天然不归一"，所以它与 Post-LN 在同参数量下最终损失常有零点几的差距——稳定性是用峰值性能换来的。
+</div>
+<div class="relnav">相关：<a href="#eq-5-17">(5.17) Post-LN</a>　<a href="#eq-5-19">(5.19) Sandwich-Norm</a>　<a href="#eq-5-23">(5.23) SwiGLU</a>　<a href="03-ch05-arch-a.html#eq-5-14">(5.14) RMSNorm</a></div>
+</section>
+
+<section class="fml" id="eq-5-19">
+<h2><span class="num">(5.19)</span>Sandwich-Norm：残差前后各一次归一化<a class="anchor" href="#eq-5-19">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.2.2 节 Normalization Position　<a href="../thellm/11-5-model-architecture.html#5-2-2-normalization-position">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0068.png" alt="原书公式 5.19"><span class="cap">原书公式 5.19</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \operatorname{Sandwich\text{-}Norm}(\mathbf{x})=\mathbf{x}+\operatorname{Norm}\Bigl(\operatorname{Sublayer}\bigl(\operatorname{Norm}(\mathbf{x})\bigr)\Bigr) \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\mathbf{x}\)</td><td>子层输入 \(\mathbf{h}_l\)</td><td>\(\mathbb{R}^{H}\)</td></tr>
+<tr><td>\(\operatorname{Norm}\)</td><td>LayerNorm（或 RMSNorm）</td><td>逐样本沿特征维</td></tr>
+<tr><td>\(\operatorname{Sublayer}\)</td><td>子层变换 \(f\)</td><td>\(\mathbb{R}^{H}\to\mathbb{R}^{H}\)</td></tr>
+<tr><td>\(L_{\mathrm{sand}}\)</td><td>中间宽度的缩写：中间维度</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>它就是 pre-LN 再套一层 post-LN。</strong>注意外层的 \(\operatorname{Norm}\) 在<strong>残差求和之后</strong>（这是相对 5.18 的唯一新增部分），内层的 \(\operatorname{Norm}\) 在子层之前。所以一层里出现了两次归一化、两次非线性机会。</li>
+<li><strong>求导：四段链式法则。</strong>记内层归一化的雅可比为 \(\mathbf{A}=J_{\mathrm{Norm}}(\mathbf{h}_l)\)，子层为 \(\mathbf{B}=J_f(\operatorname{Norm}(\mathbf{h}_l))\)，外层归一化在 \(\mathbf{h}_l+f(\operatorname{Norm}(\mathbf{h}_l))\) 处的雅可比为 \(\mathbf{C}\)。逐段相乘：</li>
+</ol>
+<div class="eq">
+\[ \frac{\partial \mathbf{h}_{l+1}}{\partial \mathbf{h}_l}=I+\underbrace{\mathbf{C}}_{\text{外层 LN}}\Bigl(I+\underbrace{\mathbf{B}}_{\text{子层}}\underbrace{\mathbf{A}}_{\text{内层 LN}}\Bigr)=I+\mathbf{C}+\mathbf{C}\mathbf{B}\mathbf{A} \]
+</div>
+<ol class="steps" start="3">
+<li><strong>结论一：梯度通路仍然是干净的。</strong>恒等项 \(I\) 依然在<strong>最左边不被任何矩阵乘</strong>（外层 LN 加在支路上，和 pre-LN 一样），所以深层不会指数衰减。</li>
+<li><strong>结论二：数值输出被双重夹逼。</strong>内层 LN 把送进子层的输入夹到零均值单位方差，外层 LN 把每层输出（\(\mathbf{h}_l\) 与子层增量之和）重新夹回去。所以 sandwich-norm 下 \(\|\mathbf{h}_{l+1}\|\) 不会像纯 pre-LN 那样随层增长——这正是它提出的动机：<strong>防止 Transformer 层输出的数值爆炸</strong>，同时在深层预训练里表现更好。</li>
+<li><strong>结论三：代价。</strong>每层多了两次归一化（计算与显存开销约翻倍），而且外层 LN 让每层输出都被重新缩放，等价于每层都施加了一次"强约束"，可能限制残差主干自由累积信息的能力。原书明确指出：<strong>Sandwich-Norm 有时反而不能保证训练稳定，甚至出现训练崩塌</strong>。GPT-2 时代的 sandwich-norm 论文（Fan et al.）结论是"层数少时更好，深层反而不如纯 pre-LN"。</li>
+<li><strong>落到实践。</strong>今天的 LLaMA / GPT-3 / BLOOM 全部用 pre-LN（或 RMSNorm 版 pre-norm）， sandwich-norm 已被放弃。DeepNorm 则是另一条路：保留 post-LN 结构但给恒等支路加超参系数（见 <a href="03-ch05-arch-a.html#eq-5-16">5.16</a>）。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+pre-LN 是"只给支管装稳压器"，sandwich-norm 是"给支管装、还把主干出口也装一个"。好处是主干不会越积越大、每层输出尺度统一；坏处是<strong>每层出口都被强制拉回标准尺度，主干想自由累积信息也做不到</strong>——训练后期容易僵住。三种归一化位置本质上是在"梯度的干净程度"与"隐藏状态尺度的自由度"之间做取舍：post-LN 要梯度不干净但尺度可控，pre-LN 梯度干净但尺度会漂，sandwich-norm 两者都想管反而两头都不够好。
+</div>
+<div class="warn"><b>易错点：sandwich-norm 不是简单的"pre+post"</b>
+它不是把 pre-LN 和 post-LN 串成两个独立模块，而是在同一层里放两次归一化（一次在子层前、一次在残差后）。因为外层 LN 位于求和之后，梯度通路仍然是 pre-LN 型的干净恒等通路；<strong>外层 LN 影响的是前向的尺度约束，不影响梯度是否消失</strong>。另外原书明确记录了 sandwich-norm 可能训练崩塌的实验现象，不要把它当成"更好的 pre-LN"。
+</div>
+<div class="relnav">相关：<a href="#eq-5-17">(5.17) Post-LN</a>　<a href="#eq-5-18">(5.18) Pre-LN</a>　<a href="03-ch05-arch-a.html#eq-5-16">(5.16) DeepNorm</a></div>
+</section>
+
+<section class="fml" id="eq-5-20">
+<h2><span class="num">(5.20)</span>ReLU：修正线性单元<a class="anchor" href="#eq-5-20">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.2.3 节 Activation Function　<a href="../thellm/11-5-model-architecture.html#5-2-3-activation-function">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0069.png" alt="原书公式 5.20"><span class="cap">原书公式 5.20</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \operatorname{ReLU}(x)=\max\bigl\{x,\,0\bigr\}=\begin{cases} x, &amp; x&gt;0\\[4pt] 0, &amp; x\le 0\end{cases} \]
+</div>
+<div class="eq">
+\[ \operatorname{ReLU}'(x)=\frac{d}{dx}\max\{x,0\}=\begin{cases} 1, &amp; x&gt;0\\[4pt] 0, &amp; x&lt;0\end{cases}\qquad\text{（在 }x=0\text{ 处不可导）} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(x\)</td><td>单个神经元（或 FFN 中间维度的一个分量）的输入</td><td>标量 \(\mathbb{R}\)</td></tr>
+<tr><td>\(\operatorname{ReLU}(x)\)</td><td>该神经元的输出</td><td>标量 \(\mathbb{R}\)，恒 \(\ge 0\)</td></tr>
+<tr><td>\(\delta_{ij}\)</td><td>Kronecker delta：\(i=j\) 时为 1，否则 0</td><td>标量</td></tr>
+<tr><td>\(J_{\mathrm{ReLU}}\)</td><td>对角雅可比矩阵，第 \(i\) 个对角元为 \(\operatorname{ReLU}'(x_i)\)</td><td>\(\mathbb{R}^{d\times d}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>逐段求导（最朴素的分段函数求导法）。</strong>在区间 \(x&gt;0\) 上 \(f(x)=x\)，导数 \(f'(x)=1\)；在 \(x&lt;0\) 上 \(f(x)\equiv 0\) 是常数，导数 \(f'(x)=0\)。</li>
+<li><strong>\(x=0\) 处为什么不可导：</strong>单侧导数不等。左导数 \(\lim_{h\to 0^-}\frac{0-0}{h}=0\)，右导数 \(\lim_{h\to 0^+}\frac{h-0}{h}=1\)。因为 \(0\ne 1\)，极限不存在，所以不可导。</li>
+<li><strong>工程上怎么处理这个不可导点：</strong>取次梯度（subgradient），约定 \(\operatorname{ReLU}'(0)\in[0,1]\)；PyTorch 实现取 \(\operatorname{ReLU}'(0)=0\)。实践中落在恰好为 0 的概率测度为零，影响可忽略。</li>
+<li><strong>导数结构 → 两个重要现象。</strong>因为导数只取 \(0/1\) 两个值，\(J_{\mathrm{ReLU}}\) 是一个 0-1 对角矩阵（投影矩阵），不改变梯度方向、只做"开关"：正激活的通道梯度<strong>原样通过</strong>，负激活的通道梯度<strong>被完全截断为 0</strong>。</li>
+<li><strong>现象一：死神经元（dying ReLU）。</strong>若某个神经元在所有训练样本上都被截断为 \(0\)，那么反向时 \(\frac{\partial \mathcal{L}}{\partial \text{bias}}=\sum \frac{\partial\mathcal{L}}{\partial y}\cdot 0=0\)——它<strong>的偏置没有任何梯度</strong>，永远学不会重新变为正，此后永久死亡。成因：初始化偏置过负 + 学习率过大导致一步把它推到负区间深处；一旦 \(x+b\ll 0\) 就没有恢复的梯度。这就是为什么实践中要小心偏置初始化与 warmup。</li>
+<li><strong>现象二：输出均值偏移。</strong>恒等初始化下若 \(\mathbf{x}\) 零均值对称，\(\operatorname{ReLU}\) 会把负半轴全部折到 0，导致输出均值 \(&gt;0\) 且方差减半。这个常数偏移本身无害，但由于 ReLU 的分段不光滑，<strong>下一层必须自己学一个偏置去抵消它</strong>。更麻烦的是：这个偏移量随输入分布变化而变化，如果输入统计量随 batch 波动（比如没做归一化），输出统计量也跟着波动。<strong>解决办法就是后接 BatchNorm</strong>（或直接用 Pre-LN 的 LayerNorm 兜住），把均值/方差拉回受控范围。</li>
+<li><strong>对比：ReLU 的优点。</strong>正半轴导数恒为 1，<strong>不衰减</strong>（对比 tanh/sigmoid 在正半轴导数指数变小），计算只需一次比较 + 一次选择，无指数/除法，前向反向都是 O(1) 且极其适合向量化与 GPU。这些优点使它在原版 Transformer 与早期 LLM（GPT-2、OPT）里是默认选择。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+ReLU 就是一个"只放行正数"的阀门：正数原样通过（并保持 1 倍增益），负数一律憋成 0。正因为正半轴是恒等映射，梯度在正区间不会像 tanh 那样越传越小——这是它在深度网络里曾统治地位的原因。代价是负半轴完全无梯度，所以神经元一旦被误杀就再也醒不过来。
+</div>
+<div class="warn"><b>易错点：三件事常被搞混</b>
+（1）\(\operatorname{ReLU}'(0)\) 没有定义，代码里取 0，不要写成"导数处处为 1"；（2）ReLU 的导数是<strong>逐元素</strong>的（对角阵），不是把整层梯度矩阵乘一次就行的"标量"；（3）"ReLU 输出均值偏正"是<strong>需要下游归一化来吸收</strong>的，不要在 ReLU 之后直接接 softmax 而不做归一化。
+</div>
+<div class="relnav">相关：<a href="#eq-5-21">(5.21) Swish / SiLU</a>　<a href="#eq-5-22">(5.22) GELU</a>　<a href="03-ch05-arch-a.html#eq-5-8">(5.8) 前馈网络</a></div>
+</section>
+
+<section class="fml" id="eq-5-21">
+<h2><span class="num">(5.21)</span>Swish / SiLU：\(x\cdot\sigma(\beta x)\)<a class="anchor" href="#eq-5-21">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.2.3 节 Activation Function　<a href="../thellm/11-5-model-architecture.html#5-2-3-activation-function">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0070.png" alt="原书公式 5.21"><span class="cap">原书公式 5.21</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \operatorname{Swish}(x)=x\cdot\operatorname{sigmoid}(x)=x\cdot\sigma(x),\qquad \operatorname{SiLU}(x)=x\cdot\sigma(x)=\operatorname{Swish}_{\beta=1}(x) \]
+</div>
+<div class="eq">
+\[ \operatorname{Swish}_{\beta}(x)=x\cdot\sigma(\beta x),\qquad \beta=0 \Rightarrow \tfrac{x}{2};\quad \beta\to+\infty \Rightarrow \max\{x,0\}=\operatorname{ReLU} \]
+</div>
+<div class="eq">
+\[ \operatorname{Swish}'(x)=\sigma(\beta x)+\beta x\,\sigma(\beta x)\bigl(1-\sigma(\beta x)\bigr) \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(x\)</td><td>神经元输入</td><td>标量 \(\mathbb{R}\)</td></tr>
+<tr><td>\(\sigma(z)\)</td><td>sigmoid 函数 \(\frac{1}{1+e^{-z}}\)，值域 \((0,1)\)</td><td>标量函数</td></tr>
+<tr><td>\(\beta\)</td><td>形状（shape）参数，控制门控的陡峭程度</td><td>标量；\(\beta=1\) 即 SiLU，\(\beta\) 常取可学习或固定 \(1\)</td></tr>
+<tr><td>\(\operatorname{Swish}_\beta\)</td><td>带形状参数的 Swish 族（Ramachandran et al., 2017）</td><td>标量函数</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>sigmoid 的导数先推出来（后面 ReLU 之外的平滑激活都要用）。</strong>\(\sigma(z)=\frac{1}{1+e^{-z}}\)。对 \(z\) 求导：设 \(u=e^{-z}\)，\(\sigma=\frac{1}{1+u}\)，\(\frac{d\sigma}{dz}=-\frac{1}{(1+u)^2}\cdot\frac{du}{dz}=-\frac{1}{(1+u)^2}\cdot(-e^{-z})=\frac{e^{-z}}{(1+e^{-z})^2}\)。整理成 \(\sigma\) 的形式：\(\frac{e^{-z}}{(1+e^{-z})^2}=\frac{1}{1+e^{-z}}\cdot\frac{e^{-z}}{1+e^{-z}}=\sigma(z)\bigl(1-\sigma(z)\bigr)\)。故 \(\boxed{\sigma'(z)=\sigma(z)(1-\sigma(z))}\)。</li>
+<li><strong>乘积法则。</strong>对 \(\operatorname{Swish}_\beta(x)=x\cdot\sigma(\beta x)\) 求导，把 \(x\) 和 \(\sigma(\beta x)\) 当两个因子：\(\frac{d}{dx}\bigl[x\,\sigma(\beta x)\bigr]=1\cdot\sigma(\beta x)+x\cdot\sigma'(\beta x)\cdot\beta\)。</li>
+<li><strong>代入链式法则。</strong>\(\sigma(\beta x)\) 对 \(x\) 的导数是 \(\sigma'(\beta x)\cdot\frac{d(\beta x)}{dx}=\sigma'(\beta x)\beta\)。再代入第 1 步的结论：</li>
+</ol>
+<div class="eq">
+\[ \operatorname{Swish}_\beta'(x)=\sigma(\beta x)+\beta x\,\sigma(\beta x)\bigl(1-\sigma(\beta x)\bigr)=\sigma(\beta x)\Bigl[1+\beta x\bigl(1-\sigma(\beta x)\bigr)\Bigr] \]
+</div>
+<ol class="steps" start="4">
+<li><strong>单调性分析：为什么说它"非单调"。</strong>令 \(\beta&gt;0\)。函数 \(f(x)=x\sigma(\beta x)\) 在负半轴是<strong>负值</strong>（\(x&lt;0\)、\(\sigma&gt;0\)），且两端行为不同：\(x\to-\infty\) 时 \(\sigma(\beta x)\to0\) 快于 \(x\) 线性增长，故 \(f(x)\to0^{-}\)；\(f(0)=0\)。所以负半轴上 \(f\) 从 \(0^{-}\) 出发、下降、再<strong>回升到 \(0\)</strong>，中间有一个<strong>极小值</strong>。求极值点：令 \(f'(x)=0\)，即 \(\sigma(\beta x)[1+\beta x(1-\sigma(\beta x))]=0\)。因 \(\sigma(\beta x)&gt;0\) 恒成立，只需解 \(1+\beta x(1-\sigma(\beta x))=0\)。记 \(u=\beta x\)，用 \(1-\sigma(u)=\frac{e^{-u}}{1+e^{-u}}=\frac{1}{1+e^{u}}\)，方程化为 \(1+\frac{u}{1+e^{u}}=0\Rightarrow 1+e^{u}+u=0\)。这个方程在 \(u\approx-1.2785\) 处有一个根（把 \(e^u\) 在 \(u=-1.28\) 附近展开 \(e^u\approx1+u+\frac{u^2}{2}\) 试值 \(1+1+u+u+\frac{u^2}{2}=0\Rightarrow \frac{u^2}{2}+2u+2=0\Rightarrow u=-2\pm\sqrt2\)，取 \(u\approx-1.28\) 验证 \(e^{-1.28}\approx0.278\) 使 \(1+0.278-1.28\approx-0.002\)，吻合）。于是极小值点 \(x^{*}\approx\frac{1.2785}{\beta}\approx-1.2785\)（\(\beta=1\)），极小值 \(\approx(-1.2785)\times\sigma(-1.2785)\approx-1.2785\times0.218=-0.278\)。</li>
+<li><strong>结论。</strong>Swish 是 \(S\) 形但<strong>非单调</strong>（不像 tanh/sigmoid 那样严格单调），它在负半轴<strong>保留了一小块负输出</strong>（约 \(-0.278\) 到 \(0\) 之间），且负半轴的导数可以为负。这带来两个好处：（a）平滑（\(C^\infty\)）、处处可导，没有 ReLU 那种不可导点，死神经元问题大幅缓解；（b）负半轴不输出硬 0，因此仍能表达"轻度抑制"，比 ReLU 的信息量更大。</li>
+<li><strong>两个端点极限说明它是一个"ReLU 的光滑插值"。</strong>\(\beta=0\)：\(\sigma(0)=\frac12\)，故 \(\operatorname{Swish}_0(x)=\frac{x}{2}\)（线性，不非线性）。\(\beta\to\infty\)：\(x&gt;0\) 时 \(\sigma(\beta x)\to1\) 得 \(x\)；\(x&lt;0\) 时 \(\sigma(\beta x)\to0\) 得 \(0\)；\(x=0\) 时为 0。即 \(\operatorname{Swish}\to\operatorname{ReLU}\)。所以 Swish 可以看作"用 sigmoid 软门控替换硬门控"——这正是它的命名含义：<strong>x 是信息，\(\sigma(\beta x)\) 是门</strong>。</li>
+<li><strong>和 sigmoid 的对比。</strong>直接用 \(\sigma(x)\) 会让负半轴输出恒正（均值偏移，ReLU 同款问题），且 \(\sigma'(x)\le\frac14\) 使梯度上限被压到 0.25。乘上 \(x\) 之后，正半轴导数 \(\to 1\)（\(x\to+\infty\) 时 \(\sigma\to1\)、第二项有界，导数 \(\to1\)），<strong>梯度上限回到了 1</strong>，这个性质让 Swish 在深层网络中比 sigmoid 好训。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+Swish 就是一个<strong>自己控制自己开多大</strong>的门：\(x\) 正得越多，门 \(\sigma(\beta x)\) 开得越大（乘 \(x\) 增益也就越大）；\(x\) 为负时门几乎全关，但还留一条缝（输出 \(-0.278\sim0\) 的微弱负信号）。相比 ReLU 的"非黑即白"，Swish 的门是<strong>渐变渐开</strong>的，所以梯度不会一步归零。也正因如此，Swish 被称为"自门控激活函数（self-gated activation）"——门控信号就是输入自己。
+</div>
+<div class="warn"><b>易错点：\(\beta\) 的角色与数值</b>
+原书公式写的是 \(x\cdot\operatorname{sigmoid}(x)\)，即固定 \(\beta=1\)（这正是 SiLU 的定义，LLaMA 用的就是它）。社区里 \(\beta\) 常作为<strong>可学习参数</strong>并初始化为 1。学习得到的 \(\beta\) 可能为负，那时函数失去 S 形性质；论文里的经验是 \(\beta\) 通常收敛到 \(0.5\sim1.5\) 附近——<strong>这是实验观察，不是理论保证</strong>。另外 Swish 需要算指数，<strong>比 ReLU 慢</strong>（但可被融合算子近似加速）。
+</div>
+<div class="relnav">相关：<a href="#eq-5-20">(5.20) ReLU</a>　<a href="#eq-5-22">(5.22) GELU</a>　<a href="#eq-5-23">(5.23) SwiGLU</a></div>
+</section>
+
+<section class="fml" id="eq-5-22">
+<h2><span class="num">(5.22)</span>GELU：高斯误差线性单元<a class="anchor" href="#eq-5-22">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.2.3 节 Activation Function　<a href="../thellm/11-5-model-architecture.html#5-2-3-activation-function">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0071.png" alt="原书公式 5.22"><span class="cap">原书公式 5.22</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \operatorname{GELU}(x)=0.5x\cdot\bigl[1+\operatorname{erf}(x/\sqrt{2})\bigr],\qquad \operatorname{erf}(x)=\frac{2}{\sqrt{\pi}}\int_{0}^{x}e^{-t^{2}}\,dt \]
+</div>
+<div class="eq">
+\[ \operatorname{GELU}(x)=x\cdot\Phi(x),\qquad \Phi(x)=\int_{-\infty}^{x}\frac{e^{-t^{2}/2}}{\sqrt{2\pi}}\,dt \ \ \text{（标准正态 CDF）} \]
+</div>
+<div class="eq">
+\[ \operatorname{GELU}_{\tanh}(x)\approx\frac{x}{2}\Bigl[1+\tanh\bigl(\tfrac{\sqrt{2}{\pi}}{\pi}(x+0.044715x^{3})\bigr)\Bigr] \quad \text{（tanh 近似，工程常用）} \]
+</div>
+<div class="eq">
+\[ \operatorname{GELU}'(x)=\Phi(x)+x\,\phi(x),\qquad \phi(x)=\frac{e^{-x^{2}/2}}{\sqrt{2\pi}} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(x\)</td><td>神经元输入</td><td>标量 \(\mathbb{R}\)</td></tr>
+<tr><td>\(\operatorname{erf}(x)\)</td><td>误差函数（error function），\(\operatorname{erf}(+\infty)=1\)、\(\operatorname{erf}(-\infty)=-1\)、\(\operatorname{erf}(0)=0\)</td><td>标量函数，值域 \((-1,1)\)</td></tr>
+<tr><td>\(\Phi(x)\)</td><td>标准正态分布的累积分布函数</td><td>标量函数，值域 \((0,1)\)</td></tr>
+<tr><td>\(\phi(x)\)</td><td>标准正态分布的概率密度</td><td>标量函数，\(\max\phi=\frac{1}{\sqrt{2\pi}}\approx0.399\)</td></tr>
+<tr><td>\(0.044715\)</td><td>tanh 近似的拟合系数（<strong>经验拟合常数，非推导所得</strong>）</td><td>标量</td></tr>
+<tr><td>\(\tanh\)，\(\sqrt{2/\pi}\)</td><td>双曲正切与它的缩放</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>把 \(\operatorname{erf}\) 与 \(\Phi\) 的关系推出来。</strong>定义 \(\Phi(x)=\int_{-\infty}^{x}\phi(t)\,dt\)，其中 \(\phi(t)=\frac{1}{\sqrt{2\pi}}e^{-t^{2}/2}\)。注意到 \(e^{-t^{2}/2}=e^{-(t/\sqrt2)^2}\)。做变量代换 \(s=t/\sqrt2\)，即 \(t=\sqrt2\,s\)、\(\mathrm{d}t=\sqrt2\,\mathrm{d}s\)，积分下限 \(-\infty\to-\infty\)：</li>
+</ol>
+<div class="eq">
+\[ \Phi(x)=\frac{1}{\sqrt{2\pi}}\int_{-\infty}^{x}e^{-t^{2}/2}\mathrm{d}t=\frac{1}{\sqrt{2\pi}}\int_{-\infty}^{x}\sqrt2\,e^{-s^{2}}\mathrm{d}s=\frac{1}{\sqrt\pi}\int_{-\infty}^{x}e^{-s^{2}}\mathrm{d}s \]
+</div>
+<ol class="steps" start="2">
+<li><strong>用 erf 的对称性 \(\int_{-\infty}^{0}e^{-s^{2}}\mathrm{d}s=-\int_{0}^{\infty}e^{-s^{2}}\mathrm{d}s=-\frac{\sqrt\pi}{2}\)。</strong>（这一步用到偶函数性质 \(e^{-s^{2}}\) 是偶的，且 \(\int_{0}^{\infty}e^{-s^{2}}\mathrm{d}s=\frac{\sqrt\pi}{2}\) 是标准高斯积分。）于是</li>
+</ol>
+<div class="eq">
+\[ \Phi(x)=\frac{1}{\sqrt\pi}\Bigl[-\frac{\sqrt\pi}{2}+\int_{0}^{x}e^{-s^{2}}\mathrm{d}s\Bigr]=\frac12+\frac12\cdot\frac{2}{\sqrt\pi}\int_{0}^{x}e^{-s^{2}}\mathrm{d}s=\frac12\bigl[1+\operatorname{erf}(x)\bigr] \]
+</div>
+<ol class="steps" start="3">
+<li><strong>代回即得原书公式。</strong>原书写 \(\operatorname{GELU}(x)=0.5x[1+\operatorname{erf}(x/\sqrt2)]\)，把上一行的 \(x\) 换成 \(x/\sqrt2\)：\(\Phi(x/\sqrt2)=\frac12[1+\operatorname{erf}(x/\sqrt2)]\)，所以 \(0.5x[1+\operatorname{erf}(x/\sqrt2)]=x\cdot\Phi(x/\sqrt2)\)……注意这里的自变量差别：标准定义 \(\operatorname{GELU}(x)=x\Phi(x)\) 用的是 \(\Phi(x)\)，与原书 erf 形式等价（因为 \(\Phi(z)=\frac12[1+\operatorname{erf}(z/\sqrt2)]\)，取 \(z=x\) 即得 \(\operatorname{GELU}(x)=\frac{x}{2}[1+\operatorname{erf}(x/\sqrt2)]\)）。<strong>两条式子完全等价</strong>，只是 erf 形式更适合看代码（erf 有高效实现）。</li>
+<li><strong>求导（乘积法则 + \(\Phi'=\phi\)）。</strong>\(\frac{d}{dx}[x\Phi(x)]=1\cdot\Phi(x)+x\cdot\Phi'(x)=\Phi(x)+x\phi(x)\)。</li>
+<li><strong>非单调性与"软门控"含义。</strong>与 Swish 同理，\(x&lt;0\) 时 \(x\Phi(x)&lt;0\)（\(\Phi&gt;0\)），且 \(x\to-\infty\) 时 \(\Phi(x)\to0\) 指数快于 \(x\) 线性增长，故 \(x\Phi(x)\to0^{-}\)；\(x=0\) 时为 0。所以负半轴上函数从 \(0^{-}\) 下探到极小值再回到 0，<strong>非单调</strong>。极小值点由 \(\Phi(x)+x\phi(x)=0\) 决定，约在 \(x\approx-0.752\)，极小值 \(\approx-0.17\)。</li>
+<li><strong>"软门控"的解释。</strong>把 GELU 读成 \(\operatorname{GELU}(x)=x\cdot\underbrace{\Phi(x)}_{\text{门}}\)。门 \(\Phi(x)\) 是"随机变量 \(Z\sim\mathcal{N}(0,1)\) 落在 \(x\) 以下的概率"：\(x=0\) 时门开度 0.5（对半砍），\(x\to+\infty\) 时门全开（1），\(x\to-\infty\) 时门全关（0）。相比 ReLU 的硬门（0/1 跳变），GELU 的门<strong>随输入连续变化</strong>，且在负半轴留了 \(\approx-0.17\) 的负值尾——这让网络能表达"轻微抑制"而不是只有"完全丢弃"。</li>
+<li><strong>tanh 近似从哪来（用泰勒展开说明动机）。</strong>对 \(x\Phi(x)\) 在 \(x=0\) 处做泰勒展开：\(\phi(x)=\frac{1}{\sqrt{2\pi}}e^{-x^{2}/2}=\frac{1}{\sqrt{2\pi}}\bigl(1-\frac{x^{2}}{2}+\frac{x^{4}}{8}-\cdots\bigr)\)（用 \(e^u=1+u+\frac{u^2}{2}+\cdots\)，取 \(u=-x^2/2\)）；\(\Phi(x)=\int_{-\infty}^{0}\phi+\int_{0}^{x}\phi=\frac12+\frac{1}{\sqrt{2\pi}}\bigl(x-\frac{x^3}{6}+\frac{x^5}{40}-\cdots\bigr)\)。故</li>
+</ol>
+<div class="eq">
+\[ \operatorname{GELU}(x)=\frac{x}{2}+\frac{1}{\sqrt{2\pi}}\Bigl(x^{2}-\frac{x^{4}}{6}+\frac{x^{6}}{40}-\cdots\Bigr) \]
+</div>
+<ol class="steps" start="8">
+<li><strong>所以 GELU 在原点附近是"线性 + 偶次修正"，并不是奇函数。</strong>原书 erf 形式用的 \(\tanh\) 之所以比 \(\operatorname{erf}\) 便宜，是因为 \(\tanh z=\frac{e^{2z}-1}{e^{2z}+1}\) 只需一次 exp，而 \(\operatorname{erf}\) 通常要凑 erf 的多项式近似；两者在 GPU 上的实际差距不大，但 \(\tanh\) 形式可用 \(\tanh\) 融合算子并<strong>避免 \(\operatorname{erf}\) 的分段多项式在某些硬件上的精度问题</strong>。</li>
+<li><strong>为什么用三次项修正 \(\tanh\) 的参数而不是直接泰勒匹配。</strong>做法是把 \(\tanh\) 写为 \(\tanh(c(x+0.044715x^3))\)，先让内层 \(c(x+a x^{3})\) 的 <em>奇次</em>结构去近似 \(\Phi(x)\) 的奇次展开（\(\Phi\) 的主导奇次项是 \(\frac{1}{\sqrt{2\pi}}x\)，加上内层 \(x^3\) 提供第三个自由度），再用外层 \(\frac{x}{2}[1+\tanh(\cdot)]\) 保证函数保持"过原点、近似恒等、负半轴单调下降"的行为。<strong>系数 \(\sqrt{2/\pi}\) 与 \(a=0.044715\) 是用最小二乘在 \([-4,4]\) 上拟合出来的经验值</strong>，最大绝对误差 \(\approx1.9\times10^{-4}\)。它不是任何定理的产物，换拟合区间就会变。</li>
+<li><strong>导数比较。</strong>GELU 的导数 \(\Phi(x)+x\phi(x)\) 恒有界（\(|x|\phi(x)\le\frac{1}{\sqrt{2\pi e}}\approx0.242\)，且 \(\Phi\in(0,1)\)），上界为 1（\(x\to+\infty\) 时 \(\Phi\to1\)），下界约 \(-0.13\)（在极小值点处取到）。所以 GELU 的梯度既不会像 sigmoid 那样被压到 0.25 以下，也不会像 ReLU 那样在负半轴被硬截断为 0。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+GELU 的名字里有 "Error"，指 \(\operatorname{erf}\)；"Gaussian" 指 \(\Phi\)。它做的是"按输入的<strong>绝对值大小</strong>决定保留多少"：\(x=+1\) 时 \(\Phi(1)\approx0.84\)，输出 \(0.84\)（基本原样通过）；\(x=-1\) 时 \(\Phi(-1)\approx0.16\)，输出 \(-0.16\)（轻度抑制）；\(x=-3\) 时 \(\Phi(-3)\approx0.0013\)，输出几乎为 0（彻底关掉）。可以想象成"输入被加了一层高斯噪声后经过一个硬 ReLU 的期望"：\(\operatorname{GELU}(x)=\mathbb{E}\bigl[\operatorname{ReLU}(x+Z)\bigr]\)，其中 \(Z\sim\mathcal{N}(0,1)\)。这解释了它为什么比 ReLU 更平滑、更容易训。
+</div>
+<div class="note"><b>精确式 vs tanh 近似式：用哪个</b>
+精确式 \(\operatorname{GELU}(x)=x\Phi(x)\) 与 tanh 近似式数值上几乎一致（误差 \(10^{-4}\) 量级），但：
+<ul>
+<li><strong>近似式更便宜</strong>：只需 1 次 exp + 1 次 tanh，近似式的融合核在 GPU 上更快；</li>
+<li><strong>近似式更数值稳定</strong>：\(\tanh\) 饱和行为良好，不会像 \(e^{-x^2/2}\) 在 \(|x|\) 大时发生下溢相关的精度损失；</li>
+<li>但 <strong>近似式是经验拟合</strong>，没有 \(\Phi\) 的概率解释，反向传播里也无法自然地推广到概率视角。</li>
+</ul>
+GPT-2/OPT/BLOOM 用近似式，LLaMA 用精确式（配合 <code>erf</code>），而 Gemma 用的是精确式 GELU 的 tanh 变体。
+</div>
+<div class="relnav">相关：<a href="#eq-5-21">(5.21) Swish / SiLU</a>　<a href="#eq-5-24">(5.24) GeGLU</a>　<a href="#eq-5-20">(5.20) ReLU</a></div>
+</section>
+
+<section class="fml" id="eq-5-23">
+<h2><span class="num">(5.23)</span>SwiGLU：Swish 门控线性单元<a class="anchor" href="#eq-5-23">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.2.3 节 Activation Function　<a href="../thellm/11-5-model-architecture.html#5-2-3-activation-function">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0072.png" alt="原书公式 5.23"><span class="cap">原书公式 5.23</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \operatorname{SwiGLU}(\mathbf{x})=\operatorname{Swish}\bigl(\mathbf{W}^{G}\mathbf{x}\bigr)\odot\bigl(\mathbf{W}^{U}\mathbf{x}\bigr) \]
+</div>
+<div class="eq">
+\[ =\bigl(\mathbf{W}^{G}\mathbf{x}\bigr)\odot\sigma\bigl(\mathbf{W}^{G}\mathbf{x}\bigr)\odot\bigl(\mathbf{W}^{U}\mathbf{x}\bigr) \]
+</div>
+<p>其中 \(\odot\) 是<strong>逐元素</strong>（Hadamard）乘积，\(\mathbf{W}^{G}\) 是"门"（Gate）投影、\(\mathbf{W}^{U}\) 是"内容"（Up / value）投影。完整的一层 FFN 还要再接下投影 \(\mathbf{W}^{D}\)：\(\operatorname{FFN}(\mathbf{x})=\mathbf{W}^{D}\operatorname{SwiGLU}(\mathbf{x})\)。</p>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\mathbf{x}\)</td><td>FFN 子层输入（残差主干）</td><td>\(\mathbb{R}^{H}\)</td></tr>
+<tr><td>\(\mathbf{W}^{G}\)</td><td>门控投影矩阵，产生"开多大"的信号</td><td>\(\mathbb{R}^{H'\times H}\)，\(H'\) 为中间维度</td></tr>
+<tr><td>\(\mathbf{W}^{U}\)</td><td>内容（value 支路）投影矩阵</td><td>\(\mathbb{R}^{H'\times H}\)</td></tr>
+<tr><td>\(\mathbf{W}^{D}\)</td><td>下投影矩阵，把 \(H'\) 压回 \(H\)</td><td>\(\mathbb{R}^{H\times H'}\)</td></tr>
+<tr><td>\(\odot\)</td><td>Hadamard（逐元素）乘积</td><td>要求两因子同形 \(\mathbb{R}^{H'}\)</td></tr>
+<tr><td>\(H'\)</td><td>FFN 中间（扩张后）维度</td><td>标量；标准 FFN 为 \(4H\)，SwiGLU 为 \(\frac{8}{3}H\)</td></tr>
+<tr><td>\(\operatorname{Swish}\)</td><td>见 <a href="#eq-5-21">5.21</a>，逐元素作用</td><td>标量函数</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>GLU 的动机：给 FFN 加一个"逐通道的开关"。</strong>标准 FFN 是 \(\operatorname{FFN}(\mathbf{x})=\mathbf{W}_2\,\sigma(\mathbf{W}_1\mathbf{x})\)，其中 \(\mathbf{W}_1\in\mathbb{R}^{4H\times H}\)、\(\mathbf{W}_2\in\mathbb{R}^{H\times 4H}\)，参数量 \(4H\cdot H+H\cdot 4H=8H^2\)。GLU（Dauphin et al.）的想法是把线性支路劈成两路：一路过激活（门），一路不过（内容），再逐元素相乘。</li>
+<li><strong><strong>参数量重算（这一步最容易搞错，重点看）。</strong></strong> SwiGLU 有一个下投影 \(\mathbf{W}^{D}\) 加<strong>两个</strong>上投影（门 + 内容），三个矩阵<strong>行数都是 \(H'\)</strong>：</li>
+</ol>
+<div class="eq">
+\[ N_{\mathrm{SwiGLU}}=H'\!\cdot\!H\;(\mathbf{W}^{G})+H'\!\cdot\!H\;(\mathbf{W}^{U})+H\!\cdot\!H'\;(\mathbf{W}^{D})=3H'H \]
+</div>
+<ol class="steps" start="3">
+<li><strong>朴素地取 \(H'=3H\) 会怎样？</strong>\(N=3\cdot 3H\cdot H=9H^2\)，<strong>比标准 FFN 的 \(8H^2\) 还多 12.5%</strong>。若要和其他模型公平比较参数量，就必须缩小 \(H'\)。令 \(3H'H=8H^2\)，解得 \(H'=\frac{8H}{3}\)。代回验证：\(3\times\frac{8}{3}H\times H=8H^2\)——<strong>恰好等于标准 FFN 的参数量</strong>。</li>
+<li><strong>这就是 Shazeer（PaLM 论文）的做法：</strong>GLU-variants 论文指出，用 \(\frac{8}{3}H\) 的中间维度可以在参数量与标准 FFN 相同的前提下获得明显更好的效果。LLaMA、LLaMA-2、LLaMA-3、Qwen、Mistral、Jurassic-1 全部采用 \(H'=\frac{8}{3}H\) 且取整到最近的 8 的倍数。例如 LLaMA-7B：\(H=4096\)、\(\frac83 H\approx10923\)，取 11008；单层 FFN 参数量 \(3\times11008\times4096=135,266,304\)，与标准 \(8H^2=134,217,728\) 几乎相同。</li>
+<li><strong>为什么"多一个门反而更省参数"？</strong>看起来加了一个投影（3 个矩阵 vs 2 个）却要靠缩小 \(H'\) 才能持平，好像很亏。但真正的理由在<strong>有效容量与条件数</strong>，不在参数量：
+<ul>
+<li><strong>有效秩更高。</strong>标准 FFN 的 \(\sigma(\mathbf{W}_1\mathbf{x})\) 输出各通道取值都 \(\in[0,1]\)（若用 ReLU 则只能正），不同通道的数值范围高度重叠。门控支路 \(\sigma(\mathbf{W}^{G}\mathbf{x})\in(0,1)\) 逐通道地<strong>重加权</strong>内容支路，使得 FFN 能表达"第 \(j\) 个中间单元只在输入落在某个子空间时才被激活"这种<strong>条件化</strong>的计算，等价于把 FFN 的表达能力从"固定线性 + 固定非线性"升级为"输入相关的线性 + 非线性"。</li>
+<li><strong>缩小的代价被经验上更高的效率补偿。</strong>GLU 论文的实验显示：把 \(H'\) 从 \(4H\) 降到 \(\frac83H\)（少 33%）带来的损失，小于门控带来的收益，净效果是同参数量下困惑度（perplexity）更低。<strong>这个结论是实验拟合的经验规律，不是定理</strong>——没有理论保证 \(\frac83\) 是最优值；后续 LLaMA-3 把比例调回约 \(3.5\times H\)、Mistral 用 \(3.5H\) 也取得了更好的效果，说明这个超参仍有调优空间。</li>
+<li><strong>同样的总 FLOPs 下门控多了一层非线性变换。</strong>FFN 的计算量 \(\propto 3H'H=8H^2\) 与标准 FFN 持平，但多了一次 Swish 和一次逐元素乘（非线性更多），所以"每参数算力"更高。</li>
+</ul></li>
+<li><strong>反向传播视角：门控让梯度多了一条路。</strong>\(\mathbf{v}=\mathbf{W}^{G}\mathbf{x}\)、\(\mathbf{w}=\mathbf{W}^{U}\mathbf{x}\)、\(\mathbf{y}=\sigma(\mathbf{v})\odot\mathbf{w}\)。逐元素看：\(\frac{\partial y_i}{\partial w_j}=\delta_{ij}\sigma(v_i)\)、\(\frac{\partial y_i}{\partial v_j}=\delta_{ij}\,w_i\,\sigma'(v_i)=\delta_{ij}w_i\sigma(v_i)(1-\sigma(v_i))\)。两条梯度路分别经过 \(\mathbf{W}^{U}\) 和 \(\mathbf{W}^{G}\)，所以 \(G\) 与 \(U\) 都会被更新——若某通道的 \(w_i\) 长期很小，该通道对 \(G\) 的梯度也小，会形成一定程度的"通道重要性分化"。</li>
+<li><strong>为什么 GLU 家族在实践中更好。</strong>原书引用的实验结论是：引入门控机制"通常带来更好的性能"。经验上，SwiGLU/GeGLU 在同参数量下比 ReLU/GELU 的 FFN 更好，原因普遍归为：门控提供了额外的非线性与输入相关的特征选择能力，同时因为 Swish/GELU 平滑（无死神经元）而更易训练。<strong>这些是实验结论</strong>。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+标准 FFN 像是"一条固定的流水线"：所有输入都经过同一组 \(4H\) 个中间单元。SwiGLU 则是"每个输入自己决定开哪几个阀门"——\(\mathbf{W}^{U}\mathbf{x}\) 提供内容（想说什么），\(\sigma(\mathbf{W}^{G}\mathbf{x})\) 提供门控（说多大声，逐通道）。门控信号本身也经过 Swish 处理，所以负的门控值（极小范围内）也能表达"反向抑制"。
+</div>
+<div class="warn"><b>易错点：三点</b>
+（1）\(\mathbf{W}^{G}\) 与 \(\mathbf{W}^{U}\) 是<strong>两个独立矩阵</strong>，形状相同但参数不共享；SwiGLU 把 <strong>Swish 作用在门控支路上</strong>（而不是内容支路上），而 GLU 的原始版本是把 sigmoid 作用在门控支路上——位置搞错就变成 GeGLU/SwiGLU 的另一个变体了。（2）"SwiGLU 更省参数"这个说法要小心：<strong>单个 SwiGLU 的矩阵数量是 3 个比标准 FFN 的 2 个多</strong>，只有在把中间维度压到 \(\frac83H\) 之后总参数量才持平；说它"更省"只是说"在同等参数量下效果更好"。（3）\(\frac83H\) 必须<strong>取整到硬件友好的倍数</strong>（通常取 8 的倍数以对齐张量核心），不能直接用分数。
+</div>
+<div class="relnav">相关：<a href="#eq-5-24">(5.24) GeGLU</a>　<a href="#eq-5-21">(5.21) Swish / SiLU</a>　<a href="#eq-5-18">(5.18) Pre-LN</a>　<a href="03-ch05-arch-a.html#eq-5-8">(5.8) 前馈网络</a></div>
+</section>
+
+<section class="fml" id="eq-5-24">
+<h2><span class="num">(5.24)</span>GeGLU：GELU 门控线性单元<a class="anchor" href="#eq-5-24">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.2.3 节 Activation Function　<a href="../thellm/11-5-model-architecture.html#5-2-3-activation-function">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0073.png" alt="原书公式 5.24"><span class="cap">原书公式 5.24</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \operatorname{GeGLU}(\mathbf{x})=\operatorname{GELU}\bigl(\mathbf{W}^{G}\mathbf{x}\bigr)\odot\bigl(\mathbf{W}^{U}\mathbf{x}\bigr) \]
+</div>
+<div class="eq">
+\[ =\bigl(\mathbf{W}^{G}\mathbf{x}\bigr)\odot\Phi\bigl(\mathbf{W}^{G}\mathbf{x}\bigr)\odot\bigl(\mathbf{W}^{U}\mathbf{x}\bigr) \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\mathbf{x}\)</td><td>FFN 子层输入</td><td>\(\mathbb{R}^{H}\)</td></tr>
+<tr><td>\(\mathbf{W}^{G}\)</td><td>门控投影矩阵</td><td>\(\mathbb{R}^{H'\times H}\)</td></tr>
+<tr><td>\(\mathbf{W}^{U}\)</td><td>内容投影矩阵</td><td>\(\mathbb{R}^{H'\times H}\)</td></tr>
+<tr><td>\(\mathbf{W}^{D}\)</td><td>下投影矩阵（FFN 的最后一步）</td><td>\(\mathbb{R}^{H\times H'}\)</td></tr>
+<tr><td>\(\Phi\)</td><td>标准正态 CDF，见 <a href="#eq-5-22">5.22</a></td><td>标量函数</td></tr>
+<tr><td>\(\odot\)</td><td>Hadamard 逐元素乘积</td><td>\(\mathbb{R}^{H'}\) 上逐元素</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>与 5.23 的关系：只换了一个门控函数。</strong>SwiGLU 用 \(\operatorname{Swish}(v)=v\sigma(v)\)，GeGLU 用 \(\operatorname{GELU}(v)=v\Phi(v)\)。矩阵个数、参数量公式（\(N=3H'H\)、\(H'=\frac83H\)）与 SwiGLU <strong>完全一样</strong>——见 <a href="#eq-5-23">5.23</a> 第 3–4 步的完整计算。</li>
+<li><strong>两个门函数的逐元素对比。</strong>记 \(v=\mathbf{W}^{G}\mathbf{x}\) 的某个分量：</li>
+</ol>
+<div class="eq">
+\[ \operatorname{GeGLU}_i(v)=v_i\,\Phi(v_i),\qquad \operatorname{SwiGLU}_i(v)=v_i\,\sigma(v_i) \]
+</div>
+<ol class="steps" start="3">
+<li><strong>它们的差异很小但有结构区别：</strong>两者都形如 \(v\cdot(\text{软门})\)，在 \(v\to+\infty\) 时门都趋于 1（<strong>梯度都 \(\to1\)</strong>），在 \(v\to-\infty\) 时都趋于 0。
+<ul>
+<li>门在 \(v=0\) 处的值：\(\Phi(0)=0.5\)，\(\sigma(0)=0.5\)——<strong>相同</strong>。</li>
+<li>极小值点：GELU 在 \(v\approx-0.752\)（值 \(\approx-0.17\)）；Swish 在 \(v\approx-1.278\)（值 \(\approx-0.278\)）。<strong>GeGLU 的负半轴尾巴更短</strong>，也就是"轻度抑制"的能力稍弱、整体更接近 ReLU。</li>
+<li>两者在 \([-4,4]\) 上的最大差约 \(0.1\) 量级（因为 \(\Phi(v)\) 与 \(\sigma(v)\) 只在负半轴有小差别，正半轴都 \(\approx1\)）。</li>
+</ul></li>
+<li><strong>参数量核算（沿用 5.23 的结论，再确认一次）：</strong>标准 FFN：\(\mathbf{W}_1\in\mathbb{R}^{4H\times H}\)、\(\mathbf{W}_2\in\mathbb{R}^{H\times4H}\)，共 \(8H^2\)。GeGLU：\(\mathbf{W}^{G},\mathbf{W}^{U}\in\mathbb{R}^{H'\times H}\)、\(\mathbf{W}^{D}\in\mathbb{R}^{H\times H'}\)，共 \(3H'H\)。令两者相等：\(3H'H=8H^2\Rightarrow H'=\frac{8}{3}H\)，此时 \(3\times\frac{8H}{3}\times H=8H^2\) <strong>恰好持平</strong>。GPT-2/OPT/BLOOM 用 GeGLU 时通常仍取 \(H'=4H\)，那就比标准 FFN 贵 12.5%——<strong>是否取 \(\frac83H\) 取决于你是否在做同参数量比较</strong>。</li>
+<li><strong>反向传播与 GeLU 的梯度。</strong>\(y_i=\operatorname{GELU}(v_i)w_i\)，\(\frac{\partial y_i}{\partial v_j}=\delta_{ij}\,w_i\,\Phi(v_i)+\delta_{ij}\,v_i\,\phi(v_i)=\delta_{ij}\,w_i\bigl[\Phi(v_i)+v_i\phi(v_i)\bigr]\)，\(\frac{\partial y_i}{\partial w_j}=\delta_{ij}\operatorname{GELU}(v_i)\)。两条路都在，训练信号充足。</li>
+<li><strong>选哪个：实践中的分布。</strong>原书表 5.1 里的分布很清楚：<strong>GPT-2、GPT-3、OPT、BLOOM、LaMDA、PaLM 用 GeGLU（或 GELU）；LLaMA-2、OPT-175B 用 SwiGLU；Falcon 用 GELU；LLaMA-3 用 SwiGLU；Galactica 用 GeGLU</strong>。两大阵营各有代表，实践上差异不大——shazeer2020 的实验里 SwiGLU 与 GELU 变体的差距在噪声范围内。<strong>这是个没有定论的选择，不要把它当成"谁更优"的数学结论</strong>。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+GeGLU 和 SwiGLU 是同一台机器的两种"阀门"：把 FFN 的第一层线性拆成"内容路 + 门控路"，门控路过一个平滑激活当阀门，与内容路逐元素相乘。GeGLU 用高斯 CDF 做阀门（负半轴关得快、尾巴短、更接近 ReLU），SwiGLU 用 Swish 做阀门（负半轴留得更久、更"软"）。实际效果上两者几乎并列，LLaMA 系选 SwiGLU、GPT-2 系选 GeGLU。
+</div>
+<div class="warn"><b>易错点</b>
+（1）GeGLU 的 GELU 作用在<strong>门控支路</strong> \(\mathbf{W}^{G}\mathbf{x}\) 上，不是内容支路；（2）不要把 \(\Phi\) 当成 sigmoid 换掉——虽然两者在正半轴都 \(\approx1\)，但负半轴行为不同（GeGLU 极小值 \(-0.17\) vs SwiGLU \(-0.278\)）；（3）"GLU 变体"是一个家族：\(\operatorname{SwiGLU}=\operatorname{Swish}\odot(\cdot)\)、\(\operatorname{GeGLU}=\operatorname{GELU}\odot(\cdot)\)，而<strong>GeGLU 的原始定义是把 sigmoid 作用在<b>非</b> GeLU 支路上</strong>，社区里 "GeGLU" 有时指 \(\operatorname{sigmoid}(\mathbf{W}^{G}\mathbf{x})\odot(\mathbf{W}^{U}\mathbf{x})\)（这是原始 GLU），两者不要混淆——原书此处用的是 GELU 版本。
+</div>
+<div class="relnav">相关：<a href="#eq-5-23">(5.23) SwiGLU</a>　<a href="#eq-5-22">(5.22) GELU</a>　<a href="#eq-5-21">(5.21) Swish / SiLU</a></div>
+</section>
+<h2 id="part2">第二部分：位置编码（5.25–5.32）</h2>
+<p>Transformer 本身是<strong>置换等变</strong>的：把输入 token 打乱，输出也跟着打乱，它天生不知道"谁在前谁在后"。位置编码就是往表示里注入顺序信息。五种方案可以用两个问题区分：<strong>（一）注入的是绝对位置还是相对位置？</strong>绝对方案（5.25、5.26）给每个位置一个向量；相对方案（5.27、5.28、5.29、5.30）只告诉模型"相隔多远"。<strong>（二）会不会增加参数？</strong>可学习编码增加 \(O(TH)\) 参数且不能外推；正弦编码无参数；RoPE 干脆不加任何东西，而是<strong>旋转 query 与 key 向量本身</strong>——这是它流行的关键。</p>

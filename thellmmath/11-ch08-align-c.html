@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>第 8 章 · 人类对齐（3/3） · 《Large Language Models》公式推导手册</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23a11f27'/%3E%3Ctext x='16' y='23' font-size='20' font-family='Georgia,serif' fill='%23fff' text-anchor='middle'%3E%E2%88%91%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="style.css">
+<script>(function(){try{var t=localStorage.getItem('thellmmath-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn idxbtn" href="index.html" aria-label="目录"><span aria-hidden="true">&#9776;</span> <span class="lbl">目录</span></a>
+  <a class="brand" href="index.html">《Large Language Models》公式推导手册</a>
+  <button class="btn" id="themeToggle" aria-label="切换深色模式">&#9788;</button>
+</header>
+<main id="main">
+<article>
+<h1><span class="chno">Chapter 8 · 3/3</span>第 8 章 · 人类对齐（3/3）</h1>
+<p class="lead">上一页我们把 RLHF 的 KL 正则目标一路化简成了 <code>min&nbsp;KL[π_θ, π*] − log&nbsp;Z(x)</code>（公式 8.32），但那一步只回答了"最优解长什么样"，没有回答"怎么训练"。本页接着走完 DPO（Direct Preference Optimization）的全部推导：先把带 KL 约束的最优化问题解出闭式解，从而<strong>反解出奖励函数与策略概率比的一一对应</strong>（8.33–8.37）；再把这个隐式奖励代回 Bradley–Terry 偏好模型（8.38–8.42），得到只用两个策略概率就能算的<strong>闭式损失</strong>（8.43）；最后对它求梯度（8.44–8.45），看清 DPO 到底在"推高什么、压低什么"。末尾给出所有监督式对齐算法的统一骨架（8.46）——SLiC、ORPO、SimPO、IPO 这类变体都可以看成对它主目标／辅助项的改写。</p>
+<p class="where"><b>原书位置</b>第 8 章 8.3 节 <a href="../thellm/15-8-human-alignment.html#8-3-1-representative-supervised-alignment-meth">8.3.1 Representative Supervised Alignment Method: DPO</a> / <a href="../thellm/15-8-human-alignment.html#8-3-2-other-supervised-alignment-algorithms">8.3.2 Other Supervised Alignment Algorithms</a></p>
+
+<h2 id="toc-c">本页公式一览</h2>
+<table class="sym">
+<tr><th>编号</th><th>一句话</th><th>核心数学工具</th></tr>
+<tr><td><a href="#eq-8-33">8.33</a></td><td>KL 正则最优解：策略是"参考模型 × 指数化奖励"再归一化</td><td>KKT 条件 / 带约束熵极小</td></tr>
+<tr><td><a href="#eq-8-34">8.34</a></td><td>同式改写，准备两边取对数</td><td>代数变形</td></tr>
+<tr><td><a href="#eq-8-35">8.35</a></td><td>取对数：对数把乘积变加法</td><td>\(\log ab=\log a+\log b\)</td></tr>
+<tr><td><a href="#eq-8-36">8.36</a></td><td>移项：把参考项与配分函数分离</td><td>移项</td></tr>
+<tr><td><a href="#eq-8-37">8.37</a></td><td><b>隐式奖励</b> \(r=\beta\log\frac{\pi_r}{\pi_{\mathrm{old}}}+\beta\log Z\)</td><td>对数商法则、\(\log e^u=u\)</td></tr>
+<tr><td><a href="#eq-8-38">8.38</a></td><td>Bradley–Terry：偏好概率是两候选的 softmax</td><td>softmax / 随机效用</td></tr>
+<tr><td><a href="#eq-8-39">8.39</a></td><td>化简成 \(\sigma(r^+-r^-)\)</td><td>同除 + sigmoid 定义</td></tr>
+<tr><td><a href="#eq-8-40">8.40</a></td><td>代入隐式奖励（未化简）</td><td>代入</td></tr>
+<tr><td><a href="#eq-8-41">8.41</a></td><td>合并指数，<b>\(\log Z(x)\) 消掉</b></td><td>指数律</td></tr>
+<tr><td><a href="#eq-8-42">8.42</a></td><td>偏好概率 = \(\sigma(\beta\Delta\log\text{ratio})\)</td><td>sigmoid 恒等变换</td></tr>
+<tr><td><a href="#eq-8-43">8.43</a></td><td><b>DPO 损失</b>：偏好似然的负对数</td><td>极大似然 / 负对数似然</td></tr>
+<tr><td><a href="#eq-8-44">8.44</a></td><td>梯度第一步：链式法则</td><td>Jacobian 链式法则</td></tr>
+<tr><td><a href="#eq-8-45">8.45</a></td><td><b>梯度最终式</b>：自适应步长的"推高/压低"</td><td>\(\nabla\sigma/\sigma=\sigma(-u)\)</td></tr>
+<tr><td><a href="#eq-8-46">8.46</a></td><td>监督对齐算法通用骨架：交叉熵 + 辅助项</td><td>token 级因子分解 + MLE</td></tr>
+</table>
+
+<h2 id="sym-c">本页符号约定</h2>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\pi_\theta(y\mid x)\)</td><td>正在训练的策略模型（policy）给出回复 \(y\) 的条件概率</td><td>标量，\((0,1)\)</td></tr>
+<tr><td>\(\pi_{\theta_{\mathrm{old}}}(y\mid x)\)</td><td>参考模型（冻结的 SFT 模型），提供 KL 锚点</td><td>标量，\((0,1)\)</td></tr>
+<tr><td>\(\pi_r(y\mid x)\)</td><td>最优策略；8.40–8.42 沿用此记号，8.43 起换成 \(\pi_\theta\)</td><td>标量</td></tr>
+<tr><td>\(\pi^*(y\mid x)\)</td><td>归一化后的目标分布（公式 8.28 定义）</td><td>标量</td></tr>
+<tr><td>\(r(x,y)\)</td><td>真实（未正则化）奖励</td><td>标量，无量纲</td></tr>
+<tr><td>\(\hat r_\theta(x,y)\)</td><td>隐式奖励估计（把配分函数丢掉的近似）</td><td>标量</td></tr>
+<tr><td>\(Z(x)\)</td><td>配分函数 \(Z(x)=\sum_y \pi_{\theta_{\mathrm{old}}}(y\mid x)e^{r(x,y)/\beta}\)</td><td>标量，\(\ge 1\)</td></tr>
+<tr><td>\(\beta\)</td><td>KL 正则强度／温度倒数，越大越保守</td><td>标量，\(\beta=0.1\sim0.5\)</td></tr>
+<tr><td>\(\sigma(u)\)</td><td>sigmoid \(1/(1+e^{-u})\)</td><td>标量，\((0,1)\)</td></tr>
+<tr><td>\(u\)</td><td>隐式奖励之差 \(\beta\log\frac{\pi_\theta(y^+\mid x)}{\pi_{\theta_{\mathrm{old}}}(y^+\mid x)}-\beta\log\frac{\pi_\theta(y^-\mid x)}{\pi_{\theta_{\mathrm{old}}}(y^-\mid x)}\)</td><td>标量</td></tr>
+<tr><td>\(\mathcal D\)</td><td>偏好数据集，元素为三元组 \((x,y^+,y^-)\)</td><td>\(\sim10^3\sim10^6\) 组</td></tr>
+</table>
+<div class="note">
+<b>符号约定里的一个"省略号"</b>LLM 的输出是变长 token 序列，\(\log\pi_\theta(y\mid x)\) 严格讲是<strong>整句联合对数似然</strong> \(=\sum_{t=1}^{T}\log\pi_\theta(y_t\mid x,y_{&lt;t})\)，但下标会淹没推导，本页一律简写成 \(\log\pi_\theta(y\mid x)\)。这正是 8.46 要显式写出来的地方。
+</div>
+
+<h2 id="sec-kkt">先补一个前置工具：带归一化约束的 KL 极小</h2>
+<p>公式 8.33 的推导只用到一条通用结论，先把它证出来，后面 <a href="#eq-8-44">8.44</a>–<a href="#eq-8-45">8.45</a> 还会复用它的思路。</p>
+<div class="eq">
+\[ \min_{p}\ \mathrm{KL}(p\|q)\quad\text{s.t.}\ \sum_y p(y)=1 \qquad\Longrightarrow\qquad p^*=q \ \ (\text{若 } q \text{ 本身已归一化}) \]
+</div>
+<ol class="steps">
+<li>把约束用拉格朗日乘子 \(\lambda\) 放出来：\(J(p,\lambda)=\sum_y p(y)\ln\frac{p(y)}{q(y)}+\lambda(\sum_y p(y)-1)\)。</li>
+<li>对每个 \(p(y)&gt;0\) 求偏导，得 KKT 条件 \(\ln\frac{p(y)}{q(y)}+1+\lambda=0\)，即 \(p(y)=q(y)e^{-1-\lambda}\)。</li>
+<li>代回归一化约束：\(1=e^{-1-\lambda}\sum_y q(y)=e^{-1-\lambda}\)，故 \(\lambda=-1\)，于是 \(p=q\)。</li>
+<li>结论也可由 \(\mathrm{KL}(p\|q)\ge0\) 且等号当且仅当 \(p=q\) 直接得到；两种说法等价，前者给出了为什么"最优解恰好等于目标分布"而不是别的形式。</li>
+</ol>
+
+<!-- ================= 8.33 ================= -->
+<section class="fml" id="eq-8-33">
+<h2><span class="num">(8.33)</span>KL 正则最优解：\(\pi_r=\pi^*=\frac{1}{Z(x)}\pi_{\theta_{\mathrm{old}}}e^{r/\beta}\)<a class="anchor" href="#eq-8-33">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.3.1 节 Introduction to the DPO Algorithm　<a href="../thellm/15-8-human-alignment.html#8-3-1-representative-supervised-alignment-meth">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0211.png" alt="原书公式 8.33"><span class="cap">原书公式 8.33</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \pi_r(y\mid x)=\pi^*(y\mid x)=\frac{1}{Z(x)}\,\pi_{\theta_{\mathrm{old}}}(y\mid x)\exp\!\left(\tfrac{1}{\beta}\,r(x,y)\right) \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\pi_r(y\mid x)\)</td><td>公式 8.32 的最优策略</td><td>标量，\((0,1)\)</td></tr>
+<tr><td>\(Z(x)\)</td><td>配分函数，使右边对 \(y\) 求和等于 1</td><td>标量</td></tr>
+<tr><td>\(r(x,y)\)</td><td>待学到的奖励</td><td>标量</td></tr>
+<tr><td>\(\beta\)</td><td>温度倒数（\(\beta\to\infty\) 回到 SFT，\(\beta\to0^+\) 逼近纯 RL）</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<p>式子右边其实是公式 8.28 的定义式，关键在于<strong>证明它确实是 8.32 的最优解</strong>。固定一个 \(x\)，把 8.32 写成单个 \(x\) 上的优化问题（\(-\log Z(x)\) 与 \(\pi_\theta\) 无关，是常数，可丢）：</p>
+<div class="eq">
+\[ \min_{\pi_\theta(\cdot\mid x)}\ \sum_y \pi_\theta(y\mid x)\ln\frac{\pi_\theta(y\mid x)}{\pi^*(y\mid x)} \qquad \text{s.t.}\ \sum_y \pi_\theta(y\mid x)=1 \]
+</div>
+<ol class="steps">
+<li>目标函数就是 \(\mathrm{KL}(\pi_\theta(\cdot\mid x)\|\pi^*(\cdot\mid x))\)，约束是概率归一化。这正是上面刚证过的通用情形。</li>
+<li>因为原书已验证 \(\pi^*\) 满足 \(\pi^*&gt;0\) 且 \(\sum_y\pi^*(y\mid x)=1\)，代入上面的结论立刻得到 \(\pi_r(y\mid x)=\pi^*(y\mid x)\)。</li>
+<li>再把 8.28 的定义代回去，<strong>反解方向</strong>的等式链就闭合了：\(\pi_r=\pi^*=\frac{1}{Z(x)}\pi_{\theta_{\mathrm{old}}}(y\mid x)e^{r(x,y)/\beta}\)。</li>
+<li>这里的"反解"很关键：8.28 是"给定奖励 \(\to\) 算出最优策略"，8.33 是"给定最优策略 \(\to\) 算出奖励的形状"。前者是 KL 投影，后者是变分下界取等条件，两条腿站在同一个等式上。</li>
+</ol>
+
+<div class="note"><b>直觉</b>最优策略 = 参考模型的分布，按奖励取指数放大，再用 \(Z(x)\) 把总和压回 1。奖励高的答案权重被放大，奖励低的被压低；但每个 \(x\) 上的概率总量必须守恒，所以只能靠"重新分配"来提升好答案。
+</div>
+<div class="warn"><b>易错点</b>\(Z(x)=\sum_y\pi_{\theta_{\mathrm{old}}}(y\mid x)e^{r(x,y)/\beta}\) 是<strong>对全部候选回复的求和</strong>，在词表 × 解码空间上是不可计算的；\(r\) 也还没学出来。所以 8.33 不是"可以直接算的公式"，它是一把钥匙——接下来 8.37 让我们把 \(Z\) 从式子里挤掉。
+</div>
+<div class="relnav">相关：<a href="10-ch08-align-b.html#eq-8-32">(8.32) 上一步的 KL 目标</a>　<a href="#eq-8-37">(8.37) 反解出的隐式奖励</a></div>
+</section>
+
+<!-- ================= 8.34 ================= -->
+<section class="fml" id="eq-8-34">
+<h2><span class="num">(8.34)</span>待反解的等式（把 \(\pi_r\) 单独留在左边）<a class="anchor" href="#eq-8-34">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.3.1 节　<a href="../thellm/15-8-human-alignment.html#8-3-1-representative-supervised-alignment-meth">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0212.png" alt="原书公式 8.34"><span class="cap">原书公式 8.34</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \pi_r(y\mid x)=\frac{1}{Z(x)}\,\pi_{\theta_{\mathrm{old}}}(y\mid x)\exp\!\left(-\frac{1}{\beta}\,r(x,y)\right) \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\pi_r,\pi_{\theta_{\mathrm{old}}},Z,\beta\)</td><td>同 <a href="#eq-8-33">8.33</a></td><td>标量</td></tr>
+<tr><td>\(r(x,y)\)</td><td>奖励；在括号内取负号，与 8.33 的 \(\exp(+r/\beta)\) 等价</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<p>这一步<strong>不引入新数学</strong>，只做两件排版上的事，交代清楚以免读者以为出了新结论。</p>
+<ol class="steps">
+<li>拆掉 8.33 的 \(\pi_r=\pi^*\) 连等式，只保留待反解的那一支，因为下一步要对 \(\pi_r\) 取对数。</li>
+<li>把三个因子 \(\frac{1}{Z(x)}\)、\(\pi_{\theta_{\mathrm{old}}}(y\mid x)\)、\(\exp(\cdot)\) 按"常数项 / 概率项 / 指数项"分开排列，使得下一步只需用 \(\log(abc)=\log a+\log b+\log c\) 就能整式展开。</li>
+<li>原书写成 \(\exp(-\tfrac1\beta r)\)、8.33 写成 \(\exp(\tfrac1\beta r)\)。因为 8.36 要把这一项单独挪到右边并变号，两种写法都成立；本页统一采用 \(+\tfrac1\beta r\) 的写法以减少符号翻转的次数。</li>
+</ol>
+
+<div class="note"><b>直觉</b>这是推导里的"起手式"：先摆出一个能取对数的等式，后面每一步都只是把它拆开、搬位。
+</div>
+<div class="relnav">相关：<a href="#eq-8-33">(8.33) 同一等式的解法陈述</a>　<a href="#eq-8-35">(8.35) 取对数</a></div>
+</section>
+
+<!-- ================= 8.35 ================= -->
+<section class="fml" id="eq-8-35">
+<h2><span class="num">(8.35)</span>两边取对数：乘积结构塌成加法结构<a class="anchor" href="#eq-8-35">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.3.1 节　<a href="../thellm/15-8-human-alignment.html#8-3-1-representative-supervised-alignment-meth">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0213.png" alt="原书公式 8.35"><span class="cap">原书公式 8.35</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \log\big(\pi_r(y\mid x)\big)=\log\left(\frac{1}{Z(x)}\,\pi_{\theta_{\mathrm{old}}}(y\mid x)\exp\!\left(\frac{1}{\beta}r(x,y)\right)\right) \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\log\)</td><td>自然对数，单位 nat（与交叉熵同底）</td><td>标量</td></tr>
+<tr><td>\(\pi_r, Z(x), \pi_{\theta_{\mathrm{old}}}, r, \beta\)</td><td>同 <a href="#eq-8-34">8.34</a></td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<p>需要的工具只有两条对数运算法则：\(\log(ab)=\log a+\log b\)（由 \(a=e^{\log a}\) 相乘得到）与 \(\log(a/b)=\log a-\log b\)。</p>
+<ol class="steps">
+<li>左边原封不动。右边因为所有因子都严格为正（\(\pi_r&gt;0\)、\(Z(x)&gt;0\)、\(\pi_{\theta_{\mathrm{old}}}&gt;0\)），对数合法。</li>
+<li>把括号内的三项乘积分别取对数：\(\log\frac{1}{Z(x)}=-\log Z(x)\)，\(\log\pi_{\theta_{\mathrm{old}}}(y\mid x)\) 保持，\(\log e^{u}=u\) 给出 \(\log\exp\frac{r(x,y)}{\beta}=\frac{r(x,y)}{\beta}\)。</li>
+<li>三项相加即得展开式——原书把展开结果留给 8.36 写，这里先只做"取对数"这一步的展示。</li>
+</ol>
+
+<div class="note"><b>直觉</b>取对数不是为了什么高深理由，而是因为下一步要"解出 \(r\)"。\(r\) 藏在指数里，取对数才能把它线性地搬出来。
+</div>
+<div class="warn"><b>易错点</b>这一步容易顺手写成 \(\log\frac{1}{Z}=-\log\frac{1}{Z}\)。正确的是 \(\log(1/Z)=-\log Z\)；而 \(\log(1/Z)=\log 1-\log Z=0-\log Z=-\log Z\)，两种算法给出同一结果，可作自检。
+</div>
+<div class="relnav">相关：<a href="#eq-8-34">(8.34) 起点</a>　<a href="#eq-8-36">(8.36) 移项</a></div>
+</section>
+
+<!-- ================= 8.36 ================= -->
+<section class="fml" id="eq-8-36">
+<h2><span class="num">(8.36)</span>移项：把参考项与配分函数搬到左边<a class="anchor" href="#eq-8-36">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.3.1 节　<a href="../thellm/15-8-human-alignment.html#8-3-1-representative-supervised-alignment-meth">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0214.png" alt="原书公式 8.36"><span class="cap">原书公式 8.36</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \log\big(\pi_r(y\mid x)\big)-\log\left(\frac{1}{Z(x)}\right)-\log\big(\pi_{\theta_{\mathrm{old}}}(y\mid x)\big)=\frac{r(x,y)}{\beta} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\log\pi_r\)</td><td>可训练项，会产生梯度</td><td>标量</td></tr>
+<tr><td>\(\log\pi_{\theta_{\mathrm{old}}}\)</td><td>参考项，<strong>与 \(\theta\) 无关，梯度恒为 0</strong></td><td>标量</td></tr>
+<tr><td>\(\log\frac{1}{Z(x)}\)</td><td>只依赖 \(x\)，在整个数据集上是常数</td><td>标量</td></tr>
+<tr><td>\(r(x,y)/\beta\)</td><td>待隔离出来的目标</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li>把 <a href="#eq-8-35">8.35</a> 的右边按三项写开：\(-\log Z(x)+\log\pi_{\theta_{\mathrm{old}}}(y\mid x)+\frac{r(x,y)}{\beta}\)。</li>
+<li>利用等式两边同加同减，把后两项整体移到左边，右边只留 \(\frac{r(x,y)}{\beta}\)。这就是 8.36。</li>
+<li>此处值得停下来看清楚一件事：<strong>左边第一项含 \(\theta\)，第二、三项不含</strong>。因为 \(\pi_{\theta_{\mathrm{old}}}\) 是冻结模型、\(Z(x)\) 与策略无关，对 \(\theta\) 求导时后两项的梯度都是零向量。</li>
+<li>这个观察在 <a href="#eq-8-44">8.44</a>–<a href="#eq-8-45">8.45</a> 会直接兑现成"梯度里只剩策略项"。</li>
+</ol>
+
+<div class="note"><b>直觉</b>参考模型的分数和配分函数都只是"陪衬"，唯一能调的是策略自己的概率。这一行式子已经把 DPO 的全部可调自由度暴露出来了。
+</div>
+<div class="relnav">相关：<a href="#eq-8-35">(8.35) 取对数</a>　<a href="#eq-8-37">(8.37) 解出 \(r\)</a></div>
+</section>
+
+<!-- ================= 8.37 ================= -->
+<section class="fml" id="eq-8-37">
+<h2><span class="num">(8.37)</span>隐式奖励：\(r(x,y)=\beta\log\frac{\pi_r(y\mid x)}{\pi_{\theta_{\mathrm{old}}}(y\mid x)}+\beta\log Z(x)\)<a class="anchor" href="#eq-8-37">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.3.1 节　<a href="../thellm/15-8-human-alignment.html#8-3-1-representative-supervised-alignment-meth">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0215.png" alt="原书公式 8.37"><span class="cap">原书公式 8.37</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ r(x,y)=\beta\log\!\left(\frac{\pi_r(y\mid x)}{\pi_{\theta_{\mathrm{old}}}(y\mid x)}\right)+\beta\log\big(Z(x)\big) \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\log\frac{\pi_r}{\pi_{\theta_{\mathrm{old}}}}\)</td><td>隐式奖励的主体，度量"策略比参考模型偏好这个回复多少"</td><td>标量（nat）</td></tr>
+<tr><td>\(\beta\log Z(x)\)</td><td>与 \(y\) <strong>无关</strong>的常数项：回复间的奖励差里它会抵消</td><td>标量</td></tr>
+<tr><td>\(r(x,y)\)</td><td>反解出的真实奖励</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li>从 8.36 出发，把 \(-\log\frac{1}{Z(x)}-\log\pi_{\theta_{\mathrm{old}}}(y\mid x)\) 移回右边，并合并成一个对数商：\(\log a-\log b=\log\frac{a}{b}\)，其中 \(a=\pi_r(y\mid x)\)、\(b=\pi_{\theta_{\mathrm{old}}}(y\mid x)\)。得 \(-\log Z(x)+\log\frac{\pi_r}{\pi_{\theta_{\mathrm{old}}}}=\frac{r(x,y)}{\beta}\)。</li>
+<li>两边同乘 \(\beta\)：\(-\beta\log Z(x)+\beta\log\frac{\pi_r}{\pi_{\theta_{\mathrm{old}}}}=r(x,y)\)。</li>
+<li>移项把配分函数项挪到右边，得 8.37。</li>
+<li>形式上 \(r\) 仍含不可算的 \(\log Z(x)\)。但接下来的 8.41 会展示：当比较两个回复 \(y^+\) 与 \(y^-\) 的奖励差时，两个 \(\beta\log Z(x)\) 完全相同，相减后消失——这才是 DPO 真正可训练的原因。</li>
+</ol>
+
+<div class="note"><b>直觉</b>DPO 从不显式训练奖励模型。它说："如果你的策略比参考模型更偏爱某个回复，那这个回复就值更高的分。"参考模型是零点，概率比的对数就是"偏离零点的距离"。
+</div>
+<div class="why"><b>为什么 \(Z(x)\) 可以不建模</b>奖励只在<strong>比较</strong>中出现，而同一个 \(x\) 下的所有候选共享同一个 \(Z(x)\)。类比：给学生排名次只需要分数的差，绝对分数是多少无关紧要。这也是 DPO 能删掉"配分函数估计"这一步的原因。
+</div>
+<div class="relnav">相关：<a href="#eq-8-36">(8.36) 移项</a>　<a href="#eq-8-41">(8.41) \(Z(x)\) 被消掉的地方</a></div>
+</section>
+
+<!-- ================= 8.38 ================= -->
+<section class="fml" id="eq-8-38">
+<h2><span class="num">(8.38)</span>Bradley–Terry 偏好模型：两候选 softmax<a class="anchor" href="#eq-8-38">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.3.1 节　<a href="../thellm/15-8-human-alignment.html#8-3-1-representative-supervised-alignment-meth">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0216.png" alt="原书公式 8.38"><span class="cap">原书公式 8.38</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ P\big(y^+\succ y^-\mid x\big)=\frac{\exp\big(r(x,y^+)\big)}{\exp\big(r(x,y^+)\big)+\exp\big(r(x,y^-)\big)} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(P(y^+\succ y^-\mid x)\)</td><td>人类在 \(x\) 下更偏好 \(y^+\) 的概率</td><td>标量，\((0,1)\)</td></tr>
+<tr><td>\(\succ\)</td><td>"严格优于"偏好关系</td><td>二元关系</td></tr>
+<tr><td>\(\exp(r(x,y))\)</td><td>奖励的指数权重（温度为 1）</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<p>这条式子不是推导出来的定理，而是一条<strong>建模假设</strong>（Bradley–Terry 模型，1952），值得把它的来历说清楚。</p>
+<ol class="steps">
+<li>起点是"随机效用（Random Utility）"假设：标注者的判断可以写成对每个候选算一个效用分 \(U(y)\)，然后按 softmax 概率抽取他实际选择的那一个。</li>
+<li>效用分里与候选无关的常数会因归一化而抵消，所以不妨取 \(U(y)=r(x,y)\)。在只有 \(y^+,y^-\) 两个候选时，softmax 的分母只有两项和，得 8.38。</li>
+<li>它满足两条性质，可以当自检：\(r^+=r^-\) 时概率为 \(1/2\)；\(r^+\to+\infty\) 时概率趋近 1。</li>
+<li>另一条等价表述来自配对比较的随机过程：偏好比值 \(\frac{P(y^+\succ y^-)}{P(y^-\succ y^+)}=\exp(r^+-r^-)\)。把这条与 8.38 联立即可反解出 \(r\)，也说明 BT 假设的核心是"<strong>奖励差</strong>决定偏好比"。</li>
+</ol>
+
+<div class="note"><b>直觉</b>人不是绝对打分，而是"两个都看一下、比一下"。BT 假设说这个比较过程等价于：给每个候选一个隐藏分数，然后按分数差的大小决定赢的概率。奖励高 1 个单位，胜率就从 50% 变到约 73%（\(\sigma(1)\)）。
+</div>
+<div class="warn"><b>易错点</b>BT 是<i>假设</i>不是定理。它要求标注者的判断只由 \(r\) 决定、与提示长度、位置偏好等无关；实践中标注噪声和"长度偏差"会让这个假设近似失效，这也是后面 IPO / SimPO / ORPO 要额外做长度归一化的动机。
+</div>
+<div class="relnav">相关：<a href="#eq-8-37">(8.37) 隐式奖励</a>　<a href="#eq-8-42">(8.42) 代入后的偏好概率</a></div>
+</section>
+
+<!-- ================= 8.39 ================= -->
+<section class="fml" id="eq-8-39">
+<h2><span class="num">(8.39)</span>化简为 \(\frac{1}{1+e^{r^- - r^+}}\)，即 \(\sigma(r^+-r^-)\)<a class="anchor" href="#eq-8-39">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.3.1 节　<a href="../thellm/15-8-human-alignment.html#8-3-1-representative-supervised-alignment-meth">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0217.png" alt="原书公式 8.39"><span class="cap">原书公式 8.39</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ P\big(y^+\succ y^-\mid x\big)=\frac{1}{1+\dfrac{\exp\big(r(x,y^-)\big)}{\exp\big(r(x,y^+)\big)}}=\sigma\big(r(x,y^+)-r(x,y^-)\big) \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(r(x,y^+)-r(x,y^-)\)</td><td>奖励差（log-odds），是偏好概率的唯一自变量</td><td>标量</td></tr>
+<tr><td>\(\sigma(u)\)</td><td>\(1/(1+e^{-u})\)，此处 \(u=r^+-r^-\)</td><td>标量，\((0,1)\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li>分式上下同除 \(\exp(r(x,y^+))\)（它严格为正，可以放心除）。分子变成 1。</li>
+<li>分母里的商用指数律合并：\(\frac{e^{a}}{e^{b}}=e^{a-b}\)，于是 \(\exp(r(x,y^-))/\exp(r(x,y^+))=\exp\big(r(x,y^-)-r(x,y^+)\big)=\exp\big(-(r^+-r^-)\big)\)。</li>
+<li>把 \(u=r^+-r^-\) 代回，得到的正是 sigmoid 的定义式 \(\frac{1}{1+e^{-u}}\)。</li>
+<li>这一步的实质是<strong>把偏好概率写成奖励差的单调函数</strong>：奖励差越大，偏好概率越接近 1，且是 S 形饱和的。这也顺带说明"加大奖励差"的边际收益会递减。</li>
+</ol>
+
+<div class="note"><b>直觉</b>偏好概率只认"差"，不认"绝对值"。把两个分数同时抬高 100 分，胜率一点不变。
+</div>
+<div class="relnav">相关：<a href="#eq-8-38">(8.38) BT 原始形式</a>　<a href="#eq-8-40">(8.40) 代入隐式奖励</a></div>
+</section>
+
+<!-- ================= 8.40 ================= -->
+<section class="fml" id="eq-8-40">
+<h2><span class="num">(8.40)</span>代入隐式奖励（未化简）<a class="anchor" href="#eq-8-40">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.3.1 节　<a href="../thellm/15-8-human-alignment.html#8-3-1-representative-supervised-alignment-meth">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0218.png" alt="原书公式 8.40"><span class="cap">原书公式 8.40</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ P\big(y^+\succ y^-\mid x\big)=\frac{1}{1+\dfrac{\exp\!\Big(\beta\log\frac{\pi_r(y^-\mid x)}{\pi_{\theta_{\mathrm{old}}}(y^-\mid x)}+\beta\log Z(x)\Big)}{\exp\!\Big(\beta\log\frac{\pi_r(y^+\mid x)}{\pi_{\theta_{\mathrm{old}}}(y^+\mid x)}+\beta\log Z(x)\Big)}} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\beta\log\frac{\pi_r(y\mid x)}{\pi_{\theta_{\mathrm{old}}}(y\mid x)}\)</td><td>隐式奖励主体（8.37 第一项）</td><td>标量</td></tr>
+<tr><td>\(\beta\log Z(x)\)</td><td>隐式奖励的常数项（8.37 第二项）</td><td>标量，与 \(y\) 无关</td></tr>
+<tr><td>\(\pi_r\)</td><td>此处即待训练的策略 \(\pi_\theta\)，原书换了个记号</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li>这是纯粹的代入：把 <a href="#eq-8-39">8.39</a> 里的 \(r(x,y^-)\) 和 \(r(x,y^+)\) 分别换成 <a href="#eq-8-37">8.37</a> 的表达式，得到 8.40。</li>
+<li>结构上要注意：分子对应"输的那个" \(y^-\)，分母对应"赢的那个" \(y^+\)。这来自 8.39 中 \(\exp(r^-)/\exp(r^+)\) 的比值形式，不要看成写反了。</li>
+<li>此刻式子里<strong>仍然有 \(Z(x)\)</strong>，还不是能算的目标。8.41 的任务就是把它消掉。</li>
+</ol>
+
+<div class="note"><b>直觉</b>代入之后，"概率"变成了两个策略概率比的比较。这一步是纯记账，没有新数学，但看清分子的来源有助于下一步不把符号弄反。
+</div>
+<div class="relnav">相关：<a href="#eq-8-39">(8.39) 代入起点</a>　<a href="#eq-8-41">(8.41) 化简并消掉 \(Z\)</a></div>
+</section>
+
+<!-- ================= 8.41 ================= -->
+<section class="fml" id="eq-8-41">
+<h2><span class="num">(8.41)</span>合并指数：\(\log Z(x)\) 在相除时消失<a class="anchor" href="#eq-8-41">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.3.1 节　<a href="../thellm/15-8-human-alignment.html#8-3-1-representative-supervised-alignment-meth">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0219.png" alt="原书公式 8.41"><span class="cap">原书公式 8.41</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ P\big(y^+\succ y^-\mid x\big)=\frac{1}{1+\exp\!\left(\beta\log\frac{\pi_r(y^-\mid x)}{\pi_{\theta_{\mathrm{old}}}(y^-\mid x)}-\beta\log\frac{\pi_r(y^+\mid x)}{\pi_{\theta_{\mathrm{old}}}(y^+\mid x)}\right)} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\beta\log\frac{\pi_r(y^-)}{\pi_{\theta_{\mathrm{old}}}(y^-)}-\beta\log\frac{\pi_r(y^+)}{\pi_{\theta_{\mathrm{old}}}(y^+)}\)</td><td>两个隐式奖励之差 \(\hat r(y^-)-\hat r(y^+)\)（符号为负）</td><td>标量</td></tr>
+<tr><td>\(Z(x)\)</td><td>已完全消失</td><td>—</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<p>核心动作是两条指数运算法则：\(\frac{e^a}{e^b}=e^{a-b}\) 与 \(\log\frac{a}{b}=\log a-\log b\)。</p>
+<ol class="steps">
+<li>把 <a href="#eq-8-40">8.40</a> 中那个大商的两个指数写成 \(e^{A}\big/e^{B}\) 的形式，其中 \(A=\beta\log\frac{\pi_r(y^-\mid x)}{\pi_{\theta_{\mathrm{old}}}(y^-\mid x)}+\beta\log Z(x)\)、\(B=\beta\log\frac{\pi_r(y^+\mid x)}{\pi_{\theta_{\mathrm{old}}}(y^+\mid x)}+\beta\log Z(x)\)。</li>
+<li>用 \(\frac{e^A}{e^B}=e^{A-B}\) 合并为一个指数：\(A-B=\big(\beta\log\frac{\pi_r(y^-)}{\pi_{\theta_{\mathrm{old}}}(y^-)}-\beta\log\frac{\pi_r(y^+)}{\pi_{\theta_{\mathrm{old}}}(y^+)}\big)+\underbrace{\beta\log Z(x)-\beta\log Z(x)}_{=0}\)。</li>
+<li>那个 \(\log Z(x)\) 是<strong>同一个 \(x\) 下两项共有的常数</strong>，相减为 0，得 8.41。</li>
+<li>最后再把 \(\log\frac{a}{b}\) 用对数商法则展开，形式上与"先合并奖励差"完全一致，这一步同时充当推导的自检：\(A-B\) 中只有策略比相关项，说明 \(Z\) 与策略无关这一判断成立。</li>
+</ol>
+
+<div class="note"><b>直觉</b>这一步是整条推导的<strong>关键一跃</strong>：不可算的配分函数被自己减掉了。原因只有一个——同一道题的满分基准是同一个数，做差时基准抵消。
+</div>
+<div class="why"><b>为什么"不可算的量"能被消掉</b>数学上常见：若目标函数对某个未知常数平移不变，最优解就不会依赖这个常数。\(-\beta\log Z(x)\) 正是这类"平移不变项"——它对所有 \(y\) 都一样，因此在优化器眼里是常数偏移，可以安全丢弃。反过来说，如果偏好比较跨不同的 \(x\)，\(Z\) 就<b>不能</b>这样消掉了。
+</div>
+<div class="relnav">相关：<a href="#eq-8-40">(8.40) 未化简式</a>　<a href="#eq-8-42">(8.42) 写成 sigmoid</a></div>
+</section>
+
+<!-- ================= 8.42 ================= -->
+<section class="fml" id="eq-8-42">
+<h2><span class="num">(8.42)</span>偏好概率写成 sigmoid 形式<a class="anchor" href="#eq-8-42">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.3.1 节　<a href="../thellm/15-8-human-alignment.html#8-3-1-representative-supervised-alignment-meth">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0220.png" alt="原书公式 8.42"><span class="cap">原书公式 8.42</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ P\big(y^+\succ y^-\mid x\big)=\sigma\!\left(\beta\log\frac{\pi_r(y^{+}\mid x)}{\pi_{\theta_{\mathrm{old}}}(y^{+}\mid x)}-\beta\log\frac{\pi_r(y^{-}\mid x)}{\pi_{\theta_{\mathrm{old}}}(y^{-}\mid x)}\right) \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\beta\log\frac{\pi_r(y^{+})}{\pi_{\theta_{\mathrm{old}}}(y^{+})}\)</td><td>赢方隐式奖励（不含 \(\log Z\)）</td><td>标量</td></tr>
+<tr><td>\(\beta\log\frac{\pi_r(y^{-})}{\pi_{\theta_{\mathrm{old}}}(y^{-})}\)</td><td>输方隐式奖励（不含 \(\log Z\)）</td><td>标量</td></tr>
+<tr><td>\(\sigma(\cdot)\)</td><td>sigmoid，输入为"赢方奖励减输方奖励"</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li>与 <a href="#eq-8-39">8.39</a> 的化简完全平行，那里把 \(u\) 取成 \(r^+-r^-\)，这里把 \(u\) 取成两个策略对数比的差。唯一区别是括号里两个项的<strong>顺序相反</strong>，符号相反。</li>
+<li>检查符号一致性：8.41 指数里是"输 − 赢"，即 \(\hat r^- - \hat r^+\)；取负后得到 \(\hat r^+ - \hat r^-\)，正是 sigmoid 需要的 \(-\beta(\hat r^- - \hat r^+)\)。两者匹配无误。</li>
+<li>顺带说明配分函数确实无关：若 \(Z(x)\) 还留在式子里，它会同时出现在两个 \(\log\) 内且位置对称，形式上不会像 8.41 那样被约掉。</li>
+<li>至此 \(\pi_r\) 只以"策略 ÷ 参考"的形式出现，比值大于 1 等价于策略比参考更偏爱该回复。把这个事实代入，得到 <a href="#eq-8-43">8.43</a>。</li>
+</ol>
+
+<div class="note"><b>直觉</b>训练信号非常直白：让"赢方相对参考模型的提升"超过"输方相对参考模型的提升"，差距越大，模型认为人类越偏好 \(y^+\)。
+</div>
+<div class="relnav">相关：<a href="#eq-8-41">(8.41) 分母形式</a>　<a href="#eq-8-43">(8.43) 取负对数得损失</a></div>
+</section>
+
+<!-- ================= 8.43 ================= -->
+<section class="fml" id="eq-8-43">
+<h2><span class="num">(8.43)</span>DPO 损失：偏好似然的负对数<a class="anchor" href="#eq-8-43">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.3.1 节　<a href="../thellm/15-8-human-alignment.html#8-3-1-representative-supervised-alignment-meth">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0221.png" alt="原书公式 8.43"><span class="cap">原书公式 8.43</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ L(\theta)=-\mathbb{E}_{(x,y^+,y^-)\sim\mathcal D}\left[\log\sigma\!\left(\beta\log\frac{\pi_\theta(y^{+}\mid x)}{\pi_{\theta_{\mathrm{old}}}(y^{+}\mid x)}-\beta\log\frac{\pi_\theta(y^{-}\mid x)}{\pi_{\theta_{\mathrm{old}}}(y^{-}\mid x)}\right)\right] \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(L(\theta)\)</td><td>待极小化的损失（标量）</td><td>标量，nat</td></tr>
+<tr><td>\(\pi_\theta\)</td><td>可训练策略模型</td><td>标量概率</td></tr>
+<tr><td>\(\pi_{\theta_{\mathrm{old}}}\)</td><td>冻结参考模型（由同一个 SFT 检查点初始化）</td><td>标量概率</td></tr>
+<tr><td>\(\mathcal D\)</td><td>偏好数据集，\((x,y^+,y^-)\sim\mathcal D\) 表示三元组联合采样</td><td>集合</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<p>这一步用的是最大似然估计（Maximum Likelihood Estimation, MLE）的标准套路：数据里的标签是"人选择了 \(y^+\)"，所以把模型给出的该事件概率取对数，再对数据集求平均、变号，即得可极小化的负对数似然。</p>
+<ol class="steps">
+<li>把 8.42 记作 \(P_\theta(y^+\succ y^-\mid x)\)，其中 \(\pi_r\) 替换为要优化的 \(\pi_\theta\)——这是本节唯一的新内容：<strong>从"最优策略"转为"待训练策略"</strong>。</li>
+<li>单条样本的负对数似然：\(-\log P_\theta(y^+\succ y^-\mid x)\)。取对数用到大数定律的直觉版本：在 \(N\) 条独立样本下最大化 \(\prod_tP_\theta^{(t)}\) 等价于最小化 \(-\frac1N\sum_t\log P_\theta^{(t)}\)。</li>
+<li>对数据集取期望，得到 8.43。实践中用小批量均值代替期望，\(L(\theta)=\frac1N\sum_{i=1}^N-\log\sigma(u_i)\)。</li>
+<li>与 RLHF 的对照：8.23 的目标是 \(\max_\theta \mathbb E[r]-\beta\mathrm{KL}\)，要同时维护 4 个模型（策略、参考、奖励、critic）；8.43 只需 2 个（策略 + 参考），且是交叉熵式的监督损失，复杂度等同 SFT。</li>
+</ol>
+
+<div class="note"><b>直觉</b>和"教模型念正确答案"不同，DPO 是"教模型更喜欢哪个"。它只有两类动作：把 \(y^+\) 相对参考的概率抬高，或把 \(y^-\) 相对参考的概率压低。参考模型是零点，所以抬高 \(y^+\) 的同时其实也在相对压低 \(y^-\)。
+</div>
+<div class="why"><b>为什么删掉奖励模型不算损失信息</b>8.33–8.37 说明：在 KL 正则的约束下，"最优奖励"与"最优策略"是一一对应的。把参数从"奖励"换成"策略"，约束自动满足——你没法在不付出 KL 代价的前提下把策略推到极端。也就是说，DPO 用"约束自动满足"换来了"少训两个模型"。
+</div>
+<div class="warn"><b>易错点</b>经验上 \(\beta\) 不能太小。\(\beta\to0\) 时 \(\log\frac{\pi_\theta}{\pi_{\theta_{\mathrm{old}}}}\) 被放大成硬约束，模型会为了取悦少数偏好样本而输出退化文本；同时 \(\log\pi_\theta\) 越小，损失对长回复的每 token 惩罚越大，模型容易学会"变短"。常用 \(\beta\in[0.1,0.5]\)。
+</div>
+<div class="relnav">相关：<a href="#eq-8-42">(8.42) 偏好概率</a>　<a href="#eq-8-44">(8.44) 梯度</a>　<a href="09-ch08-align-a.html#eq-8-3">(8.3) 奖励模型的 BT 对比损失</a></div>
+</section>
+
+<!-- ================= 8.44 ================= -->
+<section class="fml" id="eq-8-44">
+<h2><span class="num">(8.44)</span>对 DPO 损失求梯度：链式法则<a class="anchor" href="#eq-8-44">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.3.1 节 Analysis of the DPO Algorithm　<a href="../thellm/15-8-human-alignment.html#8-3-1-representative-supervised-alignment-meth">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0223.png" alt="原书公式 8.44"><span class="cap">原书公式 8.44</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \nabla L(\theta)=-\nabla\mathbb{E}_{(x,y^+,y^-)\sim\mathcal D}\big[\log\sigma(u)\big]=-\mathbb{E}_{(x,y^+,y^-)\sim\mathcal D}\left[\frac{\nabla\sigma(u)}{\sigma(u)}\,\nabla u\right] \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(u\)</td><td>\(\beta\log\frac{\pi_\theta(y^{+}\mid x)}{\pi_{\theta_{\mathrm{old}}}(y^{+}\mid x)}-\beta\log\frac{\pi_\theta(y^{-}\mid x)}{\pi_{\theta_{\mathrm{old}}}(y^{-}\mid x)}\)，<strong>是 \(\theta\) 的函数</strong></td><td>标量</td></tr>
+<tr><td>\(\nabla u\)</td><td>标量对参数向量求梯度，同形状 \(\mathbb{R}^{|\theta|}\)</td><td>向量</td></tr>
+<tr><td>\(\nabla\sigma(u)\)</td><td>同形状向量</td><td>向量</td></tr>
+<tr><td>\(\frac{\nabla\sigma(u)}{\sigma(u)}\)</td><td>逐元素（标量对向量）除法，不改变形状</td><td>向量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<p>用到的工具：<strong>Jacobian 链式法则</strong>。若标量 \(v=f(u)\)、向量 \(u=g(\theta)\)，则 \(\frac{\partial v}{\partial\theta}=\frac{\partial v}{\partial u}\frac{\partial u}{\partial\theta}\)；标量对向量求导得到的是与参数同形状的向量。</p>
+<ol class="steps">
+<li>\(\nabla\) 作用在期望上：数据三元组与 \(\theta\) 独立，所以 \(\nabla\mathbb E_{\mathcal D}[f]=-\mathbb E_{\mathcal D}[\nabla f]\)（外层负号来自 \(L\) 本身的负号）。</li>
+<li>把内层的 \(f=\log\sigma(u)\) 看成复合函数：外层是 \(\log(\cdot)\)，内层是 \(\sigma(u)\)。逐层用链式法则：\(\nabla\log\sigma(u)=\frac{1}{\sigma(u)}\nabla\sigma(u)\)。</li>
+<li>对 \(u\) 还要继续展开：\(\nabla\sigma(u)=\sigma'(u)\nabla u\)，因为 \(\sigma\) 只通过 \(u\) 依赖 \(\theta\)。</li>
+<li>三步合并即得 8.43 右式。原文把 \(u\) 的定义写在正文（见下方 <code>r̂_θ</code> 记号），此处补上：\(u\) 就是括号里那两个对数比之差。</li>
+</ol>
+
+<div class="note"><b>直觉</b>链式法则把"怎么调 \(\theta\)"归约成一个机械问题：先问"损失对 \(u\) 有多敏感"（\(\frac{\nabla\sigma(u)}{\sigma(u)}\)），再问" \(u\) 对参数有多敏感"（\(\nabla u\)），两者相乘。
+</div>
+<div class="warn"><b>易错点</b>这里的 \(\nabla\mathbb E_{\mathcal D}\) 只能穿透"与 \(\theta\) 无关"的那部分（数据集分布）。若把 \(\mathbb E_{y\sim\pi_\theta}\) 写成这种形式就错了——那时会额外多出一个 REINFORCE 项 \(\nabla\log\pi_\theta\)。DPO 之所以形式简洁，正是因为它<strong>没有</strong>这个采样期望。
+</div>
+<div class="relnav">相关：<a href="#eq-8-43">(8.43) 被求导的损失</a>　<a href="#eq-8-45">(8.45) 化简后的最终梯度</a></div>
+</section>
+
+<!-- ================= 8.45 ================= -->
+<section class="fml" id="eq-8-45">
+<h2><span class="num">(8.45)</span>DPO 梯度最终式：自适应步长的"推高 / 压低"<a class="anchor" href="#eq-8-45">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.3.1 节 Analysis of the DPO Algorithm　<a href="../thellm/15-8-human-alignment.html#8-3-1-representative-supervised-alignment-meth">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0227.png" alt="原书公式 8.45"><span class="cap">原书公式 8.45</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \nabla L(\theta)=-\beta\,\mathbb{E}_{(x,y^+,y^-)\sim\mathcal D}\Big[\big(\sigma(\hat r_\theta(x,y^-)-\hat r_\theta(x,y^+))\big)\cdot\big(\nabla\log\pi_\theta(y^{+}\mid x)-\nabla\log\pi_\theta(y^{-}\mid x)\big)\Big] \]
+</div>
+<p>其中隐式奖励估计定义为 \(\hat r_\theta(x,y)=\beta\log\frac{\pi_\theta(y\mid x)}{\pi_{\theta_{\mathrm{old}}}(y\mid x)}\)。</p>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\hat r_\theta(x,y)\)</td><td>隐式奖励估计，<strong>不含</strong> \(\beta\log Z(x)\)</td><td>标量</td></tr>
+<tr><td>\(\sigma(\hat r^- - \hat r^+)\)</td><td>梯度系数（标量），落在 \((0,1)\)</td><td>标量</td></tr>
+<tr><td>\(\nabla\log\pi_\theta(y\mid x)\)</td><td>策略的得分函数／对数似然梯度</td><td>向量 \(\mathbb{R}^{|\theta|}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>化简 \(\frac{\nabla\sigma(u)}{\sigma(u)}\)</strong>。因为 \(\sigma(u)=\frac{1}{1+e^{-u}}\)，求导得 \(\sigma'(u)=\sigma(u)(1-\sigma(u))=\sigma(u)\sigma(-u)\)，其中最后一步用了 \(\sigma(-u)=1-\sigma(u)\)。于是 \(\frac{\nabla\sigma(u)}{\sigma(u)}=\frac{\sigma'(u)\nabla u}{\sigma(u)}=\sigma(-u)\nabla u\)。</li>
+<li><strong>算出 \(\nabla u\)</strong>。\(u=\beta\log\pi_\theta(y^{+}\mid x)-\beta\log\pi_\theta(y^{-}\mid x)-\beta\log\pi_{\theta_{\mathrm{old}}}(y^{+}\mid x)+\beta\log\pi_{\theta_{\mathrm{old}}}(y^{-}\mid x)\)。参考模型参数被冻结，后两项梯度为 0；又因 \(\nabla(\beta\log\pi_\theta)=\beta\,\nabla\pi_\theta/\pi_\theta=\beta\nabla\log\pi_\theta\)，得 \(\nabla u=\beta\big(\nabla\log\pi_\theta(y^{+}\mid x)-\nabla\log\pi_\theta(y^{-}\mid x)\big)\)。</li>
+<li><strong>识别 \(-\sigma(-u)\)</strong>。\(-u=\beta\log\frac{\pi_\theta(y^{-}\mid x)}{\pi_{\theta_{\mathrm{old}}}(y^{-}\mid x)}-\beta\log\frac{\pi_\theta(y^{+}\mid x)}{\pi_{\theta_{\mathrm{old}}}(y^{+}\mid x)}=\hat r_\theta(x,y^-)-\hat r_\theta(x,y^+)\)，代入 \(\sigma\) 即得 8.45。</li>
+<li><strong>方向解读</strong>。梯度下降执行 \(\theta\leftarrow\theta-\eta\nabla L\)。因为 \(\nabla L\) 前面带负号，更新方向是 \(+\beta\sigma(\hat r^{-}-\hat r^{+})\big(\nabla\log\pi_\theta(y^{+}\mid x)-\nabla\log\pi_\theta(y^{-}\mid x)\big)\)：<strong>沿 \(\nabla\log\pi_\theta(y^{+}\mid x)\) 上升（抬高好答案概率），沿 \(\nabla\log\pi_\theta(y^{-}\mid x)\) 下降（压低坏答案概率）</strong>，权重由标量 \(\sigma(\hat r^{-}-\hat r^{+})\) 调节。</li>
+<li><strong>自适应步长</strong>。\(\sigma(\hat r^{-}-\hat r^{+})=\sigma(-u)\)。若模型已经严重偏好 \(y^-\)（\(\hat r^{-}-\hat r^{+}&gt;0\)），系数接近 1，步子大、纠偏猛；若模型已经明显偏好 \(y^+\)（\(\hat r^{-}-\hat r^{+}&lt;0\)），系数接近 0，步子自动变小避免过冲。这正是原书强调的稳定性来源。</li>
+</ol>
+
+<div class="note"><b>直觉</b>把它读成一句话："<strong>有多偏心，就有多用力</strong>"。模型的偏好排序越离谱，这一步的力度越大；一旦排对了，就轻踩刹车。所以 DPO 不会像纯 SFT 那样越训越偏。
+</div>
+<div class="warn"><b>易错点</b>\(\hat r_\theta\) 只是<strong>奖励的代理（去掉常数项后的差异）</strong>，不是真实奖励，因此不宜用它的绝对值做校准。另外梯度系数落在 \((0,1)\) 而非 \((0,\infty)\)，这意味着 \(\beta\) 与 \(\sigma\) 共同限制了更新幅度——这也是 DPO 比"直接最大化偏好似然"更稳的原因之一。
+</div>
+<div class="relnav">相关：<a href="#eq-8-44">(8.44) 链式法则第一步</a>　<a href="#eq-8-43">(8.43) DPO 损失</a></div>
+</section>
+
+<!-- ================= 8.46 ================= -->
+<section class="fml" id="eq-8-46">
+<h2><span class="num">(8.46)</span>监督式对齐算法的通用骨架：主目标 + 辅助项<a class="anchor" href="#eq-8-46">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.3.2 节 Other Supervised Alignment Algorithms　<a href="../thellm/15-8-human-alignment.html#8-3-2-other-supervised-alignment-algorithms">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0228.png" alt="原书公式 8.46"><span class="cap">原书公式 8.46</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ L_{\mathrm{total}}=-\mathbb{E}_{(x,y^+)\sim\mathcal D}\sum_{t=1}^{T}\log\big(y^{+}_{t}\mid x,\,y^{+}_{&lt;t}\big)+\underbrace{\mathcal L_{\mathrm{aux}}(y^{+},y^{-},x)}_{\text{auxiliary training target}} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(y^{+}_{t}\)</td><td>正例回复 \(y^+\) 的第 \(t\) 个 token</td><td>词表中的一个符号</td></tr>
+<tr><td>\(y^{+}_{&lt;t}\)</td><td>前 \(t-1\) 个 token 组成的序列（自回归条件）</td><td>序列</td></tr>
+<tr><td>\(T\)</td><td>正例回复的 token 数</td><td>整数</td></tr>
+<tr><td>\(\mathcal L_{\mathrm{aux}}\)</td><td>辅助目标，作用在 \(y^+\)、\(y^-\) 与 \(x\) 上</td><td>标量</td></tr>
+<tr><td>\(L_{\mathrm{total}}\)</td><td>总损失，两项直接相加（可各带权重）</td><td>标量，nat</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>主目标就是标准 SFT 交叉熵</strong>。用极大似然分解：自回归语言模型把整句似然写成 token 级连乘 \(\pi_\theta(y^{+}\mid x)=\prod_{t=1}^{T}\pi_\theta(y^{+}_{t}\mid x,y^{+}_{&lt;t})\)，取对数变成求和，再对数据集取期望、变号，得第一项。文本中省略了模型符号，直接写 \(\log(y^{+}_{t}\mid x,y^{+}_{&lt;t})\)，实为 \(\log\pi_\theta(\cdot)\)。</li>
+<li><strong>为什么必须补一个 \(\mathcal L_{\mathrm{aux}}\)</strong>。第一项是<strong>单侧</strong>的：它只教模型"多产出 \(y^+\)"，对 \(y^-\) 完全没有约束。逐 token 交叉熵还有一个结构性副作用——它按 \(T\) 累加，长回复每 token 损失更小，模型会发现"写短一点更划算"，于是系统性偏向短答案。</li>
+<li><strong>辅助项的两种常见形态</strong>（原书随后两小节）：
+  <ul>
+  <li><b>质量提示（Quality-Indicative Prompts）</b>：给输入加前缀标签（如 "Good response:" / "Bad response:"、"Response with 5-star reward:" / "Second-ranked response:"），把偏序信息<strong>编码进输入</strong>，此时 \(\mathcal L_{\mathrm{aux}}\) 可以退化为 0——因为条件已经变了。</li>
+  <li><b>质量对比（Quality Contrast）</b>：\(\mathcal L_{\mathrm{aux}}\) 取公式 <a href="09-ch08-align-a.html#eq-8-3">8.3</a> 的 BT 对比损失（<code>−log σ(r_θ(x,y⁺)−r_θ(x,y⁻))</code>）或公式 <a href="10-ch08-align-b.html#eq-8-22">8.22</a> 的排序损失（<code>−log σ(r_θ(x,y⁺)−r_θ(x,y⁻)−m)</code>），把负例压下去。还可以再叠加 in-batch 对比项，用其他输入的 \(\tilde x\) 的"好回复"当负例，防止对不同输入给出雷同回答。</li>
+  </ul></li>
+<li><strong>与本页前 13 条的关系</strong>。DPO（8.43）可以看成这个骨架的一个特例：主目标为 0、辅助项为 BT 型的偏好对数似然。SLiC / hinge 类方法是把辅助项换成 <code>max(0, δ−(log π_θ(y⁺)−log π_θ(y⁻)))</code> 的 margin 型损失并附加正则项 \(\mathcal L_{\mathrm{reg}}=-\log\pi_\theta(y^+\mid x)\)——因为单侧交叉熵不能防止模型把好答案的概率也压低，hinge 的分段梯度在 margin 满足时自动归零，起到了"只在该调时调"的正则作用。IPO 进一步把平方损失按回复长度归一化（除以 \(|y_w|^2\)）以去除长度偏置；ORPO 写成 \(\mathcal L=\mathcal L_{\mathrm{SFT}}+\lambda\mathcal L_{\mathrm{OR}}\)、其中 \(\mathcal L_{\mathrm{OR}}=-\mathbb E\log\sigma\big(\log\frac{p_\theta(y_w\mid x)}{p_\theta(y_l\mid x)}\big)\)，正是"先 SFT 再用偏好似然微调"；SimPO 则去掉参考模型、用平均对数概率做长度归一化，目标形如 \(-\mathbb E\big[\log\sigma(\tfrac{|y_w|}{|y_l|}\log\frac{p_\theta(y_w\mid x)}{p_\theta(y_l\mid x)})-\gamma\big]\)。它们全都落在这条"交叉熵主目标 + 偏序辅助项"的槽位里。</li>
+</ol>
+
+<div class="note"><b>直觉</b>8.46 是这一章的"接口定义"：<b>主目标负责"写得出来"</b>，<b>辅助项负责"分得清好坏"</b>。DPO 之所以敢砍掉主目标，是因为它的辅助项（BT 似然）自带足够强的推力；SLiC 之所以必须留下主目标，是因为 hinge 在 margin 一旦满足后就不再给任何梯度，模型会忘记怎么生成通顺文本。
+</div>
+<div class="warn"><b>易错点</b>原式第一项求和范围是 \(t=1\) 到 <b>\(T=|y^+|\)</b>，即只对正例计长度。如果原样照抄这个偏置去做"对称"的对比，会只在正例上加正则；多数变体会对 \(y^-\) 也算一份逐 token 似然作为正则项（即 \(\mathcal L_{\mathrm{aux}}\) 里含 \(-\log\pi_\theta(y^-\mid x)\)），这是实现细节而非公式规定。
+</div>
+<div class="relnav">相关：<a href="#eq-8-43">(8.43) DPO 作为特例</a>　<a href="09-ch08-align-a.html#eq-8-2">上一页 (8.2) 对比损失</a>　<a href="10-ch08-align-b.html#eq-8-22">上一页 (8.22) 排序损失</a></div>
+</section>
+</article>
+</main>
+<nav class="chapnav" aria-label="上下页导航"><div class="chapnav-inner">
+<a class="" href="10-ch08-align-b.html"><span class="lbl">上一章</span><span class="nm">Chapter 8 · 2/3　第 8 章 · 人类对齐（2/3）</span></a><a class="next" href="12-ch09-dec-a.html"><span class="lbl">下一章</span><span class="nm">Chapter 9 · 1/2　第 9 章 · 解码与部署（1/2）</span></a>
+</div></nav>
+<script src="../assets/katex/katex.min.js"></script>
+<script src="../assets/katex/auto-render.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

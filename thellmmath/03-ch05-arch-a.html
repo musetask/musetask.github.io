@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>第 5 章 · 模型架构（1/3） · 《Large Language Models》公式推导手册</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23a11f27'/%3E%3Ctext x='16' y='23' font-size='20' font-family='Georgia,serif' fill='%23fff' text-anchor='middle'%3E%E2%88%91%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="style.css">
+<script>(function(){try{var t=localStorage.getItem('thellmmath-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn idxbtn" href="index.html" aria-label="目录"><span aria-hidden="true">&#9776;</span> <span class="lbl">目录</span></a>
+  <a class="brand" href="index.html">《Large Language Models》公式推导手册</a>
+  <button class="btn" id="themeToggle" aria-label="切换深色模式">&#9788;</button>
+</header>
+<main id="main">
+<article>
+<h1><span class="chno">Chapter 5 · Model Architecture</span>第 5 章 · 模型架构（1/3）</h1>
+<p class="lead">这一页把 Transformer 从头搭一遍：输入的 token 先变成"向量 + 位置向量"，多头注意力（Multi-Head Attention, MHA）用三组投影矩阵把同一份输入劈成 \(N\) 套 query / key / value，算缩放点积注意力再拼回来，前馈网络（Feed-Forward Network, FFN）做非线性，每一层外面套残差连接与层归一化（LayerNorm）。覆盖原书 5.1 节全部编号公式 5.1–5.11，以及 5.2.1 节归一化部分的 5.12–5.16。本页大量涉及<strong>矩阵求导</strong>，所以先单独补一节把约定和工具补齐。</p>
+<p class="where"><b>原书位置</b>第 5 章 5.1 节 <a href="../thellm/11-5-model-architecture.html#5-1-transformer-models">对照原文</a></p>
+
+<h2 id="toc-a">本页公式一览</h2>
+<table class="sym">
+<tr><th>编号</th><th>一句话</th><th>核心数学工具</th></tr>
+<tr><td><a href="#eq-5-1">5.1</a></td><td>词嵌入 + 位置编码相加</td><td>向量加法</td></tr>
+<tr><td><a href="#eq-5-2">5.2</a></td><td>query 投影 \(Q = XW^Q\)</td><td>矩阵乘法</td></tr>
+<tr><td><a href="#eq-5-3">5.3</a></td><td>key 投影 \(K = XW^K\)</td><td>矩阵乘法</td></tr>
+<tr><td><a href="#eq-5-4">5.4</a></td><td>value 投影 \(V = XW^V\)</td><td>矩阵乘法</td></tr>
+<tr><td><a href="#eq-5-5">5.5</a></td><td>缩放点积注意力</td><td>方差可加性、softmax 雅可比</td></tr>
+<tr><td><a href="#eq-5-6">5.6</a></td><td>多头拼接 + 输出投影</td><td>分块矩阵</td></tr>
+<tr><td><a href="#eq-5-7">5.7</a></td><td>第 \(n\) 个头的定义</td><td>矩阵乘法</td></tr>
+<tr><td><a href="#eq-5-8">5.8</a></td><td>前馈网络（两层线性 + 激活）</td><td>仿射映射</td></tr>
+<tr><td><a href="#eq-5-9">5.9</a></td><td>编码器一层：残差 + LayerNorm</td><td>Jacobian 链式法则</td></tr>
+<tr><td><a href="#eq-5-10">5.10</a></td><td>解码器一层：三个子层</td><td>Jacobian 链式法则</td></tr>
+<tr><td><a href="#eq-5-11">5.11</a></td><td>输出层映射到词表 + softmax</td><td>softmax 雅可比</td></tr>
+<tr><td><a href="#eq-5-12">5.12</a></td><td>LayerNorm 主公式</td><td>标准化 + 可仿射恢复</td></tr>
+<tr><td><a href="#eq-5-13">5.13</a></td><td>LayerNorm 的均值与标准差</td><td>样本均值 / 样本方差</td></tr>
+<tr><td><a href="#eq-5-14">5.14</a></td><td>RMSNorm</td><td>均方根缩放</td></tr>
+<tr><td><a href="#eq-5-15">5.15</a></td><td>RMS 定义</td><td>均方根</td></tr>
+<tr><td><a href="#eq-5-16">5.16</a></td><td>DeepNorm</td><td>残差支路放缩</td></tr>
+</table>
+
+<h2 id="conv">本页符号约定</h2>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(H\)</td><td>隐藏状态维度（hidden size），即 <code>d_model</code></td><td>标量，\(\mathbb{R}\)；GPT-3 = 12288</td></tr>
+<tr><td>\(H_k\)</td><td>单个注意力头的 key / query / value 维度，即 <code>d_k</code></td><td>标量，\(\mathbb{R}\)；原书里记作 \(D\)</td></tr>
+<tr><td>\(N\)</td><td>注意力头数</td><td>标量，\(\mathbb{R}\)；GPT-3 = 96</td></tr>
+<tr><td>\(H = N\cdot H_k\)</td><td>头拼接后总维度等于隐藏维度（多头设计约束）</td><td>无</td></tr>
+<tr><td>\(T\)</td><td>序列长度（token 数）</td><td>标量，\(\mathbb{R}\)；GPT-3 = 2048</td></tr>
+<tr><td>\(L\)</td><td>Transformer 层数</td><td>标量，\(\mathbb{R}\)；GPT-3 = 96</td></tr>
+<tr><td>\(\mathbf{X}\)</td><td>输入嵌入序列，按行排成一个矩阵</td><td>\(\mathbb{R}^{T\times H}\)</td></tr>
+<tr><td>\(\mathbf{Q},\mathbf{K},\mathbf{V}\)</td><td>query / key / value 矩阵</td><td>\(\mathbb{R}^{T\times H_k}\)</td></tr>
+<tr><td>\(\mathbf{W}^{Q},\mathbf{W}^{K},\mathbf{W}^{V}\)</td><td>三个投影矩阵</td><td>\(\mathbb{R}^{H\times H_k}\)</td></tr>
+<tr><td>\(\mathbf{W}^{O}\)</td><td>多头输出投影矩阵</td><td>\(\mathbb{R}^{H\times H}\)</td></tr>
+<tr><td>\(\gamma,\beta\)</td><td>LayerNorm 的缩放（gain）与平移（shift）参数</td><td>\(\mathbb{R}^{H}\)（可学习）</td></tr>
+<tr><td>\(\sigma\)</td><td>非线性激活函数（ReLU / GELU / SwiGLU）</td><td>标量函数</td></tr>
+</table>
+<div class="warn">
+<b>易错点：\(H\) 和 \(D\) 别混</b>
+原书正文里 \(H\) 表示隐藏维度、\(D\) 表示 key 向量维度。本手册为了和社区习惯一致，在本页用 \(H\) 表示隐藏维度（= <code>d_model</code>）、用 \(H_k\) 表示头的维度（= <code>d_k</code>、= 原书的 \(D\)）。公式 5.5 里的 \(\sqrt{D}\) 就是 \(\sqrt{H_k}\)。
+</div>
+
+<h2 id="calc">前置：矩阵求导约定（分母布局）</h2>
+<p>本章每一步都是"矩阵过矩阵"，必须先固定求导约定，否则公式 5.5 之后的所有梯度都会差一个转置。本页统一采用<strong>分母布局</strong>（denominator layout，机器学习里也常叫 "backward / reverse mode" 约定）：\(\frac{\partial L}{\partial y_i}\) 这种写法里，<strong>被求导的量放在分母上</strong>，且 \(\frac{\partial L}{\partial \mathbf{y}}\) 与 \(\mathbf{y}\) <strong>同形</strong>（都是列向量）。这条约定的好处是反向传播时梯度"一路往回传、不用转置"，代码里直接就是一次矩阵乘。</p>
+<p>先从最原始的标量微分开始。设 \(\mathbf{y}=\mathbf{W}\mathbf{x}\)，其中 \(\mathbf{W}\in\mathbb{R}^{m\times k}\)、\(\mathbf{x}\in\mathbb{R}^{k}\)、\(\mathbf{y}\in\mathbb{R}^{m}\)。逐元素写出 \(y_i=\sum_{j=1}^{k}W_{ij}x_j\)，对每个 \(x_j\) 求偏导：</p>
+<div class="eq">
+\[
+\frac{\partial y_i}{\partial x_j}=W_{ij}
+\qquad\Longrightarrow\qquad
+dy=\sum_{i=1}^{m}dy_i\,dy_i^{\mathrm{(真实)}}=\sum_{i=1}^{m}\sum_{j=1}^{k}\frac{\partial y_i}{\partial x_j}dx_j\,dy_i
+\]
+</div>
+<p>注意 \(\frac{\partial y_i}{\partial x_j}=W_{ij}\) 就是矩阵元素 \((i,j)\)。把所有 \((i,j)\) 的项收集起来，\(\{W_{ij}\}\) 这一坨的系数就是 \(\{dy_i\}\) 对 \(\{dx_j\}\) 的系数矩阵，即 \(\mathbf{W}^{\top}\mathbf{dy}\)。</p>
+<ol class="steps">
+<li><strong>对 \(\mathbf{x}\) 求导（向输入传）：</strong>把上式里所有 \(dx_j\) 提到括号外，
+\(\sum_j\left(\sum_i W_{ij}dy_i\right)dx_j\)，括号内的量就是 \(\frac{\partial L}{\partial x_j}\)（当 \(L\) 是标量且 \(dL=\sum_i\frac{\partial L}{\partial y_i}dy_i\) 时）。由矩阵乘法定义它恰是 \(\mathbf{W}^{\top}\frac{\partial L}{\partial\mathbf{y}}\)：</li>
+<li><strong>对 \(\mathbf{W}\) 求导（向参数传）：</strong>回看展开式 \(\sum_{i,j}W_{ij}\,dx_j\,dy_i\)。每个 \(dW_{ij}\) 的系数是 \(dx_j\,dy_i\)，即 \(\frac{\partial L}{\partial W_{ij}}=\frac{\partial L}{\partial y_i}x_j\)。按 \((i,j)\) 排好矩阵，行指标跟 \(y\) 走、列指标跟 \(x\) 走，正好是一个<strong>外积</strong>：</li>
+</ol>
+<div class="eq">
+\[
+\boxed{\ \frac{\partial L}{\partial \mathbf{W}}=\frac{\partial L}{\partial \mathbf{y}}\,\mathbf{x}^{\top}\in\mathbb{R}^{m\times k}\ ,\qquad
+\frac{\partial L}{\partial \mathbf{x}}=\mathbf{W}^{\top}\frac{\partial L}{\partial \mathbf{y}}\in\mathbb{R}^{k}\ }
+\]
+</div>
+<p>记忆法：<strong>梯度矩阵的形状必须和被求导的量同形</strong>（分母布局的定义）。所以 \(\frac{\partial L}{\partial \mathbf{W}}\) 是 \(m\times k\) 而不是 \(k\times m\)。反向传播一路做的是"左乘 \(\mathbf{W}^{\top}\)"，正是上面第二条。</p>
+<div class="note">
+<b>另一种布局：分子布局（numerator layout）</b>
+Deep Learning 书里的写法把被求导量放在分子：\(\frac{\partial \mathbf{y}}{\partial \mathbf{x}}=\mathbf{W}\)。两者数学上等价，只是差一次转置，切换时记"分母布局 = 分子布局转置"即可。符号导数/矩阵导数的软件生态（TensorFlow 早期、JAX）用分子布局，PyTorch 和本手册用分母布局。
+</div>
+<p>还要提前备好两个反复出现的工具。</p>
+<p><strong>（a）softmax 的雅可比矩阵。</strong>定义 \(s_i=\frac{e^{z_i}}{\sum_{k=1}^{H}z_k}\text{的实际分母}=\frac{e^{z_i}}{\sum_{k}e^{z_k}}\)。用商的求导法则（\(\frac{\partial}{\partial z}\frac{u}{v}=\frac{v\frac{\partial u}{\partial z}-u\frac{\partial v}{\partial z}}{v^2}\)）：</p>
+<div class="eq">
+\[
+\frac{\partial s_i}{\partial z_j}=\frac{e^{z_i}\delta_{ij}\sum_ke^{z_k}-e^{z_i}e^{z_j}}{\left(\sum_ke^{z_k}\right)^2}
+=\frac{e^{z_i}}{\sum_ke^{z_k}}\delta_{ij}-\frac{e^{z_i}}{\sum_ke^{z_k}}\frac{e^{z_j}}{\sum_ke^{z_k}}
+=s_i\delta_{ij}-s_is_j=s_i(\delta_{ij}-s_j)
+\]
+</div>
+<p>其中第二步用到了商法则的分母展开式和 \(\frac{\partial z_i}{\partial z_j}=\delta_{ij}\)。写成矩阵形式就是对角阵减外积：</p>
+<div class="eq">
+\[
+J=\frac{\partial \mathbf{s}}{\partial \mathbf{z}}=\operatorname{diag}(\mathbf{s})-\mathbf{s}\mathbf{s}^{\top}\ \in\ \mathbb{R}^{H\times H}
+\]
+</div>
+<p><strong>（b）softmax 交叉熵损失对 logits 的梯度。</strong>设 \(L=-\sum_{c}\log s_{y_c}\)（\(y_c\) 是第 \(c\) 个样本的真类）。用链式法则 \(\frac{\partial L}{\partial z_{ic}}=\sum_j\frac{\partial L}{\partial s_{ij}}\frac{\partial s_{ij}}{\partial z_{ic}}\)。而 \(\frac{\partial L}{\partial s_{ij}}=-\delta_{j,y_i}\)，所以</p>
+<div class="eq">
+\[
+\frac{\partial L}{\partial z_{ic}}=-\sum_j\delta_{j,y_i}\,s_i(\delta_{ij}-s_j)=-s_i(1-s_{y_i})=\boxed{\,s_{ic}-\delta_{y_i,c}\,}
+\]
+</div>
+<div class="note">
+<b>直觉</b>
+梯度就是"模型给真类的概率"减"真类标签（one-hot）"。预测对了概率大，梯度就小。这个漂亮结论完全依赖上面那个 \(s_i(\delta_{ij}-s_j)\)——softmax 和交叉熵是一对设计好的搭档，分开写反而复杂。
+</div>
+
+<section class="fml" id="eq-5-1">
+<h2><span class="num">(5.1)</span>输入编码：词向量 + 位置向量<a class="anchor" href="#eq-5-1">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.1.1 节 Input Encoding Layer　<a href="../thellm/11-5-model-architecture.html#5-1-1-input-encoding-layer">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0047.png" alt="原书公式 5.1"><span class="cap">原书公式 5.1</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ x_t = v_t + p_t \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(u_t\)</td><td>输入序列第 \(t\) 个 token（词表索引）</td><td>标量整数</td></tr>
+<tr><td>\(v_t\)</td><td>token 的<strong>词嵌入</strong>，查表得到，可学习</td><td>\(\mathbb{R}^{H}\)</td></tr>
+<tr><td>\(p_t\)</td><td>第 \(t\) 个<strong>绝对位置向量</strong></td><td>\(\mathbb{R}^{H}\)</td></tr>
+<tr><td>\(x_t\)</td><td>送进第一层注意力的输入表示</td><td>\(\mathbb{R}^{H}\)</td></tr>
+<tr><td>\(t\)</td><td>位置下标，\(t=1,\dots,T\)</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>为什么需要它。</strong>自注意力（self-attention）算的是 \(q_i^{\top}k_j\) 这种<strong>两两内积</strong>，它对"谁在前谁在后"完全无感：把序列整体打乱，注意力矩阵只是跟着行列一起置换，输出的<em>集合</em>不变。要编码顺序必须外加信息，这就是位置编码（positional encoding, PE）的动机。</li>
+<li><strong>词嵌入是查表不是计算。</strong>实现上 \(v_t\) 是嵌入矩阵 \(\mathbf{E}\in\mathbb{R}^{|\mathcal{V}|\times H}\) 的第 \(u_t\) 行，即 \(v_t = \mathbf{E}[u_t,:]\)。数学上等价于 one-hot 向量 \(\mathbf{o}_t\in\mathbb{R}^{|\mathcal{V}|}\) 乘 \(\mathbf{E}\)：\(\mathbf{o}_t^{\top}\mathbf{E}\)。这就是"嵌入层 = 线性层 + one-hot 输入"的由来。</li>
+<li><strong>相加而不是拼接。</strong>这是纯粹的设计选择。拼接 \(x_t=[v_t;\,p_t]\in\mathbb{R}^{2H}\) 会让后续所有权重矩阵维度翻倍；而相加让 \(v\) 与 \(p\) 在同一空间里混合，模型自己去学哪些维度编码语义、哪些编码位置。求和也满足"两个信息都还在"的可逆性——若 \(\{v_t\}\) 与 \(\{p_t\}\) 分别张成子空间且正交，则 \(t\mapsto v_t+p_t\) 是单射（可解出 \(v_t\)），只是不再正交而已。</li>
+<li><strong>求导。</strong>因为是逐元素相加，Jacobian 是 <em>拼接的单位阵</em>：\(\frac{\partial x_t}{\partial v_t}=I_H\)，\(\frac{\partial x_t}{\partial p_t}=I_H\)。也就是说位置编码这条支路<strong>直通</strong>，梯度原封不动地回传给嵌入表或位置参数，不会被任何矩阵稀释。这是它被广泛使用的原因之一。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+"词向量"回答"这是什么字"，"位置向量"回答"它在第几个"。两者塞进同一个 \(\mathbb{R}^{H}\) 的抽屉里，相加就是把它们叠在一起。抽屉格子怎么分配由训练自己决定。
+</div>
+<div class="warn"><b>易错点：相加会互相污染</b>
+相加意味着语义和位置共享同一组坐标，"位置 5 的 <em>猫</em>"和"位置 5 的 <em>狗</em>"的 \(p_t\) 完全相同，模型必须靠 \(v_t\) 里的差异来区分。实际训练中确实会观察到：某些维度专门编码位置（对所有 token 高度相似），另一些专门编码语义。这也是可学习位置编码容易被模型"读死"的原因。
+</div>
+<div class="relnav">相关：<a href="#pe-detail">补充：三种位置编码的正弦/可学习/RoPE</a>　<a href="#eq-5-2">(5.2) 第一个投影</a></div>
+</section>
+
+<h2 id="pe-detail">补充：位置编码怎么算出来的</h2>
+<p>公式 5.1 只说"把 \(p_t\) 加上去"，没说 \(p_t\) 怎么来。本页负责的三种写法里，<strong>正弦编码（sinusoidal, Vaswani et al. 2017）</strong>是原书 5.2.4 节的起点，也是唯一能显式证明"相对位置性质"的一种，所以在这里完整写出来（可学习位置编码与 RoPE 属于第 3/5 页的内容，此处只给一句话定位）。</p>
+<div class="eq">
+\[ \mathrm{PE}_{pos,\,2i}=\sin\!\left(\frac{pos}{10000^{2i/H}}\right),\qquad \mathrm{PE}_{pos,\,2i+1}=\cos\!\left(\frac{pos}{10000^{2i/H}}\right) \]
+</div>
+<p>即把位置 \(pos\) 铺成 \(H/2\) 对 \((\sin,\cos)\)：第 \(i\) 对的角频率 \(\omega_i=10000^{-2i/H}\)，从 \(\omega_0=1\) 开始，每对频率乘 \(\frac{1}{10000}\)。所以不同维度覆盖从高到低的所有尺度。</p>
+<ol class="steps">
+<li><strong>为什么取正弦余弦，而不是随便一组可学习数字。</strong>关键性质是：\(p_{pos}\) 满足一个二阶线性递推，因此 \(p_{pos+k}\) 是 \(p_{pos}\) 与 \(p_{pos+1}\) 的<strong>线性组合</strong>。</li>
+<li><strong>把三角函数写成相位的线性函数。</strong>对第 \(i\) 对，令 \(\theta=pos\cdot\omega_i\)，则该对分量为 \((\sin\theta,\cos\theta)\)。用和差化积公式 \(2\sin a\cos b=\sin(a+b)+\sin(a-b)\) 和 \(2\cos a\sin b=\sin(a+b)-\sin(a-b)\)，对任意偏移 \(k\)：</li>
+<li>\(\sin\big((pos+k)\omega_i\big)=\sin(pos\,\omega_i)\cos(k\omega_i)+\cos(pos\,\omega_i)\sin(k\omega_i)\)，
+\(\cos\big((pos+k)\omega_i\big)=\cos(pos\,\omega_i)\cos(k\omega_i)-\sin(pos\,\omega_i)\sin(k\omega_i)\)。
+记 \(s=\sin(pos\,\omega_i)\)、\(c=\cos(pos\,\omega_i)\)，则 \(p_{pos+k}\) 的这一对 \(=(c_k\,c - s_k\,s,\; c_k\,c + s_k\,s)\)，其中 \(c_k=\cos(k\omega_i)\)、\(s_k=\sin(k\omega_i)\) <strong>只依赖相对距离 \(k\)</strong>。</li>
+<li>把全部 \(H/2\) 对按这个式子横向拼起来，系数矩阵只由 \(k\) 决定、对所有 \(pos\) 相同，即 \(\mathbf{P}_{pos+k}=M_k\,\mathbf{P}_{pos}\)，其中 \(M_k\in\mathbb{R}^{H\times H}\) 与 \(pos\) 无关。</li>
+<li><strong>推论。</strong>注意力分数里的 \(q_i^{\top}k_j\) 展开后会出现这些系数，模型看到的分数本质上是相对距离 \(i-j\) 的固定函数——这就是<strong>相对位置性质</strong>：正弦编码让注意力天然只"看到"相对距离，且距离 \(k\) 在某组低维上以周期 \(2\pi/\omega_i\) 重复出现，等于提供了不同尺度的可平移特征。</li>
+</ol>
+<div class="note"><b>直觉</b>
+把每个位置编成一串不同频率的时钟。第 0 位频率高、周期短，像秒针；第 \(H/2\) 位频率极低、周期极长，像年历。两个位置相差多少步，在每根"针"上都只差一个固定的相位差——所以模型只要会做线性运算就能读出距离。
+</div>
+<div class="why"><b>三种位置编码的分工（为什么原书把它们分开讲）</b>
+<ul>
+<li><strong>可学习绝对位置</strong>（BERT、GPT-2）：\(p_t\) 就是嵌入表 \(\mathbf{P}\in\mathbb{R}^{T_{max}\times H}\) 的第 \(t\) 行。简单、能拟合任意模式，但<strong>无法外推</strong>：超过 \(T_{max}\) 就没有对应行了。</li>
+<li><strong>正弦绝对位置</strong>：无参数、天然外推（用公式算就行），但外推质量没有保证。</li>
+<li><strong>RoPE（Rotary Position Embedding）</strong>：不用加法，而是给 \(q,k\) 乘一个由绝对位置决定的<strong>旋转矩阵</strong>，利用 \(\mathbf{R}_m^{\top}\mathbf{R}_n=\mathbf{R}_{n-m}\) 让点积只依赖相对位置。见 <a href="../thellm/11-5-model-architecture.html#5-2-4-position-encoding">原书 5.2.4</a>。</li>
+</ul>
+</div>
+<div class="relnav">相关：<a href="#eq-5-1">(5.1) 位置向量加到词向量</a></div>
+
+<section class="fml" id="eq-5-2">
+<h2><span class="num">(5.2)</span>Query 投影 \(Q = XW^Q\)<a class="anchor" href="#eq-5-2">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.1.2 节 Multi-Head Attention Layer　<a href="../thellm/11-5-model-architecture.html#5-1-2-multi-head-attention-layer">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0048.png" alt="原书公式 5.2"><span class="cap">原书公式 5.2</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \mathbf{Q} = \mathbf{X}\mathbf{W}^{Q} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\mathbf{X}\)</td><td>输入嵌入序列（公式 5.1 把整列拼起来）</td><td>\(\mathbb{R}^{T\times H}\)</td></tr>
+<tr><td>\(\mathbf{W}^{Q}\)</td><td>query 投影矩阵，可学习参数</td><td>\(\mathbb{R}^{H\times H_k}\)</td></tr>
+<tr><td>\(\mathbf{Q}\)</td><td>query 矩阵，第 \(t\) 行是 \(q_t\)</td><td>\(\mathbb{R}^{T\times H_k}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>形状怎么对上。</strong>矩阵乘法的定义是 \((\mathbf{A}\mathbf{B})_{ij}=\sum_k A_{ik}B_{kj}\)。这里 \((\mathbf{X}\mathbf{W}^Q)_{it}=\sum_{j=1}^{H}X_{ij}W^Q_{jt}\)，正好是"把第 \(t\) 个 token 的 \(H\) 维表示，用权重 \(\{W^Q_{jt}\}_{j=1}^{H}\) 重新加权求和，得到 \(H_k\) 维的 \(q_t\)"。即 \(q_t = \mathbf{x}_t^{\top}\mathbf{W}^Q\)。</li>
+<li><strong>为什么每个 token 需要自己的投影。</strong>同一份 \(\mathbf{x}_t\) 要同时当 query、key、value 用（自注意力），但三种角色需要不同的"提问方式 / 被检索方式 / 内容"。参数不共享（<code>W_Q ≠ W_K ≠ W_V</code>）正是让模型学出这三种不同视角的唯一途径。</li>
+<li><strong>为什么需要 \(\mathbf{W}^Q\) 而不是直接用 \(\mathbf{X}\)。</strong>如果 \(\mathbf{W}^Q=I\)，那么 \(q_t = x_t\)，注意力分数退化为 \(x_i^{\top}x_j\)——纯对称的相似度，没有可学习的相似度度量。<strong>相似度函数是学出来的</strong>，这才是重点。</li>
+<li><strong>求导（用页首的分母布局）。</strong>设上游梯度 \(\frac{\partial L}{\partial \mathbf{Q}}=\mathbf{G}\in\mathbb{R}^{T\times H_k}\)，把 \(\mathbf{Y}=\mathbf{X}\mathbf{W}\) 对 \(\mathbf{X}\) 求导：分母布局下 \(\frac{\partial L}{\partial \mathbf{X}}=\mathbf{W}\frac{\partial L}{\partial \mathbf{Y}}=\mathbf{W}^{Q}\mathbf{G}\in\mathbb{R}^{T\times H}\)。对 \(\mathbf{W}\) 求导：\(\frac{\partial L}{\partial \mathbf{W}^Q}=\mathbf{X}^{\top}\mathbf{G}\in\mathbb{R}^{H\times H_k}\)。两式形状分别与 \(\mathbf{X}\)、\(\mathbf{W}^Q\) 同形，符合分母布局。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+\(q_t\) 是"第 \(t\) 个位置主动想找什么"的提问向量。它由 \(x_t\) 线性变换而来，权重 \(\mathbf{W}^Q\) 就是模型学出来的"提问模板"。
+</div>
+<div class="warn"><b>易错点：\(Q\) 是 \(T\times H_k\)，不是 \(H_k\times T\)</b>
+原书矩阵是<em>行是 token</em>的布局（序列在左），所以 \(QK^{\top}\) 才是 \(T\times T\)。很多教程写成列是 token，那就得用 \(KQ^{\top}\)。本书统一行是 token。
+</div>
+<div class="relnav">相关：<a href="#eq-5-5">(5.5) Q 怎么用</a>　<a href="#calc">矩阵求导约定</a></div>
+</section>
+
+<section class="fml" id="eq-5-3">
+<h2><span class="num">(5.3)</span>Key 投影 \(K = XW^K\)<a class="anchor" href="#eq-5-3">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.1.2 节 Multi-Head Attention Layer　<a href="../thellm/11-5-model-architecture.html#5-1-2-multi-head-attention-layer">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0049.png" alt="原书公式 5.3"><span class="cap">原书公式 5.3</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \mathbf{K} = \mathbf{X}\mathbf{W}^{K} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\mathbf{W}^{K}\)</td><td>key 投影矩阵，与 \(\mathbf{W}^Q\) <strong>不共享参数</strong></td><td>\(\mathbb{R}^{H\times H_k}\)</td></tr>
+<tr><td>\(\mathbf{K}\)</td><td>key 矩阵，第 \(t\) 行是 \(k_t\)</td><td>\(\mathbb{R}^{T\times H_k}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li>与 5.2 完全同构，只是参数矩阵换成 \(\mathbf{W}^K\)：\(k_t=\mathbf{x}_t^{\top}\mathbf{W}^K\in\mathbb{R}^{H_k}\)。</li>
+<li><strong>key 的角色是"被匹配的标签"。</strong>分数 \(s_{ij}=q_i^{\top}k_j/\sqrt{H_k}\) 里，\(k_j\) 是第 \(j\) 个位置挂出的"检索标签"。标签和提问必须用<strong>同一套语义空间</strong>才能内积可比——这由训练自动协调（\(\mathbf{W}^Q,\mathbf{W}^K\) 联合优化），不需要额外约束。</li>
+<li><strong>求导。</strong>设 \(\frac{\partial L}{\partial \mathbf{K}}=\mathbf{G}_K\)，则 \(\frac{\partial L}{\partial \mathbf{X}}\) 中这一项为 \(\mathbf{W}^K\mathbf{G}_K\)，\(\frac{\partial L}{\partial \mathbf{W}^K}=\mathbf{X}^{\top}\mathbf{G}_K\)。注意反向传播时同一个 \(\mathbf{X}\) 会收到 <em>query、key、value 三路梯度之和</em>：\(\frac{\partial L}{\partial\mathbf{X}}=\mathbf{W}^Q\mathbf{G}_Q+\mathbf{W}^K\mathbf{G}_K+\mathbf{W}^V\mathbf{G}_V\)。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+每个位置既是"提问者"又是"被检索者"。\(Q\) 是它的问题，\(K\) 是它的标签，\(V\) 是它的内容。三个投影就是给同一个位置戴三顶不同的帽子。
+</div>
+<div class="relnav">相关：<a href="#eq-5-2">(5.2) Query 投影</a>　<a href="#eq-5-4">(5.4) Value 投影</a></div>
+</section>
+
+<section class="fml" id="eq-5-4">
+<h2><span class="num">(5.4)</span>Value 投影 \(V = XW^V\)<a class="anchor" href="#eq-5-4">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.1.2 节 Multi-Head Attention Layer　<a href="../thellm/11-5-model-architecture.html#5-1-2-multi-head-attention-layer">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0050.png" alt="原书公式 5.4"><span class="cap">原书公式 5.4</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \mathbf{V} = \mathbf{X}\mathbf{W}^{V} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\mathbf{W}^{V}\)</td><td>value 投影矩阵</td><td>\(\mathbb{R}^{H\times H_k}\)</td></tr>
+<tr><td>\(\mathbf{V}\)</td><td>value 矩阵，第 \(t\) 行是 \(v_t\)</td><td>\(\mathbb{R}^{T\times H_k}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li>同构：\(v_t=\mathbf{x}_t^{\top}\mathbf{W}^V\in\mathbb{R}^{H_k}\)。</li>
+<li><strong>value 不参与打分</strong>，它只作为被加权的"内容载荷"。所以 \(\mathbf{W}^V\) 的自由度最高：它可以直接决定"注意力聚合之后输出什么"。这解释了为什么很多工作（如 <code>low-rank</code> 分解、MLA）压缩的是 V 和 K 的缓存，而不是 Q。</li>
+<li><strong>求导。</strong>\(\frac{\partial L}{\partial\mathbf{W}^V}=\mathbf{X}^{\top}\mathbf{G}_V\)，\(\frac{\partial L}{\partial\mathbf{X}}\) 上收到 \(\mathbf{W}^V\mathbf{G}_V\)。三路梯度在 \(\mathbf{X}\) 处汇合，这是"参数共享导致梯度叠加"的一个具体例子。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+打分靠 \(Q,K\)，输出靠 \(V\)。注意力权重是一张 \(T\times T\) 的表，它乘在 \(V\) 上（第 \(t\) 行 = 第 \(t\) 个位置所有 value 的加权平均）。
+</div>
+<div class="relnav">相关：<a href="#eq-5-3">(5.3) Key 投影</a>　<a href="#eq-5-5">(5.5) 缩放点积注意力</a></div>
+</section>
+
+<section class="fml" id="eq-5-5">
+<h2><span class="num">(5.5)</span>缩放点积注意力<a class="anchor" href="#eq-5-5">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.1.2 节 Multi-Head Attention Layer　<a href="../thellm/11-5-model-architecture.html#5-1-2-multi-head-attention-layer">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0051.png" alt="原书公式 5.5"><span class="cap">原书公式 5.5</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \operatorname{Attention}(\mathbf{Q},\mathbf{K},\mathbf{V})=\operatorname{softmax}\!\left(\frac{\mathbf{Q}\mathbf{K}^{\top}}{\sqrt{D}}\right)\mathbf{V} \]
+</div>
+<p>其中 \(D\) 即本手册记的 \(H_k\)，是 key 向量维度。</p>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\mathbf{Q}\mathbf{K}^{\top}\)</td><td>原始分数（logits）矩阵，第 \(i\) 行第 \(j\) 项是 \(q_i^{\top}k_j\)</td><td>\(\mathbb{R}^{T\times T}\)</td></tr>
+<tr><td>\(\sqrt{D}=\sqrt{H_k}\)</td><td>缩放因子，取 <em>key 维度</em>的平方根</td><td>标量</td></tr>
+<tr><td>\(\mathbf{A}\)</td><td>注意力权重矩阵，每行非负且和为 1</td><td>\(\mathbb{R}^{T\times T}\)</td></tr>
+<tr><td>\(\operatorname{Attention}(\cdot)\)</td><td>输出矩阵，第 \(i\) 行是输出位置 \(i\) 的新表示</td><td>\(\mathbb{R}^{T\times H_k}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<p><strong>推导 A：整条公式的三步流水线。</strong>把矩阵写开：</p>
+<div class="eq">
+\[
+A_{ij}=\frac{\exp(q_i^{\top}k_j/\sqrt{H_k})}{\sum_{j'=1}^{T}\exp(q_i^{\top}k_{j'}/\sqrt{H_k})},\qquad
+\operatorname{Attention}(\mathbf{Q},\mathbf{K},\mathbf{V})_i=\sum_{j=1}^{T}A_{ij}v_j
+\]
+</div>
+<p>即"算分数 → softmax 归一化成权重 → 权重加权求和 value"。逐元素对得上原式：\(\operatorname{softmax}(\mathbf{Z}\mathbf{V})=\operatorname{softmax}(\mathbf{Z})\mathbf{V}\)，因为 softmax 只作用于行。</p>
+
+<p><strong>推导 B：为什么必须除 \(\sqrt{H_k}\)（核心）。</strong>设 \(q,k\) 的各分量 \(q_1,\dots,q_{H_k}\)、\(k_1,\dots,k_{H_k}\) 相互独立，且 \(\mathbb{E}[q_i]=\mathbb{E}[k_i]=0\)、\(\operatorname{Var}(q_i)=\operatorname{Var}(k_i)=1\)（这是初始化 + LayerNorm 后的一个合理近似：\(\mathbf{W}^Q\) 用小方差初始化会让输出近似白化）。考察内积</p>
+<div class="eq">
+\[ q\cdot k=\sum_{i=1}^{H_k}q_ik_i \]
+</div>
+<ol class="steps">
+<li><strong>期望。</strong>期望的线性性：\(\mathbb{E}[q\cdot k]=\sum_i\mathbb{E}[q_i]\mathbb{E}[k_i]=\sum_i 0\cdot 0=0\)。</li>
+<li><strong>方差（独立同分布可加）。</strong>先算二阶矩：\(\mathbb{E}[(q_ik_i)^2]=\mathbb{E}[q_i^2]\mathbb{E}[k_i^2]\)。由 \(\mathbb{E}[z^2]=\operatorname{Var}(z)+(\mathbb{E}[z])^2\)，得 \(\mathbb{E}[q_i^2]=1+0=1\)，故 \(\mathbb{E}[(q_ik_i)^2]=1\)。再算两两交叉项：\(i\neq j\) 时 \(q_ik_i\) 与 \(q_jk_j\) 独立（所有分量独立），故 \(\mathbb{E}[q_ik_iq_jk_j]=\mathbb{E}[q_ik_i]\mathbb{E}[q_jk_j]=0\)。因此 \(\mathbb{E}[(q\cdot k)^2]=\sum_{i=1}^{H_k}1+0=H_k\)。</li>
+<li>所以 \(\operatorname{Var}(q\cdot k)=\mathbb{E}[(q\cdot k)^2]-(\mathbb{E}[q\cdot k])^2=H_k-0=H_k\)，标准差 \(\sqrt{H_k}\)。<strong>内积的尺度随维度线性增长。</strong></li>
+<li><strong>后果：softmax 进入饱和区。</strong>softmax 只对<em>相对差值</em>敏感，但 logits 的<em>绝对尺度</em>决定它工作在哪个区域。设某行里最大、最小的 logit 差为 \(\Delta\)。若 \(\Delta\ll1\)，softmax 输出接近均匀分布 \(1/T\)，梯度大但信号弱；若 \(\Delta\gg1\)，softmax 变成 hard-max（一行只有一个 1），<strong>梯度消失</strong>。而 \(\Delta\) 随 \(H_k\) 增大而增大——维度越高，越容易掉进饱和区。</li>
+<li><strong>梯度消失的具体计算。</strong>用页首推出的 softmax 雅可比对角元：\(\frac{\partial s_i}{\partial z_j}=s_i(\delta_{ij}-s_j)\)。对 \(j\neq i\)（不是最大项），当 \(s_i\to 1\) 时其余所有 \(s_j\to 0\)，于是 \(\frac{\partial s_i}{\partial z_j}\to 1\cdot(0-0)=0\)：<strong>非最大项的梯度精确地趋于 0</strong>，同时对角元 \(\frac{\partial s_i}{\partial z_i}=s_i(1-s_i)\to 1\cdot 0=0\) 也趋于 0。也就是说整个 Jacobian \(\operatorname{diag}(s)-ss^{\top}\to 0\)。上游梯度无法回传到任何 \(\mathbf{z}_{ij}\)，注意力分数这一层被"冻住"，训练停滞。</li>
+<li><strong>缩放正好抵消。</strong>除以 \(\sqrt{H_k}\) 后 \(\operatorname{Var}(q^{\top}k/\sqrt{H_k})=H_k/H_k=1\)，<strong>标准差回到 1</strong>，与 \(H_k\) 无关。分数的分布宽度被控制在 softmax 的良好工作区（不同 \(d_k\) 下 logit 方差都约为 1）。</li>
+</ol>
+
+<p><strong>推导 C：反向传播。</strong>记 \(\mathbf{Z}=\mathbf{Q}\mathbf{K}^{\top}/\sqrt{H_k}\)，\(\mathbf{A}=\operatorname{softmax}(\mathbf{Z})\)，输出 \(\mathbf{O}=\mathbf{A}\mathbf{V}\)（\(\mathbf{V}\) 与输出无关，故 \(\frac{\partial \mathbf{A}}{\partial \mathbf{V}}=\mathbf{A}^{\top}\)）。</p>
+<ol class="steps">
+<li>\(\mathbf{A}\) 是行随机矩阵（每行非负、行和为 1），对输出 \(\frac{\partial L}{\partial \mathbf{A}} = \frac{\partial L}{\partial \mathbf{O}}\mathbf{V}^{\top} \triangleq \mathbf{G}_A\in\mathbb{R}^{T\times T}\)。</li>
+<li>过 softmax：\(\frac{\partial L}{\partial \mathbf{Z}}=J_s(\mathbf{A})^{\top}\mathbf{G}_A\)，其中 \(J_s(\mathbf{A})=\operatorname{diag}(\mathbf{A})-\mathbf{A}\mathbf{A}^{\top}\)。行随机性给出恒等式 \(\operatorname{diag}(\mathbf{A})-\mathbf{A}\mathbf{A}^{\top}=\operatorname{diag}(\mathbf{A})(\mathbf{I}-\mathbf{A}^{\top})\)（直接乘开验证：\((AA^{\top})_{ij}=A_{ij}\sum_mA_{im}=A_{ij}\)，所以对角元 \(A_i-A_i^2\)、非对角元 \(0-A_{ij}\)，正是所需）。因此 \(\frac{\partial L}{\partial \mathbf{Z}}=\operatorname{diag}(\mathbf{A})\big(\mathbf{G}_A-\mathbf{A}\mathbf{G}_A\big)\)，常用记法 \(\frac{\partial L}{\partial \mathbf{Z}}=\operatorname{diag}(\mathbf{A})\big(\mathbf{G}_A-\mathbf{A}\mathbf{G}_A\big)\)。</li>
+<li>过矩阵乘：\(\frac{\partial L}{\partial \mathbf{Q}}=\frac{\partial L}{\partial\mathbf{Z}}\mathbf{K}/\sqrt{H_k}\)，\(\frac{\partial L}{\partial\mathbf{K}}=\big(\frac{\partial L}{\partial\mathbf{Z}}\big)^{\top}\mathbf{Q}/\sqrt{H_k}\)，\(\frac{\partial L}{\partial\mathbf{V}}=\mathbf{A}^{\top}\frac{\partial L}{\partial\mathbf{O}}\)。三式形状分别是 \(T\times H_k\)、\(H_k\times T\)（再被 \(\mathbf{X}^{\top}\) 转成 \(H\times H_k\)）、\(H_k\times T\)，全部符合分母布局。</li>
+<li>最后过投影（用页首的分母布局公式）：\(\frac{\partial L}{\partial\mathbf{X}}=\mathbf{W}^Q\frac{\partial L}{\partial\mathbf{Q}}+\mathbf{W}^K\frac{\partial L}{\partial\mathbf{K}}+\mathbf{W}^V\frac{\partial L}{\partial\mathbf{V}}\)，\(\frac{\partial L}{\partial\mathbf{W}^Q}=\mathbf{X}^{\top}\frac{\partial L}{\partial\mathbf{Q}}\)，另两个投影同理。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+\(\sqrt{H_k}\) 不是拍脑袋的常数，是<strong>把 logits 的标准差归一化到 1</strong>。它让"128 维的头"和"64 维的头"看到同样锐利（又不过分锐利）的注意力分布。也正因为如此，<strong>改变头维度必须重新调学习率或初始化尺度</strong>——分布宽度变了，优化动力学就变了。
+</div>
+<div class="warn"><b>易错点：三点</b>
+<ul>
+<li>缩放用的是 <strong>\(d_k\)（key 维度）而不是 \(d_v\)</strong>。直觉理由：分数由 \(q,k\) 决定，尺度的来源是 \(q\cdot k\) 的方差，与 \(V\) 无关。若 \(d_k\neq d_v\)，也仍除 \(\sqrt{d_k}\)。</li>
+<li><strong>本节的独立性假设是近似的</strong>：\(q_i\) 与 \(q_j\) 严格独立只在初始化附近成立；训练中各维度会相关，实测方差与 \(d_k\) 的关系是次线性的。所以 \(\sqrt{H_k}\) 是"合适"而非"精确最优"。</li>
+<li>公式里是 <strong>\(\mathbf{Q}\mathbf{K}^{\top}\)</strong>（不是 \(\mathbf{Q}\mathbf{K}\)）：因为行是 token，要让 \(A_{ij}=q_i^{\top}k_j\)，就必须对 \(k\) 取转置。写错会导致 \(T\times H_k\) 而不是 \(T\times T\)。</li>
+</ul>
+</div>
+<div class="note"><b>备用：为什么 softmax 必须存在</b>
+没有 softmax，\(q\cdot k\) 可以为负，注意力权重可以为负；更严重的是权重不归一化，输出向量的范数会随 \(T\) 随机增长。softmax 强制"每行非负且和为 1"，于是 <em>Attention 输出是若干 value 的凸组合</em>——落在 value 张成的凸包内，因此范数天然受控。这是权重共享式价值聚合（value averaging）的关键。
+</div>
+<div class="relnav">相关：<a href="#eq-5-7">(5.7) 多头怎么切</a>　<a href="#calc">矩阵求导与 softmax 雅可比</a></div>
+</section>
+
+<section class="fml" id="eq-5-6">
+<h2><span class="num">(5.6)</span>多头聚合：拼接 + 输出投影<a class="anchor" href="#eq-5-6">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.1.2 节 Multi-Head Attention Layer　<a href="../thellm/11-5-model-architecture.html#5-1-2-multi-head-attention-layer">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0052.png" alt="原书公式 5.6"><span class="cap">原书公式 5.6</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \operatorname{MHA}=\operatorname{Concat}(\mathrm{head}_1,\ldots,\mathrm{head}_N)\mathbf{W}^{O} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\mathrm{head}_n\)</td><td>第 \(n\) 个头的输出</td><td>\(\mathbb{R}^{T\times H_k}\)</td></tr>
+<tr><td>\(\operatorname{Concat}\)</td><td>沿<strong>列</strong>（特征维）横向拼接</td><td>\(\mathbb{R}^{T\times NH_k}\)</td></tr>
+<tr><td>\(\mathbf{W}^{O}\)</td><td>输出投影矩阵，原书明确写 \(\mathbf{W}^O\in\mathbb{R}^{H\times H}\)</td><td>\(\mathbb{R}^{H\times H}\)</td></tr>
+<tr><td>\(\operatorname{MHA}\)</td><td>多头注意力输出</td><td>\(\mathbb{R}^{T\times H}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>拼接的形状。</strong>\(N\) 个 \(\mathbb{R}^{T\times H_k}\) 横向并排得到 \(\mathbb{R}^{T\times NH_k}\)。要让它和 \(\mathbf{W}^O\in\mathbb{R}^{H\times H}\) 相乘，必须 \(NH_k = H\)。这就是符号表里 \(H=N\cdot H_k\) 那条约束的来源：<strong>多头不改变总维度，只把维度切分</strong>。</li>
+<li><strong>\(\mathbf{W}^O\) 不是可有可无的。</strong>拼接后第 1 到第 \(H_k\) 列全来自 head 1，第 \(H_k+1\) 到第 \(2H_k\) 列全来自 head 2——列之间没有任何交互。\(\mathbf{W}^O=\mathbb{R}^{H\times H}\) 的第 \((i,i')\) 项 \(W^O_{i,i'}\) 决定输出第 \(i\) 个分量从第 \(i'\) 列（即某个头的第 \(i'\bmod H_k\) 个分量）拿多少，于是<strong>任意两个头、任意两个分量之间都能混合</strong>。没有这一步，多头就退化成 N 个互不相干的通道组。</li>
+<li><strong>为什么 \(\mathbf{W}^O\) 是方阵而不是升维矩阵。</strong>因为子层输出必须回到 \(H\) 维，才能和残差支路的 \(\mathbf{X}\) 相加（见 5.9）。若 \(\mathbf{W}^O\in\mathbb{R}^{H\times NH_k}\) 且 \(NH_k &gt; H\)，残差相加就做不到了。</li>
+<li><strong>参数量的经济学。</strong>单头（\(N=1\)）注意力：\(3H^2 + H^2 = 4H^2\)。多头：\(3NH_kH + NH_k\cdot H = 4H^2\)，<strong>总参数量完全不变</strong>。多头是在固定预算下换了个更好的计算结构——把一次 \(H\to H\) 的注意力换成 N 次 \(H\to H_k\) 的注意力，其中第 \(n\) 次的分数矩阵是 \(\mathbf{Q}_n\mathbf{K}_n^{\top}\)（一个 \(T\times T\) 块的子块）。</li>
+<li><strong>求导。</strong>因为 \(\operatorname{Concat}\) 只是重排，梯度求和后按列切回去：设 \(\mathbf{G}_{\mathrm{MHA}}=\frac{\partial L}{\partial \operatorname{MHA}}\in\mathbb{R}^{T\times H}\)，则 \(\frac{\partial L}{\partial \mathbf{W}^O}=\operatorname{Concat}(\mathbf{h}_1,\ldots,\mathbf{h}_N)^{\top}\mathbf{G}_{\mathrm{MHA}}\in\mathbb{R}^{H\times H}\)，\(\frac{\partial L}{\partial \mathrm{head}_n}=\mathbf{G}_{\mathrm{MHA}}\mathbf{W}^{O\,\top}[:,(n-1)H_k+1:nH_k]\)（取第 \(n\) 个列块），再把这一块按公式 5.5 的反向传播送回该头。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+把 N 个"专家"的笔记横向拼成一张宽表，再用一个 \(\mathbf{W}^O\) 做一次线性融合。类比 MoE：MoE 是稀疏地选 N 个专家，这里是稠密地用 N 个头，但融合思路一样。
+</div>
+<div class="warn"><b>易错点：\(\mathbf{W}^O\) 的下标方向</b>
+原书写 \(\mathbf{W}^O\in\mathbb{R}^{H\times H}\) 且公式是"先 Concat 后乘 \(\mathbf{W}^O\)"，所以 <strong>Concat 结果必须在左边</strong>（\(T\times NH_k\) 乘 \(H\times H\)）。若看到某些资料写成 \(\mathbf{W}^O\operatorname{Concat}(\cdot)\)，那是把 \(\mathbf{W}^O\) 转置了或改用了列向量布局。
+</div>
+<div class="relnav">相关：<a href="#eq-5-7">(5.7) 单头定义</a>　<a href="#eq-5-9">(5.9) 残差相加</a></div>
+</section>
+
+<section class="fml" id="eq-5-7">
+<h2><span class="num">(5.7)</span>第 \(n\) 个注意力头<a class="anchor" href="#eq-5-7">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.1.2 节 Multi-Head Attention Layer　<a href="../thellm/11-5-model-architecture.html#5-1-2-multi-head-attention-layer">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0053.png" alt="原书公式 5.7"><span class="cap">原书公式 5.7</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \mathrm{head}_n=\operatorname{Attention}\!\left(\mathbf{X}\mathbf{W}^{Q}_n,\ \mathbf{X}\mathbf{W}^{K}_n,\ \mathbf{X}\mathbf{W}^{V}_n\right) \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\mathbf{W}^{Q}_n,\mathbf{W}^{K}_n,\mathbf{W}^{V}_n\)</td><td>第 \(n\) 个头的三个投影矩阵，<strong>结构相同、参数互不相同</strong></td><td>各 \(\mathbb{R}^{H\times H_k}\)</td></tr>
+<tr><td>\(\mathrm{head}_n\)</td><td>第 \(n\) 个头的输出</td><td>\(\mathbb{R}^{T\times H_k}\)</td></tr>
+<tr><td>\(n=1,\dots,N\)</td><td>头下标</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li>把 5.2–5.5 里带下标 \(n\) 的三个投影代入缩放点积注意力即可：\(\mathbf{Q}_n=\mathbf{X}\mathbf{W}^Q_n\)、\(\mathbf{K}_n=\mathbf{X}\mathbf{W}^K_n\)、\(\mathbf{V}_n=\mathbf{X}\mathbf{W}^V_n\)。</li>
+<li><strong>"结构相同、参数不同"的含义。</strong>每个头计算的是<strong>完全一样</strong>的形式（同一种函数类、同一种维度），只是各自的权重独立初始化、独立梯度更新。这正是"multi-head"而不是"multi-type attention"的地方。</li>
+<li><strong>矩阵化的等价写法。</strong>把 \(N\) 个投影横着拼成大矩阵 \(\mathbf{W}^{Q}_{[H\times NH_k]}=[\mathbf{W}^Q_1\,\|\,\cdots\,\|\,\mathbf{W}^Q_N]\)，则 \(\mathbf{X}\mathbf{W}^{Q}_{[H\times NH_k]}=[\mathbf{Q}_1\,\|\,\cdots\,\|\,\mathbf{Q}_N]\)。而按块相乘 \(\mathbf{Q}_{blk}\mathbf{K}_{blk}^{\top}\) 的第 \((m,n)\) 块恰好是 \(\mathbf{Q}_m\mathbf{K}_n^{\top}\)，也就是<strong>head \(m\) 对 head \(n\) 的交叉注意力分数</strong>。这就是"多头"能用一次大矩阵乘实现、又被叫作 <em>block attention</em> 的原因。</li>
+<li><strong>为什么单头不够。</strong>softmax 归一化强制"注意力权重和为 1"，所以一个头在每个位置上<strong>只能给出一个分布</strong>——它天然擅长"一种检索模式"（比如专找主语指代）。要同时做"找指代"和"找语法依存"，就需要多个独立的分布，再靠 \(\mathbf{W}^O\) 融合。这是把"多分布"需求和"归一化约束"碰撞后逼出来的设计。</li>
+<li><strong>求导。</strong>每个头的三个投影各收一份梯度：\(\frac{\partial L}{\partial\mathbf{W}^Q_n}=\mathbf{X}^{\top}\mathbf{G}_n\)，其余同理（\(\mathbf{G}_n\) 见 5.6 的推导）。因为参数不共享，N 个头之间<strong>没有梯度耦合</strong>，各自独立学习。这是多头能并行训练的根本原因。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+同一个问题问 N 遍，每遍换一种提问方式（换 \(\mathbf{W}^Q_n\)）、换一种检索标签（换 \(\mathbf{W}^K_n\)）、取回不同内容（换 \(\mathbf{W}^V_n\)），最后汇总。多问几遍比问一遍猜得准。
+</div>
+<div class="warn"><b>易错点：头的维度不是自由的</b>
+必须 \(H=N\cdot H_k\)。工程上常见 \(H_k=H/N\)；也有例外（如 MQA/GQA 让多个 query 头共享一份 K/V，HuggingFace 里表现为 <code>num_key_value_heads &lt; num_attention_heads</code>，此时 <code>W_K, W_V</code> 的行数变了）。GQA 的推导属于 <a href="../thellm/11-5-model-architecture.html#5-2-5-attention-mechanism">原书 5.2.5</a>。
+</div>
+<div class="relnav">相关：<a href="#eq-5-6">(5.6) 拼接聚合</a>　<a href="#eq-5-8">(5.8) 下一个子层</a></div>
+</section>
+
+<section class="fml" id="eq-5-8">
+<h2><span class="num">(5.8)</span>前馈网络 FFN<a class="anchor" href="#eq-5-8">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.1.3 节 Feed-Forward Network Layer　<a href="../thellm/11-5-model-architecture.html#5-1-3-feed-forward-network-layer">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0054.png" alt="原书公式 5.8"><span class="cap">原书公式 5.8</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \operatorname{FFN}(x)=\sigma\!\left(x\mathbf{W}^{U}+b_1\right)\mathbf{W}^{D}+b_2 \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(x\)</td><td>FFN 层输入（注意力子层的输出，<strong>逐 token 独立</strong>）</td><td>\(\mathbb{R}^{H}\)</td></tr>
+<tr><td>\(\mathbf{W}^{U}\)</td><td>上投影矩阵，"升维"</td><td>\(\mathbb{R}^{H\times H_{ff}}\)</td></tr>
+<tr><td>\(b_1\)</td><td>上投影偏置</td><td>\(\mathbb{R}^{H_{ff}}\)</td></tr>
+<tr><td>\(\sigma\)</td><td>非线性激活：ReLU / GELU / SwiGLU</td><td>标量函数</td></tr>
+<tr><td>\(\mathbf{W}^{D}\)</td><td>下投影矩阵，"降维"</td><td>\(\mathbb{R}^{H_{ff}\times H}\)</td></tr>
+<tr><td>\(b_2\)</td><td>下投影偏置</td><td>\(\mathbb{R}^{H}\)</td></tr>
+<tr><td>\(H_{ff}\)</td><td>FFN 中间维度，原书记 \(H_{FF}\)，常取 \(4H\)</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>拆成两个仿射映射。</strong>第一层 \(h_1=\sigma(x\mathbf{W}^U+b_1)\)：\(x\mathbf{W}^U\in\mathbb{R}^{H_{ff}}\) 的第 \(j\) 项是 \(\sum_{i=1}^{H}x_iW^U_{ij}\)，即用权重 \(W^U_{ij}\) 给输入第 \(i\) 个分量加权后求和，得到隐层第 \(j\) 个单元。加 \(b_1\) 是给隐层单元加偏置（等价于给输入拼一个常数 1）。第二层 \(y=h_1\mathbf{W}^D+b_2\)：同理回到 \(\mathbb{R}^{H}\)。</li>
+<li><strong>为什么必须有非线性。</strong>如果 \(\sigma\) 取恒等映射，\(\operatorname{FFN}(x)=x(\mathbf{W}^U\mathbf{W}^D)+b_1\mathbf{W}^D+b_2\) 整体塌缩成<strong>一个仿射映射</strong>，两个矩阵的乘积秩不超过 \(\min(H,H_{ff})\)，无论叠多少层都是一条仿射变换，只能做线性可分的分类。加了非线性才获得非线性表达能力。</li>
+<li><strong>为什么 FFN 必须逐 token 独立。</strong>注意公式里 \(x\) 是<strong>单个 token</strong> 的向量：FFN 层内部<strong>完全没有跨位置的信息流动</strong>。实现上写成矩阵是 \(\operatorname{FFN}(\mathbf{X})=\sigma(\mathbf{X}\mathbf{W}^U+\mathbf{1}b_1^{\top})\mathbf{W}^D+\mathbf{1}b_2^{\top}\)，\(\mathbf{1}\in\mathbb{R}^{T}\) 是全 1 列向量——把偏置广播到每一行。也就是说，<strong>注意力负责"token 之间交流"，FFN 负责"token 内部思考"</strong>，两者分工明确。</li>
+<li><strong>参数量为什么占大头。</strong>FFN 参数量 \(2\cdot H\cdot H_{ff}\)；\(H_{ff}=4H\) 时是 \(8H^2\)。而一层里 QKV 投影加输出投影共 \(4H^2\)。<strong>FFN 占了单层参数量的 2/3。</strong>这就是为什么"把 \(H_{ff}\) 砍半"是常见的省参数手段（如部分模型用 \(\frac{8}{3}H\) 配 SwiGLU 来保持等参数）。</li>
+<li><strong>求导。</strong>记 \(h_1=\sigma(x\mathbf{W}^U+b_1)\)、\(y=h_1\mathbf{W}^D+b_2\)，上游梯度 \(g=\frac{\partial L}{\partial y}\in\mathbb{R}^{H}\)。按页首的分母布局公式逐层回传：\(\frac{\partial L}{\partial\mathbf{W}^D}=h_1^{\top}g\)、\(\frac{\partial L}{\partial b_2}=g\)、\(\frac{\partial L}{\partial h_1}=g(\mathbf{W}^D)^{\top}\in\mathbb{R}^{H_{ff}}\)。过激活：令 \(z=x\mathbf{W}^U+b_1\)，\(\frac{\partial L}{\partial z}=\frac{\partial L}{\partial h_1}\odot\sigma'(z)\)（\(\odot\) 是逐元素积，因 \(\sigma\) 是逐元素作用的）。最后 \(\frac{\partial L}{\partial\mathbf{W}^U}=x^{\top}\frac{\partial L}{\partial z}\)、\(\frac{\partial L}{\partial b_1}=\frac{\partial L}{\partial z}\)、\(\frac{\partial L}{\partial x}=\frac{\partial L}{\partial z}(\mathbf{W}^U)^{\top}\)。</li>
+<li><strong>几个常见变体。</strong>GeLU 把 \(\sigma\) 换成 GELU；SwiGLU 用 \(\sigma(a)\odot\sigma(b)\) 代替单个 \(\sigma(\cdot)\) 并取 \(H_{ff}=\frac{8}{3}H\)；GLU 变体去掉 \(b_1\)（偏置可并入下一层）。这些只改 \(\sigma\) 那一行，不影响求导框架。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+注意力层像"开会"：每个 token 都能听到所有人的发言。FFN 像"各自消化"：听完之后每个人自己闷头算一遍，产出结论。开会时不许各自算（没时间），消化时没人能插嘴（不必要）。
+</div>
+<div class="warn"><b>易错点：\(H_{ff}\) 与 \(\mathbf{W}\) 的方向</b>
+原书公式是 \(x\mathbf{W}^U+b_1\)（行向量右乘），所以 \(\mathbf{W}^U\) 是 \(H\times H_{ff}\)，<strong>输入在左</strong>。很多 PyTorch 代码用 <code>nn.Linear(in,out)</code> 内部权重是 \(\mathbb{R}^{out\times in}\)，是转置关系，别直接对照形状。
+</div>
+<div class="relnav">相关：<a href="#eq-5-9">(5.9) FFN 外面套残差</a>　<a href="../thellm/11-5-model-architecture.html#5-2-3-activation-function">原书 5.2.3 激活函数</a></div>
+</section>
+
+<section class="fml" id="eq-5-9">
+<h2><span class="num">(5.9)</span>编码器一层：残差 + LayerNorm<a class="anchor" href="#eq-5-9">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.1.4 节 Encoder　<a href="../thellm/11-5-model-architecture.html#5-1-4-encoder">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0056.png" alt="原书公式 5.9"><span class="cap">原书公式 5.9</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[
+\begin{aligned}
+\tilde{\mathbf{X}}_l &amp;= \operatorname{LayerNorm}\!\left(\operatorname{MHA}(\mathbf{X}_{l-1})+\mathbf{X}_{l-1}\right)\\[3pt]
+\mathbf{X}_l &amp;= \operatorname{LayerNorm}\!\left(\operatorname{FFN}(\tilde{\mathbf{X}}_l)+\tilde{\mathbf{X}}_l\right)
+\end{aligned}
+\]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\mathbf{X}_{l-1}\)</td><td>第 \(l-1\) 层的输入</td><td>\(\mathbb{R}^{T\times H}\)</td></tr>
+<tr><td>\(\tilde{\mathbf{X}}_l\)</td><td>注意力子层输出（已归一化），FFN 子层的输入</td><td>\(\mathbb{R}^{T\times H}\)</td></tr>
+<tr><td>\(\mathbf{X}_l\)</td><td>第 \(l\) 层的输出</td><td>\(\mathbb{R}^{T\times H}\)</td></tr>
+<tr><td>\(f(\cdot)\)</td><td>占位符：\(f=\operatorname{MHA}\) 或 \(f=\operatorname{FFN}\)</td><td>—</td></tr>
+<tr><td>\(L\)</td><td>总层数，\(l=1,\dots,L\)</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>这就是残差连接 + post-norm 的组合。</strong>原书这一章写的是 <code>LayerNorm</code> 加在"子层输出 + 输入"外面（post-LN，与原始 Transformer 论文一致）；后来的主流 LLM 多改成 <strong>pre-LN</strong>：\(\mathbf{X}'=\mathbf{X}_{l-1}+\operatorname{MHA}(\operatorname{LayerNorm}(\mathbf{X}_{l-1}))\)。两者数学上都是"残差 + 归一化"的顺序问题，本页讲原书版本。</li>
+<li><strong>残差为什么缓解梯度消失（核心推导）。</strong>把一层抽象成 \(\mathbf{h}_{l+1}=\mathbf{h}_l+f(\mathbf{h}_l)\)。用 Jacobian 链式法则（若 \(\mathbf{z}=g(\mathbf{y}),\mathbf{y}=f(\mathbf{x})\)，则 \(\frac{\partial\mathbf{z}}{\partial\mathbf{x}}=\frac{\partial\mathbf{z}}{\partial\mathbf{y}}\frac{\partial\mathbf{y}}{\partial\mathbf{x}}\)）：</li>
+<li>\(\displaystyle\frac{\partial\mathbf{h}_{l+1}}{\partial\mathbf{h}_l}=\mathbf{I}_H+\frac{\partial f}{\partial\mathbf{h}_l}\)。这个加法就是<strong>恒等通路的来源</strong>：反向传播时梯度是连乘 \(\frac{\partial\mathbf{h}_L}{\partial\mathbf{h}_0}=\prod_{l}\big(\mathbf{I}_H+\frac{\partial f_l}{\partial\mathbf{h}_l}\big)\)。如果每层的 \(\frac{\partial f_l}{\partial\mathbf{h}_l}\) 都很小（接近 0，这个子层"学不动"），那么每层因子都 \(\approx\mathbf{I}_H\)，连乘下来 \(\approx\mathbf{I}_H\)，<strong>梯度原封不动地穿过去</strong>。</li>
+<li>对比没有残差的情形：\(h_{l+1}=f(h_l)\) 时 \(\frac{\partial h_L}{\partial h_0}=\prod_l\frac{\partial f_l}{\partial h_l}\)。若每层 Jacobian 的谱范数都 \(\le\rho&lt;1\)，连乘是 \(\rho^L\)，<strong>指数衰减</strong>；残差把这个乘积变成了"一堆接近单位阵的东西的乘积"，衰减从指数变成接近常数。这就是深层 Transformer 能训起来的关键。</li>
+<li>逐元素版本看得更清楚。对标量 \(\mathbf{h}\in\mathbb{R}^{H}\)，\(\frac{\partial h^{(l+1)}_i}{\partial h^{(l)}_i}=1+\frac{\partial f_i}{\partial h_i}\)：即使 \(\frac{\partial f_i}{\partial h_i}\) 是负的，只要不小于 \(-2\)，这一项就还在正区间；最坏情形也只是"这一层梯度略微放大"，而不是"整层梯度被乘成 0"。</li>
+<li><strong>LayerNorm 的作用位置。</strong>残差相加后各维度量纲可能剧烈变化（尤其经过 FFN 的 \(W^D\) 之后），LayerNorm 把每一<em>行</em>（每个 token 的 \(H\) 维向量）重新标准化到零均值单位方差，再让 \(\gamma,\beta\) 学回需要的尺度和偏移。这保证下一层的输入尺度稳定，也保证了 \(\sqrt{H_k}\) 那套方差分析的前提成立。</li>
+<li><strong>形状校验。</strong>\(\operatorname{MHA}(\mathbf{X}_{l-1})\in\mathbb{R}^{T\times H}\) 与 \(\mathbf{X}_{l-1}\in\mathbb{R}^{T\times H}\) 同形，加法合法；LayerNorm 沿最后一维做，形状不变。<strong>整条公式形状全程不变</strong>，这是残差能成立的前提。</li>
+<li><strong>求导。</strong>把 \(\mathbf{h}_{l+1}=\mathbf{J}_{\mathrm{LN}}(\mathbf{h}_l+f(\mathbf{h}_l))\cdot(\mathbf{h}_l+f(\mathbf{h}_l))\) 的链式法则写全：
+\[
+\frac{\partial \mathbf{h}_{l+1}}{\partial\mathbf{h}_l}=J_{\mathrm{LN}}\big(\mathbf{h}_l+f(\mathbf{h}_l)\big)\left(\mathbf{I}_H+\frac{\partial f}{\partial\mathbf{h}_l}\right)
+\]
+其中 \(J_{\mathrm{LN}}\) 是 LayerNorm 的 Jacobian（推导见 <a href="#eq-5-12">5.12</a>，它接近 \(\frac{1}{\sigma_H}\big(\mathbf{I}-\frac{1}{H}\mathbf{1}\mathbf{1}^{\top}-\hat{\mathbf{x}}\hat{\mathbf{x}}^{\top}\big)\)，特征值在 \(\{1/\sigma_H,\ 0\}\)，非奇异）。<strong>注意恒等项也过了一遍 \(J_{\mathrm{LN}}\)</strong>——post-LN 的代价就在这里：LayerNorm 位于残差通路上，恒等通路的梯度也会被它缩放（乘上 \(1/\sigma_H\)）。pre-LN 把 LayerNorm 挪到子层<em>输入</em>，恒等通路就完全干净了。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+残差 = 每个模块只负责"在原有信息上加一点修正"，而不是"从零重写"。这样即使某个模块学不到东西，它也只是输出 0，信息原样通过。L 层就是 L 次小修正，梯度也就能一路返回。
+</div>
+<div class="why"><b>post-LN vs pre-LN：工程上的取舍</b>
+<table class="sym">
+<tr><th></th><th>post-LN（原书 / GPT-2）</th><th>pre-LN（GPT-3 / LLaMA / 现代 LLM）</th></tr>
+<tr><td>公式</td><td>\(h_{l+1}=\mathrm{LN}(h_l+f(h_l))\)</td><td>\(h_{l+1}=h_l+f(\mathrm{LN}(h_l))\)</td></tr>
+<tr><td>恒等通路</td><td>梯度过 LN，被乘 \(1/\sigma_H\)</td><td>梯度<strong>完全干净</strong>，不经任何变换</td></tr>
+<tr><td>残差支路起点</td><td>值本身被归一化，深层输出量级受控</td><td>深层输出量级随 \(\sqrt{l}\) 增长，需最终 LN 兜底</td></tr>
+<tr><td>warmup</td><td>必需，lr 不当易发散</td><td>基本可免，可放心加深度</td></tr>
+</table>
+这就是为什么原书写 post-LN，而所有主流大模型都用 pre-LN。
+</div>
+<div class="relnav">相关：<a href="#eq-5-10">(5.10) 解码器层</a>　<a href="#eq-5-12">(5.12) LayerNorm 主公式</a></div>
+</section>
+
+<section class="fml" id="eq-5-10">
+<h2><span class="num">(5.10)</span>解码器一层：三个子层<a class="anchor" href="#eq-5-10">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.1.5 节 Decoder　<a href="../thellm/11-5-model-architecture.html#5-1-5-decoder">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0058.png" alt="原书公式 5.10"><span class="cap">原书公式 5.10</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[
+\begin{aligned}
+\tilde{\mathbf{Y}}_l &amp;= \operatorname{LayerNorm}\!\left(\operatorname{MaskedMHA}(\mathbf{Y}_{l-1})+\mathbf{Y}_{l-1}\right)\\[3pt]
+\hat{\mathbf{Y}}_l &amp;= \operatorname{LayerNorm}\!\left(\operatorname{CrossMHA}(\tilde{\mathbf{Y}}_l,\mathbf{X}_L)+\tilde{\mathbf{Y}}_l\right)\\[3pt]
+\mathbf{Y}_l &amp;= \operatorname{LayerNorm}\!\left(\operatorname{FFN}(\hat{\mathbf{Y}}_l)+\hat{\mathbf{Y}}_l\right)
+\end{aligned}
+\]
+</div>
+<p>原书正式编号的是第二行（原图即该行），但三行必须合起来看才是完整的解码器层。</p>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\mathbf{Y}_{l-1},\mathbf{Y}_l\)</td><td>解码器第 \(l\) 层的输入 / 输出</td><td>\(\mathbb{R}^{T_y\times H}\)</td></tr>
+<tr><td>\(\tilde{\mathbf{Y}}_l\)</td><td>经<strong>掩码自注意力</strong>后的中间表示</td><td>\(\mathbb{R}^{T_y\times H}\)</td></tr>
+<tr><td>\(\hat{\mathbf{Y}}_l\)</td><td>经<strong>交叉注意力</strong>后的中间表示</td><td>\(\mathbb{R}^{T_y\times H}\)</td></tr>
+<tr><td>\(\mathbf{X}_L\)</td><td>编码器最后一层的输出（本页若只用 decoder，则退化为"当前层输入"）</td><td>\(\mathbb{R}^{T_x\times H}\)</td></tr>
+<tr><td>\(\operatorname{MaskedMHA}\)</td><td>因果（causal）自注意力：把注意力矩阵上三角置为 \(-\infty\) 后再做 softmax</td><td>—</td></tr>
+<tr><td>\(\operatorname{CrossMHA}(\cdot,\cdot)\)</td><td>交叉注意力：query 来自 \(\tilde{\mathbf{Y}}_l\)，key/value 来自 \(\mathbf{X}_L\)</td><td>—</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>掩码是怎么实现的（以及为什么梯度正常）。</strong>因果自注意力只是在 5.5 的 logits 上加一个掩码矩阵 \(M\)（\(M_{ij}=0\) 当 \(i\ge j\)，\(M_{ij}=-\infty\) 当 \(i&lt;j\)）再 softmax：\(\mathbf{A}=\operatorname{softmax}\big(\frac{\mathbf{Q}\mathbf{K}^{\top}}{\sqrt{H_k}}+\mathbf{M}\big)\)。因为 \(\exp(-\infty)=0\)，上三角被清零，剩下的行重新归一化成"只看 \(j\le i\)"。<strong>关键：\(-\infty\) 只在<em>前向</em>出现，反向时 \(M\) 是常数、不参与求导</strong>，所以梯度公式和 5.9 完全一样，只是 \(\mathbf{A}\) 的上三角恒为 0。这等价于"训练时并行处理整句 + 位置 \(i\) 只能看到前缀"，实现上比"逐个预测"快得多。</li>
+<li><strong>自注意力用了两套 Q/K/V。</strong>MaskedMHA 的 Q、K、V 都来自 \(\mathbf{Y}_{l-1}\)；CrossMHA 的 <strong>Q 来自 \(\tilde{\mathbf{Y}}_l\)，K 和 V 来自 \(\mathbf{X}_L\)</strong>。这在数学上完全沿用 5.2–5.5，只是把 \(\mathbf{X}\mathbf{W}^K\)、\(\mathbf{X}\mathbf{W}^V\) 的输入源换成了 \(\mathbf{X}_L\)。形状上：\(\mathbf{Q}_y\in\mathbb{R}^{T_y\times H_k}\)、\(\mathbf{K}_x,\mathbf{V}_x\in\mathbb{R}^{T_x\times H_k}\)，所以分数矩阵是 <strong>\(T_y\times T_x\)</strong>（不是方阵）。</li>
+<li><strong>为什么必须有交叉注意力。</strong>编码器的输出 \(\mathbf{X}_L\) 编码的是<em>源</em>句子。解码时每一步都要"读源句 + 写目标句"，MaskedMHA 只能读已生成的目标前缀（自回归需要它来建模目标侧上下文），CrossMHA 才是唯一读源句的通路。这就是 seq2seq 架构的全部秘密。</li>
+<li><strong>与编码器的差异只有两处</strong>：多了 CrossMHA 子层，且自注意力带掩码。残差 + LayerNorm 的处理方式完全一致，因此 5.9 里 \(\frac{\partial \mathbf{h}_{l+1}}{\partial\mathbf{h}_l}=\mathbf{I}_H+\frac{\partial f}{\partial\mathbf{h}_l}\) 的结论对每一行都适用。</li>
+<li><strong>纯因果 decoder（现代 LLM）退化情况。</strong>GPT/LLaMA 不用编码器，此时 \(\operatorname{MaskedMHA}\) 内部 Q/K/V 全部来自同一个 \(\mathbf{X}_{l-1}\)，三种架构塌缩成一种。三行公式退化成两行：\(\tilde{\mathbf{X}}_l=\mathrm{LN}(\mathrm{MHA}(\mathbf{X}_{l-1})+\mathbf{X}_{l-1})\)、\(\mathbf{X}_l=\mathrm{LN}(\mathrm{FFN}(\tilde{\mathbf{X}}_l)+\tilde{\mathbf{X}}_l)\)——和 5.9 一模一样，<strong>只多了掩码</strong>。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+解码器一层做三件事：先自己回想已写的内容（MaskedMHA，不能偷看未来），再查资料（CrossMHA 读编码器），最后消化落笔（FFN）。每件事后面都跟一个"加回自己 + 重新校准量纲"。
+</div>
+<div class="warn"><b>易错点：掩码不等于"注意权重小"，而是"精确为 0"</b>
+很多人想当然以为因果掩码是给未来位置一个小的负权重。实现里必须是加 \(-\infty\)（或 fp16 下的大负数如 \(-10^4\)）让 softmax 后<strong>精确为 0</strong>，否则训练/推理不一致、且仍有信息泄漏。另一坑：训练时并行（全序列 + 掩码）与推理时逐步生成的数值分布不同，长上下文下会放大误差。
+</div>
+<div class="relnav">相关：<a href="#eq-5-9">(5.9) 编码器层</a>　<a href="#eq-5-11">(5.11) 输出层</a></div>
+</section>
+
+<section class="fml" id="eq-5-11">
+<h2><span class="num">(5.11)</span>输出层：映射到词表并 softmax<a class="anchor" href="#eq-5-11">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.1.5 节 Decoder　<a href="../thellm/11-5-model-architecture.html#5-1-5-decoder">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0060.png" alt="原书公式 5.11"><span class="cap">原书公式 5.11</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \mathbf{O} = \operatorname{softmax}\!\left(\mathbf{Y}_L\mathbf{W}^{L}\right) \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\mathbf{Y}_L\)</td><td>解码器最后一层的输出</td><td>\(\mathbb{R}^{T_y\times H}\)</td></tr>
+<tr><td>\(\mathbf{W}^{L}\)</td><td>输出投影（也叫 LM head / unembedding），<strong>常与输入嵌入矩阵绑定（tied weights）</strong></td><td>\(\mathbb{R}^{H\times |\mathcal{V}|}\)</td></tr>
+<tr><td>\(\mathbf{O}\)</td><td>词表上的概率分布，每行是给定上下文下各 token 的概率</td><td>\(\mathbb{R}^{T_y\times |\mathcal{V}|}\)，行随机</td></tr>
+<tr><td>\(|\mathcal{V}|\)</td><td>词表大小（如 32k / 128k）</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>这一步就是公式 5.5 的 V 为单位矩阵的特例。</strong>注意力只是"聚合"，真正的"读出词表"靠这个线性层：\(\mathbf{Y}_L\) 的每一行是一个上下文向量，\(\mathbf{W}^L\) 的第 \(c\) 列是 token \(c\) 的"读出方向"（proto-label）。所以 \(z_c=y^{\top}\mathbf{W}^L_{:,c}\) 是上下文与该 token 读出向量的内积，<strong>越大越可能选它</strong>。</li>
+<li><strong>为什么需要 \(|\mathcal{V}|\) 而不是 \(H\) 个输出。</strong>隐藏维度 \(H\) 受算力约束（每层都要乘 \(H^2\)），而词表可以是十万级。把"每个 token 一个输出单元"改成"内积打分"后，输出层的参数量从 \(H\cdot|\mathcal{V}|\) 变成…仍然是 \(H|\mathcal{V}|\)，但<strong>只需最后一步才产生 \(|\mathcal{V}|\) 维</strong>，不必在整个主干里维持词表维度。</li>
+<li><strong>权重绑定（weight tying）的来历。</strong>输入嵌入是 \(\mathbf{E}\in\mathbb{R}^{|\mathcal{V}|\times H}\)，输出投影是 \(\mathbf{W}^L\in\mathbb{R}^{H\times|\mathcal{V}|}\)。取 \(\mathbf{W}^L=\mathbf{E}^{\top}\) 就省下一整份 \(H|\mathcal{V}|\) 参数，同时让"输入时嵌入的向量"和"输出时读出的向量"是同一个几何对象。LLaMA-2 / GPT-2 都这么做，代价是输入与输出层被绑死，略微限制表达力。</li>
+<li><strong>softmax 的归一化性质。</strong>\(\mathbf{O}\) 每行非负、行和为 1，可以直接当概率用：\(O_{ic}=P(\text{输出 token }c\mid\text{上下文})\)。推理时采样（temperature / top-p）都在这一行上做。</li>
+<li><strong>求导：这就是交叉熵损失。</strong>训练目标是 \(L=-\sum_{i}\log O_{i,y_i}\)。用页首推出的结论 \(\frac{\partial L}{\partial z_{ic}}=O_{ic}-\delta_{y_i,c}\)（其中 \(\mathbf{Z}=\mathbf{Y}_L\mathbf{W}^L\)）。这一步极关键：<strong>梯度不经过任何 Jacobian 显式相乘</strong>，softmax 与交叉熵合成了一步。再用分母布局公式往回传：\(\frac{\partial L}{\partial\mathbf{W}^L}=\mathbf{Y}_L^{\top}\left(\mathbf{O}-\mathbf{1}\mathbf{y}^{\top}\right)\)，\(\frac{\partial L}{\partial\mathbf{Y}_L}=\left(\mathbf{O}-\mathbf{1}\mathbf{y}^{\top}\right)(\mathbf{W}^L)^{\top}\)。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+主干网络（5.1–5.10）把上下文压成一个 \(H\) 维向量 \(\mathbf{y}\)。最后一步是拿这个向量去和十万个"候选词的代表向量"逐一算内积，谁的内积大就预测谁。相当于在一堆词条里做一次最近邻检索。
+</div>
+<div class="warn"><b>易错点</b>
+<ul>
+<li><strong>数值稳定性</strong>：\(z_c\) 的绝对值可以很大（尤其深层大模型），直接算 \(\exp\) 会溢出。工程上用 <code>log-sum-exp</code> 技巧：\(\operatorname{softmax}(z-c\cdot\mathbf{1})\)，减同一个常数不改变 softmax 结果（分子分母同乘 \(e^{-c}\)）。</li>
+<li><strong>logit 尺度必须可控</strong>：这里与 5.5 的 \(\sqrt{H_k}\) 是同一个道理——logits 太大会让 softmax 饱和、梯度消失。所以 LLaMA 一类模型在最后必加一个 RMSNorm（见 5.14）就是为控制进入 \(\mathbf{W}^L\) 前的尺度。</li>
+<li>最后这一步之前<strong>不要再加 softmax</strong>：交叉熵内部自带。</li>
+</ul>
+</div>
+<div class="relnav">相关：<a href="#eq-5-5">(5.5) softmax 雅可比</a>　<a href="#eq-5-14">(5.14) 最终 RMSNorm</a></div>
+</section>
+
+<section class="fml" id="eq-5-12">
+<h2><span class="num">(5.12)</span>LayerNorm 主公式<a class="anchor" href="#eq-5-12">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.2.1 节 Normalization Methods　<a href="../thellm/11-5-model-architecture.html#5-2-1-normalization-methods">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0061.png" alt="原书公式 5.12"><span class="cap">原书公式 5.12</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \operatorname{LayerNorm}(x)=\frac{x-\mu}{\sigma}\cdot\gamma+\beta \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(x\)</td><td>待归一化的向量（一行隐状态，即一个 token 的 \(H\) 个分量）</td><td>\(\mathbb{R}^{H}\)，随机向量</td></tr>
+<tr><td>\(\mu\)</td><td>该向量的均值（沿 \(H\) 维）</td><td>标量 \(\mathbb{R}\)，量纲同 \(x\)</td></tr>
+<tr><td>\(\sigma\)</td><td>该向量的（总体）标准差，<strong>不加 \(\epsilon\) 时可能为 0</strong></td><td>标量 \(\mathbb{R}\)，非负</td></tr>
+<tr><td>\(\gamma\)</td><td>缩放参数（gain），可学习，<strong>初值全 1</strong></td><td>\(\mathbb{R}^{H}\)</td></tr>
+<tr><td>\(\beta\)</td><td>平移参数（shift），可学习，<strong>初值全 0</strong></td><td>\(\mathbb{R}^{H}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>为什么减均值 \(\mu\) 不损失信息。</strong>这一步把 \(x\) 在子空间 \(\mathbf{1}^{\perp}\)（各分量和为 0 的方向）上投影：\(x-\mu\mathbf{1}\) 的分量和为 0。所以 LayerNorm <strong>只保留 \(H-1\) 个自由度</strong>，沿"全 1 方向"的偏置被丢弃。深度学习里认为"某一层所有分量同时大一点"是冗余信息，丢掉它有助于解耦。</li>
+<li><strong>为什么除 \(\sigma\) —— 尺度不变性。</strong>\((x-\mu)/\sigma\) 让输出向量满足"零均值、单位方差"，无论输入尺度是 \(10^{-3}\) 还是 \(10^3\)。这带来两个好处：(a) 后一层的权重初始化尺度不再是超参；(b) 关键点：<strong>反向传播时 \(\frac{1}{\sigma}\) 与 \(\frac{\partial L}{\partial \hat{y}}\) 中的 \(\sigma\) 相消</strong>，所以 LN 并不像想象中那样把梯度放大或缩小。</li>
+<li><strong>雅可比（这是理解 LN 梯度的关键）。</strong>记 \(\hat{x}=(x-\mu\mathbf{1})/\sigma\)、\(\mathbf{1}=\mathbf{1}_H\)。分两步推：</li>
+<li>\(\displaystyle\frac{\partial \hat{x}_i}{\partial x_j}=\frac{1}{\sigma}\left(\delta_{ij}-\frac{1}{H}-\frac{\hat{x}_i\hat{x}_j}{H}\right)\)。<strong>推导</strong>：由 \(\frac{\partial \mu}{\partial x_j}=\frac{1}{H}\)、\(\frac{\partial (x_i-\mu)}{\partial x_j}=\delta_{ij}-\frac1H\)，以及商的求导法则
+\(\frac{\partial \hat{x}_i}{\partial x_j}=\frac{1}{\sigma}\frac{\partial(x_i-\mu)}{\partial x_j}-\frac{x_i-\mu}{\sigma^2}\frac{\partial\sigma}{\partial x_j}\)。而 \(\sigma^2=\frac1H\sum_k(x_k-\mu)^2\)，故 \(\frac{\partial \sigma^2}{\partial x_j}=\frac{2}{H}(x_j-\mu)=\frac{2\sigma}{H}\hat{x}_j\)，于是 \(\frac{\partial\sigma}{\partial x_j}=\frac{\hat{x}_j}{H}\)。代回并用 \(x_i-\mu=\sigma\hat{x}_i\) 得
+\(\frac{\partial \hat{x}_i}{\partial x_j}=\frac{1}{\sigma}\left(\delta_{ij}-\frac1H\right)-\frac{\sigma\hat{x}_i}{\sigma^2}\cdot\frac{\hat{x}_j}{H}=\frac{1}{\sigma}\left(\delta_{ij}-\frac1H-\frac{\hat{x}_i\hat{x}_j}{H}\right)\)。</li>
+<li>写成矩阵：\(\displaystyle\frac{\partial \hat{x}}{\partial x}=\frac{1}{\sigma}\left(\mathbf{I}-\frac{1}{H}\mathbf{1}\mathbf{1}^{\top}-\frac{1}{H}\hat{x}\hat{x}^{\top}\right)\)。<strong>每一项都是投影阵</strong>：\(\frac1H\mathbf{1}\mathbf{1}^{\top}\) 投影到 \(\mathbf{1}\) 方向，\(\frac1H\hat{x}\hat{x}^{\top}\) 投影到 \(\hat{x}\) 方向。三者在 \(\mathbf{1}\) 与 \(\hat{x}\) 上都为 0（因为 \(\mathbf{1}^{\top}\hat{x}=0\)），故特征值是 \(1/\sigma\)（在 \(\mathbf{1}^{\perp}\) 且 \(\hat{x}^{\perp}\) 上，\(H-2\) 个）和 \(0\)。LN 是<strong>不可逆但非奇异</strong>的压缩：把两个特殊方向完全压掉，其余方向统一放大 \(1/\sigma\)。</li>
+<li><strong>接上 \(\gamma,\beta\)。</strong>\(\operatorname{LayerNorm}(x)=\gamma\odot\hat{x}+\beta\)（\(\odot\) 逐元素乘，\(\gamma\) 与 \(x\) 同形逐分量作用）。因此 \(\frac{\partial y_i}{\partial x_j}=\gamma_i\frac{\partial\hat{x}_i}{\partial x_j}\)，雅可比是对上面矩阵的<strong>行缩放</strong>。</li>
+<li><strong>所以 LN 不会引起梯度消失。</strong>因为在 \(\hat{x}^{\perp}\) 上特征值是 \(\gamma_i/\sigma\)，若 \(\gamma_i\) 是 \(O(1)\) 就只是常数缩放；若某维 \(\sigma\) 极小导致 \(1/\sigma\) 巨大，则该维输出被 \(\gamma\) 压回去，但梯度会放大——这是数值风险的来源（实践中靠 \(+10^{-5}\) 的 \(\epsilon\) 和 fp32 累加来规避）。</li>
+<li><strong>与 BatchNorm 的本质区别。</strong>BN 沿<em>batch</em> 维统计均值方差，一个样本的输出依赖同 batch 的其他样本（训练/推理行为不一致，且 \(T\) 变长、batch 变小时统计量噪声大）。LN 沿<em>特征</em> 维统计，<strong>每个样本独立、训练推理完全一致、与序列长度无关</strong>。这就是原书说"BN 对变长序列和小 batch 无效"的原因。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+对每个 token 的向量做一次"调平"：整体平移到零均值，再拉伸到单位长度，最后用自己的 \(\gamma,\beta\) 换一套想要的刻度。像调音台上的推子：先归一化信号，再按个人口味调增益和偏置。
+</div>
+<div class="warn"><b>易错点：\(\sigma\) 是 0 会炸</b>
+公式里写 \(\frac{x-\mu}{\sigma}\) 但没写 \(+10^{-5}\)。若某行所有分量相等（如 padding 后的全 0 向量、或 \(\mathrm{RMSNorm}\) 里 LLaMA 显式加 <code>eps=1e-6</code>），\(\sigma=0\)，除法直接 NaN。PyTorch <code>nn.LayerNorm</code> 的 <code>eps</code> 默认 \(10^{-5}\)，LLaMA 的 <code>rms_norm_eps</code> 默认 \(10^{-6}\)。见 <a href="#eq-5-14">5.14</a> 的代码框。
+</div>
+<div class="relnav">相关：<a href="#eq-5-13">(5.13) \(\mu,\sigma\) 的定义</a>　<a href="#eq-5-16">(5.16) DeepNorm</a></div>
+</section>
+
+<section class="fml" id="eq-5-13">
+<h2><span class="num">(5.13)</span>LayerNorm 的均值与标准差<a class="anchor" href="#eq-5-13">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.2.1 节 Normalization Methods　<a href="../thellm/11-5-model-architecture.html#5-2-1-normalization-methods">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0062.png" alt="原书公式 5.13"><span class="cap">原书公式 5.13</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \mu=\frac{1}{H}\sum_{i=1}^{H}x_i,\qquad \sigma=\sqrt{\frac{1}{H}\sum_{i=1}^{H}(x_i-\mu)^2} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(x_i\)</td><td>隐状态第 \(i\) 个分量，\(i=1,\dots,H\)</td><td>标量</td></tr>
+<tr><td>\(\mu\)</td><td>样本均值，\(1/H\) 是<strong>总体</strong>归一化因子（不是 \(1/(H-1)\)）</td><td>标量</td></tr>
+<tr><td>\(\sigma\)</td><td>样本标准差（同总体定义）</td><td>标量，非负</td></tr>
+<tr><td>\(H\)</td><td>归一化的维度 = 隐藏维度</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>均值。</strong>样本均值定义就是 \(\frac{1}{H}\sum_{i=1}^{H}x_i\)，直接对特征维求和除以维数。这里<strong>没有可学习参数、也没有梯度累积项</strong>（不同于 BN），是一个纯统计量。</li>
+<li><strong>标准差：为什么是总体（除 \(H\)）而非无偏（除 \(H-1\)）。</strong>无偏方差是 \(\frac{1}{H-1}\sum(x_i-\mu)^2\)，因为它把估计 \(\mathbb{E}[x^2]-\mathbb{E}[x]^2\) 时 \(\mu\) 自身贡献的自由度扣掉了。但 <strong>LayerNorm 里的 \(H\) 是网络结构常数、不是有限样本量</strong>——不存在"样本少导致的估计偏差"问题，所以直接用总体形式。这跟 BN 用无偏估计正好相反（BN 沿 batch 维是真样本）。</li>
+<li><strong>两条恒等式，值得记住：</strong>
+<ul>
+<li>\(\displaystyle \sigma^2=\frac{1}{H}\sum_i x_i^2-\mu^2=\mathbb{E}[x^2]-\big(\mathbb{E}[x]\big)^2\)。展开 \(\sum(x_i-\mu)^2=\sum x_i^2-2\mu\sum x_i+H\mu^2=\sum x_i^2-H\mu^2\)，除以 \(H\) 即得。这个形式在实现里更快（一次 <code>pow(2).mean()</code> 就够，不用先算 \(\mu\)）。</li>
+<li>标准化后 \(\frac1H\sum_i\hat{x}_i^2=1\) 且 \(\frac1H\sum_i\hat{x}_i=0\)。所以 LayerNorm 输出的<strong>每个分量</strong>是 \(O(1/\sqrt{H})\) 量级（如果分量近似独立同分布），单个分量的典型大小约 \(1/\sqrt{H}\)。<strong>这解释了为什么 \(\mathbf{W}^L\) 需要足够大的初始化</strong>——logit 是 \(H\) 个 \(O(1/\sqrt{H})\) 项的和，尺度才正常。</li>
+</ul></li>
+<li><strong>求导：</strong>直接用 5.12 推导里已经算好的两个偏导：
+\(\displaystyle \frac{\partial\mu}{\partial x_j}=\frac1H\)，\(\displaystyle \frac{\partial\sigma}{\partial x_j}=\frac{1}{H}\sum_i(x_i-\mu)\cdot\left(-(\delta_{ij}-\tfrac1H)\right)\cdot\frac{1}{2\sigma}=-\frac{x_j-\mu}{H\sigma}=-\frac{\hat{x}_j}{H}\)。后者尤其干净：<strong>标准差对第 \(j\) 分量的偏导只依赖 \(\hat{x}_j\) 自己</strong>。</li>
+<li><strong>梯度回传到 \(x\) 的完整表达式。</strong>把 5.12 的 \(\frac{\partial\hat{x}_i}{\partial x_j}\) 代入 \(\frac{\partial y_i}{\partial x_j}=\gamma_i\frac{\partial \hat{x}_i}{\partial x_j}\)，再对 \(\mu,\sigma\) 用链式法则求和，可整理为
+\[
+\frac{\partial L}{\partial x_j}=\sum_i \frac{\partial L}{\partial y_i}\gamma_i\cdot\frac{1}{\sigma}\left[\left(\delta_{ij}-\frac1H\right)-\frac{\hat{x}_i\hat{x}_j}{H}-\frac{\hat{x}_i\hat{x}_j}{H}\right]
+=\frac{1}{\sigma}\left[\frac{\partial L}{\partial y}\odot\gamma\right]_j\left(1-\frac{2}{H}\right)-\frac{1}{\sigma}\left[\left(\frac{\partial L}{\partial y}\odot\gamma\right)^{\top}\hat{x}\right]\frac{\hat{x}_j}{H}
+\]
+其中后一项来自 \(-\mu\) 和 \(-\sigma\) 两条间接路径。<strong>结论：LN 的反向映射是"取加权梯度的均值方向 + 正交分量"的组合，不改变梯度的零和/正交结构，量级只被 \(1/\sigma\) 整体缩放。</strong></li>
+</ol>
+
+<div class="note"><b>直觉</b>
+\(\mu\) 问"整体偏亮还是偏暗"，\(\sigma\) 问"忽明忽暗还是均匀"。LN 把每个 token 的向量按这两个数归一化。两条统计量都是<strong>沿特征维</strong>算的，与其他样本、与序列长度都无关——这是 LN 相对 BN 的全部优势来源。
+</div>
+<div class="warn"><b>易错点：\(H\) 还是 \(T\)？</b>
+LN 沿<strong>特征维 \(H\)</strong> 归一化，一个 token 一个统计量。<strong>不是</strong>沿序列维归一化（那会跨 token 互相影响，破坏因果性）。实现里对应 <code>nn.LayerNorm(H)</code> 作用在最后一维。
+</div>
+<div class="relnav">相关：<a href="#eq-5-12">(5.12) LayerNorm 主公式</a>　<a href="#eq-5-15">(5.15) RMS 的定义</a></div>
+</section>
+
+<section class="fml" id="eq-5-14">
+<h2><span class="num">(5.14)</span>RMSNorm<a class="anchor" href="#eq-5-14">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.2.1 节 Normalization Methods　<a href="../thellm/11-5-model-architecture.html#5-2-1-normalization-methods">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0063.png" alt="原书公式 5.14"><span class="cap">原书公式 5.14</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \operatorname{RMSNorm}(x)=\frac{x}{\operatorname{RMS}(x)}\cdot\gamma \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(x\)</td><td>待归一化的隐状态向量</td><td>\(\mathbb{R}^{H}\)</td></tr>
+<tr><td>\(\operatorname{RMS}(x)\)</td><td>均方根（Root Mean Square），见 5.15</td><td>标量，量纲同 \(x\)</td></tr>
+<tr><td>\(\gamma\)</td><td>缩放参数，LLaMA 里叫 <code>self.weight</code>，<strong>初值全 1、无 \(\beta\)</strong></td><td>\(\mathbb{R}^{H}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>与 LayerNorm 的唯一区别：不减均值、无平移参数。</strong>LN 是 \(\gamma\odot\frac{x-\mu}{\sigma}+\beta\)，RMSNorm 是 \(\gamma\odot\frac{x}{\operatorname{RMS}(x)}\)。省掉的是<strong>减均值这一步和整个 \(\beta\)</strong>。</li>
+<li><strong>为什么可以省。</strong>直觉：残差网络里每个子层外面都有残差相加，<strong>均值方向的信息本来就通过恒等通路保留着</strong>（输入 \(x\) 直接加进输出）。所以"把所有分量同时平移"这个自由度不需要在归一化里显式建模，交给残差即可。这是一个经验性的论证，不是定理——但被 Gopher、Chinchilla、LLaMA 全系列验证。</li>
+<li><strong>省掉的实际收益有三个：</strong>
+<ul>
+<li><strong>速度</strong>：一次 <code>pow(2).mean(-1)</code> + 一次 <code>rsqrt</code>，不需要 <code>sum</code> 求均值、不需要中心化减法、不需要 <code>\beta</code> 的加法。在解码阶段（memory-bound、逐 token）这一点很关键。</li>
+<li><strong>梯度更干净</strong>：LN 的反向要处理"沿 \(\mathbf{1}\) 方向投影为零"这个奇点；RMSNorm 没有中心化，梯度路径里不会出现"两个方向被同时压掉"的退化。</li>
+<li><strong>参数更少</strong>：省 \(H\) 个参数（可忽略，但体现了设计哲学）。</li>
+</ul></li>
+<li><strong>数值稳定性上略差，需要 \(\epsilon\)。</strong>LN 的 \(\sigma\) 测的是"离均值的距离"，RMS 测的是"离原点的距离"。若整行 \(x\) 各分量相同且都等于常数 \(c\)，RMSNorm 分母是 \(|c|\)（非零，没问题），但若 \(x\approx\mathbf{0}\)，分母趋于 0。所以实现里必须 <code>x * rsqrt(mean(x^2) + eps)</code>。</li>
+<li><strong>求导。</strong>记 \(r=\operatorname{RMS}(x)\)、\(\hat{x}=x/r\)，则 \(y=\gamma\odot\hat{x}\)。由 \(\frac{\partial r}{\partial x_j}=\frac{x_j}{H r^2}\)（因为 \(r^2=\frac1H\sum_i x_i^2\)，对 \(x_j\) 求导得 \(\frac{2}{H}x_j\)，再乘 \(\frac{1}{2r}\)），故 \(\frac{\partial \hat{x}_i}{\partial x_j}=\frac{\delta_{ij}}{r}-\frac{x_i x_j}{H r^3}=\frac{1}{r}\left(\delta_{ij}-\frac{\hat{x}_i\hat{x}_j}{H}\right)\)。矩阵形式：\(\displaystyle\frac{\partial\hat{x}}{\partial x}=\frac1r\left(\mathbf{I}-\frac1H\hat{x}\hat{x}^{\top}\right)\)。对比 LN 少了 \(-\frac1H\mathbf{1}\mathbf{1}^{\top}\) 项，<strong>特征值只有 \(1/r\)（\(H-1\) 个）和 \(0\)（沿 \(\hat{x}\)）</strong>——少压掉一个方向。</li>
+<li><strong>统计性质。</strong>\(\frac1H\sum_i\hat{x}_i^2=1\) 仍成立（这正是归一化的目的），但 \(\frac1H\sum_i\hat{x}_i\) 一般不为 0。<strong>所以 RMSNorm 之后零均值的性质丢失了</strong>，这是它与 LN 唯一的实质差异。</li>
+</ol>
+
+<h3>实现：LLaMA 的 RMSNorm</h3>
+<div class="codeblock"><pre><code>class LlamaRMSNorm(nn.Module):
+    def __init__(self, hidden_size, eps=1e-6):
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(hidden_size))
+        self.variance_epsilon = eps
+
+    def forward(self, hidden_states):
+        input_dtype = hidden_states.dtype
+        hidden_states = hidden_states.to(torch.float32)   # 关键：累加用 fp32
+        variance = hidden_states.pow(2).mean(-1, keepdim=True)
+        hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
+        return self.weight * hidden_states.to(input_dtype)
+</code></pre></div>
+<p>逐行对应公式：<code>variance</code> 就是 \(\frac1H\sum x_i^2=\operatorname{RMS}(x)^2\)；<code>rsqrt(variance + eps)</code> 就是 \(\frac{1}{\operatorname{RMS}(x)}\)（<code>rsqrt</code> 是算融合指令，同时算平方根和倒数，硬件加速）；<code>self.weight</code> 就是 \(\gamma\)；<code>eps</code> 就是防止除零的保险；<code>to(torch.float32)</code> 是因为大量分量求和容易在 fp16/bf16 下溢出。</p>
+
+<div class="note"><b>直觉</b>
+LN 是"先算这组数的重心在哪，再测偏离重心的散布"；RMSNorm 只测"离原点的整体大小"，不管重心在哪。像"调亮度但不调色温"。
+</div>
+<div class="warn"><b>易错点：<code>eps</code> 的位置</b>
+是 <code>rsqrt(variance + eps)</code>，即 \(\frac{1}{\sqrt{\text{variance}+\epsilon}}\)，<strong>不是</strong> <code>rsqrt(variance) + eps</code>。写错位置在数值上差别不大但都随 batch 概率性触发 NaN，排查很痛苦。另外 <code>eps</code> 通常加在<em>方差</em>上（量级 \(O(\text{std}^2)\)），不是加在标准差上。
+</div>
+<div class="relnav">相关：<a href="#eq-5-15">(5.15) RMS 定义</a>　<a href="#eq-5-12">(5.12) LayerNorm 对照</a></div>
+</section>
+
+<section class="fml" id="eq-5-15">
+<h2><span class="num">(5.15)</span>均方根 RMS 的定义<a class="anchor" href="#eq-5-15">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.2.1 节 Normalization Methods　<a href="../thellm/11-5-model-architecture.html#5-2-1-normalization-methods">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0064.png" alt="原书公式 5.15"><span class="cap">原书公式 5.15</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \operatorname{RMS}(x)=\sqrt{\frac{1}{H}\sum_{i=1}^{H}x_i^2} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(x_i\)</td><td>隐状态第 \(i\) 个分量</td><td>标量</td></tr>
+<tr><td>\(x_i^2\)</td><td>平方，恒非负——<strong>这是 RMS 能不用中心化的原因</strong></td><td>标量，量纲是 \(x\) 的平方</td></tr>
+<tr><td>\(\operatorname{RMS}(x)\)</td><td>均方根，量纲与 \(x\) 相同</td><td>标量，非负</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>标准 RMS 的定义。</strong>对非负量 \(a_1,\dots,a_n\)，RMS \(=\sqrt{\frac{1}{n}\sum a_i^2}\)。这里是<a href="#eq-5-13">5.13</a> 中标准差 \(\sigma=\sqrt{\frac1H\sum(x_i-\mu)^2}\) 把"中心化"那一步拿掉、且不减均值的版本。</li>
+<li><strong>与 L2 范数的关系。</strong>\(\|x\|_2=\sqrt{\sum_{i=1}^H x_i^2}\)，所以 \(\operatorname{RMS}(x)=\frac{\|x\|_2}{\sqrt{H}}\)。反过来 \(\frac{x}{\operatorname{RMS}(x)}=\frac{\sqrt{H}\,x}{\|x\|_2}\)。所以 <strong>RMSNorm 就是把向量缩放到 \(H\) 维单位球面上的投影</strong>（沿原射线），然后再学一个 \(\gamma\)。这个几何解释很直观：不管输入方向如何、长度如何，先把长度钉死在 \(\sqrt{H}\)。</li>
+<li><strong>缩放不变性验证。</strong>若 \(x\to cx\)，则 \(\operatorname{RMS}(cx)=|c|\operatorname{RMS}(x)\)，故 \(\frac{cx}{|c|\operatorname{RMS}(x)}=\operatorname{sgn}(c)\cdot\frac{x}{\operatorname{RMS}(x)}\)。<strong>整体尺度和方向被完全消除</strong>，只保留方向（以及符号），正是我们想要的。（对比 LN 只消尺度、保留均值。）</li>
+<li><strong>与 L2 归一化的区别。</strong>用 \(\|x\|_2\) 而不是 \(\|x\|_2/\sqrt{H}\) 做分母，结果只是差一个常数 \(\sqrt{H}\)。除以 \(\sqrt{H}\) 的意义在于让<strong>输出分量的均方值恰好为 1</strong>（\(\frac1H\sum\hat{x}_i^2=1\)），使得后续线性层的输入尺度与 \(H\) 无关。这正是 5.5 里"分数方差 = 1"的同一套逻辑。</li>
+<li><strong>与均值的关系。</strong>用 \(\mathbb{E}[x^2]=\operatorname{Var}(x)+(\mathbb{E}[x])^2\)：\(\operatorname{RMS}(x)^2=\sigma^2+\mu^2\)。所以 RMSNorm 的分母里<strong>混进了均值的贡献</strong>——如果一个 token 的分量整体偏大（\(\mu\) 大），分母就大，输出被压小。这是 RMSNorm 与 LN 唯一真正实质的差别。</li>
+<li><strong>求导。</strong>\(\frac{\partial \operatorname{RMS}(x)}{\partial x_j}=\frac{1}{2\sqrt{\frac1H\sum_i x_i^2}}\cdot\frac{2x_j}{H}=\frac{x_j}{H\cdot\operatorname{RMS}(x)}\)。干净利落，因为不用先求 \(\mu\)。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+RMS 是"这组数的典型大小"。LLaMA 里 \(\gamma\) 初值全 1，所以第一层 RMSNorm 之后每个 token 向量的长度恰好是 \(\sqrt{H}\)——不管它进来时是 0.001 还是 1000。
+</div>
+<div class="relnav">相关：<a href="#eq-5-14">(5.14) RMSNorm 主公式</a>　<a href="#eq-5-13">(5.13) 标准差对照</a></div>
+</section>
+
+<section class="fml" id="eq-5-16">
+<h2><span class="num">(5.16)</span>DeepNorm<a class="anchor" href="#eq-5-16">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.2.1 节 Normalization Methods　<a href="../thellm/11-5-model-architecture.html#5-2-1-normalization-methods">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0065.png" alt="原书公式 5.16"><span class="cap">原书公式 5.16</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \operatorname{DeepNorm}(x)=\operatorname{LayerNorm}\bigl(\alpha\cdot x+\operatorname{Sublayer}(x)\bigr) \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(x\)</td><td>子层输入</td><td>\(\mathbb{R}^{H}\)</td></tr>
+<tr><td>\(\operatorname{Sublayer}(x)\)</td><td>子层本身的变换（MHA / FFN）</td><td>\(\mathbb{R}^{H}\)</td></tr>
+<tr><td>\(\alpha\)</td><td>残差<strong>恒等支路</strong>的放大系数，<strong>超参、不可学习</strong></td><td>标量</td></tr>
+<tr><td>\(\operatorname{LayerNorm}\)</td><td>见 5.12 / 5.13</td><td>逐元素作用于 \(\mathbb{R}^{H}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>和 5.9 的 post-LN 对比，差别只有一个 \(\alpha\)：</strong>5.9 是 \(\operatorname{LayerNorm}\big(f(x)+x\big)\)，DeepNorm 把恒等支路放大成 \(\alpha x\)。而子层支路<strong>不加系数</strong>（等价于系数为 1）。</li>
+<li><strong>为什么放大恒等支路有用——回到 5.9 的残差分析。</strong>一层是 \(\mathbf{h}_{l+1}=\mathbf{J}_{\mathrm{LN}}(\alpha\mathbf{h}_l+f(\mathbf{h}_l))\cdot(\alpha\mathbf{h}_l+f(\mathbf{h}_l))\)，所以 \(\frac{\partial\mathbf{h}_{l+1}}{\partial\mathbf{h}_l}\approx\alpha\mathbf{I}_H+\frac{\partial f}{\partial\mathbf{h}_l}\)。反向传播时梯度要连乘 \(L\) 层，粗略地看每层贡献一个系数 \(\alpha\)。若 \(\alpha&gt;1\)，梯度会<strong>随深度指数放大</strong>——这听起来是"梯度爆炸"，但 DeepNorm 的论证是反的：它要的是让<strong>反向梯度尺度不随深度指数缩小</strong>（\(\alpha&gt;1\) 时 \(\alpha^L\) 抵消了每层 LayerNorm 造成的 \(1/\sigma\) 缩小与初始化的缩小），从而在<strong>不加 warmup 或大幅缩短 warmup</strong> 的前提下训更深。</li>
+<li><strong>更严格的角度：残差支路的有效学习率。</strong>把 \(f\) 近似线性为 \(\mathbf{W}_f\)，则反向梯度大小 \(\propto(\alpha+\lambda)\)，而参数的有效步长正比于"梯度 / 曲率"。文献里给出的经验结论是：<strong>恒等支路系数 \(\alpha\) 越大，子层参数的有效学习率越小</strong>，从而允许更大的 \(L\) 而不发散。</li>
+<li><strong>\(\alpha\) 的取值不是随便定的，是经验值。</strong>原书引的 DeepNorm 论文给出：编码器 \(\alpha=2H\)，解码器 \(\alpha=8H\)（\(H\) 为隐藏维度）。<strong>这些是从实验调出来的、依赖模型宽度与深度的经验值，不是数学定理</strong>。所以换架构（如从 encoder-decoder 改成 decoder-only、或者 SwiGLU 替代 FFN）时 \(\alpha\) 必须重调。</li>
+<li><strong>为什么它能撑更深的网络（配合 post-LN）。</strong>post-LN 的弱点是 <strong>LN 位于残差通路上</strong>（见 <a href="#eq-5-9">5.9</a> 推导的最后一步：恒等项也要过 \(J_{\mathrm{LN}}\)），所以每层恒等通路的梯度都被乘上 \(1/\sigma\)。DeepNorm 把这条通路上的人为放大 \(\alpha\) 补回来，同时<strong>刻意让子层支路保持"未放大"</strong>，使子层的更新相对保守——这就是名字里 "Deep" 的来源。</li>
+<li><strong>与 pre-LN 的关系（重要背景）。</strong>现代 LLM（LLaMA 等）走的是另一条路：pre-LN 把 LN 从残差通路上移走，恒等梯度<strong>完全干净</strong>，于是不需要 \(\alpha\)，也不需要 warmup。<strong>DeepNorm 和 pre-LN 解决的是同一个问题（深层 post-LN 训不动），方案不同</strong>：DeepNorm 修补 post-LN，pre-LN 绕开 post-LN。这也解释了为什么主流实现几乎都转向了 pre-LN。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+残差是"主干 + 补丁"。DeepNorm 说：把主干放大 \(\alpha\) 倍、补丁保持原样。这样每一层对"原样传递信息"的贡献更大，对"改写信息"的贡献更小，于是叠很多层也不会把信息搅烂——可以放心加深。
+</div>
+<div class="warn"><b>易错点：\(\alpha\) 是超参，不是学习率也不是温度</b>
+常见误解是把 \(\alpha\) 当成可学习参数或归一化强度。<strong>它是固定常数</strong>，直接乘在恒等支路上（不是乘在子层输出上！）。另外 \(\alpha=2H\)、\(8H\) 这些数值与隐藏维度挂钩，换宽度必须重调。
+</div>
+<div class="relnav">相关：<a href="#eq-5-9">(5.9) 残差与 LayerNorm 的梯度</a>　<a href="#eq-5-12">(5.12) LayerNorm</a>　<a href="../thellm/11-5-model-architecture.html#5-2-2-normalization-position">原书 5.2.2 归一化位置</a></div>
+</section>
+</article>
+</main>
+<nav class="chapnav" aria-label="上下页导航"><div class="chapnav-inner">
+<a class="" href="02-ch04-data.html"><span class="lbl">上一章</span><span class="nm">Chapter 4　第 4 章 · 数据准备</span></a><a class="next" href="04-ch05-arch-b.html"><span class="lbl">下一章</span><span class="nm">Chapter 5 · 2/3　第 5 章 · 模型架构（2/3）</span></a>
+</div></nav>
+<script src="../assets/katex/katex.min.js"></script>
+<script src="../assets/katex/auto-render.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,161 @@
+{
+ "chapter": "2",
+ "cn": "统计学习概览",
+ "en": "An Overview of Statistical Learning",
+ "book": "03-statistical-learning.html",
+ "count": 15,
+ "equations": [
+  {
+   "id": "eq-2-1",
+   "num": "(2.1)",
+   "page": 25,
+   "img": "eq-p025-638y655-216x385.png",
+   "section": "2.1 What Is Statistical Learning?",
+   "link": "../isl/03-statistical-learning.html#eq-2-1",
+   "before": "2.1What Is Statistical Learning?# More generally, suppose that we observe a quantitative response Y and p different predictors, X1, X2,⋯, Xp. We assume that there is some relationship between Y and X = (X1, X2,⋯, Xp), which can be written in the very general form Here f is some fixed but unknown function of X1,⋯, Xp, and ϵ is a random error term, which is independent of X and has mean zero. In this formulation, f represents the systematic information that X provides about Y. In order to motivate…",
+   "after": "As another example, consider the left-hand panel of Figure 2.2, a plot of income versus years of education for 30 individuals in the Income data set. The plot suggests that one might be able to predict income using years of education. However, the function f that connects the input variable to the output variable is in general unknown. In this situation one must estimate f based on the observed points. Since Income is a simulated data set, f is known and is shown by the blue curve in the right-hand panel of Figure 2.2. The vertical lines represent the error terms ϵ. We note that some of the 30 observations lie above the blue curve and some lie below it; overall, the errors have approximately…"
+  },
+  {
+   "id": "eq-2-2",
+   "num": "(2.2)",
+   "page": 27,
+   "img": "eq-p027-340y360-224x385.png",
+   "section": "2.1 What Is Statistical Learning? › 2.1.1 Why Estimate f?",
+   "link": "../isl/03-statistical-learning.html#eq-2-2",
+   "before": "2.1.1Why Estimate f?# There are two main reasons that we may wish to estimate f: prediction and inference. We discuss each in turn. Prediction In many situations, a set of inputs X are readily available, but the output Y cannot be easily obtained. In this setting, since the error term averages to zero, we can predict Y using Why is the irreducible error larger than zero? The quantity ϵ may contain unmeasured variables that are useful in predicting Y: since we don’t measure them, f cannot use the…",
+   "after": "where f̂ represents our estimate for f, and Ŷ represents the resulting prediction for Y. In this setting, f̂ is often treated as a black box, in the sense that one is not typically concerned with the exact form of f̂, provided that it yields accurate predictions for Y. As an example, suppose that X1,⋯, Xp are characteristics of a patient’s blood sample that can be easily measured in a lab, and Y is a variable encoding the patient’s risk for a severe adverse reaction to a particular drug. It is natural to seek to predict Y using X, since we can then avoid giving the drug in question to patients who are at high risk of an adverse reaction—that is, patients for whom the estimate of Y is high. …"
+  },
+  {
+   "id": "eq-2-3",
+   "num": "(2.3)",
+   "page": 28,
+   "img": "eq-p028-415y451-147x385.png",
+   "section": "2.1 What Is Statistical Learning? › 2.1.1 Why Estimate f?",
+   "link": "../isl/03-statistical-learning.html#eq-2-3",
+   "before": "As an example, suppose that X1,⋯, Xp are characteristics of a patient’s blood sample that can be easily measured in a lab, and Y is a variable encoding the patient’s risk for a severe adverse reaction to a particular drug. It is natural to seek to predict Y using X, since we can then avoid giving the drug in question to patients who are at high risk of an adverse reaction—that is, patients for whom the estimate of Y is high. The accuracy of Ŷ as a prediction for Y depends on two quantities, whi…",
+   "after": "ReducibleIrreducible where E(Y −Ŷ)2 represents the average, or expected value, of the squared difference between the predicted and actual value of Y, and Var(ϵ) represents the variance associated with the error term ϵ. The focus of this book is on techniques for estimating f with the aim of minimizing the reducible error. It is important to keep in mind that the irreducible error will always provide an upper bound on the accuracy of our prediction for Y. This bound is almost always unknown in practice. Inference We are often interested in understanding the association between Y and X1,⋯, Xp. In this situation we wish to estimate f, but our goal is not necessarily to make predictions for Y. …"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 30,
+   "img": "eq-p030-408y416-86x366.png",
+   "section": "2.1 What Is Statistical Learning? › 2.1.1 Why Estimate f? › 2.1.2 How Do We Estimate f?",
+   "link": "../isl/03-statistical-learning.html",
+   "before": "This situation falls into the inference paradigm. Another example involves modeling the brand of a product that a customer might purchase based on variables such as price, store location, discount levels, competition price, and so forth. In this situation one might really be most interested in the association between each variable and the probability of purchase. For instance, to what extent is the product’s price associated with sales? This is an example of modeling for inference. Depending on …",
+   "after": "Our goal is to apply a statistical learning method to the training data in order to estimate the unknown function f. In other words, we want to find a function f̂ such that Y ≈f̂(X) for any observation (X, Y). Broadly speaking, most statistical learning methods for this task can be characterized as either parametric or non-parametric. We now briefly discuss these two types of approaches. Parametric Methods Parametric methods involve a two-step model-based approach. 1. First, we make an assumption about the functional form, or shape, of f. For example, one very simple assumption is that f is linear in X: (2.4)"
+  },
+  {
+   "id": "eq-2-4",
+   "num": "(2.4)",
+   "page": 30,
+   "img": "eq-p030-576y587-171x385.png",
+   "section": "2.1 What Is Statistical Learning? › 2.1.1 Why Estimate f? › 2.1.2 How Do We Estimate f?",
+   "link": "../isl/03-statistical-learning.html#eq-2-4",
+   "before": "Our goal is to apply a statistical learning method to the training data in order to estimate the unknown function f. In other words, we want to find a function f̂ such that Y ≈f̂(X) for any observation (X, Y). Broadly speaking, most statistical learning methods for this task can be characterized as either parametric or non-parametric. We now briefly discuss these two types of approaches. Parametric Methods Parametric methods involve a two-step model-based approach. 1. First, we make an assumptio…",
+   "after": "This is a linear model, which will be discussed extensively in Chapter 3. Once we have assumed that f is linear, the problem of estimating f is greatly simplified. Instead of having to estimate an entirely arbitrary p-dimensional function f(X), one only needs to estimate the p + 1 coefficients β0, β1,⋯, βp. FIGURE 2.4 A linear model fit by least squares to the Income data from Figure 2.3. The observations are shown in red, and the yellow plane indicates the least squares fit to the data. 2. After a model has been selected, we need a procedure that uses the training data to fit or train the model. In the case of the linear model (2.4), we need to estimate the parameters β0, β1,⋯, βp. That is,…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 31,
+   "img": "eq-p031-344y361-178x351.png",
+   "section": "2.1 What Is Statistical Learning? › 2.1.1 Why Estimate f? › 2.1.2 How Do We Estimate f?",
+   "link": "../isl/03-statistical-learning.html",
+   "before": "This is a linear model, which will be discussed extensively in Chapter 3. Once we have assumed that f is linear, the problem of estimating f is greatly simplified. Instead of having to estimate an entirely arbitrary p-dimensional function f(X), one only needs to estimate the p + 1 coefficients β0, β1,⋯, βp. FIGURE 2.4 A linear model fit by least squares to the Income data from Figure 2.3. The observations are shown in red, and the yellow plane indicates the least squares fit to the data. 2. Afte…",
+   "after": "The most common approach to fitting the model (2.4) is referred to as (ordinary) least squares, which we discuss in Chapter 3. However, least squares is one of many possible ways to fit the linear model. In Chapter 6, we discuss other approaches for estimating the parameters in (2.4). The model-based approach just described is referred to as parametric; it reduces the problem of estimating f down to one of estimating a set of parameters. Assuming a parametric form for f simplifies the problem of estimating f because it is generally much easier to estimate a set of parameters, such as β0, β1,⋯, βp in the linear model (2.4), than it is to fit an entirely arbitrary function f. The potential dis…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 31,
+   "img": "eq-p031-636y657-137x368.png",
+   "section": "2.1 What Is Statistical Learning? › 2.1.1 Why Estimate f? › 2.1.2 How Do We Estimate f?",
+   "link": "../isl/03-statistical-learning.html",
+   "before": "2. After a model has been selected, we need a procedure that uses the training data to fit or train the model. In the case of the linear model (2.4), we need to estimate the parameters β0, β1,⋯, βp. That is, we want to find values of these parameters such that Figure 2.4 shows an example of the parametric approach applied to the Income data from Figure 2.3. We have fit a linear model of the form Since we have assumed a linear relationship between the response and the two predictors, the entire f…",
+   "after": "FIGURE 2.5 A smooth thin-plate spline fit to the Income data from Figure 2.3 is shown in yellow; the observations are displayed in red. Splines are discussed in Chapter 7. An example of a non-parametric approach to fitting the Income data is shown in Figure 2.5. A thin-plate spline is used to estimate f. This approach does not impose any pre-specified model on f. It instead attempts to produce an estimate for f that is as close as possible to the observed data, subject to the fit—that is, the yellow surface in Figure 2.5—being smooth. In this case, the non-parametric fit has produced a remarkably accurate estimate of the true f shown in Figure 2.3. In order to fit a thin-plate spline, the da…"
+  },
+  {
+   "id": "eq-2-5",
+   "num": "(2.5)",
+   "page": 38,
+   "img": "eq-p038-300y320-189x385.png",
+   "section": "2.2 Assessing Model Accuracy › 2.2.1 Measuring the Quality of Fit",
+   "link": "../isl/03-statistical-learning.html#eq-2-5",
+   "before": "In this section, we discuss some of the most important concepts that arise in selecting a statistical learning procedure for a specific data set. As the book progresses, we will explain how the concepts presented here can be applied in practice. 2.2.1Measuring the Quality of Fit# In order to evaluate the performance of a statistical learning method on a given data set, we need some way to measure how well its predictions actually match the observed data. That is, we need to quantify the extent t…",
+   "after": "The MSE in (2.5) is computed using the training data that was used to fit the model, and so should more accurately be referred to as the training MSE. But in general, we do not really care how well the method works on the training data. Rather, we are interested in the accuracy of the predictions that we obtain when we apply our method to previously unseen test data. Why is this what we care about? Suppose that we are interested in developing an algorithm to predict a stock’s price based on previous stock returns. We can train the method using stock returns from the past 6 months. But we don’t really care how well our method predicts last week’s stock price. We instead care about how well it…"
+  },
+  {
+   "id": "eq-2-7",
+   "num": "(2.7)",
+   "page": 42,
+   "img": "eq-p042-343y374-114x385.png",
+   "section": "2.2 Assessing Model Accuracy › 2.2.1 Measuring the Quality of Fit › 2.2.2 The Bias-Variance Trade-Off",
+   "link": "../isl/03-statistical-learning.html#eq-2-7",
+   "before": "2.2.2The Bias-Variance Trade-Off# The U-shape observed in the test MSE curves (Figures 2.9–2.11) turns out to be the result of two competing properties of statistical learning methods. FIGURE 2.11 Details are as in Figure 2.9, using a different f that is far from linear. In this setting, linear regression provides a very poor fit to the data. Though the mathematical proof is beyond the scope of this book, it is possible to show that the expected test MSE, for a given value x0, can always be deco…",
+   "after": "Here the notation Ey0 −f̂(x0) defines the expected test MSE at x0, and refers to the average test MSE that we would obtain if we repeatedly estimated f using a large number of training sets, and tested each at x0. The 1 22 overall expected test MSE can be computed by averaging Ey0 −f̂(x0) over all possible values of x0 in the test set. Equation 2.7 tells us that in order to minimize the expected test error, we need to select a statistical learning method that simultaneously achieves low variance and low bias. Note that variance is inherently a nonnegative quantity, and squared bias is also nonnegative. Hence, we see that the expected test MSE can never lie below Var(ϵ), the irreducible error…"
+  },
+  {
+   "id": "eq-2-8",
+   "num": "(2.8)",
+   "page": 45,
+   "img": "eq-p045-75y116-213x385.png",
+   "section": "2.2 Assessing Model Accuracy › 2.2.1 Measuring the Quality of Fit › 2.2.2 The Bias-Variance Trade-Off › 2.2.3 The Classification Setting",
+   "link": "../isl/03-statistical-learning.html#eq-2-8",
+   "before": "Thus far, our discussion of model accuracy has been focused on the regression setting. But many of the concepts that we have encountered, such as the bias-variance trade-off, transfer over to the classification setting with only some modifications due to the fact that yi is no longer quantitative. Suppose that we seek to estimate f on the basis of training observations {(x1, y1),⋯, (xn, yn)}, where now y1,⋯, yn are qualitative. The most common approach for quantifying the accuracy of our estimat…",
+   "after": "Here ŷi is the predicted class label for the ith observation using f̂. And I(yi̸ = ŷi) is an indicator variable that equals 1 if yi̸ = ŷi and zero if yi = ŷi. If I(yi̸ = ŷi) = 0 then the ith observation was classified correctly by our classification method; otherwise it was misclassified. Hence Equation 2.8 computes the fraction of incorrect classifications. Equation 2.8 is referred to as the training error rate because it is computed based on the data that was used to train our classifier. As in the regression setting, we are most interested in the error rates that result from applying our classifier to test observations that were not used in training. The test error rate associated wi…"
+  },
+  {
+   "id": "eq-2-10",
+   "num": "(2.10)",
+   "page": 45,
+   "img": "eq-p045-397y420-208x380.png",
+   "section": "2.2 Assessing Model Accuracy › 2.2.1 Measuring the Quality of Fit › 2.2.2 The Bias-Variance Trade-Off › 2.2.3 The Classification Setting",
+   "link": "../isl/03-statistical-learning.html#eq-2-10",
+   "before": "Equation 2.8 is referred to as the training error rate because it is computed based on the data that was used to train our classifier. As in the regression setting, we are most interested in the error rates that result from applying our classifier to test observations that were not used in training. The test error rate associated with a set of test observations of the form (x0, y0) is given by Ave (I(y0̸ = ŷ0)),(2.9) where ŷ0 is the predicted class label that results from applying the classifi…",
+   "after": "is largest. Note that (2.10) is a conditional probability: it is the probability that Y = j, given the observed predictor vector x0. This very simple classifier is called the Bayes classifier. In a two-class problem where there are only two possible response values, say class 1 or class 2, the Bayes classifier corresponds to predicting class one if Pr(Y = 1|X = x0) > 0.5, and class two otherwise. K-Nearest Neighbors In theory we would always like to predict qualitative responses using the Bayes classifier. But for real data, we do not know the conditional distribution of Y given X, and so computing the Bayes classifier is impossible. Therefore, the Bayes classifier serves as an unattainable …"
+  },
+  {
+   "id": "eq-2-11",
+   "num": "(2.11)",
+   "page": 46,
+   "img": "eq-p046-423y461-186x380.png",
+   "section": "2.2 Assessing Model Accuracy › 2.2.1 Measuring the Quality of Fit › 2.2.2 The Bias-Variance Trade-Off › 2.2.3 The Classification Setting",
+   "link": "../isl/03-statistical-learning.html#eq-2-11",
+   "before": "is largest. Note that (2.10) is a conditional probability: it is the probability that Y = j, given the observed predictor vector x0. This very simple classifier is called the Bayes classifier. In a two-class problem where there are only two possible response values, say class 1 or class 2, the Bayes classifier corresponds to predicting class one if Pr(Y = 1|X = x0) > 0.5, and class two otherwise. K-Nearest Neighbors In theory we would always like to predict qualitative responses using the Bayes …",
+   "after": "where the expectation averages the probability over all possible values of X. For our simulated data, the Bayes error rate is 0.133. It is greater than zero, because the classes overlap in the true population, which implies that maxj Pr(Y = j|X = x0) < 1 for some values of x0. The Bayes error rate is analogous to the irreducible error, discussed earlier. (2.12) Finally, KNN classifies the test observation x0 to the class with the largest probability from (2.12). Figure 2.14 provides an illustrative example of the KNN approach. In the left-hand panel, we have plotted a small training data set consisting of six blue and six orange observations. Our goal is to make a prediction for the point la…"
+  },
+  {
+   "id": "eq-2-12",
+   "num": "(2.12)",
+   "page": 47,
+   "img": "eq-p047-115y157-164x380.png",
+   "section": "2.2 Assessing Model Accuracy › 2.2.1 Measuring the Quality of Fit › 2.2.2 The Bias-Variance Trade-Off › 2.2.3 The Classification Setting",
+   "link": "../isl/03-statistical-learning.html#eq-2-12",
+   "before": "FIGURE 2.13 A simulated data set consisting of 100 observations in each of two groups, indicated in blue and in orange. The purple dashed line represents the Bayes decision boundary. The orange background grid indicates the region in which a test observation will be assigned to the orange class, and the blue background grid indicates the region in which a test observation will be assigned to the blue class. The Bayes classifier produces the lowest possible test error rate, called the Bayes error…",
+   "after": "Finally, KNN classifies the test observation x0 to the class with the largest probability from (2.12). Figure 2.14 provides an illustrative example of the KNN approach. In the left-hand panel, we have plotted a small training data set consisting of six blue and six orange observations. Our goal is to make a prediction for the point labeled by the black cross. Suppose that we choose K = 3. Then KNN will first identify the three observations that are closest to the cross. This neighborhood is shown as a circle. It consists of two blue points and one orange point, resulting in estimated probabilities of 2/3 for the blue class and 1/3 for the orange class. Hence KNN will predict that the black c…"
+  },
+  {
+   "id": "eq-2-6",
+   "num": "(2.6)",
+   "page": 38,
+   "img": null,
+   "section": "（原书有编号，网页版解析器未切图）",
+   "link": "../isl/03-statistical-learning.html#eq-2-6",
+   "before": "",
+   "after": "",
+   "fromPdf": true
+  },
+  {
+   "id": "eq-2-9",
+   "num": "(2.9)",
+   "page": 44,
+   "img": null,
+   "section": "（原书有编号，网页版解析器未切图）",
+   "link": "../isl/03-statistical-learning.html#eq-2-9",
+   "before": "",
+   "after": "",
+   "fromPdf": true
+  }
+ ]
+}

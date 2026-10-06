@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>6 Model Pre-training · Large Language Models</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23a11f27'/%3E%3Cpath d='M9 8h9a4.5 4.5 0 0 1 0 9H9zm0 9h9a4.5 4.5 0 0 1 0 9H9z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<script>(function(){try{var t=localStorage.getItem('pdf2html-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn" href="index.html" aria-label="Contents">&#9776;</a>
+  <a class="brand" href="index.html">Large Language Models</a>
+  <button class="btn" id="themeToggle" aria-label="Toggle dark mode">&#9788;</button>
+</header>
+<main id="main">
+<article>
+<h1 id="model-pre-training"><span class="chno">Chapter 6</span>Model Pre-training</h1>
+<p><strong>Abstract</strong> Training large language models (LLMs) presents significantly greater challenges compared to traditional language models, primarily due to the massive number of parameters involved. This chapter delves into effective strategies for pre-training LLMs, a critical phase in their development. We begin by exploring three fundamental pre-training tasks: language modeling, denoising autoencoding, and mixture-of-denoisers, with a particular focus on language modeling and its two key variants-prefix language modeling and fill-in-the-middle tasks. This provides a foundational understanding of the core mechanisms driving large language model development. To illustrate these concepts, we provide example code for training the LLaMA model.</p>
+<p>Next, we delve into various optimization settings essential for training LLMs, including batch-based training, learning rate configuration, and practical insights for their effective implementation. We then introduce scalable training techniques, including 3D parallel training, the zero-redundancy optimizer, activation recomputation, and mixed-precision training. For 3D parallel training, we conduct a thorough comparison of different parallelization strategies, including data parallelism, pipeline parallelism, and tensor parallelism, highlighting their respective strengths and trade-offs.</p>
+<p>Additionally, we address the practical aspects of running LLMs, such as calculating the number of parameters and estimating memory costs, presented in a clear, step-by-step manner. Finally, we conclude with a simplified pre-training code practice that integrates the discussed techniques, demonstrating how to construct an end-to-end pre-training pipeline for LLMs. This chapter aims to provide a basic guideline for researchers and practitioners seeking to navigate the intricate landscape of LLM pre-training.</p>
+<p>The previous chapters have thoroughly introduced the preparation of pre-training data (Chap. 4) and the model architecture (Chap. 5). This chapter will focus on how to conduct pre-training for large language models (LLMs). First, the pre-training tasks</p>
+<figure class="eq"><img src="assets/fig-0120.png" alt="equation " loading="lazy"></figure>
+<figure class="eq"><img src="assets/fig-0121.png" alt="equation " loading="lazy"></figure>
+<figure><img src="assets/fig-0122.png" alt="" loading="lazy"><figcaption>Figure 6.1 An illustrative comparison between language modeling and denoising autoencoding</figcaption></figure>
+<p>for text modeling will be introduced (Sect. 6.1), followed by the training optimization setup (Sect. 6.2) and scalable training techniques (Sect. 6.3). Finally, we will present the efficiency analysis (Sect. 6.4) and code implementation (Sect. 6.5).</p>
+<h2 id="6-1-pre-training-tasks"><span class="num">6.1</span>Pre-training Tasks<a class="anchor" href="#6-1-pre-training-tasks">#</a></h2>
+<p>To pre-train LLMs, the first step is to design suitable self-supervised training tasks that enable the model to acquire extensive semantic and world knowledge from vast amounts of unlabeled text data. Generally, there are three common pre-training tasks: <em>language</em> modeling</em> (LM), <em>denoising autoencoding</em> (DAE), and <em>mixture-of-denoisers</em> (MoD). Figure 6.1 illustrates the examples of inputs and outputs for language modeling and denoising autoencoding.</p>
+<h3 id="6-1-1-language-modeling"><span class="num">6.1.1</span>Language Modeling<a class="anchor" href="#6-1-1-language-modeling">#</a></h3>
+<p>The language modeling task is a widely adopted pre-training task for LLMs, focused on “<em>predicting</em> <em>the</em> <em>next</em> <em>wor</em><em>d</em>.”</p>
+<p>It is primarily applied in <em>decoder-based</em> LLMs such as GPT-3 [20] and PaLM [107]. Given a sequence of words or tokens, denoted by <span class="m">u</span> <span class="m">=</span> <span class="m">{</span><em>u</em>1<span class="m">, . . .</span> <span class="m">,</span> <em>u</em><span class="m">T</span> <span class="m">}</span>., the language modeling task can be defined as follows: based on the preceding word sequence <span class="m">u</span><span class="m">&lt;</span><span class="m">t</span> ., the model uses an autoregressive approach to predict the target word <em>u</em><span class="m">t</span> . During training, the model is typically optimized according to the following likelihood function:</p>
+<figure class="eq"><img src="assets/fig-0123.png" alt="equation 6.1" loading="lazy"></figure>
+<p>In essence, the language modeling task is similar to how humans produce language (such as spoken expressions or written texts), as both generate (or predict) subsequent content based on preceding content. Although the next-word prediction task might seem simple, LLMs can effectively learn the generative mechanisms of natural language text when the scale of the pre-training data is sufficiently large. As Ilya Sutskever explained in an interview, a model that accurately predicts the next word would better understand the textual semantics and world knowledge. A transcript of this interview is excerpted as shown in Example 6.1.<span class="m">1</span></p>
+<p>Say you read a detective novel. It’s like complicated plot, a storyline, different characters,</p>
+<p>lots of events, mysteries like clues, it’s unclear. Then, let’s say that at the last page of the</p>
+<p>book, the detective has gathered all the clues, gathered all the people and saying, “okay,</p>
+<p>I’m going to reveal the identity of whoever committed the crime and that person’s name</p>
+<p>is”. Predict that word. ...</p>
+<p>Now, there are many different words. But predicting those words better and better, the</p>
+<p>understanding of the text keeps on increasing. GPT-4 predicts the next word better.</p>
+<p><strong>Example 6.1</strong> Ilya Sutskever’s explanation of the effectiveness of the next-word</p>
+<p>prediction task</p>
+<p>The pre-training task based on next-token prediction can be viewed as a process of multi-task learning. For example, when predicting the target word “good” in the text prefix “<em>This movie has a full plot, and the actors performed very well.</em> <em>It is very good</em>,” the model is essentially learning the task of sentiment analysis. Conversely, when predicting the phrase “one candy” in the sentence prefix “<em>James had three candies, gave two to Nancy.</em> <em>Now,</em> <em>he</em> <em>has</em> <em>one</em> <em>candy</em>,” it is learning a mathematical task. Therefore, pre-training on large-scale text corpora enables the model to acquire the potential capability to solve a variety of downstream tasks.</p>
+<p>An important variant of language modeling is the <em>prefix</em> <em>language</em> <em>modeling</em> task, which is specifically designed for models that adopt the prefix decoder architecture (detailed in Sect. 5.3.3). During the training phase, each text sequence <span class="m">u</span>. is split into a prefix</p>
+<figure class="eq"><img src="assets/fig-0124.png" alt="equation " loading="lazy"></figure>
+<p>position <em>k</em> <span class="m">(</span>1 <span class="m">≤</span> <em>k</em> <span class="m">≤</span> <em>T</em><span class="m">)</span>. Unlike the standard language modeling task, in a prefix decoder, only the token loss from the suffix portion of the text is included in the training loss. The training objective of this task can be formally expressed as:</p>
+<figure class="eq"><img src="assets/fig-0125.png" alt="equation 6.2" loading="lazy"></figure>
+<p>The prefix language modeling task is highly similar to the input–output prediction setting in NLP tasks. However, because the loss from the input tokens is not included in the training loss function, the performance of prefix language modeling tends to be slightly inferior to that of standard language modeling when trained on datasets of the same size [181].</p>
+<p>Another variant of language modeling is the <em>fill-in-the-middle (FIM)</em> task [182]. This task aims to train the model to fill in missing information in the middle by reordering the input sequence. Specifically, an input sequence <span class="m">u</span>. is divided into three parts: the prefix <span class="m">u</span>prefix., the middle part <span class="m">u</span>middle., and the suffix <span class="m">u</span>suffix. In this task, the model needs to autoregressively predict the content of the middle part (<span class="m">u</span>middle.) based on a new sequence composed of the prefix and suffix (<span class="m">u</span>prefix <span class="m">⊕</span> <span class="m">u</span>suffix.). In this way, the model can learn the ability to fill in the missing information in the middle. The specific training function can be expressed as follows:</p>
+<figure class="eq"><img src="assets/fig-0126.png" alt="equation 6.3" loading="lazy"></figure>
+<p>Generally speaking, the cloze task can be used to assist standard language modeling tasks, enabling the model to recover the content in the middle part of the text. It can be used for training code models and enhance the model’s performance in applications such as code completion.</p>
+<div class="codeblock"><pre><code>LlamaForCausalLM</code></pre></div>
+<div class="codeblock"><pre><code><span class="t-kw">class</span> <span class="t-kw">LlamaForCausalLM</span>(LlamaPreTrainedModel):
+        <span class="t-kw">def</span> __init__(<span class="t-kw">self</span>, config):
+            <span class="t-kw">super</span>().__init__(config)
+            <span class="t-kw">self</span>.model = LlamaModel(config)</code></pre></div>
+<p>The following code presents the method for calculating language modeling loss using detailed configuration of the LLaMA model, LlamaModel, has already been presented earlier. LlamaForCausalLM adds a self.lm_head prediction head on top of it, which is used to map the model output to the vocabulary dimension.</p>
+<div class="codeblock"><pre><code><span class="t-kw">self</span>.vocab_size = config.vocab_size
+<span class="t-com">#</span> <span class="t-com">Map</span> <span class="t-com">the</span> <span class="t-com">hidden</span> <span class="t-com">state</span> <span class="t-com">of</span> <span class="t-com">the</span> <span class="t-com">last</span> <span class="t-com">layer</span> <span class="t-com">to</span> <span class="t-com">the</span> <span class="t-com">vocabulary.</span>
+<span class="t-kw">self</span>.lm_head = nn.Linear(config.hidden_size, config.vocab_size,
+    bias=<span class="t-kw">False</span>)</code></pre></div>
+<div class="codeblock"><pre><code><span class="t-kw">def</span> forward(
+    <span class="t-kw">self</span>,
+    input_ids: torch.LongTensor = <span class="t-kw">None</span>,
+    attention_mask: Optional[torch.Tensor] = <span class="t-kw">None</span>,
+    position_ids: Optional[torch.LongTensor] = <span class="t-kw">None</span>,
+    labels: Optional[torch.LongTensor] = <span class="t-kw">None</span>,
+    **kwargs,
+) -&gt; Union[Tuple, CausalLMOutputWithPast]:
+    outputs = <span class="t-kw">self</span>.model(
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        position_ids=position_ids,
+    )
+    <span class="t-com">#</span> <span class="t-com">Feed</span> <span class="t-com">input</span> <span class="t-com">into</span> <span class="t-com">LlamaModel</span> <span class="t-com">to</span> <span class="t-com">obtain</span> <span class="t-com">the</span> <span class="t-com">hidden</span> <span class="t-com">states</span> <span class="t-com">of</span> <span class="t-com">the</span> <span class="t-com">last</span> <span class="t-com">layer.</span></code></pre></div>
+<div class="codeblock"><pre><code>hidden_states = outputs[0]
+<span class="t-com">#</span> <span class="t-com">Feed</span> <span class="t-com">hidden</span> <span class="t-com">states</span> <span class="t-com">into</span> <span class="t-com">mapping</span> <span class="t-com">head</span> <span class="t-com">to</span> <span class="t-com">convert</span> <span class="t-com">them</span> <span class="t-com">into</span> <span class="t-com">the</span>
+    <span class="t-com">probability</span> <span class="t-com">of</span> <span class="t-com">each</span> <span class="t-com">token</span> <span class="t-com">in</span> <span class="t-com">the</span> <span class="t-com">vocabulary.</span></code></pre></div>
+<div class="codeblock"><pre><code>logits = <span class="t-kw">self</span>.lm_head(hidden_states).float()
+loss = <span class="t-kw">None</span>
+<span class="t-kw">if</span> labels <span class="t-kw">is</span> <span class="t-kw">not</span> <span class="t-kw">None</span>:
+    <span class="t-com">#</span> <span class="t-com">Compute</span> <span class="t-com">predicted</span> <span class="t-com">probability</span> <span class="t-com">of</span> <span class="t-com">tokens</span> <span class="t-com">from</span> <span class="t-com">position</span> <span class="t-com">2</span> <span class="t-com">to</span> <span class="t-com">t</span>
+        <span class="t-com">based</span> <span class="t-com">on</span> <span class="t-com">tokens</span> <span class="t-com">from</span> <span class="t-com">position</span> <span class="t-com">1</span> <span class="t-com">to</span> <span class="t-com">t-1.</span></code></pre></div>
+<div class="codeblock"><pre><code>    shift_logits = logits[..., :-1, :].contiguous()
+    shift_labels = labels[..., 1:].contiguous()
+    loss_fct = CrossEntropyLoss()
+    <span class="t-com">#</span> <span class="t-com">Flatten</span> <span class="t-com">tokens</span> <span class="t-com">of</span> <span class="t-com">different</span> <span class="t-com">sequences</span> <span class="t-com">in</span> <span class="t-com">a</span> <span class="t-com">batch.</span>
+    shift_logits = shift_logits.view(-1, <span class="t-kw">self</span>.config.vocab_size)
+    shift_labels = shift_labels.view(-1)
+    shift_labels = shift_labels.to(shift_logits.device)
+    <span class="t-com">#</span> <span class="t-com">Compute</span> <span class="t-com">the</span> <span class="t-com">cross-entropy</span> <span class="t-com">loss.</span>
+    loss = loss_fct(shift_logits, shift_labels)
+<span class="t-kw">return</span> CausalLMOutputWithPast(
+    loss=loss,
+    logits=logits,
+)</code></pre></div>
+<p><span class="m">→</span> <span class="m">→</span> <span class="m">→</span> <span class="m">→</span></p>
+<h3 id="6-1-2-denoising-autoencoding"><span class="num">6.1.2</span>Denoising Autoencoding<a class="anchor" href="#6-1-2-denoising-autoencoding">#</a></h3>
+<p>In addition to the traditional language modeling task, the denoising autoencoding task is another commonly used pre-training task for language models, which is widely used in pre-trained language models such as BERT and T5 [11, 67]. In the task, the input text undergoes a series of random replacements or deletions to form corrupted text ˜<span class="m">u</span>.</p>
+<p>The model’s training objective is to restore the original text based on the corrupted text, which can be expressed by the following formula:</p>
+<figure class="eq"><img src="assets/fig-0127.png" alt="equation 6.4" loading="lazy"></figure>
+<p>Compared to language modeling, the implementation of the denoising autoencoding task is more complex, requiring the setup of additional optimization strategies, such as token replacement proportions and strategies. However, in contrast to language modeling tasks, the use of denoising autoencoding for pre-training LLMs is still relatively limited. Representative models using denoising autoencoding include T5 and GLM-130B.</p>
+<h3 id="6-1-3-mixture-of-denoisers"><span class="num">6.1.3</span>Mixture-of-Denoisers<a class="anchor" href="#6-1-3-mixture-of-denoisers">#</a></h3>
+<p>The mixture-of-denoisers, also known as UL2 loss [183], unifies pre-training tasks by treating both language modeling and denoising autoencoding objectives as different types of denoising tasks, including S-denoiser, R-denoiser, and X-denoiser.</p>
+<p>Specifically, the S-denoiser uses the same objective as prefix language modeling (Eq. 6.2), aiming to train the model to generate suffix text based on prefix information. In contrast, the R-denoiser and X-denoiser are more aligned with the denoising autoencoding task objectives (Eq. 6.4), differing only in the span of masked fragments and the corruption ratio. The R-denoiser masks approximately 15% of tokens in the sequence, with each masked fragment containing only three to five tokens. On the other hand, the X-denoiser uses longer segments (over 12 tokens) or a higher corruption ratio (around 50%), requiring the model to more accurately restore the original information. This setting increases task difficulty, which helps improve model performance.</p>
+<p>During the training of the mixture-of-denoisers, the input sentence begins with special tokens ([R], [S], [X]), which guide the model to restore the corrupted tokens accordingly. This approach is applied for training LLMs such as UL2 [183] and PaLM- 2 [184].</p>
+<h2 id="6-2-optimization-settings"><span class="num">6.2</span>Optimization Settings<a class="anchor" href="#6-2-optimization-settings">#</a></h2>
+<p>Similar to the optimization of traditional neural networks, the batch gradient descent algorithm is commonly used for training model parameters in the large-scale pre-training. Furthermore, adjusting the learning rate and applying gradient optimization strategies can</p>
+<figure class="tbl"><div class="tablewrap"><img src="assets/fig-0128.png" alt="Table 6.1 Detailed optimization settings of existing LLMs. PT, WD, and GC denote" loading="lazy"></div><figcaption>Table 6.1 Detailed optimization settings of existing LLMs. PT, WD, and GC denote precision type, weight decay, and gradient clipping, respectively. (Table source: [8])</figcaption></figure>
+<p><strong>Learning rate</strong></p>
+<p><strong>Batch size</strong></p>
+<p><strong>Optimizer</strong> <strong>PT</strong> <strong>WD</strong> <strong>GC</strong> <strong>Model</strong></p>
+<p>(<strong>Warmup</strong> <span class="m">→</span>.<strong>Peak</strong> <span class="m">→</span>.<strong>Decay</strong>)</p>
+<figure class="eq"><img src="assets/fig-0129.png" alt="equation " loading="lazy"></figure>
+<p>32K→3.2M</p>
+<p>Adam</p>
+<p>FP16 0.1 GPT-3</p>
+<p>Adam</p>
+<p>AdamW</p>
+<p>FP16 0.1 OPT</p>
+<p><em>lr</em>2.</p>
+<p>Adafactor BF16</p>
+<p>PaLM</p>
+<p>1M→4M</p>
+<p>Adam</p>
+<p>BF16 0.1 BLOOM</p>
+<p>MT-NLG</p>
+<p>64K→3.75M</p>
+<p>Adam</p>
+<p>BF16 0.1</p>
+<p>Adam</p>
+<p>Gopher</p>
+<p>3M→6M</p>
+<p>BF16</p>
+<p>Chinchilla</p>
+<p>AdamW</p>
+<p>1.5M→3M</p>
+<p>BF16</p>
+<p>Galactica</p>
+<p>AdamW</p>
+<p>LaMDA</p>
+<p>256K</p>
+<p>BF16</p>
+<p>Jurassic-1</p>
+<p>32K→3.2M</p>
+<p>LLaMA-2</p>
+<p>AdamW</p>
+<p>Adam</p>
+<p>FP16 0.01 1.0 Pythia</p>
+<p>AdamW</p>
+<p>BF16 0.1 Baichuan-2</p>
+<p>AdamW</p>
+<p>BF16 0.1 Qwen-1.5</p>
+<p>InternLM-2</p>
+<p>AdamW</p>
+<p>Warmup→4M Warmup→1<span class="m">.</span>25 <span class="m">×</span> 10<span class="m">-</span>4.→Cosine</p>
+<p>AdamW</p>
+<p>BF16 0.1 Falcon</p>
+<p>AdamW</p>
+<p>BF16 0.1 DeepSeek</p>
+<p>AdamW</p>
+<p>BF16 0.1 Yi</p>
+<p>256K</p>
+<p>Adam</p>
+<p>BF16 0.1 YuLan</p>
+<p>4.5M</p>
+<p>GLM-130B 0.4M→8.25M</p>
+<p>AdamW</p>
+<p>FP16 0.1 T5</p>
+<p>Adafactor</p>
+<p>further enhance training stability. To alleviate model over-fitting, a series of regularization methods need to be used during training. Below, we will provide a detailed overview of training optimization settings for LLMs.</p>
+<p>For the reader’s convenience, Table 6.1 summarizes the training optimization settings of several common models.</p>
+<h3 id="6-2-1-batch-based-training"><span class="num">6.2.1</span>Batch-Based Training<a class="anchor" href="#6-2-1-batch-based-training">#</a></h3>
+<p>In large-scale pre-training, the batch size is typically set to a large number, such as 1M to 4M tokens, to improve training efficiency and stability. Many models adopt dynamic batch adjustment strategies, gradually increasing the batch size until it reaches the million level. For example, the batch size for GPT-3 increases from 32K tokens to 3.2M tokens, while the batch size for PaLM (540B) increases from 1M tokens to 4M tokens. Extensive research shows that dynamically adjusting the batch size can effectively stabilize the</p>
+<p>training process of LLMs [107]: using small batches at the beginning of training allows the loss to drop rapidly, while using large batches in the late stages steadily decreases the loss, facilitating better convergence.</p>
+<h3 id="6-2-2-learning-rate"><span class="num">6.2.2</span>Learning Rate<a class="anchor" href="#6-2-2-learning-rate">#</a></h3>
+<p>In the pre-training phase of LLMs, learning rate adjustment strategies are commonly employed, typically consisting of a warm-up phase followed by an annealing phase. The warm-up phase typically accounts for 0.1–0.5% of the total training steps, after which the learning rate begins to decay. At the initial stage of training, since the parameters are randomly initialized and the gradients tend to be large, a small learning rate is used to ensure stable training. A linear warm-up strategy is often adopted to gradually adjust the learning rate.</p>
+<p>Specifically, the learning rate starts from a very small value (e.g., 0 or 1 <span class="m">×</span> 10<span class="m">-</span>8.) and increases linearly until it reaches a predefined maximum threshold. When using a larger learning rate, the model converges more quickly, and this maximum threshold is usually set between 5 <span class="m">×</span> 10<span class="m">-</span>5. and 1 <span class="m">×</span> 10<span class="m">-</span>4. For example, the maximum learning rate for GPT-3 is set to 6 <span class="m">×</span> 10<span class="m">-</span>5., while for LLaMA, it is set to 1<span class="m">.</span>5 <span class="m">×</span> 10<span class="m">-</span>4. After reaching the maximum threshold, the learning rate gradually decays to prevent oscillation around the suboptimal point. Typically, the learning rate would decay to about 10% of its maximum value. Common decay strategies include linear decay, cosine decay, and inverse square root decay, with corresponding learning rate changes illustrated in Fig. 6.2.</p>
+<figure><img src="assets/fig-0130.png" alt="" loading="lazy"><figcaption>Figure 6.2 Illustration of linear decay, cosine decay, and inverse square root decay</figcaption></figure>
+<h3 id="6-2-3-optimizer"><span class="num">6.2.3</span>Optimizer<a class="anchor" href="#6-2-3-optimizer">#</a></h3>
+<p>The training of LLMs typically uses the Adam optimizer [185] and its variants, such as AdamW [186]. The Adam optimizer utilizes the momentum of the gradients</p>
+<p>as the direction for parameter updates. It replaces the current gradient with a weighted average of gradients from past update steps, thus reducing the oscillations in loss caused by sample randomness. Additionally, Adam employs an adaptive learning rate method by correcting the gradient using the second moment (which can be viewed as normalizing with the variance), preventing the issue of excessively small gradients that can make the model difficult to optimize. Adam introduces three hyper-parameters, typically set</p>
+<figure class="eq"><img src="assets/fig-0131.png" alt="equation " loading="lazy"></figure>
+<p>AdamW</p>
+<p> builds upon Adam by introducing a weight decay technique (discussed in Sect. 6.2.4). Moreover, researchers have proposed the Adafactor optimizer [187], a variant of Adam that is more memory-efficient during training. Common hyper-parameter settings for Adafactor include: <span class="m">β</span>1 <span class="m">=</span> 0<span class="m">.</span>9. and <span class="m">β</span>2 <span class="m">=</span> 1<span class="m">.</span>0 <span class="m">-</span> <em>k</em><span class="m">-</span>0<span class="m">.</span>8., where <em>k</em> represents the training step. Models such as PaLM and T5 use Adafactor as their training optimizer.</p>
+<h3 id="6-2-4-stable-optimization-techniques"><span class="num">6.2.4</span>Stable Optimization Techniques<a class="anchor" href="#6-2-4-stable-optimization-techniques">#</a></h3>
+<p>In the training of language models, instability is a common issue. Below are several techniques commonly used in deep learning to improve training stability.</p>
+<ul><li><em>Gradient</em> <em>clipping.</em> Gradient explosion is a frequent phenomenon during training. To alleviate this issue, the gradient clipping method is employed to constrain the gradient within a small value range: when the gradient norm exceeds a given threshold, it is clipped to a given threshold. In LLM training, the clipping threshold is typically set to 1<span class="m">.</span>0.</li><li><em>Training</em> <em>checkpoints.</em> To prevent abnormal situations during training, another practical strategy is to set up checkpoints at fixed intervals. When abnormal behavior occurs during training (e.g., a sudden increase in loss), the model can be recovered from the previous checkpoint, skipping the problematic data.</li><li><em>Weight decay.</em> Regularization techniques can also be introduced during training to stabilize the process and improve the model’s generalization ability. In AdamW, weight decay is applied by introducing a decay coefficient during parameter updates, typically set to 0<span class="m">.</span>1.</li><li><em>Dropout.</em> Traditional deep learning methods often use dropout to alleviate over-fitting by randomly setting some neuron outputs to zero during training, increasing model robustness. However, since LLMs are trained on massive datasets and include normalization modules in their architectures, over-fitting is less of a concern. Therefore, dropout is rarely used in large model pre-training.</li></ul>
+<h2 id="6-3-scalable-training-techniques"><span class="num">6.3</span>Scalable Training Techniques<a class="anchor" href="#6-3-scalable-training-techniques">#</a></h2>
+<p>As model parameters and data continue to increase, efficiently training LLMs with limited computational resources has become a key technical challenge. It has become a key technical challenge to efficiently train LLMs with limited computational resources. There are two main issues to address: first, how to improve training efficiency; and second, how to conduct cross-GPU distributed training. This section will introduce several common scalable training techniques, including 3D parallel training, ZeRO, activation recomputation, and mixed-precision training.</p>
+<h3 id="6-3-1-3d-parallel-training"><span class="num">6.3.1</span>3D Parallel Training<a class="anchor" href="#6-3-1-3d-parallel-training">#</a></h3>
+<p>The 3D parallel strategy is essentially a combination of three commonly-used parallel training techniques: <em>data</em> <em>parallelism</em>, <em>pipeline</em> <em>parallelism</em>, and <em>tensor</em> <em>parallelism</em>, as illustrated in Fig. 6.3 (ZeRO in Fig. 6.3(b) will be introduced in Sect. 6.3.2). In some cases, the term model parallelism is also used to refer to both tensor parallelism and pipeline parallelism.</p>
+<ul><li><em>Data</em> <em>parallelism.</em> Data parallelism is a method to improve training throughput. It copies model parameters and optimizer states across multiple GPUs, and then evenly allocates the training data among these GPUs. In this way, each GPU only needs to process its allocated data, then performs forward and backward propagation to compute gradients. Once all GPUs have completed their computations, gradients from different GPUs will be averaged to obtain a global gradient for updating the model parameters on all GPUs. As shown in Fig. 6.3a, four data samples are split into two parts, each computed by a separate GPU. The gradients from both GPUs are averaged before updating the model, which is equivalent to performing a gradient update with a batch size of 4. Since gradient computation can be done independently on different GPUs, the data parallelism mechanism has high scalability and can improve training efficiency by increasing the number of GPUs. The implementation of data parallelism is relatively simple, and most deep learning libraries, such as TensorFlow and PyTorch, provide support for this strategy. Output Output GPU GPU Input Input (a) Data Parallelism (b) ZeRO Output</li></ul>
+<figure class="eq"><img src="assets/fig-0132.png" alt="equation " loading="lazy"></figure>
+<p>Output</p>
+<p>GPU GPU Input</p>
+<figure class="eq"><img src="assets/fig-0133.png" alt="equation " loading="lazy"></figure>
+<p>Input</p>
+<p>(c) Tensor Parallelism</p>
+<p>(d) Pipeline Parallelism</p>
+<figure><img src="assets/fig-0134.png" alt="" loading="lazy"><figcaption>Figure 6.3 Parameter distribution for data parallelism, ZeRO, tensor parallelism, and pipeline parallelism</figcaption></figure>
+<ul><li><em>Pipeline</em> <em>parallelism.</em> Pipeline parallelism aims to distribute model parameters across different GPUs. In practice, consecutive layers of a Transformer model can be loaded onto the same GPU to reduce the cost of transferring hidden states or gradients For example, in Fig. 6.3d, layers 1-2 of the Transformer model are between GPUs. deployed on GPU 1, while layers 3-4 are deployed on GPU 2. However, a simple pipeline schedule does not achieve true parallelism. In the case of Fig. 6.3d, GPU 1 needs to wait for the backward propagation results from GPU 2 after its forward pass to continue with</li></ul>
+<figure class="eq"><img src="assets/fig-0135.png" alt="equation " loading="lazy"></figure>
+<p>gradient propagation. This leads to a serial operation of “GPU 1 forward</p>
+<p>forward <span class="m">→</span>.GPU 2 backward <span class="m">→</span>.GPU 1 backward,” significantly reducing GPU efficiency. To address this issue, pipeline parallelism is often optimized by combining it with the</p>
+<p><em>gradient</em> <em>accumulation</em> technique. The main idea behind gradient accumulation is to compute the gradients for a batch but not update the model parameters immediately. Instead, the gradients are accumulated over several batches before updating the model, allowing for the simulation of larger batch sizes without increasing memory consumption. When using gradient accumulation in pipeline parallelism, after GPU 1 completes the forward pass of the first batch, it does not need to wait for the backward pass and can proceed with the forward pass of subsequent batches, thus improving the efficiency of the pipeline.</p>
+<ul><li><em>Tensor parallelism.</em> Tensor parallelism and pipeline parallelism are two techniques for distributing large model parameters across multiple GPUs. While pipeline parallelism focuses on assigning different layers of the model to different GPUs, tensor parallelism operates at a finer granularity by partitioning the parameter tensors (i.e., parameter matrices), enabling more efficient use of the parallel computing power of multiple GPUs. Specifically, for a matrix multiplication <span class="m">HW</span> ., the parameter matrix <span class="m">W</span> . can be split into two submatrices, <span class="m">W</span> 1. and <span class="m">W</span> 2., so that the original computation can be written as <span class="m">HW</span> 1 <span class="m">⊕</span> <span class="m">HW</span> 2. The submatrices <span class="m">W</span> 1. and <span class="m">W</span> 2. can be placed on two different GPUs, and the two matrix multiplications can be executed in parallel. Finally, the outputs from both GPUs are combined through inter-GPU communication to form the final result. A common tensor parallelism strategy is to partition the attention parameter matrices <span class="m">W</span> <span class="m">Q</span>., <span class="m">W</span> <span class="m">K</span> ., <span class="m">W</span><span class="m">V</span> ., and <span class="m">W</span> <span class="m">O</span>. (Eq. 5.2~5.6) and the FFN matrices <span class="m">W</span><span class="m">U</span>. and <span class="m">W</span> <span class="m">D</span>. (Eq. 5.8). Currently, tensor parallelism is supported by several open-source libraries. For example, Megatron-LM [23] supports tensor parallelism by splitting parameter matrices into blocks along rows and columns.</li></ul>
+<h3 id="6-3-2-zero-redundancy-optimizer"><span class="num">6.3.2</span>Zero Redundancy Optimizer<a class="anchor" href="#6-3-2-zero-redundancy-optimizer">#</a></h3>
+<p>The zero redundancy optimizer (ZeRO), introduced by DeepSpeed, addresses the issue of model redundancy in data parallelism, where each GPU needs to store a complete copy of the model parameters. As shown in Fig. 6.3a, in data parallelism, each GPU stores the same copy of the model, including model parameters and optimizer states. During the forward pass, only the parameters of the current layer are involved in computation, while parameters from other layers remain unused, leading to significant memory redundancy.</p>
+<p>This also limits the amount of data that can be processed during the forward pass on each GPU, thus reducing training efficiency. To solve this problem, ZeRO retains only a portion of the model parameters and optimizer states on each GPU and retrieves the rest from other GPUs when needed. As illustrated in Fig. 6.3b, the model parameters are split between two GPUs. When performing computation for the first layer, each GPU fetches the parameters from the other GPU. Once the computation is complete, the corresponding memory resources are released, reducing memory redundancy. ZeRO provides three different stages for partitioning model parameters and optimizer states, which are described in detail in Sect. 6.4.4. PyTorch has also implemented a similar technique known as <em>fully</em> <em>sharded</em> <em>data</em> <em>parallel</em> (FSDP), which achieves a similar effect to ZeRO.</p>
+<h3 id="6-3-3-activation-recomputation"><span class="num">6.3.3</span>Activation Recomputation<a class="anchor" href="#6-3-3-activation-recomputation">#</a></h3>
+<p>Activation recomputation, also known as <em>gr</em><em>adient</em> <em>checkpointing</em>, is a technique used to optimize memory consumption during backpropagation. Specifically, given an optimization function <span class="m">Y</span> <span class="m">=</span> <span class="m">XW</span> ., the value of <span class="m">X</span> . is needed to compute the gradient of <span class="m">W</span> . during backpropagation. Hence, the value of <span class="m">X</span> . (often referred to as <em>activations</em>) must be stored during the forward pass. However, storing the activations for every layer consumes a large amount of memory (detailed memory consumption can be found in Sect. 6.4.4). To address this issue, activation recomputation only stores part of the activations during the forward pass, then recomputes them during the backward pass, thus saving memory at the cost of additional computation. In large model training, activation recomputation typically saves the input to each layer of the Transformer model and recomputes the corresponding activations during backpropagation. This strategy significantly reduces memory usage, though it introduces some computational overhead.</p>
+<h3 id="6-3-4-mixed-precision-training"><span class="num">6.3.4</span>Mixed-Precision Training<a class="anchor" href="#6-3-4-mixed-precision-training">#</a></h3>
+<p>Early pre-trained language models (such as BERT) primarily use single-precision floating-point format (FP32) to represent model parameters and perform optimization calculations. In recent years, to enable the training of large-scale models, researchers have developed mixed-precision training, a technique that uses both half-precision (2 bytes)</p>
+<p>and single-precision (4 bytes) floating-point formats in computations. This approach effectively halves memory usage and doubles training efficiency. Specifically, to maintain precision, a copy of the original 32-bit model parameters should be retained. During training, the 32-bit parameters are first converted to 16-bit precision, and then the forward and backward propagations are performed using 16-bit precision. Finally, during parameter updates, the optimization is applied to the 32-bit model. Since the majority of time in model training is spent on forward and backward propagation, mixed precision training can significantly enhance training efficiency. A common format for half-precision floating-point numbers is FP16, which consists of 1 sign bit, 5 exponent bits, and 10 fraction bits, representing a range from <span class="m">-</span>.65,504 to 65,504. Further, researchers have developed a new half-precision floating-point format, BF16 [188], specifically designed for deep learning scenarios. BF16 consists of 1 sign bit, 8 exponent bits, and 7 fraction bits, allowing for a numerical range on the order of 1038. Compared to FP16, BF16 offers a broader representation range and has been widely used in the training of LLMs. Notably, recent GPUs, such as the NVIDIA A100, equipped with tensor cores that support 16-bit precision and mixed-precision training.</p>
+<h2 id="6-4-model-parameter-calculation-and-efficien"><span class="num">6.4</span>Model Parameter Calculation and Efficiency Analysis<a class="anchor" href="#6-4-model-parameter-calculation-and-efficien">#</a></h2>
+<p>This section will introduce how to calculate the number of parameters in LLMs and provide estimation methods for the computational cost, training time, and memory usage during model training. This allows readers to estimate the time, GPU memory, and other computational resources required for training.</p>
+<h3 id="6-4-1-parameter-calculation"><span class="num">6.4.1</span>Parameter Calculation<a class="anchor" href="#6-4-1-parameter-calculation">#</a></h3>
+<p>Since mainstream LLMs currently adopt a causal decoder architecture based on the Transformer, we will next use the LLaMA model as an example to detail the method for calculating its number of parameters. The calculation methods for other models can be referenced similarly. First, assume the vocabulary size is <em>V</em>, the model contains <em>L</em> layers of decoders, the dimension size of the hidden state is <em>H</em>, and the dimension size of the intermediate state in the feed-forward network layer is <em>H</em> . We mainly focus on calculating the number of parameters in the following five parts:</p>
+<ul><li><em>Input</em> <em>embedding</em> <em>layer.</em> First, the input embedding layer (<span class="m">E</span> <span class="m">∈</span> R<span class="m">V</span><span class="m">×</span><span class="m">H</span> .) maps each token in the vocabulary to an <em>H</em>-dimensional vector, so the input embedding layer has <em>V</em> <em>H</em>. parameters.</li><li><em>Multi-head</em> <em>attention</em> <em>layer.</em> The standard attention mechanism includes linear transformation matrices for the query (<span class="m">W</span> <span class="m">Q</span> <span class="m">∈</span> R<span class="m">H</span><span class="m">×</span><span class="m">H</span> .), key (<span class="m">W</span> <span class="m">K</span> <span class="m">∈</span> R<span class="m">H</span><span class="m">×</span><span class="m">H</span> .), and value (<span class="m">W</span><span class="m">V</span> <span class="m">∈</span> R<span class="m">H</span><span class="m">×</span><span class="m">H</span> .), each of which contains <em>H</em>2. parameters, so this part requires 3 <span class="m">×</span> <em>H</em>2. parameters. Additionally, an extra linear transformation is needed to map the concatenated output of multiple heads to the final output (<span class="m">W</span> <span class="m">O</span> <span class="m">∈</span> R<span class="m">H</span><span class="m">×</span><span class="m">H</span> .), which requires another <em>H</em>2. parameters. Therefore, the multi-head attention layer requires a total of 4<span class="m">×</span> <em>H</em>2. parameters.</li><li><em>Feed-forward</em> <em>network</em> <em>layer.</em> The feed-forward network layer in LLaMA consists of three linear transformations. The first two linear transformations (<span class="m">W</span><span class="m">U</span> <span class="m">∈</span> R<span class="m">H</span><span class="m">×</span><span class="m">H</span> . and <span class="m">W</span> <span class="m">G</span> <span class="m">∈</span> R<span class="m">H</span><span class="m">×</span><span class="m">H</span> .) map the input from <em>H</em> dimensions to <em>H</em> . dimensions, requiring 2 <span class="m">×</span> <em>HH</em> . parameters. The final linear transformation (<span class="m">W</span> <span class="m">D</span> <span class="m">∈</span> R<span class="m">H</span> <span class="m">×</span><span class="m">H</span> .) maps the output back from <em>H</em> . dimensions to <em>H</em> dimensions, requiring <em>HH</em> . parameters. Thus, the feed-forward network layer requires a total of 3 <span class="m">×</span> <em>HH</em> . parameters.</li><li><em>Normalization</em> <em>layer.</em> Each decoder layer also contains two RMSNorm modules, which are used to normalize the input of the multi-head attention layer and the feed-forward network layer, respectively, requiring a total of 2 <span class="m">×</span> <em>H</em>. parameters. Additionally, the output of the final layer also needs to be normalized, which requires an additional <em>H</em> parameters.</li><li><em>Output</em> <em>layer.</em> The output layer contains a linear transformation (<span class="m">W</span> <span class="m">L</span> <span class="m">∈</span> R<span class="m">H</span><span class="m">×</span><span class="m">V</span> .) that maps the decoder output to a <em>V</em>-dimensional (vocabulary size) vector. This linear transformation requires <em>V</em> <em>H</em>. parameters. Considering the input embedding layer, output layer, and the multi-head attention layer (<em>L</em> layers), feed-forward network layer (<em>L</em> layers), and normalization layer (<em>L</em> layers), the total number of parameters in the LLaMA model can be calculated as:</li></ul>
+<figure class="eq"><img src="assets/fig-0136.png" alt="equation 6.5" loading="lazy"></figure>
+<p>To calculate the total number of parameters for the LLaMA (7B) model, we substitute the given values <em>V</em> <span class="m">=</span> 32<span class="m">,</span>000., <em>L</em> <span class="m">=</span> 32., <em>H</em> <span class="m">=</span> 4096., and <em>H</em> <span class="m">=</span> 11<span class="m">,</span>008. into the formulas derived</p>
+<p>earlier for each component of the model.</p>
+<figure class="eq"><img src="assets/fig-0137.png" alt="equation " loading="lazy"></figure>
+<figure class="eq"><img src="assets/fig-0138.png" alt="equation " loading="lazy"></figure>
+<figure class="eq"><img src="assets/fig-0139.png" alt="equation " loading="lazy"></figure>
+<p>The calculated number of parameters is exactly the same as the actual number of parameters of the LLaMA (7B) model.</p>
+<h3 id="6-4-2-estimation-of-training-cost"><span class="num">6.4.2</span>Estimation of Training Cost<a class="anchor" href="#6-4-2-estimation-of-training-cost">#</a></h3>
+<p>The training cost is calculated by the number of floating-point operations (FLOP) that a model needs to perform during training, including operations such as addition, subtraction, multiplication, and division of floating-point numbers, as well as exponential functions, logarithmic functions, and trigonometric functions. In Transformer-based architectures, the majority of computation is concentrated in multi-head attention and linear transformation calculations. In contrast, the amount of computation required for normalization, output mapping, and rotary positional encoding is relatively small, and no computation is required for the input embedding layer. Therefore, these parts are omitted in the subsequent analysis. To analyze the computation of multi-head attention and linear transformations, the following hyper-parameters are further defined: the total number of model parameters is <em>P</em>, the batch size is <em>B</em>, and the length of the input sequence is <em>T</em>. Therefore, the total number of training tokens is <em>C</em> <span class="m">=</span> <em>BT</em> .; the multi-head attention module contains <em>N</em> heads, and the dimension of each head is <em>D</em>, so the dimension of the hidden state <em>H</em> satisfies the relationship <em>H</em> <span class="m">=</span> <em>N</em> <em>D</em>. Other notations are consistent with those in Sect. 6.4.1.</p>
+<p><strong>Tips</strong> <strong>(Computational Cost of Matrix Multiplication)</strong></p>
+<p>The computational cost required to multiply matrix <span class="m">A</span> <span class="m">∈</span> R<span class="m">n</span><span class="m">×</span><span class="m">m</span>. and matrix <span class="m">B</span> <span class="m">∈</span> R<span class="m">m</span><span class="m">×</span><span class="m">p</span>. is</p>
+<p>2<em>nmp</em>.</p>
+<ul><li><em>Multi-head</em> <em>attention.</em> First, let’s analyze the computational cost of the multi-head attention operation. For batched data, the corresponding query, key, and value tensors (Eq. 5.2) need to be computed, i.e., <span class="m">Q</span><span class="m">,</span> <span class="m">K</span><span class="m">,</span> <span class="m">V</span> <span class="m">∈</span> R<span class="m">B</span><span class="m">×</span><span class="m">T</span><span class="m">×</span><span class="m">H</span> . Considering the multi-head computational cost, these tensors are split and transposed to obtain ˜<span class="m">Q</span><span class="m">,</span> ˜<span class="m">K</span><span class="m">,</span> ˜<span class="m">V</span> <span class="m">∈</span> R<span class="m">B</span><span class="m">×</span><span class="m">N</span><span class="m">×</span><span class="m">T</span><span class="m">×</span><span class="m">D</span>. In the attention calculation (Eq. 5.5), the matrix multiplication of ˜<span class="m">Q</span> ˜<span class="m">K</span> requires 2<em>BT</em>2<em>N</em> <em>D</em>. <span class="m">√</span> floating-point operations. Then, the standardization operation (scaling by <em>D</em>.) requires <em>BT</em>2<em>N</em>. floating-point operations, and the softmax operation, which involves exponentiation, summation, and normalization, requires a total of 3<em>BT</em>2<em>N</em>. floating-point operations. Finally, multiplying the result of the softmax operation by ˜<span class="m">V</span> . requires another 2<em>BT</em>2<em>N</em> <em>D</em>. floating-point operations. Therefore, the total number of floating-point operations for the multi-head attention calculation is 4<em>BT</em>2<em>N</em> <em>D</em> <span class="m">+</span> 4<em>BT</em>2<em>N</em>. Since the computational cost for backpropagation is approximately twice that of forward propagation,<span class="m">2</span> the total computational cost of multi-head attention in the model can be expressed as:</li></ul>
+<figure class="eq"><img src="assets/fig-0140.png" alt="equation 6.6" loading="lazy"></figure>
+<ul><li><em>Linear transformation.</em> Next, let’s derive the training cost for the linear transformations, which mainly include the four mapping calculations in the attention layer (Eqs. 5.2, 5.3, 5.4, and 5.6), the transformation in the feed-forward network layer (Eq. 5.8), and the output layer mapping (Eq. 5.11). Take the up-projection operation in the feed-forward network layer <span class="m">X</span> <span class="m">W</span><span class="m">U</span>. as an example, where the intermediate state is <span class="m">X</span> <span class="m">∈</span> R<span class="m">B</span><span class="m">×</span><span class="m">T</span><span class="m">×</span><span class="m">H</span> . and the up-projection matrix is <span class="m">W</span><span class="m">U</span> <span class="m">∈</span> R<span class="m">H</span><span class="m">×</span><span class="m">H</span> . Thus, the forward pass requires 2<em>BT</em> <em>HH</em> . floating-point operations, and the backward pass requires 4<em>BT</em> <em>HH</em> . floating-point operations, for a total of 6<em>CHH</em> . floating-point operations, where <em>C</em> <span class="m">=</span> <em>BT</em> . is the total number of training tokens. As we can see, the computational cost of the linear transformations is related to the number of matrix parameters. Therefore, the total computational cost for all linear transformations in the Transformer can be expressed as follows:</li></ul>
+<figure class="eq"><img src="assets/fig-0141.png" alt="equation 6.7" loading="lazy"></figure>
+<p>If activation recomputation is used during training (as discussed in Sect. 6.3.3), an additional forward pass is required during backpropagation. Thus, the total computational cost will become:</p>
+<figure class="eq"><img src="assets/fig-0142.png" alt="equation 6.8" loading="lazy"></figure>
+<p>Lastly, by comparing Eqs. 6.5, 6.6, and 6.7, it can be found that the computational cost <span class="m">T</span> 6<span class="m">H</span> . of that in linear transformation. For ease of of multi-head attention is approximately</p>
+<p><span class="m">2</span>In Transformer based models, most operations are binary (e.g., matrix multiplication), and gradients of the</p>
+<p>analysis, we assume here that in the LLM training scenario, the sequence length <em>T</em> is less than the hidden state dimension <em>H</em>, i.e., <em>T</em> <span class="m">&lt;</span> <em>H</em>. Therefore, the computational cost of multi-head attention is at most 1</p>
+<p>6. of the computational cost for linear transformation, so its impact is relatively small. According to Eq. 6.5, the parameters of linear transformations usually account for more than 95% of the total parameters. Hence, the number of parameters <em>P</em> can directly replace the number of parameters in linear transformations. In this case, the total computational cost of a model with parameter number <em>P</em> during pre-training on <em>C</em> tokens can be estimated by the following equation:</p>
+<figure class="eq"><img src="assets/fig-0143.png" alt="equation 6.9" loading="lazy"></figure>
+<p>Furthermore, if activation recomputation is used, the total computational cost is approximately 8<em>CP</em>.</p>
+<p>For example, when training LLaMA (7B), its parameter number is <em>P</em> <span class="m">≈</span> 6<span class="m">.</span>74 <span class="m">×</span> 109. Assuming that the total number of tokens in the training data is <em>C</em> <span class="m">=</span> 1 <span class="m">×</span> 109. and activation recomputation is not used, the total <em>floating-point</em> operations during the training</p>
+<figure class="eq"><img src="assets/fig-0144.png" alt="equation " loading="lazy"></figure>
+<h3 id="6-4-3-training-time-estimation"><span class="num">6.4.3</span>Training Time Estimation<a class="anchor" href="#6-4-3-training-time-estimation">#</a></h3>
+<p>During training, the consumption of training time involves multiple components, primarily including floating-point operations, data read and write, and multi-process synchronization. Among these, floating-point operations are the most time-consuming part of the training process. Therefore, the training time can be roughly estimated based on the formula for training computational cost (Eq. 6.9) and the floating-point computational capability of the GPU. The estimation formula is as follows:</p>
+<figure class="eq"><img src="assets/fig-0145.png" alt="equation 6.10" loading="lazy"></figure>
+<p>.Training Time <span class="m">=</span></p>
+<p>Number of GPUs <span class="m">×</span> Floating-point Operations per Second of GPU <span class="m">.</span></p>
+<p>In practice, the floating-point operations per second (FLOP/s) of a GPU typically range from 30 to 70% of its theoretical peak performance, which is often influenced by various factors. Taking the pre-training of LLaMA (65B) as an example, its parameter number is <em>P</em> <span class="m">=</span> 6<span class="m">.</span>5 <span class="m">×</span> 1010., with tokens <em>C</em> <span class="m">=</span> 1<span class="m">.</span>4 <span class="m">×</span> 1012. Due to the use of activation recomputation, the total computational cost is approximately 8<em>CP</em> <span class="m">=</span> 7<span class="m">.</span>28 <span class="m">×</span> 1023. During</p>
+<p>pre-training, 2,048 A100 GPUs were used, with each A100 GPU capable of performing up to 3<span class="m">.</span>12 <span class="m">×</span> 1014. FLOP/s.<span class="m">3</span> Here, it is assumed that each GPU can achieve a practical performance of 2 <span class="m">×</span> 1014. FLOP/s during training. Based on the above formula, it can be calculated that LLaMA (65B) using 2048 A100 GPUs would take approximately 1<span class="m">.</span>78 <span class="m">×</span> 106. seconds to train on 1.4T tokens, which is about 20.6 days. This estimate closely matches the 21 days reported in the paper.</p>
+<h3 id="6-4-4-training-memory-estimation"><span class="num">6.4.4</span>Training Memory Estimation<a class="anchor" href="#6-4-4-training-memory-estimation">#</a></h3>
+<p>This subsection discusses how to estimate the memory resources required by the model during training from three aspects.</p>
+<p><strong>Memory Consumption of Model Parameters and Optimizers</strong></p>
+<p>The memory consumption of model parameters and optimizers refers to the memory overhead of model parameters, model gradients, and optimizer states during the training process. In large-scale model training, mixed-precision training is typically used (see Sect. 6.3.4), where model parameters and gradients are stored in 16-bit floating point, while the Adam or AdamW optimizer state requires storage model parameters, gradient momentum, and gradient variance in 32-bit floating point. Suppose that the model has <em>P</em> parameters, <em>G</em> GPUs are used in training, the degree of data parallelism is <em>N</em><span class="m">D</span>., the degree of pipeline parallelism is <em>N</em><span class="m">P</span>., and the degree of tensor parallelism is <em>N</em><span class="m">T</span> . Based on these definitions, the memory usage of model parameters and optimizer states can be analyzed as follows.</p>
+<ul><li><em>Without using ZeRO optimization.</em> In this case, since a 16-bit floating point requires 2 bytes and a 32-bit floating point requires 4 bytes, model parameters and gradients each require 2<em>P</em>. bytes of memory, and the optimizer’s model parameters, gradient momentum, and gradient variance each require 4<em>P</em>. bytes of memory. By summing up the memory consumption, each GPU require <span class="m">(</span>2 <span class="m">+</span> 2 <span class="m">+</span> 4 <span class="m">+</span> 4 <span class="m">+</span> 4<span class="m">) ·</span> <em>P</em> <span class="m">=</span> 16<em>P</em>. bytes of memory to store the model parameters and optimizer states.</li><li><em>Using optimizer states partition</em> (ZeRO-1). This scheme distributes the optimizer’s states across GPUs, while each GPU still holds its own copy of the model parameters and gradients. In this case, each GPU requires <span class="m">(</span>2<span class="m">+</span>2<span class="m">)</span> <span class="m">·</span> <em>P</em> <span class="m">+</span> <span class="m">(</span>4<span class="m">+</span>4<span class="m">+</span>4<span class="m">)</span> <span class="m">·</span> <em>P</em><span class="m">/</span><em>N</em><span class="m">D</span> <span class="m">=</span> 4<em>P</em> <span class="m">+</span> 12<em>P</em><span class="m">/</span><em>N</em><span class="m">D</span>.</li></ul>
+<p>bytes of memory for storing the model parameters and optimizer states. When the number of GPUs <em>N</em><span class="m">D</span>. is sufficiently large, the memory usage for storing model parameters and optimizer states is reduced to one fourth compared to the case without ZeRO.</p>
+<ul><li><em>Using</em> <em>gradient</em> <em>partition</em> <em>(ZeRO-2)</em>. The ZeRO-2 scheme builds on ZeRO-1 by further distributing model gradients across GPUs. Thus, each GPU requires 2<em>P</em> <span class="m">+</span> <span class="m">(</span>2 <span class="m">+</span> 4 <span class="m">+</span> 4 <span class="m">+</span> 4<span class="m">) ·</span> <em>P</em><span class="m">/</span><em>N</em><span class="m">D</span> <span class="m">=</span> 2<em>P</em> <span class="m">+</span> 14<em>P</em><span class="m">/</span><em>N</em><span class="m">D</span>. bytes of memory for storing model parameters and optimizer states. Similar to the estimation for ZeRO-1, when the number of GPUs is sufficiently large, the memory usage for storing the model and optimizer is reduced to one eighth.</li><li><em>Using parameter partition (ZeRO-3)</em>. ZeRO-3 builds on ZeRO-2 by also distributing model parameters across GPUs. In this case, each GPU requires 16<em>P</em><span class="m">/</span><em>N</em><span class="m">D</span>. bytes of memory for storing model parameters and optimizer states. Compared to the case without</li></ul>
+<figure class="eq"><img src="assets/fig-0146.png" alt="equation " loading="lazy"></figure>
+<p>ZeRO-3, the memory usage for storing the model and optimizer is reduced to</p>
+<ul><li><em>Using tensor parallelism and pipeline parallelism.</em> Tensor parallelism and pipeline parallelism can be used in conjunction with the four schemes above. In this case, we can simply divide the above formulas by <em>N</em><span class="m">P</span> <span class="m">×</span> <em>N</em><span class="m">T</span> . to obtain the memory usage of a single GPU. <strong>Memory Consumption of Activations</strong> During the training of LLMs, the activations (intermediate states) from each layer in the forward pass need to be retained for the subsequent backward pass to compute gradients and update model parameters. This part focuses on analyzing the memory usage of activations, using LLaMA as an example. The notation for model hyper-parameters is consistent with the previous sections. First, let’s consider the memory usage of activations on a single GPU when not using optimizations like tensor parallelism, pipeline parallelism, or activation recomputation.</li><li><em>Multi-head</em> <em>attention</em> <em>layer.</em> In Eqs. 5.2, 5.3, and 5.4, the linear transformations of queries, keys, and values require storing their input <span class="m">X</span> ., which consumes 2<em>BT</em> <em>H</em>. bytes in total. In Eq. 5.5, multi-head attention computation requires storing the input matrices: <span class="m">Q</span>., <span class="m">K</span> ., and <span class="m">V</span> ., amounting to 6<em>BT</em> <em>H</em>. bytes. In Eq. 5.7, merging the multi-head results requires storing its input Concat<span class="m">(</span>head1<span class="m">, . . .</span> <span class="m">,</span> head<span class="m">N</span> <span class="m">)</span>., which takes up 2<em>BT</em> <em>H</em>. bytes. If the FlashAttention is not used, the result of <span class="m">QK</span> in Eq. 5.5 also needs to be stored, consuming 2<em>BT</em>2<em>N</em>. bytes. However, using FlashAttention eliminates this overhead.</li><li><em>Feed-forward</em> <em>network</em> <em>layer.</em> LLaMA’s feed-forward network layer uses the SwiGLU activation function (Eq. 5.23), which requires storing its input <span class="m">X</span> ., consuming 2<em>BT</em> <em>H</em>. bytes. Additionally, the values of <span class="m">W</span> <span class="m">G</span> <span class="m">X</span> . and <span class="m">W</span><span class="m">U</span> <span class="m">X</span> . need to be stored, requiring a total of 4<em>BT</em> <em>H</em> . bytes. Lastly, the output of the SwiGLU activation, used as the input for the subsequent linear transformation (i.e., <span class="m">σ</span><span class="m">(</span><span class="m">XW</span><span class="m">U</span><span class="m">)</span>. in Eq. 5.8), also needs to be stored, consuming 2<em>BT</em> <em>H</em> . bytes. The total memory overhead for this part is 2<em>BT</em> <em>H</em> <span class="m">+</span> 6<em>BT</em> <em>H</em> . bytes.</li><li><em>Normalization</em> <em>layer.</em> Each decoder layer contains two normalization layers, and each normalization layer requires storing its input (i.e., the input of multi-head attention layers and feed-forward layers), which requires 4<em>BT</em> <em>H</em>. bytes of memory in total.</li><li><em>Output</em> <em>layer.</em> After passing through <em>L</em> layers, the resulting intermediate representation needs to undergo an additional normalization, which requires the storage of 2<em>BT</em> <em>H</em>. bytes of input. Then, a vocabulary mapping is performed (Eq. 5.11), requiring 2<em>BT</em> <em>H</em>. bytes to store its input <span class="m">Y</span> <span class="m">L</span>. Furthermore, when computing the softmax function, the input <span class="m">Y</span> <span class="m">L</span><span class="m">W</span> <span class="m">L</span>. needs to be stored. In practice, to improve the precision of the softmax function, the input is typically converted to 32-bit floating-point format for subsequent calculations, requiring 4<em>BTV</em> . bytes. In summary, when not using FlashAttention, the total memory usage for activations is given by the following formula:</li></ul>
+<figure class="eq"><img src="assets/fig-0147.png" alt="equation 6.11" loading="lazy"></figure>
+<p>If FlashAttention is used, the memory overhead 2<em>BT</em>2<em>N</em>. can be removed from the above formula, thus reducing the required memory usage.</p>
+<p>Next, we will analyze the memory consumption of activation values when using optimization techniques such as pipeline parallelism, tensor parallelism, and activation recomputation. To simplify the analysis process, we omit the derivation when using FlashAttention; to calculate the memory usage with this technique, simply remove the 2<em>BT</em>2<em>N</em>. item from the following formulas.</p>
+<ul><li><em>Pipeline</em> <em>parallelism.</em> Pipeline parallelism distributes model parameters evenly across different GPUs, so each GPU only needs to store the corresponding activation values. Assuming that the degree of pipeline parallelism is <em>N</em><span class="m">P</span>., the formula for activation memory usage is as follows:</li></ul>
+<figure class="eq"><img src="assets/fig-0148.png" alt="equation 6.12" loading="lazy"></figure>
+<ul><li><em>Tensor</em> <em>parallelism.</em> In tensor parallelism optimization, the linear transformation operations in the multi-head attention layer and the feed-forward network layer can be parallelized by splitting their parameter matrices and distributing them across different GPUs. Therefore, the corresponding activation values can also be distributed to the</li></ul>
+<figure class="eq"><img src="assets/fig-0149.png" alt="equation " loading="lazy"></figure>
+<p>. in the multi-head attention computation, as well as <span class="m">W</span> <span class="m">G</span> <span class="m">X</span> ., <span class="m">W</span><span class="m">U</span> <span class="m">X</span> ., and <span class="m">σ</span><span class="m">(</span><span class="m">XW</span><span class="m">U</span><span class="m">)</span>. in the feed-forward network layer. However, the inputs of the multi-head attention layer, the feed-forward network layer, and the two normalization layers cannot be split and should be stored on each GPU. Assuming that the parallelism degree of tensor parallelism is <em>N</em><span class="m">T</span> ., the formula for activation memory usage is as follows:</p>
+<figure class="eq"><img src="assets/fig-0150.png" alt="equation 6.13" loading="lazy"></figure>
+<p>.Activation Memory <span class="m">=</span></p>
+<ul><li><em>Activation recomputation.</em> During the training of LLMs, activation recomputation stores only the input of each Transformer layer and the input to the final layer’s softmax function during the forward pass. In the backward pass, activation values are recomputed as needed to reduce memory usage. In this case, the memory usage for activation values can be simplified as:</li></ul>
+<figure class="eq"><img src="assets/fig-0151.png" alt="equation 6.14" loading="lazy"></figure>
+<p><strong>Other Memory Consumption</strong></p>
+<p>In addition to the main factors of memory consumption mentioned above, GPU memory usage also includes the following aspects:</p>
+<ul><li><em>Library</em> <em>kernels.</em> When loading the library kernels, the PyTorch framework consumes approximately 0.8 to 1 GB of memory. This constitutes the basic overhead necessary for the framework to operate.</li><li><em>ZeRO</em> <em>implementation.</em> When using the ZeRO optimization technique from the DeepSpeed library, memory consumption fluctuates between 1 and 4 GB. The exact amount depends on the stage of the ZeRO scheme being used and the configuration of related parameters. This portion of memory is primarily used to optimize memory management and communication efficiency during training.</li><li><em>Intermediate</em> <em>results</em> <em>and</em> <em>memory</em> <em>fragmentation.</em> When calculating the softmax function in Eq. 5.11, the specific implementation in the Transformers library introduces additional memory usage, equivalent to twice the input size, requiring 8<em>BTV</em> . bytes. Additionally, due to the discontinuous allocation and release of memory, memory fragmentation can occur during training, typically resulting in an extra 0.5 to 1 GB of memory usage. <strong>Example:</strong> <strong>Estimation of Total Memory Consumption During T</strong><strong>raining</strong> Next, the above formulas will be used to estimate the memory usage during training. Assuming that data parallelism (with <em>N</em><span class="m">D</span>.), FlashAttention, activation recomputation, and ZeRO-3 are used for efficiency optimization, and the code implementation provided by the Transformers library is utilized, the memory usage per GPU is: Per-GPU Memory <span class="m">≈</span> 16<em>P</em></li></ul>
+<figure class="eq"><img src="assets/fig-0152.png" alt="equation 6.15" loading="lazy"></figure>
+<ul><li><em>Memory</em> <em>consumption</em> <em>for</em> <em>LLaMA</em> <em>(7B).</em> In the LLaMA (7B) model, <em>L</em> <span class="m">=</span> 32., and <em>H</em> <span class="m">=</span> 4096. Furthermore, assuming the use of two A800-80G GPUs and a batch size of <em>B</em> <span class="m">=</span> 8., the memory usage for model parameters and optimizer states per GPU is 16<em>P</em><span class="m">/</span><em>N</em><span class="m">D</span> <span class="m">≈</span> 5<span class="m">.</span>39<span class="m">×</span>1010. bytes, approximately 50.20 GB. Using the implementation of the Transformers library, the memory usage for model training activations is <span class="m">(</span>4 <span class="m">+</span> 2<em>L</em><span class="m">) ·</span> <em>BT</em> <em>H</em> <span class="m">+</span> 4<em>BTV</em> <span class="m">=</span> <span class="m">(</span>4<span class="m">+</span>2<span class="m">×</span>32<span class="m">)×</span>8<span class="m">×</span>2048<span class="m">×</span>4096<span class="m">+</span>4<span class="m">×</span>8<span class="m">×</span>2048<span class="m">×</span>32<span class="m">,</span>000 <span class="m">≈</span> 6<span class="m">.</span>66<span class="m">×</span>109. bytes, or about 6.20 GB. The memory usage for intermediate results is 8<em>BTV</em> <span class="m">=</span> 8 <span class="m">×</span>8<span class="m">×</span> 2048 <span class="m">×</span> 32<span class="m">,</span>000 <span class="m">≈</span> 4<span class="m">.</span>19 <span class="m">×</span> 109. bytes, or about 3.91 GB. Additionally, each GPU requires approximately 6 GB for other memory usage. Thus, when training LLaMA (7B) with two A800-80G GPUs, each GPU</li></ul>
+<figure class="eq"><img src="assets/fig-0153.png" alt="equation " loading="lazy"></figure>
+<ul><li><em>Estimated memory consumption for different model scales.</em> In the discussion above, it can be observed that the memory consumption for model parameters and optimizer states is the key factor in determining the required training resources. Therefore, in practice, at least 16 times the parameter size <em>P</em> in memory resources is needed to fully train the parameters (if resources are limited, readers can refer to Sect. 7.3 for lightweight training methods). For example, a 13B model requires at least 13 <span class="m">×</span> 16 <span class="m">=</span> 208.GB of memory, which means at least 3 A800-80G GPUs are needed. With approximately 10GB of memory available on each GPU, the maximum batch size <em>B</em> can be set to 2 by substituting into Eq. 6.15. However, in practice, a small batch size may lead to inefficient model training. Therefore, for a 13B model, it is recommended to use at least 4 GPUs. By substituting into the formula, <em>B</em> can be set to 12 to improve training efficiency. Based on the above analysis, the number of GPUs required to train 30B and 65B models can also be calculated, requiring at least 8 GPUs and 16 GPUs (with 80GB memory), respectively.</li></ul>
+<h2 id="6-5-pre-training-code-practice"><span class="num">6.5</span>Pre-training Code Practice<a class="anchor" href="#6-5-pre-training-code-practice">#</a></h2>
+<div class="codeblock"><pre><code><span class="t-kw">from</span> <span class="t-kw">dataclasses</span> <span class="t-kw">import</span> dataclass
+<span class="t-kw">from</span> <span class="t-kw">dataset.pt_dataset</span> <span class="t-kw">import</span> PTDataset
+<span class="t-kw">from</span> <span class="t-kw">transformers</span> <span class="t-kw">import</span> (
+        AutoModelForCausalLM,
+        AutoTokenizer,
+        HfArgumentParser,
+        TrainingArguments,
+        Trainer,</code></pre></div>
+<p>To help readers better understand the pre-training process, this section will showcase the pre-training code of the LLMBox library and YuLan models. This example is implemented based on Transformers and DeepSpeed. In the sample code below, the train() function covers the main steps of the pre-training process, including the initialization of the model and tokenizer, preparation of training data, and then calls the Trainer class to execute the model training and save the training state.</p>
+<div class="codeblock"><pre><code><span class="t-kw">from</span> <span class="t-kw">transformers.hf_argparser</span> <span class="t-kw">import</span> HfArg
+<span class="t-com">#</span> <span class="t-com">User</span> <span class="t-com">input</span> <span class="t-com">hyper-parameters</span>
+@dataclass
+<span class="t-kw">class</span> <span class="t-kw">Arguments</span>(TrainingArguments):
+        <span class="t-com">#</span> <span class="t-com">Model</span> <span class="t-com">architecture</span>
+        model_name_or_path: <span class="t-kw">str</span> = HfArg(
+            default=<span class="t-kw">None</span>,
+            help=<span class="t-str">"The</span> <span class="t-str">model</span> <span class="t-str">name</span> <span class="t-str">or</span> <span class="t-str">path,</span> <span class="t-str">e.g.,</span> <span class="t-str">`meta-llama/Llama-2-7b-hf`"</span>,
+        )
+        <span class="t-com">#</span> <span class="t-com">Training</span> <span class="t-com">dataset</span>
+        dataset: <span class="t-kw">str</span> = HfArg(
+            default=<span class="t-str">""</span>,
+            help=<span class="t-str">"Setting</span> <span class="t-str">the</span> <span class="t-str">names</span> <span class="t-str">of</span> <span class="t-str">data</span> <span class="t-str">file."</span>,
+        )
+        <span class="t-com">#</span> <span class="t-com">Context</span> <span class="t-com">window</span> <span class="t-com">size</span></code></pre></div>
+<p><sup class="fnref">9</sup> )</p>
+<div class="codeblock"><pre><code>model_max_length: <span class="t-kw">int</span> = HfArg(
+    default=2048,
+    help=<span class="t-str">"The</span> <span class="t-str">maximum</span> <span class="t-str">sequence</span> <span class="t-str">length"</span>,
+)
+<span class="t-com">#</span> <span class="t-com">Save</span> <span class="t-com">only</span> <span class="t-com">model</span> <span class="t-com">parameters</span> <span class="t-com">(do</span> <span class="t-com">not</span> <span class="t-com">save</span> <span class="t-com">optimizer</span> <span class="t-com">states)</span>
+save_only_model: <span class="t-kw">bool</span> = HfArg(
+    default=<span class="t-kw">True</span>,
+    help=<span class="t-str">"When</span> <span class="t-str">checkpointing,</span> <span class="t-str">whether</span> <span class="t-str">to</span> <span class="t-str">only</span> <span class="t-str">save</span> <span class="t-str">the</span> <span class="t-str">model,</span> <span class="t-str">or</span> <span class="t-str">also</span>
+        <span class="t-str">the</span> <span class="t-str">optimizer,</span> <span class="t-str">scheduler</span> <span class="t-str">&amp;</span> <span class="t-str">rng</span> <span class="t-str">state."</span>,</code></pre></div>
+<div class="codeblock"><pre><code>        )
+        <span class="t-com">#</span> <span class="t-com">Use</span> <span class="t-com">BF16</span> <span class="t-com">mixed</span> <span class="t-com">precision</span> <span class="t-com">training</span>
+        bf16: <span class="t-kw">bool</span> = HfArg(
+            default=<span class="t-kw">True</span>,
+            help=<span class="t-str">"Whether</span> <span class="t-str">to</span> <span class="t-str">use</span> <span class="t-str">bf16</span> <span class="t-str">(mixed)</span> <span class="t-str">precision</span> <span class="t-str">instead</span> <span class="t-str">of</span> <span class="t-str">32-bit."</span>,
+        )
+<span class="t-kw">def</span> train():
+        <span class="t-com">#</span> <span class="t-com">Parse</span> <span class="t-com">command</span> <span class="t-com">line</span> <span class="t-com">arguments</span>
+        parser = HfArgumentParser(Arguments)
+        args = parser.parse_args_into_dataclasses()[0]
+        <span class="t-com">#</span> <span class="t-com">Load</span> <span class="t-com">tokenizer</span>
+        tokenizer = AutoTokenizer.from_pretrained(
+            args.model_name_or_path,
+            model_max_length=args.model_max_length,
+            padding_side=<span class="t-str">"right"</span>,
+            add_eos_token=<span class="t-kw">False</span>,
+        )
+        <span class="t-com">#</span> <span class="t-com">Load</span> <span class="t-com">model</span> <span class="t-com">and</span> <span class="t-com">use</span> <span class="t-com">FlashAttention</span>
+        model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path,
+            attn_implementation=<span class="t-str">"flash_attention_2"</span>)</code></pre></div>
+<div class="codeblock"><pre><code>    <span class="t-com">#</span> <span class="t-com">Initialize</span> <span class="t-com">trainer,</span> <span class="t-com">prepare</span> <span class="t-com">training</span> <span class="t-com">data,</span> <span class="t-com">and</span> <span class="t-com">start</span> <span class="t-com">training</span>
+    kwargs = <span class="t-kw">dict</span>(
+        model=model,
+        args=args,
+        tokenizer=tokenizer,
+        train_dataset=PTDataset(args, tokenizer),
+    )
+    trainer = Trainer(**kwargs)
+    trainer.train()
+    trainer.save_model(args.output_dir + <span class="t-str">"/checkpoint-final"</span>)
+    trainer.save_state()
+<span class="t-kw">if</span> __name__ == <span class="t-str">"__main__"</span>:
+    train()</code></pre></div>
+<div class="codeblock"><pre><code><span class="t-kw">import</span> <span class="t-kw">torch</span>
+<span class="t-kw">from</span> <span class="t-kw">datasets</span> <span class="t-kw">import</span> load_dataset
+<span class="t-kw">from</span> <span class="t-kw">itertools</span> <span class="t-kw">import</span> chain
+<span class="t-kw">class</span> <span class="t-kw">PTDataset</span>:
+        <span class="t-kw">def</span> __init__(<span class="t-kw">self</span>, args, tokenizer):
+            <span class="t-kw">self</span>.args = args
+            <span class="t-kw">self</span>.block_size = <span class="t-kw">self</span>.args.model_max_length
+            <span class="t-kw">self</span>.tokenizer = tokenizer
+            <span class="t-kw">self</span>.input_ids = <span class="t-kw">self</span>.process()
+            <span class="t-kw">self</span>.input_ids = <span class="t-kw">self</span>.group_texts(<span class="t-kw">self</span>.input_ids)
+            <span class="t-kw">self</span>.labels = <span class="t-kw">self</span>.input_ids.copy()
+        <span class="t-com">#</span> <span class="t-com">Dataset</span> <span class="t-com">length</span>
+        <span class="t-kw">def</span> __len__(<span class="t-kw">self</span>):
+            <span class="t-kw">return</span> <span class="t-kw">len</span>(<span class="t-kw">self</span>.input_ids)
+        <span class="t-com">#</span> <span class="t-com">Get</span> <span class="t-com">the</span> <span class="t-com">i-th</span> <span class="t-com">data</span> <span class="t-com">item</span>
+        <span class="t-kw">def</span> __getitem__(<span class="t-kw">self</span>, i):
+            <span class="t-kw">return</span> <span class="t-kw">dict</span>(input_ids=<span class="t-kw">self</span>.input_ids[i], labels=<span class="t-kw">self</span>.labels[i])
+        <span class="t-com">#</span> <span class="t-com">Data</span> <span class="t-com">tokenization</span>
+        <span class="t-kw">def</span> encode(<span class="t-kw">self</span>, examples):
+            output = <span class="t-kw">self</span>.tokenizer(examples[<span class="t-str">"text"</span>], truncation=<span class="t-kw">True</span>)
+            <span class="t-kw">return</span> output
+        <span class="t-com">#</span> <span class="t-com">Data</span> <span class="t-com">batching</span>
+        <span class="t-kw">def</span> group_texts(<span class="t-kw">self</span>, examples):
+            concatenated_examples = <span class="t-kw">list</span>(chain(*examples))
+            total_length = <span class="t-kw">len</span>(concatenated_examples)
+            <span class="t-kw">if</span> total_length &gt;= <span class="t-kw">self</span>.block_size:
+                total_length = (total_length // <span class="t-kw">self</span>.block_size) *
+                    <span class="t-kw">self</span>.block_size</code></pre></div>
+<div class="codeblock"><pre><code>result = [
+    torch.stack(concatenated_examples[i:i + <span class="t-kw">self</span>.block_size]) <span class="t-kw">for</span> i <span class="t-kw">in</span> <span class="t-kw">range</span>(0, total_length, <span class="t-kw">self</span>.block_size)</code></pre></div>
+<div class="codeblock"><pre><code>    ]
+    <span class="t-kw">return</span> result
+<span class="t-com">#</span> <span class="t-com">Call</span> <span class="t-com">dataset</span> <span class="t-com">loading,</span> <span class="t-com">tokenization,</span> <span class="t-com">and</span> <span class="t-com">batching</span>
+<span class="t-kw">def</span> process(<span class="t-kw">self</span>):
+    input_ids = []
+    list_data_dict = load_dataset(<span class="t-str">'text'</span>,
+        data_files=<span class="t-kw">self</span>.args.dataset)[<span class="t-str">'train'</span>]</code></pre></div>
+<div class="codeblock"><pre><code>tokenized_dataset = list_data_dict.map(
+    <span class="t-kw">self</span>.encode,
+    batched=<span class="t-kw">True</span>,
+    remove_columns=<span class="t-str">'text'</span>,
+)
+<span class="t-kw">for</span> example <span class="t-kw">in</span> tokenized_dataset:
+    <span class="t-kw">if</span> <span class="t-kw">len</span>(example[<span class="t-str">'input_ids'</span>]) &gt; 0:
+        input_ids.append(torch.tensor(example[<span class="t-str">'input_ids'</span>]))
+<span class="t-kw">return</span> input_ids</code></pre></div>
+<div class="codeblock"><pre><code>ain_epochs per_device_train_batch_s ize gradient_accumulation_steps</code></pre></div>
+<div class="codeblock"><pre><code>_scheduler_type deepspeed</code></pre></div>
+<div class="codeblock"><pre><code>torchrun --nproc_per_node=2 --master_port=5999 pretrain.py <span class="t-kw">\</span>
+        --model_name_or_path meta-llama/Llama-2-7b-hf/ <span class="t-kw">\</span>
+        --data_path data/pretrain.json <span class="t-kw">\</span>
+        --bf16 True <span class="t-kw">\</span>
+        --output_dir output/llama-7b <span class="t-kw">\</span>
+        --num_train_epochs 3 <span class="t-kw">\</span>
+        --per_device_train_batch_size 8 <span class="t-kw">\</span>
+        --gradient_accumulation_steps 8 <span class="t-kw">\</span>
+        --evaluation_strategy <span class="t-str">"no"</span> <span class="t-kw">\</span>
+        --save_strategy <span class="t-str">"steps"</span> <span class="t-kw">\</span>
+        --save_steps 200 <span class="t-kw">\</span>
+        --save_total_limit 200 <span class="t-kw">\</span>
+        --learning_rate 2e-5 <span class="t-kw">\</span>
+        --weight_decay 0. <span class="t-kw">\</span>
+        --warmup_ratio 0.03 <span class="t-kw">\</span>
+        --lr_scheduler_type <span class="t-str">"cosine"</span> <span class="t-kw">\</span>
+        --logging_steps 1 <span class="t-kw">\</span>
+        --deepspeed ds_z3_bf16.json <span class="t-kw">\</span>
+        --tf32 True <span class="t-kw">\</span>
+        --gradient_checkpointing True</code></pre></div>
+<p><span class="m">→</span> <span class="m">→</span> The definition of the pre-training dataset class PTDataset is shown in the following code. The process() function covers the main processing steps of the pre-training data, including data loading, tokenization, batching, and other key operations. <span class="m">→</span> <span class="m">→</span> <span class="m">→</span> To further implement data parallel training (single machine, multiple GPUs), one can use the command torchrun to launch the above code. The specific command is shown in the following code. In the first line, the nproc_per_node parameter specifies the number of GPUs for training, and the master_port parameter specifies the communication port during training. The remaining parameters are hyper-parameters specified for training. For example, bf16 is used to determine whether BF16 is used for training, num_tr number of gradient accumulation steps, learning_rate specifies the maximum learning rate, warmup_ratio specifies the proportion of training steps used for learning rate, lr DeepSpeed parameter file (such as the ZeRO stage), and gradient_checkpointing is used to determine whether activation recomputation is used.</p>
+<div class="codeblock"><pre><code>e3_max_live_parameters  stage3_max_reuse_distance</code></pre></div>
+<p>Next, we illustrate how to set the DeepSpeed training file, which can be used to configure ZeRO hyper-parameters. This file is in JSON format, where zero_optimiza tion includes ZeRO training hyper-parameters. In this parameter dictionary, stage can be set to an integer value of 1, 2, or 3, representing the ZeRO optimization stage. stag</p>
+<div class="codeblock"><pre><code>stage3_gather_16b it_weights_on_model_save</code></pre></div>
+<p>in ZeRO-3 used to control the cache of model parameters. The smaller the values, the set to false, the checkpoint will be sharded upon saving, and an additional script will be needed to merge them later; otherwise, the checkpoint will not be sharded, but the saving process will take more time.</p>
+<div class="codeblock"><pre><code>    <span class="t-kw">"bf16"</span>: {
+        <span class="t-kw">"enabled"</span>: <span class="t-str">"auto"</span>
+    },
+    <span class="t-kw">"zero_optimization"</span>: {
+        <span class="t-kw">"stage"</span>: 3,
+        <span class="t-kw">"overlap_comm"</span>: <span class="t-kw">true</span>,
+        <span class="t-kw">"contiguous_gradients"</span>: <span class="t-kw">true</span>,
+        <span class="t-kw">"sub_group_size"</span>: 1e9,
+        <span class="t-kw">"reduce_bucket_size"</span>: <span class="t-str">"auto"</span>,
+        <span class="t-kw">"stage3_prefetch_bucket_size"</span>: <span class="t-str">"auto"</span>,
+        <span class="t-kw">"stage3_param_persistence_threshold"</span>: <span class="t-str">"auto"</span>,
+        <span class="t-kw">"stage3_max_live_parameters"</span>: 1e9,
+        <span class="t-kw">"stage3_max_reuse_distance"</span>: 1e9,
+        <span class="t-kw">"stage3_gather_16bit_weights_on_model_save"</span>: <span class="t-kw">true</span>
+    },
+    <span class="t-kw">"gradient_accumulation_steps"</span>: <span class="t-str">"auto"</span>,
+    <span class="t-kw">"gradient_clipping"</span>: <span class="t-str">"auto"</span>,
+    <span class="t-kw">"steps_per_print"</span>: 2000,
+    <span class="t-kw">"train_batch_size"</span>: <span class="t-str">"auto"</span>,
+    <span class="t-kw">"train_micro_batch_size_per_gpu"</span>: <span class="t-str">"auto"</span>,
+    <span class="t-kw">"wall_clock_breakdown"</span>: <span class="t-kw">false</span>
+}</code></pre></div>
+<p><sup class="fnref">1</sup> {</p>
+<section class="footnotes"><h2>Notes</h2><ol class="fnlist"><li><span class='fnnum'>1</span> <span class="m">1</span>https://lifearchitect.ai/ilya/.</li><li><span class='fnnum'>4</span> <sup class="fnref">4</sup></li><li><span class='fnnum'>3</span> <span class="m">3</span>https://www.nvidia.com/en-us/data-center/a100/.</li><li><span class='fnnum'>26</span> <sup class="fnref">26</sup></li></ol></section>
+</article>
+</main>
+<nav class="chapnav" aria-label="Chapter navigation"><div class="chapnav-inner">
+<a class="prev" href="11-5-model-architecture.html"><span class="lbl">上一页</span><span class="nm">5 Model Architecture</span></a><a class="next" href="13-part-iii-post-training.html"><span class="lbl">下一页</span><span class="nm">III Post-training</span></a>
+</div></nav>
+<script src="app.js"></script>
+</body>
+</html>

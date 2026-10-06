@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="推导全书所需的数学工具：线性代数、微积分、概率统计、最优化、数值分析。每条都给出可复核的公式。">
+<title>数学预备知识 · Mathematical Preliminaries · ESL 数学推导</title>
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/style.css">
+<script defer src="../assets/katex/katex.min.js"></script>
+<script defer src="../assets/katex/auto-render.min.js"></script>
+<script defer src="assets/app.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="bar">
+  <button class="icon" id="themeToggle" type="button" aria-label="切换深色模式">&#9681;</button>
+  <a class="title" href="index.html">ESL 数学推导</a>
+  <a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+<h1 id="s-0" class="ch anchored"><span class="num">0</span> 数学预备知识</h1>
+<p>读 ESL 的时候最常卡住的地方不是「看不懂结论」，而是「中间那一步凭什么」。这本书大量使用五类工具：矩阵代数、微积分（极值与求导）、概率统计、优化理论、数值计算。本章把它们一次性重建，后面每一章都只引用这里的编号（<code>L1</code>、<code>C2</code>、<code>P5</code>、<code>O3</code> 这样的标签）。</p>
+<p>写法上遵循一个原则：<strong>每条工具都给出可以手算验证的形式</strong>，并指出初学者最容易记错的地方。</p>
+<hr>
+<h2 id="s-0-1" class="anchored"><span class="num">0.1</span> L · 线性代数</h2>
+<h3 id="s-0-1-1" class="anchored"><span class="num">0.1.1</span> 内积、范数与正定性（L1）</h3>
+<div class="aside basis"><p class="hd">基础知识 · 内积空间 $\mathbb{R}^p$</p><p>定义：对 $a,b\in\mathbb{R}^p$，</p>
+<div class="eq"><div class="escroll">
+$$
+\langle a,b\rangle = a^\top b = \sum_{k=1}^p a_k b_k,\qquad \|a\|^2 = \langle a,a\rangle
+$$
+</div></div>
+<p>于是 $\|a\|=\sqrt{\sum_k a_k^2}$。Cauchy–Schwarz 不等式 $|\langle a,b\rangle|\le\|a\|\|b\|$ 来自等号条件：$\|a-\lambda b\|^2\ge 0$ 对一切 $\lambda$ 取最小。</p>
+<p><strong>正定矩阵</strong>：对称矩阵 $A=A^\top$ 满足 $x^\top A x&gt;0$ 对一切 $x\ne0$ 成立，称为正定（positive definite）。等价说法很多，逐条有用：</p>
+<ul><li>$A$ 正定 $\iff$ 所有特征值 $\lambda_i&gt;0$</li><li>$A$ 正定 $\iff$ 可以写成 $A=C^\top C$，$C$ 是列满秩的「方根」矩阵</li><li>$A$ 正定 $\iff$ $A=L^\top L$，$L$ 上三角（Cholesky 分解）</li><li>$A$ 半正定：把 $&gt;0$ 换成 $\ge0$，等价于 $\lambda_i\ge0$</li></ul>
+<p><strong>二次型极小判别</strong>：若 $A$ 对称，</p>
+<div class="eq"><div class="escroll">
+$$
+\min_x x^\top A x \ \text{有非零解当且仅当}\ \lambda_{\min}(A)\le 0
+$$
+</div></div>
+<p>这个判别法是全书写得最多的一行推导，值得记住。</p></div>
+<div class="eq"><div class="escroll">
+$$
+x^\top A x=\sum_{i=1}^p \lambda_i (v_i^\top x)^2
+$$
+</div></div>
+<p>推导：用 $A=Q\Lambda Q^\top$（谱分解），令 $z=Q^\top x$，则 $x^\top A x = \Lambda z^\top z=\sum_i\lambda_i z_i^2$。每个 $\lambda_i$ 的系数是 $z_i^2\ge0$，所以只要有一个 $\lambda_i\le0$，取 $z=e_i$ 就能让它 $\le0$。</p>
+<div class="aside warn"><p class="hd">坑</p><p>正定性要求<strong>对称</strong>。一般矩阵 $A$ 只要对称部分 $\tfrac12(A+A^\top)$ 正定，就有 $x^\top A x&gt;0$（对称部分可以半正定而不失结论）。ESL 里 $X^\top X$ 天然对称，正定性只用在这个自然情形上。</p></div>
+<h3 id="s-0-1-2" class="anchored"><span class="num">0.1.2</span> 投影与最小二乘（L2）</h3>
+<div class="aside basis"><p class="hd">基础知识 · 投影定理</p><p>设 $C$ 是 $\mathbb{R}^n$ 的子空间，$v\in\mathbb{R}^n$。存在唯一的 $p\in C$ 与 $r\perp C$ 使得 $v=p+r$，其中 $p$ 是 $C$ 中离 $v$ 最近的点。这个 $p$ 称为 $v$ 在 $C$ 上的<strong>正交投影</strong>。</p>
+<p>证明只用到两条：$p$ 是最近点 $\Rightarrow$ $\langle v-p,\;c-p\rangle\ge0$ 对一切 $c\in C$；取 $c=p+w$（$w\in C$）得 $\langle v-p,w\rangle\ge0$ 对一切 $w\in C$，即残差与整个子空间正交。$C$ 闭且有限维时该极小点存在。</p></div>
+<p>矩阵形式：$C=\mathrm{col}(X)$，$X$ 为 $n\times p$ 满列秩，则</p>
+<div class="eq"><div class="escroll">
+$$
+P_X = X(X^\top X)^{-1}X^\top,\qquad \hat y = P_X y,\qquad \hat\beta=(X^\top X)^{-1}X^\top y
+$$
+</div></div>
+<p>推导：$\hat\beta$ 使残差 $y-X\hat\beta$ 与每个列向量正交，即 $X^\top(y-X\hat\beta)=0$，解出即得。$P_X$ 的两条性质可以直接验证：</p>
+<div class="eq"><div class="escroll">
+$$
+P_X^\top = P_X,\qquad P_X^2 = P_X
+$$
+</div></div>
+<p>（$P_X^2 = X(X^\top X)^{-1}X^\top X(X^\top X)^{-1}X^\top = X(X^\top X)^{-1}X^\top$。）对称且幂等 $\iff$ 正交投影。</p>
+<div class="aside calc"><p class="hd">数值 · 残差平方和可分解为</p><div class="eq"><div class="escroll">
+$$
+\|y\|^2 = \|P_Xy\|^2 + \|(I-P_X)y\|^2
+$$
+</div></div>
+<p>这是 Pythagoras 恒等式在 $\mathbb{R}^N$ 中的应用，也是第 3 章所有 RSS 分析的出发点。</p></div>
+<h3 id="s-0-1-3" class="anchored"><span class="num">0.1.3</span> 特征分解、SVD 与秩（L3）</h3>
+<div class="aside basis"><p class="hd">基础知识 · 谱分解</p><p>实对称矩阵 $A$ 有正交特征系 $\{\lambda_i,v_i\}$：$Av_i=\lambda_i v_i$，$V^\top V=I$。于是 $A=Q\Lambda Q^\top$。</p>
+<p><strong>奇异值分解（SVD）</strong>：任何 $X\in\mathbb{R}^{N\times p}$ 可以写成</p>
+<div class="eq"><div class="escroll">
+$$
+X = U D V^\top
+$$
+</div></div>
+<p>其中 $D=\mathrm{diag}(d_1,\dots,d_r)$，$d_i\ge0$ 递减，$r=\mathrm{rank}(X)$；$U,V$ 列正交。$d_i^2$ 就是 $X^\top X$ 的特征值，所以<strong>SVD 是对称特征分解在非对称矩阵上的对应物</strong>。</p></div>
+<p>ESL 反复用到的一个等价关系，值得单独推导一遍：</p>
+<div class="eq"><div class="escroll">
+$$
+X^\top X = V D^2 V^\top \quad\Longleftrightarrow\quad X^\top X \cdot v_j = d_j^2 v_j
+$$
+</div></div>
+<p>推导：$X=UDV^\top \Rightarrow X^\top X = VD U^\top U D V^\top = VD^2V^\top$。后向由 $X^\top Xv = d^2v \Rightarrow \|(Xv)\|^2 = v^\top X^\top Xv = d^2\|v\|^2$，再由正交性定出 $Xv=d_ju_j$。</p>
+<div class="aside warn"><p class="hd">坑</p><p>秩亏时 (3.6) 的 $(X^\top X)^{-1}$ 不存在。但<strong>拟合值仍然唯一</strong>：$P_X$ 有无穷多个矩阵表达式，投影本身唯一。ESL 第 3 章专门强调了这一点。</p>
+<p>解决办法是改用 $V_rD_r^{-1}U_r^\top$（截断逆）或伪逆 $X^+=V_rD_r^{-1}U_r^\top$。</p></div>
+<h3 id="s-0-1-4" class="anchored"><span class="num">0.1.4</span> 矩阵微积分（L4）</h3>
+<div class="aside basis"><p class="hd">基础知识 · 梯度与雅可比</p><p>标量函数 $g:\mathbb{R}^p\to\mathbb{R}$ 的梯度 $\nabla g(x)\in\mathbb{R}^p$，分量 $\partial g/\partial x_k$。向量函数的雅可比 $J\in\mathbb{R}^{m\times p}$，$J_{ij}=\partial f_i/\partial x_j$。</p>
+<p><strong>微分恒等式</strong>：把 $dx$ 当作形式小量，$dg=\sum_k \frac{\partial g}{\partial x_k}dx_k$。</p>
+<p>四条常用求导法则（都可由定义验证）：</p></div>
+<div class="eq long"><div class="escroll">
+$$
+\nabla_x (a^\top x) = a,\quad
+\nabla_x (x^\top A x) = (A+A^\top)x \ (\text{一般}),\quad
+\nabla_x (x^\top A x) = 2Ax \ (\text{$A$ 对称})
+$$
+</div></div>
+<p>第三条的推导（这是全书出现频率最高的推导之一）：设 $A$ 对称，</p>
+<div class="eq"><div class="escroll">
+$$
+x^\top Ax=\sum_{i,j}A_{ij}x_ix_j,\quad \frac{\partial}{\partial x_k}=\sum_j A_{kj}x_j+\sum_i A_{ik}x_i
+$$
+</div></div>
+<p>第一个和是 $(Ax)_k$，第二个用 $A^\top=A$ 得 $(A^\top x)_k$，两者相等故为 $2(Ax)_k$。</p>
+<p>矩阵对矩阵：设 $F$ 为 $N\times M$，$G$ 为 $N\times M$，$A$ 为 $M\times N$（注意维度，则 $FA$ 是 $N\times N$，迹才有意义），则</p>
+<div class="eq"><div class="escroll">
+$$
+\frac{\partial \mathrm{tr}(G^\top F A)}{\partial F} = GA^\top
+$$
+</div></div>
+<p>推导：令 $H$ 与 $F$ 同形（$N\times M$），考察一阶增量</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{tr}\big(G^\top(F+H)A\big)-\mathrm{tr}(G^\top F A)=\mathrm{tr}(G^\top H A)
+$$
+</div></div>
+<p>用迹循环律把 $G^\top$（$M\times N$）挪到最右端：</p>
+<div class="eq long"><div class="escroll">
+$$
+\mathrm{tr}(G^\top H A)=\mathrm{tr}(A G^\top H)=\mathrm{tr}\big((GA^\top)^\top H\big)=\langle GA^\top,\ H\rangle
+$$
+</div></div>
+<p>（逐个核对维度：$A G^\top$ 是 $M\times M$，$(GA^\top)^\top=AG^\top$，它与同形的 $H$ 做内积得 $N\times M$ 的矩阵。）由微分定义 $dg=\langle \nabla_F g,\ dF\rangle$，得</p>
+<div class="eq"><div class="escroll">
+$$
+\nabla_{\!F}\,\mathrm{tr}(G^\top F A)=GA^\top
+$$
+</div></div>
+<div class="aside warn"><p class="hd">坑 · 三个最容易踩的地方：</p><ol><li><strong>别把 $GA$ 和 $GA^\top$ 搞反。</strong> $\langle GA^\top,H\rangle$ 里的 $GA^\top$ 是 $M\times N$ 才与 $H$ 同形；写成 $GA$（$N\times M$）虽然也"能凑"，但那是另一个式子 $\mathrm{tr}(G^\top H A^\top)$ 的结果，不是本题的。</li><li><strong>迹循环律的适用条件</strong>：$\mathrm{tr}(AB)=\mathrm{tr}(BA)$ 要求 $A$ 是 $m\times n$、$B$ 是 $n\times m$（两个乘积都是 $m\times m$）。它<strong>不是</strong>"只有方阵才能用"，也不是无条件成立——若 $AB$ 与 $BA$ 尺寸不同，迹根本没有定义。</li><li><strong>先检查维度</strong>再套公式。上面 $G^\top F A$ 要求 $F$ 是 $N\times M$、$A$ 是 $M\times N$，否则整个表达式无意义。</li></ol></div>
+<h3 id="s-0-1-5" class="anchored"><span class="num">0.1.5</span> 协方差与相关性（L5）</h3>
+<div class="aside basis"><p class="hd">基础知识 · 协方差矩阵</p><p>随机向量 $Z\in\mathbb{R}^p$，均值 $\mu=E[Z]$，协方差 $\mathrm{Cov}(Z)=E[(Z-\mu)(Z-\mu)^\top]$。分量 $\mathrm{Cov}(Z_i,Z_j)=E[(Z_i-\mu_i)(Z_j-\mu_j)]$，标准差 $\sigma_i=\sqrt{\mathrm{Var}(Z_i)}$。</p>
+<p>相关系数 $\mathrm{Corr}(Z_i,Z_j)=\frac{\mathrm{Cov}(Z_i,Z_j)}{\sigma_i\sigma_j}$。</p>
+<p><strong>线性变换律</strong>（ESL 第 14 章反复用）：</p>
+<div class="eq"><div class="escroll">
+$$
+Z=aX \ \Rightarrow\ E[Z]=aE[X],\qquad \mathrm{Cov}(aX)=a\,\mathrm{Cov}(X)\,a^\top
+$$
+</div></div></div>
+<p>推导：$E[aX]=aE[X]$ 由期望的线性性；$\mathrm{Cov}(aX)=E[(aX-aE[X])(aX-aE[X])^\top]=a\,E[(X-E[X])(X-E[X])^\top]\,a^\top$。第二个等号是矩阵乘法的分配律。</p>
+<p>方差分解：$\mathrm{Var}(\sum_k a_k Z_k)=\sum_{ij}a_ia_j\,\mathrm{Cov}(Z_i,Z_j)$ —— 这是<strong>二次型形式的方差公式</strong>，第 6、7、14 章的偏差计算都建立在它之上。</p>
+<hr>
+<h2 id="s-0-2" class="anchored"><span class="num">0.2</span> C · 微积分与极值</h2>
+<h3 id="s-0-2-1" class="anchored"><span class="num">0.2.1</span> 无约束极值与海森矩阵（C1）</h3>
+<div class="aside basis"><p class="hd">基础知识</p><p>$g:\mathbb{R}^p\to\mathbb{R}$ 可微，内点 $x_0$ 为局部极小 ⟹ $\nabla g(x_0)=0$（必要条件）。</p>
+<p>二阶判别：设 $\nabla^2 g(x_0)$（海森矩阵，对称，$\partial^2g/\partial x_i\partial x_j$）存在，</p>
+<div class="eq long"><div class="escroll">
+$$
+\nabla^2g(x_0)\ \begin{cases} \text{正定} &amp;\Rightarrow \text{严格局部极小}\\ \text{负定} &amp;\Rightarrow \text{严格局部极大}\\ \text{不定} &amp;\Rightarrow \text{非极值（鞍点）}\\ \text{半正定} &amp;\Rightarrow \text{不能判定} \end{cases}
+$$
+</div></div></div>
+<p>二阶判别的证明只用泰勒展开：$g(x_0+h)=g(x_0)+\nabla g(x_0)^\top h+\frac12h^\top Hh+o(\|h\|^2)$。在内点极值处 $\nabla g(x_0)=0$，剩下</p>
+<div class="eq"><div class="escroll">
+$$
+g(x_0+h)-g(x_0)=\frac12h^\top Hh+o(\|h\|^2)
+$$
+</div></div>
+<p>若 $\lambda_{\min}(H)&gt;0$，则 $h^\top Hh\ge\lambda_{\min}\|h\|^2$，二阶项至少 $\frac{\lambda_{\min}}{2}\|h\|^2&gt;0$；而 $o(\|h\|^2)$ 是三阶以上小量，被它压过，故充分小的 $h\ne0$ 都有 $g(x_0+h)&gt;g(x_0)$，即严格局部极小。$\lambda_{\max}(H)&lt;0$ 同理给出严格极大。</p>
+<div class="aside warn"><p class="hd">坑</p><p><strong>「半正定 $\Rightarrow$ 局部极小」是错的</strong>，这是最常被误抄的一条：半正定只是<strong>必要</strong>条件，不是充分条件。反例 $g(x)=x^3$ 在 $x_0=0$ 处 $\nabla g(0)=0$、$g''(0)=0\succeq0$，但 $0$ 是<strong>拐点</strong>不是极小。要断定极小，要么证明 $\nabla^2g$ 在某邻域内<strong>正定</strong>，要么直接用结构（例如整体凸 $\Rightarrow$ 任意驻点是全局极小）。另外「不定 $\Rightarrow$ 鞍点」只在 $p\ge2$ 时严格：$p=1$ 时海森是 $1\times1$，非零就已经能定极性。</p></div>
+<p><strong>梯度下降</strong>：沿最陡下降方向 $-\nabla g$ 移动，</p>
+<div class="eq"><div class="escroll">
+$$
+x^{(m+1)} = x^{(m)} - \gamma_m \nabla g(x^{(m)})
+$$
+</div></div>
+<p>局部收敛要求步长不过大；严格说，若 $\nabla g$ Lipschitz 连续且 $\gamma&lt;2/L$，迭代线性收敛。</p>
+<h3 id="s-0-2-2" class="anchored"><span class="num">0.2.2</span> 二次函数（贯穿全书的核心）</h3>
+<div class="aside basis"><p class="hd">基础知识 · 二次函数极小</p><p>$g(\beta)=\frac12\beta^\top A\beta - b^\top\beta$，$A$ 对称正定。则</p>
+<div class="eq"><div class="escroll">
+$$
+\nabla g = A\beta - b = 0 \Rightarrow \beta^\star=A^{-1}b,\qquad g(\beta^\star)=-\tfrac12 b^\top A^{-1}b
+$$
+</div></div></div>
+<p>推导第二步：$A\beta^\star=b \Rightarrow b^\top A^{-1}b = (A\beta^\star)^\top A^{-1}A\beta^\star = (\beta^\star)^\top\beta^\star = \beta^{\star\top}A^{-1}b$。故 $g(\beta^\star)=\frac12\beta^{\star\top}b-b^\top\beta^\star=-\frac12 b^\top A^{-1}b$。</p>
+<p><strong>配方（completion of squares）</strong>，几乎所有「为什么 ridge 会收缩」的论证都靠它：</p>
+<div class="eq"><div class="escroll">
+$$
+\beta^\top A\beta - 2b^\top\beta = (\beta-A^{-1}b)^\top A(\beta-A^{-1}b) - b^\top A^{-1}b
+$$
+</div></div>
+<p>推导：右边展开 $(\beta-A^{-1}b)^\top A(\beta-A^{-1}b) = \beta^\top A\beta - 2\beta^\top b + b^\top A^{-1}b$。移项即得。</p>
+<div class="aside key"><p class="hd">结果</p><p>对任意正定 $A$，函数 $\beta\mapsto\beta^\top A\beta$ 是<strong>严格凸</strong>的。因此 $A$-带约束的极小问题有唯一解，不存在局部非全局极小。这是第 5、12、18 章所有凸性论证的根据。</p></div>
+<h3 id="s-0-2-3" class="anchored"><span class="num">0.2.3</span> 积分技巧：分部积分与换元（C3）</h3>
+<div class="aside basis"><p class="hd">基础知识</p><p>分部积分：$\frac{d}{dx}[f(x)g(x)]=f'g+fg'$，故 $\int_a^b f'g = [fg]_a^b - \int_a^b fg'$。</p>
+<p>换元：$\int g(u)u'(x)dx = \int g(u)du$。</p>
+<p><strong>卷积恒等式</strong>（局部估计的通用工具，第 6 章反复用）：</p>
+<div class="eq"><div class="escroll">
+$$
+\int h(x-u)\,du = \int h(v)\,dv \ (\text{换元 } v=x-u),\qquad \int u\,h(x-u)du = x\int h - \int v h(v)dv
+$$
+</div></div></div>
+<p>第二条的推导：令 $v=x-u$，则 $u=x-v$，$du=-dv$，</p>
+<div class="eq"><div class="escroll">
+$$
+\int u h(x-u)du = \int (x-v)h(v)dv = x\int h(v)dv - \int vh(v)dv
+$$
+</div></div>
+<p>第三种更常用的形式：核 $K$ 是概率密度（$\int K=1$）时</p>
+<div class="eq"><div class="escroll">
+$$
+\int u\,K(x-u)du = x\!\!\int K(v)dv-\!\!\int vK(v)dv = x - m_K,\quad m_K:=\int vK(v)dv
+$$
+</div></div>
+<p>这就是 Nadaraya–Watson 估计量偏差 $-m_K/h$ 的全部来源。</p>
+<hr>
+<h2 id="s-0-3" class="anchored"><span class="num">0.3</span> P · 概率统计</h2>
+<h3 id="s-0-3-1" class="anchored"><span class="num">0.3.1</span> 矩、大数定律与中心极限（P1）</h3>
+<div class="aside basis"><p class="hd">基础知识</p><p>均值 $E[Z]=\int z\,dP$，二阶矩 $E[Z^2]$，$\mathrm{Var}(Z)=E[Z^2]-E[Z]^2$。</p>
+<p><strong>方差可加性</strong>：若 $Z_1,\dots,Z_N$ 独立同分布，则 $\mathrm{Var}(\bar Z)=\sigma^2/N$。推导：</p>
+<div class="eq long"><div class="escroll">
+$$
+\mathrm{Var}(\bar Z)=\mathrm{Var}\Big(\tfrac1N\sum_i Z_i\Big)=\tfrac1{N^2}\sum_{ij}\mathrm{Cov}(Z_i,Z_j)=\tfrac{N}{N^2}\sigma^2=\frac{\sigma^2}{N}
+$$
+</div></div>
+<p>用到 $\mathrm{Cov}(Z_i,Z_j)=0\ (i\ne j)$。</p>
+<p><strong>弱大数定律（WLLN）</strong>：独立同分布、$E|Z|&lt;\infty$ 时 $\bar Z_N\to\mu$ 依概率。</p>
+<p><strong>中心极限定理（CLT）</strong>：独立同分布、均值 $\mu$、方差 $\sigma^2&lt;\infty$ 时</p>
+<div class="eq"><div class="escroll">
+$$
+\frac{\sqrt N(\bar Z_N-\mu)}{\sigma}\ \xrightarrow{d}\ N(0,1)
+$$
+</div></div></div>
+<p>CLT 的推导思路：中心化后 $Z_i-\mu$ 独立同分布零均值，$\sum_{i=1}^N(\frac{Z_i-\mu}{\sigma/\sqrt N})$ 是标准化独立随机变量之和，其特征函数为</p>
+<div class="eq"><div class="escroll">
+$$
+\phi_{S_N}(t)=\prod_{i=1}^N\Big(1-\frac{t^2}{2N}+o(1/N)\Big)\to e^{-t^2/2}
+$$
+</div></div>
+<p>Levy 连续性定理把特征函数收敛翻译成依分布收敛。</p>
+<p><strong>为什么 CLT 是全书统计推断的支柱</strong>：$\beta^\top\hat\beta$ 这类二次型的渐近正态性、$\chi^2$ 检验、$F$ 检验的极限分布，全部由 CLT 加「函数映射定理」得到。ESL 第 3 章的 $F$ 分布、第 7 章的 bootstrap 渐近正态性都只是 CLT 的一次应用。</p>
+<h3 id="s-0-3-2" class="anchored"><span class="num">0.3.2</span> 条件期望与全期望公式（P2）</h3>
+<div class="aside basis"><p class="hd">基础知识 · 塔性质（tower property）</p><p>对随机变量 $X,Y$ 与函数 $g$：</p>
+<div class="eq"><div class="escroll">
+$$
+E[g(Y)] = E\big[E[g(Y)\mid X]\big]
+$$
+</div></div>
+<p>推导：右边 $=E\big[\int g(y)dP_{Y\mid X=y}(y)\big]$，把条件分布看作关于 $(x,y)$ 的边缘分布的条件核，再用边缘化。</p>
+<p><strong>全方差公式</strong>：</p>
+<div class="eq"><div class="escroll">
+$$
+\mathrm{Var}(Y) = E\big[\mathrm{Var}(Y\mid X)\big] + \mathrm{Var}\big(E[Y\mid X]\big)
+$$
+</div></div>
+<p>推导：记 $m(X)=E[Y\mid X]$，则 $Y-m(X)+m(X)-E[Y]$ 两项正交（条件期望的正交投影性质），</p>
+<div class="eq"><div class="escroll">
+$$
+E[(Y-E[Y])^2]=E[(Y-m(X))^2]+E[(m(X)-E[Y])^2]+2E[(Y-m(X))(m(X)-E[Y])]
+$$
+</div></div>
+<p>最后一项为零：由条件期望的定义，$E[Z\cdot 1_{\{X\in A\}}]=E[E[Z\mid X]1_{\{X\in A\}}]$，取 $Z=Y-m(X)$、$A=\{m(X)&gt;E[Y]\}$ 之类即可得零。</p></div>
+<p><strong>这个公式是偏差–方差分解的引擎</strong>。ESL 第 2、7、15 章反复说的「把预测误差写成条件均值减去真值」就来自这里。</p>
+<h3 id="s-0-3-3" class="anchored"><span class="num">0.3.3</span> 指数族与极大似然（P3）</h3>
+<div class="aside basis"><p class="hd">基础知识 · 指数族</p><p>密度形如</p>
+<div class="eq"><div class="escroll">
+$$
+p(y\mid\eta)=h(y)\,\exp\big(\eta^\top T(y)-A(\eta)\big)
+$$
+</div></div>
+<p>其中 $A(\eta)=\log\int h(y)e^{\eta^\top T(y)}dy$ 是配分函数的对数。</p>
+<p><strong>对数配分函数的导数给出矩</strong>：设积分收敛且可交换求导与积分，则</p>
+<div class="eq"><div class="escroll">
+$$
+A'(\eta)=E_\eta[T(Y)],\qquad A''(\eta)=\mathrm{Var}_\eta\,T(Y)
+$$
+</div></div>
+<p>推导：对 $A(\eta)=\log\int h(y)e^{\eta^\top T}dy$ 求导，分子分母同时含 $e^{\eta^\top T}$，商法则给出 $A'=(\int T h e^{\eta^\top T})/(\int h e^{\eta^\top T})$，即期望。二次求导：再对 $\eta_j$ 求导，把 $\frac{\partial}{\partial\eta_j}e^{\eta^\top T}=T_je^{\eta^\top T}$ 代进去，得到期望的加权形式，整理成 $E[T_jT_k]-E[T_j]E[T_k]$。</p></div>
+<div class="aside warn"><p class="hd">坑</p><p>$A''(\eta)\ge0$ 说明 $A$ 凸，这保证了负对数似然 $\ell(\eta)=\sum_i[A(\eta_i)-\eta_i^\top T(y_i)]$ 是凸函数，逻辑回归、泊松回归因此有唯一极小。ESL 第 4 章用这个论证说明逻辑回归解的唯一性。</p></div>
+<h3 id="s-0-3-4" class="anchored"><span class="num">0.3.4</span> 抽样分布：$t$、$\chi^2$、$F$（P4）</h3>
+<div class="aside basis"><p class="hd">基础知识 · 高斯向量的二次型</p><p>设 $Z\sim N(\mu,I_p)$，$A$ 对称，特征值 $\lambda_1,\dots,\lambda_p$。则</p>
+<div class="eq"><div class="escroll">
+$$
+Z^\top AZ \ \sim\ \sum_{i=1}^p \lambda_i \chi^2_1,\qquad Z^\top A Z-\mu^\top A\mu=\sum_i\lambda_i\chi^2_1
+$$
+</div></div></div>
+<p>推导（正交变换法）：设 $q_i$ 为 $A$ 的单位特征向量，$W=Q^\top(Z-\mu)$。$W\sim N(0,I_p)$（正交变换不改变标准高斯的分布，因为每个分量仍是标准正态且不相关），故</p>
+<div class="eq long"><div class="escroll">
+$$
+Z^\top A Z = (Z-\mu)^\top A(Z-\mu)+\mu^\top A\mu = W^\top A W + \mu^\top A\mu = \sum_i \lambda_i W_i^2 + \text{常数}
+$$
+</div></div>
+<p>独立性和 $\chi^2_1$ 分布：$W_i\overset{\text{iid}}{\sim}N(0,1)$，$W_i^2\sim\chi^2_1$。</p>
+<p><strong>加权 $\chi^2$ 求和的三大结论</strong>（ESL 第 3 章 (3.11)、(3.15) 的全部内容）：</p>
+<div class="tscroll-x"><table class="fx"><thead><tr><th>结论</th><th>条件</th><th>结果</th></tr></thead><tbody><tr><td>正定性保持</td><td>所有 $\lambda_i&gt;0$</td><td>$\sum\lambda_i\chi^2_1 \sim \sigma^2\chi^2_{\sum \lambda_i}$（加权尺度）</td></tr><tr><td>$t$ 分布</td><td>$\sigma^2$ 未知</td><td>$(\hat\theta-\theta)/(\hat\sigma \sqrt{v})\sim t_\nu$</td></tr><tr><td>$F$ 分布</td><td>两个嵌套二次型</td><td>$\frac{Q_1/(p_1-p_0)}{Q_2/(N-p_1-1)}\sim F_{p_1-p_0,\,N-p_1-1}$</td></tr></tbody></table></div>
+<div class="aside key"><p class="hd">结果</p><p><strong>$t$ 分布的定义</strong>：若 $Z\sim N(0,1)$，$V\sim\chi^2_\nu$ 独立，则 $T=Z/\sqrt{V/\nu}\sim t_\nu$。</p>
+<p>这就是书里说「把 $\sigma$ 换成 $\hat\sigma$ 后 $z_j$ 服从 $t_{N-p-1}$」的原因：$\hat\beta_j-\beta_j$ 的分子是标准正态的倍数，分母换成 $\hat\sigma$ 后分母是 $\chi^2_\nu/\nu$ 的平方根。</p></div>
+<div class="aside warn"><p class="hd">坑</p><p>$t$ 与 $F$ 的自由度来源不同：$t$ 的 $\nu=N-p-1$ 来自<strong>残差自由度</strong>（估了 $p+1$ 个参数），$F$ 的分母自由度也来自残差；分子自由度来自<strong>被检验的参数个数</strong>。搞混这两者是常见错误。</p></div>
+<h3 id="s-0-3-5" class="anchored"><span class="num">0.3.5</span> 假设检验与置信区间（P5）</h3>
+<div class="aside basis"><p class="hd">基础知识 · 检验的逻辑</p><ul><li>原假设 $H_0:\theta=\theta_0$，统计量 $T(\text{data})$ 在 $H_0$ 下的分布已知。</li><li>$p$ 值 $=\Pr\bigl(\lvert T\rvert\ge\lvert T_{\text{obs}}\rvert\,\bigr)$ —— <strong>不是</strong> $P(H_0\mid\text{data})$。</li><li>置信区间 $\{[\,l(\text{data}),\,u(\text{data})\,]\}$ 覆盖 $\theta$ 的概率是 $1-\alpha$，<strong>参数是固定的，随机的是区间</strong>。</li></ul>
+<p><strong>双侧置信区间来自检验的对偶</strong>：水平 $\alpha$ 的检验 $\{ \text{接受 }H_0\}$ 与水平 $1-\alpha$ 的置信集 $\{ \theta: \text{不接受 } H_0:\theta\}$ 互补。</p></div>
+<p>正态情形：已知 $\sigma$ 时 $\hat\theta\sim N(\theta,\sigma^2/n)$，</p>
+<div class="eq long"><div class="escroll">
+$$
+\frac{\sqrt n(\hat\theta-\theta)}{\sigma}\sim N(0,1)\ \Rightarrow\ \theta\in \Big[\hat\theta - z^{(1-\alpha/2)}\frac{\sigma}{\sqrt n},\ \hat\theta+z^{(1-\alpha/2)}\frac{\sigma}{\sqrt n}\Big]
+$$
+</div></div>
+<hr>
+<h2 id="s-0-4" class="anchored"><span class="num">0.4</span> O · 最优化理论</h2>
+<h3 id="s-0-4-1" class="anchored"><span class="num">0.4.1</span> 拉格朗日乘子与对偶（O1）</h3>
+<div class="aside basis"><p class="hd">基础知识</p><p>等式约束 $\min_\beta f(\beta)\ \text{s.t.}\ g(\beta)=0$。用 $L(\beta,\lambda)=f(\beta)-\lambda^\top g(\beta)$，则最优解满足 $\nabla_\beta L=0,\ \lambda^\top g=0$。</p>
+<p><strong>凸问题的对偶</strong>：原问题</p>
+<div class="eq"><div class="escroll">
+$$
+\min_\beta f_0(\beta)\quad \text{s.t. } f_i(\beta)\le0,\ i=1,\dots,m
+$$
+</div></div>
+<p>拉格朗日函数 $L=f_0+\sum_i\lambda_i f_i$，$\lambda\ge0$。对偶函数</p>
+<div class="eq"><div class="escroll">
+$$
+g(\lambda)=\inf_\beta L(\beta,\lambda)
+$$
+</div></div>
+<p>弱对偶性（不需要任何凸性）：对任意可行 $(\beta,\lambda)$，$g(\lambda)\le L(\beta,\lambda)=f_0(\beta)$，故 $g(\lambda)\le f_0(\beta)$。</p>
+<p>Slater 条件（存在严格可行点 $f_i&lt;0$）下，$f_0$ 凸时强对偶成立：$\sup_\lambda g(\lambda)=\min_\beta f_0(\beta)$。</p></div>
+<div class="aside warn"><p class="hd">坑</p><p><strong>对偶总是凸问题</strong>。这是 SVM、lasso 的对偶形式能带来算法优势的根本原因：即使原问题非凸，对偶仍凸，可以放心用梯度法。ESL 第 12 章反复利用这一点。</p></div>
+<h3 id="s-0-4-2" class="anchored"><span class="num">0.4.2</span> KKT 条件（O2）</h3>
+<div class="aside basis"><p class="hd">基础知识 · 四个条件</p><p>凸问题 + Slater ⟹ 最优解 $(\beta^\star,\lambda^\star)$ 恰好是下列条件的解：</p>
+<ul><li><strong>原始可行</strong>：$f_i(\beta^\star)\le0$</li><li><strong>对偶可行</strong>：$\lambda^\star\ge0$</li><li><strong>互补松弛</strong>：$\lambda_i^\star f_i(\beta^\star)=0$</li><li><strong>平稳性</strong>：$\nabla f_0(\beta^\star)+\sum_i\lambda_i^\star\nabla f_i(\beta^\star)=0$</li></ul>
+<p>推导：把 KKT 的四个条件组合成</p>
+<div class="eq long"><div class="escroll">
+$$
+L(\beta,\lambda)-L(\beta^\star,\lambda^\star)=\sum_i\lambda_i f_i(\beta)-\sum_i\lambda_i^\star f_i(\beta^\star)
+$$
+</div></div>
+<p>逐项非负（$\lambda_i\ge0,\ f_i\le0$；互补松弛使 $-\lambda_i^\star f_i(\beta^\star)\ge0$）。若再满足平稳性，右端等于</p>
+<div class="eq"><div class="escroll">
+$$
+(\beta-\beta^\star)^\top\big[\nabla f_0(\beta^\star)+\sum_i\lambda_i^\star\nabla f_i(\beta^\star)\big]=0
+$$
+</div></div></div>
+<p><strong>互补松弛是「什么时候约束起作用」的回答</strong>：$\lambda_i^\star&gt;0$ 才有可能 $f_i(\beta^\star)=0$（约束紧）。ESL 第 3 章 lasso 的 KKT 条件 (3.58)(3.59) 正是这一条的直接应用——不活跃变量的零阈值条件就来自这里。</p>
+<h3 id="s-0-4-3" class="anchored"><span class="num">0.4.3</span> EM 算法（O3）</h3>
+<div class="aside basis"><p class="hd">基础知识</p><p>设观测数据 $y$，缺失（或未观测）数据 $z$，完整数据的联合密度</p>
+<div class="eq"><div class="escroll">
+$$
+p_\theta(y,z)=p_\theta(y\mid z)\,p_\theta(z)
+$$
+</div></div>
+<p>定义对数似然的期望</p>
+<div class="eq"><div class="escroll">
+$$
+Q(\theta,\theta')=E_{\theta'}\big[\log p_\theta(Y,Z)\mid Y=y\big]
+$$
+</div></div>
+<p>迭代：$\theta^{(m+1)}=\arg\max_\theta Q(\theta,\theta^{(m)})$。</p></div>
+<div class="aside"><p class="hd">推导</p><p>EM 单调提升对数似然。令 $\ell(\theta)=\log p_\theta(y)$，$r(\theta,z)=p_\theta(z\mid y)/p_\theta(y)$ 为后验。则 Jensen 不等式给出</p>
+<div class="eq long"><div class="escroll">
+$$
+\ell(\theta)-Q(\theta,\theta')\ \ge\ E_{\theta'}\Big[\log\frac{r(\theta',Z)}{r(\theta,Z)}\Big] = \mathrm{KL}\big(r(\theta')\ \|\ r(\theta)\big)\ \ge0
+$$
+</div></div>
+<p>第一个不等号来自 Jensen 对凹函数 $\log$（$E\log a\le\log Ea$），第二个来自 KL 非负。<strong>等号成立当且仅当</strong> $r(\theta)=r(\theta')$（后验不变），此时 $\theta=\theta'$ 也是极小。因此每次迭代不降低似然。</p></div>
+<div class="aside warn"><p class="hd">坑</p><p>EM 只是<strong>收敛到驻点</strong>，不保证全局最大（除非似然凹，如高斯混合的对数似然在无约束情形下是凹的但约束使其非凹）。初始化敏感，会陷局部极值。这是第 14 章反复强调的。</p></div>
+<h3 id="s-0-4-4" class="anchored"><span class="num">0.4.4</span> 坐标下降与随机梯度（O4）</h3>
+<div class="aside basis"><p class="hd">基础知识 · 坐标下降</p><p>对可分目标 $F(\beta)=\sum_{j=1}^p F_j(\beta_j)$，固定其余坐标只优化第 $j$ 个：</p>
+<div class="eq"><div class="escroll">
+$$
+\beta_j\leftarrow\arg\min_t F_j(t)
+$$
+</div></div>
+<p>每次都单调下降（因为 $F(\beta)\le F(\beta^{\pm})$）。</p></div>
+<p><strong>lasso 的坐标下降解（ESL (3.84)）</strong>：$R(\beta)=\frac{1}{2N}\|y-X\beta\|_2^2+\lambda\|\beta\|_1$。只更新 $\beta_j$，令残差 $r=y-X\beta+X_j\beta_j$，则</p>
+<div class="eq long"><div class="escroll">
+$$
+\beta_j \leftarrow S\!\left(\frac1N x_j^\top r,\ \lambda\right),\qquad
+S(u,\lambda)=\begin{cases}u,&amp;|u|\le\lambda\\ u-\lambda\,\mathrm{sign}(u),&amp;|u|&gt;\lambda\end{cases}
+$$
+</div></div>
+<div class="aside"><p class="hd">推导 · 固定其它坐标，目标变成</p><div class="eq"><div class="escroll">
+$$
+\frac1{2N}\sum_i\big(r_i-x_{ij}\beta_j\big)^2+\lambda|\beta_j|
+$$
+</div></div>
+<p>对 $\beta_j$ 求导：$-\frac1N x_j^\top(r-x_j\beta_j)+\lambda\,\mathrm{sign}(\beta_j)=0$。分三种情形：</p>
+<ul><li>$\beta_j&gt;0$：$\frac1N x_j^\top r=\frac1N\|x_j\|^2\beta_j+\lambda \Rightarrow \beta_j=\frac{1}{N\|x_j\|^2}(x_j^\top r-N\lambda)$</li><li>$\beta_j&lt;0$：同理 $\beta_j=\frac{1}{N\|x_j\|^2}(x_j^\top r+N\lambda)$</li><li>$\beta_j=0$：需要 $|x_j^\top r/N|\le\lambda$（KKT 互补松弛）</li></ul>
+<p>三种情形合并即软阈值算子 $S$。ESL (3.84) 写的就是这个形式：$\tilde\beta_j^{(j)}\leftarrow S\!\big(\frac1N\sum_i\tilde y_i^{(j)}x_{ij},\ \lambda\big)$。</p></div>
+<div class="aside warn"><p class="hd">坑</p><p>常见的一个错误推论：「软阈值算子满足 $S(u-\lambda,\lambda)=S(u,\lambda)-\lambda$，所以可以把 $\lambda$ 提出来」。<strong>这个恒等式不成立。</strong> 取 $u=1.5\lambda$：左边 $S(0.5\lambda,\lambda)=0.5\lambda$，右边 $S(1.5\lambda,\lambda)-\lambda=(1.5\lambda-\lambda)-\lambda=-0.5\lambda$，两者不等。真正成立的是<strong>正齐次性</strong> $S(cu,c\lambda)=c\,S(u,\lambda)\ (c&gt;0)$，以及只在 $u\ge0$（或只在 $u\le0$）一侧成立的$S(u+\lambda,\lambda)=S(u,\lambda)+\lambda$。这类「看起来显然的平移」正是坐标下降实现里最常见的 bug 来源——务必直接用上面那个 $S$ 去验，而不是套恒等式。\n> <strong>随机梯度</strong>：$F(\beta)=E[L(\beta,Z)]$ 时，$\nabla F=E[\nabla L(\beta,Z)]$，用单样本梯度 $\nabla L(\beta,Z^{(m)})$ 代替即 SGD。步长 $\gamma_m=1/(\lambda_0+\lambda_1m)$ 保证 $\sum\gamma_m=\infty$ 且 $\sum\gamma_m^2&lt;\infty$，从而几乎必然收敛。</p></div>
+<h3 id="s-0-4-5" class="anchored"><span class="num">0.4.5</span> 判决理论：风险与贝叶斯分类（O5）</h3>
+<div class="aside basis"><p class="hd">基础知识 · 条件风险</p><p>动作空间 $\{1,\dots,K\}$，损失 $L(g,Y)$，后验 $p_k(x)=P(Y=k\mid X=x)$。条件风险</p>
+<div class="eq"><div class="escroll">
+$$
+R(g\mid x)=\sum_k L(g,k)\,p_k(x)
+$$
+</div></div>
+<p><strong>贝叶斯分类规则</strong>：$g^*(x)=\arg\min_k R(g=k\mid x)$。0-1 损失下 $R(g=k\mid x)=p_k(x)$，故规则是「选后验最大的类」。</p>
+<p>推导：全风险 $R(g)=E[R(g(X)\mid X)]$（塔性质）。若 $g^*$ 逐点最小化条件风险，则</p>
+<div class="eq"><div class="escroll">
+$$
+R(g^*)=E[R(g^*\mid X)]\le E[R(g\mid X)]=R(g)
+$$
+</div></div>
+<p>这是「最优」的严格含义，也是第 4 章所有「贝叶斯最优」陈述的依据。</p></div>
+<div class="aside warn"><p class="hd">坑</p><p>$p_k(x)$ 是<strong>后验</strong>，不是<strong>先验</strong>。0-1 损失下先验与似然加权后相互抵消，但判别分析里类先验 $\pi_k$ 必须保留（第 4 章 LDA 公式中 $\log\frac{\pi_k}{\pi_l}$ 一项）。</p></div>
+<hr>
+<h2 id="s-0-5" class="anchored"><span class="num">0.5</span> N · 数值与计算量</h2>
+<h3 id="s-0-5-1" class="anchored"><span class="num">0.5.1</span> 病态、条件数与秩（N1）</h3>
+<div class="aside basis"><p class="hd">基础知识</p><ul><li><strong>秩</strong>：$\mathrm{rank}(X)=\dim\,\mathrm{col}(X)$。$\mathrm{rank}(X)=\mathrm{rank}(X^\top X)$，$\mathrm{rank}(X)\le\min(N,p)$。</li><li><strong>条件数</strong>：$\kappa(X)=\sigma_{\max}/\sigma_{\min}$（$X$ 满秩时）。相关矩阵 $\mathrm{cor}(x_j,x_l)$ 接近 $\pm1$ 时 $\kappa\to\infty$，最小二乘解剧烈震荡。</li><li><strong>机器精度</strong>：双精度 $\epsilon\approx2.2\times10^{-16}$。<strong>有效秩</strong> $d_{\rm eff}=\sum_j \sigma_j^2/\sum_{j\le d}\sigma_j^2$ 是判断数值可信度的实用指标。</li></ul></div>
+<div class="aside calc"><p class="hd">数值</p><p>正确的做法是 SVD 或 QR，而不是显式求 $(X^\top X)^{-1}$。理由由误差分析给出：</p>
+<div class="eq"><div class="escroll">
+$$
+\frac{\|\Delta\beta\|}{\|\beta\|}\ \lesssim\ \kappa_2(X)\,\epsilon
+$$
+</div></div>
+<p>推导思路：$\Delta\beta = A^{-1}\Delta b$，$\frac{\|\Delta\beta\|}{\|\beta\|}\le\frac{\|A^{-1}\|}{\|A\|}\frac{\|A\|\|\Delta b\|}{\|\Delta b\|}$，第二项为条件数。$\kappa_2(X)=\sqrt{\lambda_{\max}(X^\top X)/\lambda_{\min}(X^\top X)}$，而 $\lambda_{\min}(X^\top X)=\sigma_{\min}^2$，故 $\kappa_2(X^\top X)=\kappa_2(X)^2$ —— <strong>正规方程把条件数平方了</strong>，这是不能直接消元的数值理由。</p></div>
+<h3 id="s-0-5-2" class="anchored"><span class="num">0.5.2</span> 复杂度计数（N2）</h3>
+<div class="aside basis"><p class="hd">基础知识 · 矩阵乘法的代价</p><p>直接矩阵乘法 $N\times p$ 乘 $p\times N$ 需 $O(N^2p)$。但用 SVD 可以看清「有效秩」才是真正的计算量：</p></div>
+<div class="tscroll-x"><table class="fx"><thead><tr><th>运算</th><th>直接算法</th><th>用 SVD / 低秩</th></tr></thead><tbody><tr><td>$(X^\top X)^{-1}X^\top y$</td><td>$O(N^2p)$</td><td>$O(Npr)$，$r=\mathrm{rank}(X)$</td></tr><tr><td>全部 $N$ 个 $\hat y_i$</td><td>同上</td><td>$O(Npr)$</td></tr><tr><td>第 $i$ 个留一法预测</td><td>$O(pr^2)$</td><td>$O(r)$</td></tr></tbody></table></div>
+<div class="aside key"><p class="hd">结果</p><p>第 5 章的 LOOCV 精确公式之所以重要，正是因为它把「$N$ 次重新拟合」的 $O(N^2p^2)$ 降到 $O(Npr)$。</p></div>
+<h3 id="s-0-5-3" class="anchored"><span class="num">0.5.3</span> 梯度 / 随机梯度复杂度（N3）</h3>
+<div class="aside basis"><p class="hd">基础知识 · 一次迭代代价</p><p>逻辑回归（4 章）与 lasso（5、18 章）的坐标下降每次更新需要 $x_j^\top r$，代价 $O(N)$；一轮扫过 $p$ 个坐标是 $O(Np)$。SGD 每次是 $O(p)$。所以 SGD 的优势在 $p$ 极大时的<strong>内存</strong>而非时间：只需驻留梯度向量。</p></div>
+<hr>
+<h2 id="s-0-6" class="anchored"><span class="num">0.6</span> 这套工具怎么用在后面的章节里</h2>
+<div class="tscroll-x"><table class="fx"><thead><tr><th>章节</th><th>主要依赖</th><th>典型例子</th></tr></thead><tbody><tr><td>2 监督学习概述</td><td>L2, P1, P2, O5</td><td>偏差–方差分解、交叉验证</td></tr><tr><td>3 线性回归</td><td>L1–L4, P4</td><td>正规方程 (3.6)、$F$ 统计量 (3.13)</td></tr><tr><td>4 线性分类</td><td>P3, O5, C2</td><td>逻辑回归的极大似然</td></tr><tr><td>5 基展开与正则化</td><td>L1, C2, O2, O4</td><td>lasso 的 KKT (3.58)</td></tr><tr><td>6 核平滑</td><td>C3, P1</td><td>核估计的偏差 $-m_K/h$</td></tr><tr><td>7 模型评估</td><td>L2, P1, P2</td><td>LOOCV 公式</td></tr><tr><td>8 模型推断与平均</td><td>P1, P2</td><td>bagging 方差公式</td></tr><tr><td>9–10 树与提升</td><td>O1, O5, P2</td><td>AdaBoost 的 margin 推导</td></tr><tr><td>11 神经网络</td><td>L4, C1</td><td>后向传播、权重衰减</td></tr><tr><td>12 支持向量机</td><td>O1, O2, L1</td><td>最大间隔几何与对偶</td></tr><tr><td>13 最近邻</td><td>O5, P2</td><td>一致性收敛</td></tr><tr><td>14 无监督学习</td><td>L3, O3</td><td>PCA 推导、EM</td></tr><tr><td>15–16 森林与集成</td><td>P2</td><td>平均的偏差–方差公式</td></tr><tr><td>17 图模型</td><td>P3</td><td>Gibbs 分布、配分函数</td></tr><tr><td>18 高维问题</td><td>L3, O2</td><td>lasso 的支撑集、LOCO</td></tr></tbody></table></div>
+<p><a class="src" href="index.html">返回封面</a></p>
+</main>
+<nav class="chapnav"><div class="inner">
+<a class="prev" href="index.html"><span class="lbl">Home</span><span class="nm">封面</span></a>
+<a class="next" href="m02.html"><span class="lbl">下一章 →</span><span class="nm">第 2 章 监督学习概述</span></a>
+</div></nav>
+</body>
+</html>

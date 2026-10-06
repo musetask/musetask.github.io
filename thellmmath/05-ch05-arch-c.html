@@ -1,0 +1,1056 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>第 5 章 · 模型架构（3/3） · 《Large Language Models》公式推导手册</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23a11f27'/%3E%3Ctext x='16' y='23' font-size='20' font-family='Georgia,serif' fill='%23fff' text-anchor='middle'%3E%E2%88%91%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="style.css">
+<script>(function(){try{var t=localStorage.getItem('thellmmath-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn idxbtn" href="index.html" aria-label="目录"><span aria-hidden="true">&#9776;</span> <span class="lbl">目录</span></a>
+  <a class="brand" href="index.html">《Large Language Models》公式推导手册</a>
+  <button class="btn" id="themeToggle" aria-label="切换深色模式">&#9788;</button>
+</header>
+<main id="main">
+<article>
+<h1><span class="chno">Chapter 5 · 3/3</span>第 5 章 · 模型架构（3/3）</h1>
+<p class="lead">这一页收尾第 5 章。先把 RoPE 的最后一个零件——每个子空间的波长 <a href="#eq-5-33">(5.33)</a>——和 ALiBi 的线性距离偏置 <a href="#eq-5-34">(5.34)</a> 补齐；再进入稀疏激活：MoE 的 top-k 门控 <a href="#eq-5-35">(5.35)</a> 与加权输出 <a href="#eq-5-36">(5.36)</a>，并把负载均衡辅助损失、专家容量、token dropping 与参数量估算一并讲透；接着是长上下文外推的统一框架——把 RoPE 的旋转角分解成 <a href="#eq-5-37">(5.37)</a>，再用 <a href="#eq-5-38">(5.38)</a> 的 \(f=g\cdot h\) 把"改距离"和"改基"两类方法统一起来，位置插值 <a href="#eq-5-39">(5.39)</a>、位置截断 <a href="#eq-5-40">(5.40)</a>、旋转基调整与截断 <a href="#eq-5-41">(5.41)</a>–<a href="#eq-5-43">(5.43)</a> 都是它的特例；最后是 5.5 节的另类架构——状态空间模型（State Space Model, SSM）的离散递推 <a href="#eq-5-44">(5.44)</a>，它展开成的因果卷积和 <a href="#eq-5-45">(5.45)</a> 与卷积核 <a href="#eq-5-46">(5.46)</a>。此外有 5 个补充小节把推导补全：连续时间 SSM 方程从头推、零阶保持离散化与 FFT 卷积、并行扫描、选择性扫描（Mamba 的关键改动）、以及 FlashAttention 的 online softmax。</p>
+<p class="where"><b>原书位置</b>第 5 章 5.2.4 – 5.5 节　<a href="../thellm/11-5-model-architecture.html#5-2-4-position-encoding">对照原文</a></p>
+
+<h2 id="toc-c">本页公式一览</h2>
+<table class="sym">
+<tr><th>编号</th><th>一句话</th><th>核心数学工具</th></tr>
+<tr><td><a href="#eq-5-33">5.33</a></td><td>RoPE 每个子空间的波长 \(\lambda_i\)</td><td>周期 = \(2\pi\) / 角频率</td></tr>
+<tr><td><a href="#eq-5-34">5.34</a></td><td>ALiBi：注意力分数减去与距离成正比的偏置</td><td>softmax 平移不变性 → 几何衰减</td></tr>
+<tr><td><a href="#eq-5-35">5.35</a></td><td>MoE 门控：top-k 选择 + softmax 归一化</td><td>softmax 定义、掩码的 \(-\infty\) 极限</td></tr>
+<tr><td><a href="#eq-5-36">5.36</a></td><td>MoE 输出 = 被选专家输出的凸组合</td><td>凸组合、负载均衡辅助损失</td></tr>
+<tr><td><a href="#eq-5-37">5.37</a></td><td>RoPE 旋转角 = 相对距离 × 旋转基</td><td>旋转矩阵群性质 \(R^{\top}R=I\)</td></tr>
+<tr><td><a href="#eq-5-38">5.38</a></td><td>统一框架：\(f(t,i)=g(t)\,h(i)\)</td><td>距离修正 × 基修正的可分解性</td></tr>
+<tr><td><a href="#eq-5-39">5.39</a></td><td>位置插值 PI：把所有位置索引乘 \(T_{\max}/T'_{\max}\)</td><td>线性缩放 + 波长同比拉长</td></tr>
+<tr><td><a href="#eq-5-40">5.40</a></td><td>位置截断：ReRoPE / LeakyReRoPE 分段 \(g(t)\)</td><td>分段线性函数、局部性假设</td></tr>
+<tr><td><a href="#eq-5-41">5.41</a></td><td>旋转基方法必须满足的约束不等式</td><td>单调性 + 取 \(t=T'_{\max}\) 端点</td></tr>
+<tr><td><a href="#eq-5-42">5.42</a></td><td>基调整（NTK-aware）：\(h(i)=(\alpha b)^{-(i-1)/H}\)</td><td>几何级数 / 对数均匀分布</td></tr>
+<tr><td><a href="#eq-5-43">5.43</a></td><td>旋转基截断：保留 / 压到 \(\beta\) / 置零</td><td>阈值分段函数</td></tr>
+<tr><td><a href="#eq-5-44">5.44</a></td><td>离散 SSM 递推：状态更新 + 状态读出</td><td>线性一阶差分方程</td></tr>
+<tr><td><a href="#eq-5-45">5.45</a></td><td>把递推展开成历史输入的因果卷积和</td><td>数学归纳法 / 展开法</td></tr>
+<tr><td><a href="#eq-5-46">5.46</a></td><td>SSM 等价于固定卷积核的因果卷积</td><td>卷积定义、卷积定理</td></tr>
+<tr><td><a href="#ssm-cont">补充 A</a></td><td>连续时间 SSM 方程的通解（矩阵指数 + 积分因子）</td><td>幂级数矩阵指数、常数变易法</td></tr>
+<tr><td><a href="#ssm-zoh">补充 B</a></td><td>零阶保持离散化 + FFT 卷积 \(O(L\log L)\)</td><td>积分因子、对角化、卷积定理</td></tr>
+<tr><td><a href="#ssm-scan">补充 C</a></td><td>并行扫描：把一阶递推变成结合律前缀和</td><td>半群 / Blelloch scan</td></tr>
+<tr><td><a href="#ssm-selective">补充 D</a></td><td>选择性扫描：为什么 Mamba 不能用 FFT</td><td>线性时不变性被破坏</td></tr>
+<tr><td><a href="#flash-online">补充 E</a></td><td>FlashAttention 的 online softmax 与分块 IO</td><td>数值稳定的分块 softmax、IO 复杂度</td></tr>
+</table>
+
+<h2 id="symconv-c">本页符号约定</h2>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(t,\, i,\, j\)</td><td>序列位置索引、子空间索引</td><td>整数，\(i,j\in\{1,\dots,T\}\)，子空间 \(i\in\{1,\dots,H/2\}\)</td></tr>
+<tr><td>\(T_{\max},\,T'_{\max}\)</td><td>原始上下文窗口长度、扩展后的窗口长度</td><td>整数，\(T_{\max}&lt;T'_{\max}\)</td></tr>
+<tr><td>\(b\)</td><td>RoPE 的旋转基（base），如 \(10^4\)、\(10^8\)</td><td>标量，&gt;1</td></tr>
+<tr><td>\(\theta_i\)</td><td>第 \(i\) 个子空间的角度步长（旋转基）</td><td>标量，\(\theta_i=b^{-2(i-1)/H}\)</td></tr>
+<tr><td>\(\lambda_i\)</td><td>第 \(i\) 个子空间的波长（走完一整圈 \(2\pi\) 所需距离）</td><td>token 数，\(\lambda_i=2\pi/\theta_i\)</td></tr>
+<tr><td>\(H\)</td><td>每个注意力头的维度（RoPE 子空间对数 = \(H/2\)）</td><td>正偶整数</td></tr>
+<tr><td>\(N,\,k\)</td><td>MoE 的专家个数、每个 token 激活的专家个数（top-k）</td><td>正整数，\(k\le N\)</td></tr>
+<tr><td>\(E_i,\,E\)</td><td>第 \(i\) 个专家（一个 FFN）、单专家参数量</td><td>\(E_i:\mathbb{R}^{H}\to\mathbb{R}^{H}\)，\(E\approx 3Hd_{\mathrm{ffn}}\)</td></tr>
+<tr><td>\(W^G\)</td><td>门控（路由）权重矩阵</td><td>\(\mathbb{R}^{H\times N}\)（原书写 \(\mathbb{R}^{H\times K}\)）</td></tr>
+<tr><td>\(G(x_t)_i\)</td><td>token \(x_t\) 路由到专家 \(i\) 的权重</td><td>标量，\(\ge 0\)，\(\sum_i G=1\)</td></tr>
+<tr><td>\(\mathbf{A},\mathbf{B},\mathbf{C}\)</td><td>SSM 的状态转移、输入、读出矩阵</td><td>\(\mathbf{A}\in\mathbb{R}^{H\times N\times N}\)，\(\mathbf{B}\in\mathbb{R}^{H\times N\times 1}\)，\(\mathbf{C}\in\mathbb{R}^{H\times 1\times N}\)</td></tr>
+<tr><td>\(\mathbf{S}_t\)</td><td>第 \(t\) 步的隐状态（每个 head 一份）</td><td>\(\mathbb{R}^{H\times N\times 1}\)</td></tr>
+<tr><td>\(\Delta\)</td><td>离散化步长（token 间隔）</td><td>标量，\(\Delta=1\) 或可学习</td></tr>
+</table>
+<div class="note"><b>命名差异</b>原书在 5.2.6 用 \(K\) 表示专家个数、在 5.5.1 用 \(N\) 表示状态维数。本页为了避免同一字母在不同小节里含义打架，把<b>专家个数统一记作 \(N\)</b>、把 <b>SSM 状态维数记作 \(n\)</b>（原书的 \(N\)）；MoE 公式里原书上限 \(K\) 就是本页的 \(N\)。SSM 公式里出现的 \(N\) 请一律读作 \(n\)。</div>
+
+<!-- ==================== 5.33 ==================== -->
+<section class="fml" id="eq-5-33">
+<h2><span class="num">(5.33)</span>RoPE 子空间的波长<a class="anchor" href="#eq-5-33">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.2.4 节 Rotary position embedding（RoPE）　<a href="../thellm/11-5-model-architecture.html#5-2-4-position-encoding">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0088.png" alt="原书公式 5.33"><span class="cap">原书公式 5.33</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \lambda_i = 2\pi\, b^{2(i-1)/H} = 2\pi \big/ \theta_i \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\lambda_i\)</td><td>第 \(i\) 个子空间的波长：在这个子空间里转满 \(2\pi\) 所需的相对距离</td><td>标量，单位 token</td></tr>
+<tr><td>\(b\)</td><td>RoPE 的旋转基（base），LLaMA 用 \(b=10^4\)</td><td>标量，&gt;1</td></tr>
+<tr><td>\(i\)</td><td>子空间编号，共 \(H/2\) 个</td><td>整数 \(1\le i\le H/2\)</td></tr>
+<tr><td>\(H\)</td><td>单个注意力头的维度</td><td>正偶整数</td></tr>
+<tr><td>\(\theta_i\)</td><td>第 \(i\) 个子空间的角度步长（每走一个 token 转多少弧度）</td><td>标量，\(\theta_i=b^{-2(i-1)/H}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<p>RoPE 把一个 \(H\) 维头向量劈成 \(H/2\) 个二维平面，第 \(i\) 个平面里的两个分量 \((q_{2i-1},q_{2i})\) 在绝对位置 \(t\) 上被旋转一个角度。回忆 5.2.4 的定义：<b>角度 = 相对距离 × 角度步长</b>，即相对位置为 \(t\) 时第 \(i\) 个子空间的旋转角是 \(f(t,i)=t\,\theta_i\)，而 \(\theta_i=b^{-2(i-1)/H}\)（这是上一页的式 (5.32)）。</p>
+<ol class="steps">
+<li><b>写出"转满一圈"的条件。</b>波长就是让相位走过 \(2\pi\) 的那段距离。设相对距离为 \(t\)，则相位为 \(\varphi(t)=t\,\theta_i\)。要求 \(\varphi(\lambda_i)=2\pi\)：</li>
+</ol>
+<div class="eq">
+\[ \lambda_i\,\theta_i = 2\pi \quad\Longrightarrow\quad \lambda_i = \frac{2\pi}{\theta_i} \]
+</div>
+<ol class="steps" start="2">
+<li><b>代入 \(\theta_i\)。</b>把 \(\theta_i=b^{-2(i-1)/H}\) 代进去，取倒数：\((b^{-2(i-1)/H})^{-1}=b^{2(i-1)/H}\)，于是 \(\lambda_i=2\pi\,b^{2(i-1)/H}\)。两种写法相等，因为原书式 (5.32) 与本页符号表里 \(\theta_i=b^{-2(i-1)/H}\) 是同一条。</li>
+<li><b>取对数看清几何级数结构。</b>\(\log_{b}\lambda_i = \log_b(2\pi)+\frac{2(i-1)}{H}\)。也就是说：子空间编号每加 1，波长乘一个固定因子 \(b^{2/H}\)，是<b>等比</b>而不是等差地拉长。取 \(b=10^4,H=128\) 时 \(b^{2/H}=10^{4/64}\approx1.31\)，即子空间 1 的波长 \(\lambda_1=2\pi\approx6.3\) token，子空间 64 的波长 \(\lambda_{64}=2\pi\cdot10^4\approx6.3\times10^4\) token，相差约一万倍。这个"从 6 个 token 到 6 万个 token"的跨度就是 RoPE 能同时编码局部语法和长程依赖的机制来源。</li>
+</ol>
+
+<div class="note"><b>直觉</b>把每个二维子空间想成一个<b>不同转速的时钟</b>：指针转一圈代表"这个尺度上的一个周期"。高频子空间（\(\lambda\) 小）像秒针，每 6 个 token 转一圈，负责编码"刚才那几个词"；低频子空间（\(\lambda\) 大）像时针，6 万个 token 才转一圈，负责编码"整段文档的结构"。位置信息就是靠这一堆转速不同的时钟的<b>相对相位</b>被注意力分数读出来的。</div>
+<div class="warn"><b>易错点：波长超过窗口的"临界子空间"</b>如果 \(\lambda_i&gt;T_{\max}\)，模型在训练时<b>从来没见过这个子空间转满一整圈</b>，也就是没见过 \((\cos,\sin)\) 在该子空间上的完整取值轨迹。这类子空间被称为<b>临界子空间（critical subspace）</b>。把窗口拉长时它们的相位会跑到训练分布之外，注意力分数就会出现异常值——这正是第 5.4.1 节要动手改 \(\theta_i\) 的直接动因，见 <a href="#eq-5-41">(5.41)</a>。另外注意 \(i\) 只到 \(H/2\)：RoPE 是把头向量<b>成对</b>旋转，不是每个维度独立旋转。</div>
+<div class="relnav">相关：<a href="#eq-5-34">(5.34) ALiBi</a> · <a href="#eq-5-37">(5.37) 旋转角分解</a> · <a href="#eq-5-42">(5.42) 旋转基调整</a> · <a href="04-ch05-arch-b.html#eq-5-32">(5.32) 旋转基 \(\theta_i\) 的定义（上一页）</a></div>
+</section>
+
+<!-- ==================== 5.34 ==================== -->
+<section class="fml" id="eq-5-34">
+<h2><span class="num">(5.34)</span>ALiBi：与距离成正比的注意力偏置<a class="anchor" href="#eq-5-34">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.2.4 节 ALiBi position encoding　<a href="../thellm/11-5-model-architecture.html#5-2-4-position-encoding">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0089.png" alt="原书公式 5.34"><span class="cap">原书公式 5.34</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ A_{ij} = x_i\, W^{Q}\, W^{K\top}\, x_j^{\top} \;-\; m\,(i-j) \]
+</div>
+<div class="eq">
+\[ \text{矩阵形式：}\quad \mathbf{A} \;=\; \mathbf{X}\mathbf{W}^Q(\mathbf{X}\mathbf{W}^K)^{\top} \;-\; m\bigl(\mathbf{r}\mathbf{1}^{\top}-\mathbf{1}\mathbf{r}^{\top}\bigr) \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(A_{ij}\)</td><td>加了 ALiBi 偏置<b>之后</b>、进 softmax <b>之前</b>的注意力分数</td><td>标量</td></tr>
+<tr><td>\(x_i,x_j\)</td><td>第 \(i\)、第 \(j\) 个 token 的输入表示（多头时省略 head 下标）</td><td>\(\mathbb{R}^{1\times H}\)</td></tr>
+<tr><td>\(W^Q,W^K\)</td><td>query / key 投影矩阵</td><td>\(\mathbb{R}^{H\times H}\)</td></tr>
+<tr><td>\(m\)</td><td>该注意力头专属的<b>惩罚系数（斜率）</b>，&gt;0</td><td>标量，不训练</td></tr>
+<tr><td>\(i-j\)</td><td>query 与 key 的<b>相对距离</b>（有符号）</td><td>整数</td></tr>
+<tr><td>\(\mathbf{r}\)</td><td>位置索引向量，\(\mathbf{r}=(0,1,\dots,T-1)^{\top}\)</td><td>\(\mathbb{R}^{T\times1}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>先把标准注意力分数合并成一个投影。</b>标准 scaled dot-product 的分数是 \(s_{ij}=(\mathbf{q}_i)(\mathbf{k}_j)^{\top}\)，其中 \(\mathbf{q}_i=\mathbf{x}_iW^Q\)、\(\mathbf{k}_j=\mathbf{x}_jW^K\)。代入展开：\((\mathbf{x}_iW^Q)(\mathbf{x}_jW^K)^{\top}=\mathbf{x}_iW^Q(W^K)^{\top}\mathbf{x}_j^{\top}\)。原书把两个投影合成一个 \(W^QW^{K\top}\) 来写，这是纯粹的记号合并（\(\mathbf{x}_i\mathbf{x}_j^{\top}\) 是 \(1\times1\) 外积，所以中间矩阵可以从右边"吸"进去）。ALiBi 做的事就是在这个分数上<b>减一项只依赖相对距离的量</b>。</li>
+<li><b>为什么减一个常数项在 softmax 里"免费"？</b>回忆 softmax 的定义 \(\mathrm{softmax}(z)_i=e^{z_i}/\sum_j e^{z_j}\)。若给所有 \(z_j\) 同加一个常数 \(c\)，分子分母同乘 \(e^c\)，\(\mathrm{softmax}(z+c\mathbf{1})=\mathrm{softmax}(z)\)。<b>但 ALiBi 加的不是常数，而是随距离变化的线性项</b>，所以它会真的改变分布：</li>
+</ol>
+<div class="eq">
+\[ p_{ij} \;=\; \frac{\exp\bigl(s_{ij}-m(i-j)\bigr)}{\sum_{j'\le i}\exp\bigl(s_{ij'}-m(i-j')\bigr)} \;=\; \frac{\exp(s_{ij})\,\beta^{\,i-j}}{\sum_{j'\le i}\exp(s_{ij'})\,\beta^{\,i-j'}},\qquad \beta:=e^{-m}\in(0,1) \]
+</div>
+<ol class="steps" start="3">
+<li><b>几何衰减的含义。</b>若某一段距离上 \(s_{ij}\approx\) 常数（即注意力分数本身没有偏好），则 \(p_{ij}\propto\beta^{i-j}\)：这是一个<b>几何（指数）滑动平均</b>，每往回看一个 token 权重乘 \(\beta\)。取 \(m=0.5\) 则 \(\beta\approx0.61\)，有效回溯窗口约 \(1/(1-\beta)\approx2.6\) 个 token；\(m\) 越小看得越远。ALiBi 的全部设计就是：<b>不同 head 用不同的 \(m\)</b>（BLOOM 的实现里 \(m_h=2^{-8h/n_{\mathrm{heads}}}\)，头越靠后衰减越慢），于是一个模型里天然并存"看前一个字"和"看前一万字"的多尺度感受野。</li>
+<li><b>偏置矩阵怎么在代码里一次算出来。</b>令 \(\mathbf{r}\) 为位置索引向量，\(\mathbf{1}\) 为全 1 列向量，则 \((\mathbf{r}\mathbf{1}^{\top}-\mathbf{1}\mathbf{r}^{\top})_{ij}=r_i-r_j=i-j\)。所以整个偏置就是一次广播加法：<code>alibi = slopes[..., None] * arange_tensor</code>，其中 <code>slopes</code> 就是各头的 \(m\)。</li>
+<li><b>长度外推为什么成立。</b>关键在于 \(m(i-j)\) 是相对距离的<b>线性</b>函数：训练时见过的最大距离是 \(D\)，外推到 \(D'&gt;D\) 时，新距离上的偏置就是同一条直线的<b>线性延拓</b>，没有任何"没见过的相位"出现（对比 RoPE 的 \(\sin,\cos\) 会走到训练没覆盖的相位，见 <a href="#eq-5-42">(5.42)</a>）。同时偏置只依赖 \(i-j\) 而不依赖绝对位置，所以整段文本平移位置索引时偏置不变——这正是相对位置编码的定义。</li>
+</ol>
+
+<div class="note"><b>直觉</b>ALiBi 像是给每个注意力头发了一把"尺子"：尺子越粗（\(m\) 越大），越只敢看眼前；尺子越细（\(m\) 越小），越敢看很远。它不往向量里加信息，而是<b>直接给远处的 token 打折</b>——打折这件事不需要训练，而且打折规律可以无限外推。</div>
+<div class="warn"><b>易错点</b>（1）\(m\) <b>不是</b>可学习参数，预训练时就按几何级数定死，所以 ALiBi 不能像 RoPE 那样通过改位置索引来微调窗口。（2）ALiBi 论文强调它"能外推出流畅的长文本"，但流畅 ≠ 理解得好；在需要精确位置检索的任务上，线性衰减本身就会压制远距离信号。（3）原书式 (5.34) 里没有显式的 \(1/\sqrt{H}\) 缩放因子，那个因子在注意力公式里统一出现，这里省略了。</div>
+<div class="relnav">相关：<a href="#eq-5-33">(5.33) RoPE 波长</a> · <a href="#eq-5-37">(5.37) 旋转角分解</a> · <a href="#eq-5-39">(5.39) 位置插值</a> · <a href="03-ch05-arch-a.html#eq-5-6">(5.6) 注意力分数与 softmax（上一页）</a></div>
+</section>
+
+<!-- ==================== 5.35 ==================== -->
+<section class="fml" id="eq-5-35">
+<h2><span class="num">(5.35)</span>MoE 门控：top-k 选择与 softmax 归一化<a class="anchor" href="#eq-5-35">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.2.6 节 Mixture of Experts Model　<a href="../thellm/11-5-model-architecture.html#5-2-6-mixture-of-experts-model">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0095.png" alt="原书公式 5.35"><span class="cap">原书公式 5.35</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ G(x_t) \;=\; \mathrm{softmax}\Bigl(\mathrm{topk}\bigl(x_t\cdot W^G\bigr)\Bigr) \]
+</div>
+<div class="eq">
+\[ \text{展开：}\quad s=W^Gx_t\in\mathbb{R}^{N},\quad S=\mathrm{topk\ index}(s)=\{i:\ s_i\ \text{最大}\ k\ \text{个}\},\quad G(x_t)_i=\begin{cases}\dfrac{e^{s_i}}{\sum_{j\in S}e^{s_j}}, &amp; i\in S\\[6pt] 0, &amp; i\notin S\end{cases} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(G(\cdot)\)</td><td>门控/路由网络，输出长度为 \(N\) 的权重向量</td><td>\(\mathbb{R}^{N}\to[0,1]^N\)</td></tr>
+<tr><td>\(x_t\)</td><td>第 \(t\) 个 token 的输入表示</td><td>\(\mathbb{R}^{1\times H}\)</td></tr>
+<tr><td>\(W^G\)</td><td>门控线性层权重</td><td>\(\mathbb{R}^{H\times N}\)</td></tr>
+<tr><td>\(s=W^Gx_t\)</td><td>token \(x_t\) 对 \(N\) 个专家的打分（logit）</td><td>\(\mathbb{R}^{1\times N}\)</td></tr>
+<tr><td>\(\mathrm{topk}\)</td><td>取打分最大的 \(k\) 个（保留其 logit，其余置为 \(-\infty\)）</td><td>\(\mathbb{R}^{N}\to\mathbb{R}^{N}\)</td></tr>
+<tr><td>\(k\)</td><td>每个 token 实际激活的专家个数</td><td>整数，\(k\le N\)（Mixtral 取 2）</td></tr>
+<tr><td>\(\mathrm{softmax}\)</td><td>\(v\mapsto e^v/\sum_j e^{v_j}\)</td><td>逐元素后归一化</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>第一步：打分。门控就是一个没有偏置、没有激活的线性层。</b>\(s=x_tW^G\in\mathbb{R}^{1\times N}\)。每个分量 \(s_i\) 可以理解为"token \(x_t\) 与专家 \(i\) 的匹配程度"。注意它<b>只有 \(HN\) 个参数</b>，相比一个 FFN 的 \(3Hd_{\mathrm{ffn}}\) 可以忽略。</li>
+<li><b>第二步：top-k 选择。</b>令 \(S=\mathrm{topk\ index}(s)\)，即 \(s\) 最大的 \(k\) 个下标构成集合，\(|S|=k\)。这一步是 <b>hard selection</b>：不连续的、不可微的（梯度为 0），这也是为什么 MoE 的门控本身很难训（见 <a href="#eq-5-36">(5.36)</a> 的辅助损失）。工程上 `topk` 的实现是把未被选中的位置填成 \(-\infty\)（或一个很小的数如 \(-10^{9}\)）。</li>
+<li><b>第三步：为什么"填 \(-\infty\) 再 softmax"就等于"只在被选中的 \(k\) 个上做 softmax"？</b>这是本条公式最值得记的一步。取 \(\varepsilon\to+\infty\)，未被选中的位置 \(z_i=-\varepsilon\)，则
+<div class="eq">\[
+\mathrm{softmax}(z)_i=\frac{e^{z_i}}{\sum_j e^{z_j}}=\frac{e^{z_i}}{e^{-\varepsilon}+\sum_{j\in S}e^{z_j}}\xrightarrow[\varepsilon\to\infty]{}\begin{cases}\dfrac{e^{z_i}}{\sum_{j\in S}e^{z_j}},&amp;i\in S\\[4pt]0,&amp;i\notin S\end{cases}
+\]</div>
+因为 \(e^{-\varepsilon}\to0\)。所以原书写成一行 <code>softmax(topk(·))</code>，展开后正是"未选中者权重为 0"的语义；实际代码里直接写 <code>F.softmax(weights, dim=1)</code>（<code>torch.topk</code> 已经只返回 \(k\) 个了），数学上等价。</li>
+<li><b>第四步：归一化带来两个关键性质。</b>
+<ul>
+<li><b>\(\sum_i G(x_t)_i=1\)：门控权重是概率分布。</b>因为 \(\sum_{j\in S}e^{s_j}/\sum_{j\in S}e^{s_j}=1\)。这使得 <a href="#eq-5-36">(5.36)</a> 的输出是<b>凸组合</b>（权重非负且和为 1 的加权和），不会因为"激活了几个专家"而改变输出范数。</li>
+<li><b>softmax 的平移不变性让数值稳定。</b>\(s_i\) 可以整体减去 \(\max_{j\in S}s_j\)，\(\mathrm{softmax}\) 结果不变。这一步在 fp16/bf16 下是必须的，否则 \(e^{s}\) 溢出。同时它给出梯度：\(\dfrac{\partial \mathrm{softmax}(z)_i}{\partial z_j}=\mathrm{softmax}(z)_i(\delta_{ij}-\mathrm{softmax}(z)_j)\)。</li>
+</ul></li>
+<li><b>为什么是"先 topk 再 softmax"而不是"先 softmax 再 topk"？</b>先 softmax 再取 top-k 会得到 \(\sum_iG_i&lt;1\)（被砍掉的质量丢失），输出被整体缩小，需要额外重标定；而"先 topk 再 softmax"保证 \(\sum_iG_i=1\)。代价是：<b>归一化只在 \(k\) 个之间进行</b>，所以 \(G(x_t)_i\) 的最大值可以低到 \(1/k\)（当 \(k\) 个 logit 完全相同时每个都是 \(1/k\)），而全 softmax 下最大值至少是 \(1/N\)。因此 top-k 路由的权重分布<b>更尖锐</b>，训练更稳，但表达力更受限。GShard/Switch 一类工作还会在打分上加高斯噪声（noisy top-k gating）来鼓励探索。</li>
+</ol>
+
+<div class="note"><b>直觉</b>门控网络是个"分诊台"：病人（token）来了，<b>先量血压（打分）</b>，<b>选出最合适的 \(k\) 个专科</b>，然后<b>在选中者之间按分数比例分配权重</b>。被选中的专科才会被叫来会诊（这才叫"稀疏激活"）。</div>
+<div class="warn"><b>易错点</b>（1）<code>topk</code> 不可微，门控的梯度<b>不会</b>通过"选择"这一步传回去，只能通过 softmax 在被选中的那 \(k\) 个 logit 上回传；未被选中的专家在这一步拿到的梯度是 0。（2）\(W^G\in\mathbb{R}^{H\times N}\) 里 \(N\) 是专家数，<b>不要</b>和隐藏维度 \(H\) 搞混。（3）top-k 之后被丢弃的 token 若不做残差旁路（bypass），输出会缺失信息，工程上通常把溢出容量的 token 直接送进残差连接。</div>
+<div class="relnav">相关：<a href="#eq-5-36">(5.36) MoE 输出与负载均衡</a> · <a href="#eq-5-33">(5.33) RoPE 波长</a></div>
+</section>
+
+<!-- ==================== 5.36 ==================== -->
+<section class="fml" id="eq-5-36">
+<h2><span class="num">(5.36)</span>MoE 输出：被选专家输出的凸组合<a class="anchor" href="#eq-5-36">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.2.6 节 Mixture of Experts Model　<a href="../thellm/11-5-model-architecture.html#5-2-6-mixture-of-experts-model">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0096.png" alt="原书公式 5.36"><span class="cap">原书公式 5.36</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ o_t=\mathrm{MoELayer}(x_t)=\sum_{i=1}^{K} G(x_t)_i\cdot E_i(x_t) \]
+</div>
+<div class="eq">
+\[ \text{负载均衡辅助损失：}\quad \mathcal{L}_{\mathrm{aux}}=\alpha\,N\sum_{i=1}^{N}f_i\,P_i,\qquad f_i=\frac{1}{T}\sum_{t=1}^{T}\mathbb{1}\!\left[i\in S_t\right],\quad P_i=\frac{1}{T}\sum_{t=1}^{T}G(x_t)_i \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(o_t\)</td><td>MoE 层的输出</td><td>\(\mathbb{R}^{1\times H}\)</td></tr>
+<tr><td>\(E_i\)</td><td>第 \(i\) 个专家，一个 FFN 模块</td><td>\(\mathbb{R}^{H}\to\mathbb{R}^{H}\)，参数量 \(E\)</td></tr>
+<tr><td>\(\alpha\)</td><td>辅助损失权重（平衡损失 vs 主任务损失的权衡）</td><td>标量，无量纲，典型 0.01</td></tr>
+<tr><td>\(f_i\)</td><td>被路由到专家 \(i\) 的 token <b>比例</b>（fraction of tokens dispatched）</td><td>标量，\(\sum_i f_i=k\)（top-k 下）或 \(1\)（top-1）</td></tr>
+<tr><td>\(P_i\)</td><td>专家 \(i\) 的<b>平均路由概率</b>（mean gate prob）</td><td>标量，\(\sum_i P_i=1\)</td></tr>
+<tr><td>\(\mathcal{L}_{\mathrm{task}}\)</td><td>主任务损失（交叉熵等）</td><td>标量</td></tr>
+<tr><td>\(C\)</td><td>单个专家的<b>容量</b>（能处理的 token 上限）</td><td>正整数</td></tr>
+</table>
+
+<h3>③ 推导 A：输出为什么是凸组合</h3>
+<ol class="steps">
+<li>因为 \(G(x_t)_i\ge0\) 且 \(\sum_iG(x_t)_i=1\)（见 <a href="#eq-5-35">(5.35)</a> 第 4 步），\(\sum_iG_iE_i(x_t)\) 是一组<b>凸组合</b>：它落在 \(\{E_1(x_t),\dots,E_N(x_t)\}\) 的凸包内。用范数三角不等式可以立刻看到一个有用的界：\(\|o_t\|\le\sum_iG_i\|E_i(x_t)\|\le\max_i\|E_i(x_t)\|\)。这保证了 MoE 不会因为"激活了 \(k\) 个专家"而把激活值放大 \(k\) 倍。</li>
+<li>反向传播时，第 \(i\) 个专家收到的梯度是 \(\dfrac{\partial\mathcal{L}}{\partial E_i}=\sum_t G(x_t)_i\dfrac{\partial\mathcal{L}}{\partial o_t}\)。<b>权重 \(G_i\) 同时充当了"学习率"和"重要性采样比率"</b>：门控给某个专家的权重越大，它这一步的更新幅度越大。这带来一个正反馈——好专家被选得更多、长得更快——所以必须人为加约束把负载压平，这就引出辅助损失。</li>
+</ol>
+
+<h3>③ 推导 B：负载均衡辅助损失，以及 \(f_iP_i\) 的期望为什么是 \(1/N^2\)</h3>
+<ol class="steps">
+<li><b>总损失的形式。</b>训练时优化 \(\mathcal{L}=\mathcal{L}_{\mathrm{task}}+\alpha\,\mathcal{L}_{\mathrm{aux}}\)。\(\mathcal{L}_{\mathrm{aux}}\) 不是主任务的一部分，它是一个<b>正则项</b>，用来在参数空间里推动路由分布变平。注意这是一个启发式的工程设计，<b>不是</b>某个凸问题的最优解；这一点后面 <a href="#eq-5-36">warn</a> 里会点明。</li>
+<li><b>先算 \(\mathbb{E}[f_i]\)。</b>\(f_i=\frac{1}{T}\sum_t\mathbb{1}[i\in S_t]\)。取期望并交换期望与求和（线性性）：
+<div class="eq">\[
+\mathbb{E}[f_i]=\frac{1}{T}\sum_{t=1}^{T}\mathbb{P}(i\in S_t).
+\]</div>
+在"路由对 token 内容近似无差别"的随机路由假设下，任一 token 选中的 \(k\) 专家子集是 \(\binom{N}{k}\) 个等可能集合之一，故 \(\mathbb{P}(i\in S_t)=\frac{k}{N}\)，于是 \(\mathbb{E}[f_i]=k/N\)。top-1 时就是 \(1/N\)。</li>
+<li><b>再算 \(\mathbb{E}[P_i]\)。</b>\(P_i=\frac{1}{T}\sum_tG(x_t)_i\)。若各 logit 近似同分布且对称（路由不针对 \(i\) 特殊），由对称性每个专家的平均概率相同，又 \(\sum_iP_i=1\)，故 \(\mathbb{E}[P_i]=1/N\)。</li>
+<li><b>相乘。</b>若 \(f_i\) 与 \(P_i\) 近似独立（它们由同一批 token 产生，大样本下近似），则
+<div class="eq">\[
+\mathbb{E}[f_iP_i]=\mathbb{E}[f_i]\,\mathbb{E}[P_i]=\frac{k}{N}\cdot\frac{1}{N}=\frac{k}{N^{2}}.
+\]</div>
+top-1（\(k=1\)）时<b>正是 \(1/N^2\)</b>。对 \(i\) 求和：\(\mathbb{E}\!\left[N\sum_i f_iP_i\right]=N\cdot N\cdot\frac{1}{N^{2}}=1\)。这就是论文里"辅助损失的期望值是 1"这个说法的来历——<b>1 是"完全均衡"这个参照点</b>。</li>
+<li><b>不均衡会怎样？给两个极端例子。</b>
+<ul>
+<li><b>完美均衡：</b>\(f_i=P_i=\frac{1}{N}\)，则 \(\sum_if_iP_i=N\cdot\frac{1}{N^{2}}=\frac{1}{N}\)，\(\mathcal{L}_{\mathrm{aux}}=\alpha\)。<b>这是实际可达到的最小值。</b></li>
+<li><b>完全坍缩：</b>所有 token 都只去专家 1，则 \(f_1=P_1=1\)、其余为 0，\(\sum_if_iP_i=1\)，\(\mathcal{L}_{\mathrm{aux}}=\alpha N\)——<b>正好是均衡时的 \(N\) 倍</b>。梯度上，这等价于对专家 1 施加了 \(N\) 倍的有效学习率，于是它更快地变好、吸引更多 token，<b>正反馈会自我放大</b>，最终大量专家变成"死专家"（从未被选中、梯度恒为 0、参数永不更新）。</li>
+</ul></li>
+<li><b>数学上"最小值在哪里"的一个诚实说法。</b>如果 \(f,P\) 是单纯形（\(\sum f_i=\sum P_i=1\)）里的<b>任意</b>两个向量，二次型 \(\sum_if_iP_i\) 的下确界是 0 而非 \(1/N\)（反例：\(N=2\)，\(f=(1,0)\)、\(P=(0,1)\)，此时 \(\sum f_iP_i=0\)）。文献里常引用的 \(\sum_if_iP_i\ge 1/N\) 依赖于额外假设——\(f_i\) 与 \(P_i\) 来自同一批 token 因而"对齐"。所以更稳妥的表述是：<b>均衡时该量取到 \(1/N\)，而实际路由总与均衡有偏差，辅助损失的经验值 &gt; \(1/N\)；它是一个"离均衡有多远"的标量读数，而不是有严格下界的凸目标。</b>如果确实需要<b>保证</b>负载精确均衡，正确的工具是带容量约束的<b>最优传输（optimal transport）/ Sinkhorn 迭代</b>，那才是真正的约束优化问题。</li>
+</ol>
+
+<h3>③ 推导 C：专家容量与 token dropping</h3>
+<ol class="steps">
+<li><b>为什么必须设容量。</b>MoE 的全部速度优势来自"每个 token 只算 \(k\) 个专家"，这要求<b>负载在批内大致均匀</b>，才能保证每个专家的计算量可预测、能在设备上静态分配显存。设一个 batch 有 \(T\) 个 token，容量因子（capacity factor）\(\kappa&gt;1\)，则每专家容量通常取
+<div class="eq">\[
+C=\left\lceil \frac{\kappa\,k\,T}{N}\right\rceil .
+\]</div>
+若负载恰好均衡，\(n_i\approx\frac{kT}{N}\)，取 \(\kappa=1.2\sim1.5\) 给了随机波动留出余量。</li>
+<li><b>溢出怎么处理。</b>设 \(n_i=\sum_t\mathbb{1}[i\in S_t]\) 为专家 \(i\) 实际收到的 token 数，则溢出（丢弃）token 数为 \(d_i=\max(0,n_i-C)\)。总丢弃率 \(D=\frac{\sum_id_i}{kT}\)。工程上有三种处理：<b>(a) 直接丢弃</b>（token 输出缺失，通常配合残差旁路把输入直接送下去）；<b>(b) residual bypass</b>：\(o_t\leftarrow o_t+x_t\)，信息不丢；<b>(c) token 选择</b>：优先保留门控权重大的 token，其余丢。</li>
+<li><b>容量、\(\alpha\) 与丢弃率是同一个三角的三条边。</b>\(\kappa\) 越大丢弃越少但显存/算力越浪费；\(\alpha\) 越大负载越平但主任务损失被干扰越多（Switch Transformer 在 T5 上扫出的经验值是 \(\alpha=0.01\)，<b>这是实验调出来的经验常数，不是推导结果</b>）；丢弃率 \(D\) 则是前两者的<b>因变量</b>。实践上常把目标丢弃率设成 0.05 左右再倒推 \(\kappa\)。</li>
+</ol>
+
+<h3>③ 推导 D：参数量与计算量估算</h3>
+<ol class="steps">
+<li><b>总量与激活量。</b>设 \(N\) 个专家、每专家参数量 \(E\)（一个 SwiGLU-FFN 约 \(E=3Hd_{\mathrm{ffn}}\)：三块矩阵 \(W_{\mathrm{gate}},W_{\mathrm{up}}\in\mathbb{R}^{H\times d_{\mathrm{ffn}}}\)、\(W_{\mathrm{down}}\in\mathbb{R}^{d_{\mathrm{ffn}}\times H}\)）。则
+<ul>
+<li><b>可训练参数量</b>（决定模型容量与显存）：\(\Theta_{\mathrm{total}}\approx N\cdot E+NH\)（门控 \(W^G\) 只占 \(HN\)，可忽略）。</li>
+<li><b>每 token 激活参数量</b>（决定推理算力与显存带宽）：\(\Theta_{\mathrm{act}}\approx k\cdot E+HN\)。</li>
+<li><b>压缩比</b>：\(\Theta_{\mathrm{total}}/\Theta_{\mathrm{act}}=N/k\)。</li>
+</ul></li>
+<li><b>算一份 Mixtral (8×7B) 的账。</b>取 \(H=4096\)、\(d_{\mathrm{ffn}}=14336\)、\(N=8\)、\(k=2\)、\(L=32\) 层：
+<div class="eq">\[
+E=3\times4096\times14336\approx1.76\times10^{8}\ (\text{每专家}),\quad \text{每层 MoE}\approx8\times1.76\times10^{8}\approx1.41\times10^{9},\quad \text{全模型}\approx32\times1.41\times10^{9}\approx4.5\times10^{10}=45\,\mathrm{B}.
+\]</div>
+加上注意力与 embedding 后约 \(46.7\)B，与官方公布的 46.7B 一致；<b>每 token 激活</b> \(2\times1.76\times10^8\times32\approx1.13\times10^{10}\approx12.9\)B，加上注意力约 \(13\)B——正好是官方说的 13B activated。<b>同样的推理算力，容量翻了约 3.6 倍。</b></li>
+<li><b>FLOPs 侧。</b>前向每 token 的矩阵乘 FLOPs \(\approx2\Theta_{\mathrm{act}}\)，训练（含反向）约 \(6\Theta_{\mathrm{total}}\) 次（激活部分只算前向部分）。所以 MoE 的"训练算力/推理算力"比从 dense 模型的 \(\approx3\) 变成 \(\approx3N/k\)，这正是它能把容量和成本解耦的数学原因。</li>
+</ol>
+
+<div class="note"><b>直觉</b>MoE 就是一家有 \(N\) 个专科医生的医院：每个病人只挂 \(k\) 个号（稀疏激活），所以<b>看诊总耗时</b>不变；但<b> doctor's 总数</b>可以很大，等于知识总量变大。辅助损失是"平均号源"考核，防止所有病人都挂同一位医生的号。</div>
+<div class="warn"><b>易错点</b>（1）\(\sum_i f_i=k\ne1\)（top-k 下），文献里有的定义会额外归一化成 \(f_i=\frac{1}{kT}\sum_t\mathbb{1}[i\in S_t]\)，两种写法的 \(\alpha\) 相差 \(k\) 倍，混用会调错 \(\alpha\)。（2）\(\mathcal{L}_{\mathrm{aux}}\) 是<b>启发式正则</b>，与主损失联合后目标非凸、不保证均衡，也不保证全局最优；追求严格均衡请用 Sinkhorn/最优传输。（3）\(\alpha\)、\(\kappa\) 都是<b>实验调出来的经验值</b>。（4）\(E_i\) 的输入输出维度都是 \(H\)，但内部有 \(d_{\mathrm{ffn}}\) 的扩张，所以"专家参数量"是 FFN 的 \(3Hd_{\mathrm{ffn}}\)，不是 \(H^2\)。</div>
+<div class="relnav">相关：<a href="#eq-5-35">(5.35) 门控与 top-k</a> · <a href="#eq-5-44">(5.44) SSM 递推（同样是"稀疏/线性"路线）</a></div>
+</section>
+
+<!-- ==================== 5.37 ==================== -->
+<section class="fml" id="eq-5-37">
+<h2><span class="num">(5.37)</span>RoPE 旋转角 = 相对距离 × 旋转基<a class="anchor" href="#eq-5-37">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.4.1 节 Scaling Positional Encodings　<a href="../thellm/11-5-model-architecture.html#5-4-1-scaling-positional-encodings">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0099.png" alt="原书公式 5.37"><span class="cap">原书公式 5.37</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ f(t,i)=t\cdot\theta_i \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(f(t,i)\)</td><td>第 \(i\) 个子空间上、相对位置为 \(t\) 时的旋转角（弧度）</td><td>标量，弧度</td></tr>
+<tr><td>\(t\)</td><td>相对位置（通常是 key 位置减 query 位置，\(t=j-i\)）</td><td>整数，单位 token</td></tr>
+<tr><td>\(i\)</td><td>子空间编号，\(1\le i\le H/2\)</td><td>整数</td></tr>
+<tr><td>\(\theta_i\)</td><td>第 \(i\) 个子空间的旋转基 / 角度步长</td><td>标量，\(\theta_i=b^{-2(i-1)/H}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>先把 RoPE 的单子空间写出来。</b>第 \(i\) 个子空间是二维平面，位置 \(m\) 对应的旋转矩阵是
+<div class="eq">\[
+R(m\varphi_i)=\begin{pmatrix}\cos(m\varphi_i)&amp;-\sin(m\varphi_i)\\ \sin(m\varphi_i)&amp;\cos(m\varphi_i)\end{pmatrix}=:R(m\varphi_i).
+\]</div>
+整头维度的旋转 \(\mathcal{R}(m)=\mathrm{diag}\bigl(R(m\theta_1),\dots,R(m\theta_{H/2})\bigr)\)，即 \(\mathcal{R}(m)\) 把绝对位置 \(m\) 编码成"每个平面里转了多少角度"。</li>
+<li><b>为什么只需要相对位置？用旋转群的三条性质。</b>
+<ul>
+<li>\(R(\alpha)^{\top}=R(-\alpha)\)（旋转矩阵是正交的，转 \(\alpha\) 的逆就是转 \(-\alpha\)）；</li>
+<li>\(R(\alpha)R(\beta)=R(\alpha+\beta)\)（转角可加）；</li>
+<li>\(R(0)=I\)。</li>
+</ul>
+于是对 query 位置 \(i\)、key 位置 \(j\)：
+<div class="eq">\[
+\mathcal{R}(i)^{\top}\mathcal{R}(j)=\mathcal{R}(-i)\mathcal{R}(j)=\mathcal{R}(j-i).
+\]</div>
+注意力分数里的内积因此变成
+<div class="eq">\[
+\bigl(\mathcal{R}(i)q\bigr)^{\top}\bigl(\mathcal{R}(j)k\bigr)=q^{\top}\underbrace{\mathcal{R}(i)^{\top}\mathcal{R}(j)}_{=\mathcal{R}(j-i)}k=q^{\top}\mathcal{R}(t)k,\qquad t:=j-i .
+\]</div>
+<b>绝对位置消失了，只剩相对距离 \(t\)</b>——这就是 RoPE 能表达相对位置信息的原因，也是它被称为"由绝对位置推导出的相对位置编码"的地方。</li>
+<li><b>把 \(f(t,i)\) 读出来。</b>在 \(\mathcal{R}(t)\) 的第 \(i\) 个平面上，转过的角度是"距离 \(\times\) 该平面的角度步长"。而 RoPE 的设计规定这个步长就是 \(\theta_i=b^{-2(i-1)/H}\)（上一页式 (5.32)），所以
+<div class="eq">\[
+f(t,i)=\underbrace{t}_{\text{距离}}\cdot\underbrace{\theta_i}_{\text{步长}} .
+\]</div>
+</li>
+<li><b>展开成显式的 sin/cos 看清楚它的内容。</b>记 \(q=(q_{2i-1},q_{2i})\)、\(k=(k_{2i-1},k_{2i})\) 为第 \(i\) 个平面上的分量，乘开两个 \(2\times2\) 旋转矩阵再取内积：
+<div class="eq">\[
+(R(\phi)q)^{\top}(R(\phi)k)=\bigl(q_{2i-1}k_{2i-1}+q_{2i}k_{2i}\bigr)\cos\phi+\bigl(q_{2i-1}k_{2i}-q_{2i}k_{2i-1}\bigr)\sin\phi .
+\]</div>
+对 \(i\) 求和，得 \(\sum_i\bigl[\text{(偶项点积)}\cos(t\theta_i)+\text{(交叉项)}\sin(t\theta_i)\bigr]\)。<b>要点：分数里同时出现 \(\cos(t\theta_i)\) 和 \(\sin(t\theta_i)\)，它们都是相对距离 \(t\) 的周期函数，周期恰是 <a href="#eq-5-33">(5.33)</a> 的 \(\lambda_i\)。</b></li>
+</ol>
+
+<div class="note"><b>直觉</b>把每个子空间想成一个"相位盘"，token 每往前走一步，盘上的指针就多转 \(\theta_i\) 弧度。两个 token 之间的距离 \(t\) 换算成指针的<b>相位差</b>，注意力分数就是靠这些相位差算出来的。所以 RoPE 天然只编码相对位置，而"多快转"由 \(\theta_i\) 决定。</div>
+<div class="warn"><b>易错点：这就是 RoPE 不能外推的根源。</b>训练时 \(t\) 只到 \(T_{\max}-1\)，于是所有子空间的相位只覆盖 \([0,(T_{\max}-1)\theta_i]\)。外推到 \(t&gt;T_{\max}\) 时，相位会走到训练时 \(\sin,\cos\) <b>从未取过</b>的值上——低频子空间（\(\theta_i\) 小、\(\lambda_i\) 大）甚至会走完整圈（见 <a href="#eq-5-33">(5.33)</a> 的临界子空间）。模型对那些相位没有任何拟合，注意力分数就会出现异常值、分布崩坏。第 5.4.1 节之后的所有公式，本质都是在回答一个问题：<b>怎样把 \(f(t,i)\) 拉回训练分布内？</b></div>
+<div class="relnav">相关：<a href="#eq-5-33">(5.33) 波长</a> · <a href="#eq-5-38">(5.38) 统一框架</a> · <a href="#eq-5-34">(5.34) ALiBi 的另一种外推思路</a></div>
+</section>
+
+<!-- ==================== 5.38 ==================== -->
+<section class="fml" id="eq-5-38">
+<h2><span class="num">(5.38)</span>外推方法的统一形式：\(f(t,i)=g(t)\,h(i)\)<a class="anchor" href="#eq-5-38">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.4.1 节 Scaling Positional Encodings　<a href="../thellm/11-5-model-architecture.html#5-4-1-scaling-positional-encodings">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0100.png" alt="原书公式 5.38"><span class="cap">原书公式 5.38</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ f(t,i)=g(t)\cdot h(i) \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(g\)</td><td><b>距离修正函数</b>（distance modification）：改"走多远"</td><td>\(\mathbb{Z}_{\ge0}\to\mathbb{R}_{\ge0}\)，\(g(0)=0\)，要求<b>单调不减</b></td></tr>
+<tr><td>\(h\)</td><td><b>旋转基修正函数</b>（rotation base modification）：改"每步转多少"</td><td>\(\{1,\dots,H/2\}\to\mathbb{R}_{\ge0}\)</td></tr>
+<tr><td>\(t,i\)</td><td>相对距离、子空间编号</td><td>整数</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>这是一条"公理化重述"，不是新定理。</b>\(f(t,i)\) 原本是 \(t\) 的线性函数、\(i\) 的指数函数的乘积：\(t\cdot b^{-2(i-1)/H}\)。它天然可以<b>分离</b>成"只依赖 \(t\) 的部分"×"只依赖 \(i\) 的部分"。5.4.1 节所做的，是把这两部分各自替换成一个可设计的函数：把 \(t\to g(t)\) 叫<b>改距离</b>（位置插值、位置截断），把 \(\theta_i\to h(i)\) 叫<b>改基</b>（基调整、基截断）。所以式 (5.38) 是把这两族方法的公共接口抽出来。</li>
+<li><b>验证它能还原原始 RoPE。</b>取 \(g(t)=t\)、\(h(i)=\theta_i=b^{-2(i-1)/H}\)，则 \(g(t)h(i)=t\,\theta_i=f(t,i)\)，与式 (5.37) 完全一致。说明式 (5.38) 是 (5.37) 的严格推广。</li>
+<li><b>后面 6 条公式各自在动哪个因子？</b>
+<ul>
+<li><a href="#eq-5-39">(5.39)</a> 位置插值：只动 \(g\)，\(g(t)=\frac{T_{\max}}{T'_{\max}}t\)；</li>
+<li><a href="#eq-5-40">(5.40)</a> 位置截断：只动 \(g\)，改成分段函数（<b>非线性</b>）；</li>
+<li><a href="#eq-5-42">(5.42)</a> 基调整：只动 \(h\)，\(h(i)=(\alpha b)^{-(i-1)/H}\)；</li>
+<li><a href="#eq-5-43">(5.43)</a> 基截断：只动 \(h\)，改成分段函数（把某些子空间的 \(h\) 直接置 0）。</li>
+</ul></li>
+<li><b>单调性为什么是硬要求。</b>\(g\) 必须单调不减，否则不同位置会映射到同一个（或倒序的）相位，两个相距很远的 token 可能被判为"相邻"，注意力分布直接乱掉。同理 \(h(i)\) 应当随 \(i\) 单调不增（与 \(\theta_i\) 同向），保证"子空间编号越大转得越慢"这个训练时的结构不被破坏。</li>
+<li><b>波长如何随 \(g,h\) 变化（这是理解所有外推方法的关键一步）。</b>\(\lambda_i\) 的定义是"使相位走过 \(2\pi\) 的距离"，即解 \(g(\lambda'_i)\,h(i)=2\pi\)。若 \(g,h\) 都在原点附近近似线性（\(g(t)\approx c_gt\)、\(h(i)\approx\theta_i\)），则
+<div class="eq">\[
+\lambda'_i\approx\frac{2\pi}{c_g\,\theta_i}=c_g^{-1}\lambda_i .
+\]</div>
+<b>所以：只改距离时，所有子空间的波长被同一个因子 \(1/c_g\) 同比拉长；只改基时，第 \(i\) 个子空间的波长变成 \(\lambda'_i=2\pi/h(i)\)。</b>两种做法都达到了"让相位待在训练见过的范围内"这个目的。</li>
+</ol>
+
+<div class="note"><b>直觉</b>式 (5.38) 是一张"配方表"的抬头：<b>角度 = 走了多远 × 每步转多少</b>。想省角度，要么少走（把距离打折，等于把长文本"压缩"进短窗口），要么转慢（把基调小，等于把时钟换慢）。两类方法互不干扰，可以叠加。</div>
+<div class="warn"><b>易错点</b>（1）\(g\) 和 \(h\) 的<b>量纲不同</b>：\(g\) 输出"token 数"（要保持整数或至少单调），\(h\) 输出"弧度/token"（是角度步长），\(f\) 才是弧度。（2）这个框架只描述"怎么算角度"，<b>不含</b>注意力分数本身，也不是任何一种具体算法的实现。（3）\(g\) 与 \(h\) 可以同时非平凡（例如 PI + NTK 组合使用），此时波长被"双重拉长"，容易过头。</div>
+<div class="relnav">相关：<a href="#eq-5-37">(5.37) 旋转角分解</a> · <a href="#eq-5-39">(5.39) 位置插值</a> · <a href="#eq-5-41">(5.41) 约束不等式</a></div>
+</section>
+
+<!-- ==================== 5.39 ==================== -->
+<section class="fml" id="eq-5-39">
+<h2><span class="num">(5.39)</span>位置插值（Position Interpolation, PI）<a class="anchor" href="#eq-5-39">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.4.1 节 Scaling Positional Encodings · Position interpolation　<a href="../thellm/11-5-model-architecture.html#5-4-1-scaling-positional-encodings">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0101.png" alt="原书公式 5.39"><span class="cap">原书公式 5.39</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ g(t)=\frac{T_{\max}}{T'_{\max}}\cdot t \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(T_{\max}\)</td><td>原始（训练时）上下文窗口长度</td><td>整数 token</td></tr>
+<tr><td>\(T'_{\max}\)</td><td>目标（扩展后）上下文窗口长度，&gt;\(T_{\max}\)</td><td>整数 token</td></tr>
+<tr><td>\(g(t)\)</td><td>送进 RoPE 的"压缩后"位置索引</td><td>token，可为小数</td></tr>
+<tr><td>\(s:=T'_{\max}/T_{\max}\)</td><td>扩展倍数（inverse scale factor）</td><td>标量，&gt;1</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>目标写成一个不等式。</b>我们希望：扩展窗口里最远的那个位置 \(t=T'_{\max}\)，在每个子空间上的角度都<b>不超过</b>训练时的最大角度 \(T_{\max}\theta_i\)。结合式 (5.38)（此法只动 \(g\)，\(h(i)=\theta_i\)）：
+<div class="eq">\[
+f(T'_{\max},i)=g(T'_{\max})\,\theta_i\;\le\;T_{\max}\,\theta_i .
+\]</div>
+（这就是 <a href="#eq-5-41">(5.41)</a>，此处提前借用；\(\theta_i&gt;0\) 可以约掉。）</li>
+<li><b>要"用满"预算，就得取等号。</b>\(g(T'_{\max})=T_{\max}\)。同时位置编码必须满足 \(g(0)=0\)，否则序列首 token 的编码会漂移。</li>
+<li><b>在"线性"这个最简假设下解出唯一解。</b>设 \(g\) 是过原点的一次函数 \(g(t)=ct\)（线性是刻意的选择：它保持"距离比例不变"，\(g(t_2-t_1)=c(t_2-t_1)\)，相对距离信息不被扭曲，只是整体缩小了）。代入 \(g(T'_{\max})=T_{\max}\)：
+<div class="eq">\[
+c\,T'_{\max}=T_{\max}\;\Longrightarrow\;c=\frac{T_{\max}}{T'_{\max}}=\frac{1}{s}\quad(s&gt;1).
+\]</div>
+于是得到式 (5.39)。<b>所以 PI 里的 \(T_{\max}/T'_{\max}\) 不是玄学，它就是"让最长位置恰好落回训练边界"的唯一缩放系数。</b></li>
+<li><b>波长怎么变？</b>由 <a href="#eq-5-38">(5.38)</a> 第 5 步，\(c_g=1/s\)，故 \(\lambda'_i=s\,\lambda_i\)。<b>所有子空间的波长被同比拉长 \(s\) 倍</b>——短波长的子空间变得比原来还长，长波长的子空间超出天际。这就是"插值"这个名字的来源：\(T'_{\max}\) 个位置被<b>插值</b>（等距压缩）到 \(T_{\max}\) 个位置上。</li>
+<li><b>为什么叫"分辨率"。</b>关键性质：RoPE 是<b>相位别名（aliasing）</b>编码——两个位置相距 \(\Delta\)，只有当 \(\Delta\theta_i\) 明显小于 \(2\pi\) 时（即 \(\Delta\lesssim\lambda_i/2\)）它们的编码才可区分；一旦 \(\Delta\) 跨过波长，两个位置在子空间 \(i\) 上读数相同，就发生混淆。PI 把波长拉长 \(s\) 倍，等价于<b>把角分辨率从 \(\lambda_i\) 降到 \(s\lambda_i\)</b>：模型原本能区分相隔 6 个 token 的两个位置，现在要相隔 \(6s\) 个才区分得开。\(s\) 越大，能表达的最远距离越长，但位置分辨能力越差。这就是 <code>α</code>（分辨率）— <code>窗口</code> 的经典权衡。</li>
+<li><b>实践中的代价。</b>训练代价极低：原书举的例子是 LLaMA-33B 从 2K 扩到 8K 只需几千个训练步。但注意 \(s=4\) 意味着模型在 2K 窗口内只能用到原来 1/4 的角分辨率，<b>短文本上的表现会退化</b>（相邻 token 的位置编码被压得更近，容易混淆）——原书明确点了这一条负面影响。</li>
+</ol>
+
+<div class="note"><b>直觉</b>把 \(T_{\max}=2048\)、\(T'_{\max}=8192\) 代进去，\(g(t)=t/4\)。效果相当于：<b>把 8192 个 token 的序列，压缩成"长度 2048 的序列"来算位置编码</b>。好处是所有角度都没超出训练范围；坏处是 8192 内的两个 token 现在挤在原来 2048 范围内的四分之一位置上，细节变糊了。</div>
+<div class="warn"><b>易错点</b>（1）\(g(t)=t/s\) 可以是小数，位置编码必须用 <b>float</b> 计算（不能取整），否则短距离的位置编码会大量重复。（2）<code>s=8</code> 之类的比例不能一步到位，实际都是<b>分多次外推</b>（2K→4K→8K→…），每步用上一次微调后的模型继续。（3）PI 只保证"最大角度"不超界，中间所有位置的角度自然也在范围内（因为 \(g\) 单调），所以这个不等式是<b>充分且紧</b>的。（4）PI 与 <a href="#eq-5-40">(5.40)</a> 的截断不同，PI <b>改变所有距离</b>，包括最近的 token；截断只动远距离。</div>
+<div class="relnav">相关：<a href="#eq-5-38">(5.38) 统一框架</a> · <a href="#eq-5-40">(5.40) 位置截断</a> · <a href="#eq-5-41">(5.41) 约束不等式</a></div>
+</section>
+
+<!-- ==================== 5.40 ==================== -->
+<section class="fml" id="eq-5-40">
+<h2><span class="num">(5.40)</span>位置截断：ReRoPE 与 LeakyReRoPE<a class="anchor" href="#eq-5-40">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.4.1 节 Scaling Positional Encodings · Position truncation　<a href="../thellm/11-5-model-architecture.html#5-4-1-scaling-positional-encodings">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0104.png" alt="原书公式 5.40"><span class="cap">原书公式 5.40（cases 环境，第一分支 \(t\) 与第二分支 \(w\)）</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ g(t)=\begin{cases} t, &amp; t\le w;\\[4pt] w, &amp; t&gt;w \ \text{and using ReRoPE};\\[4pt] w+\dfrac{(T_{\max}-w)(t-w)}{T'_{\max}-w}, &amp; t&gt;w \ \text{and using LeakyReRoPE}.\end{cases} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(w\)</td><td>阈值（近端保真长度），\(w\le T_{\max}\)</td><td>整数 token</td></tr>
+<tr><td>\(t\)</td><td>相对距离</td><td>整数 token</td></tr>
+<tr><td>\(T_{\max},T'_{\max}\)</td><td>原窗口 / 扩展窗口长度</td><td>整数 token</td></tr>
+<tr><td>\(\lambda_{\mathrm{leak}}\)</td><td>LeakyReRoPE 的<b>泄漏斜率</b> \(\dfrac{T_{\max}-w}{T'_{\max}-w}\)</td><td>标量，\(\in(0,1)\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>动机：语言有局部性（locality）。</b>token 的语义主要由它附近的窗口决定，远距离的精确位置信息价值低。所以 PI 那种"全局等比压缩"是浪费的——它牺牲了近距离的分辨率，而近距离才是最重要的。位置截断的做法是<b>分段处理</b>：\(t\le w\) 原样保留（保证短文本性能零损失），只对 \(t&gt;w\) 做处理。</li>
+<li><b>ReRoPE 分支：硬截断 \(g(t)=w\)。</b>\(t&gt;w\) 之后一律映射到 \(w\)，等价于把所有"很远"的距离都当成"刚好 \(w\)"。它显然满足角度上界（\(g(t)\le T_{\max}\)）。<b>代价</b>：所有 \(t&gt;w\) 的距离在位置编码上<b>完全无法区分</b>——相距 1 万和相距 2 万的 token 拿到同一个位置编码，模型对超长距离彻底"失明"。</li>
+<li><b>LeakyReRoPE 分支：给远距离留一点"斜率"。</b>设 \(t&gt;w\) 时 \(g(t)=w+\lambda_{\mathrm{leak}}(t-w)\)。为了让 \(g\) 在 \(t=T'_{\max}\) 处<b>恰好用满</b>训练预算（即 \(g(T'_{\max})=T_{\max}\)，对应 <a href="#eq-5-41">(5.41)</a> 取等），代入：
+<div class="eq">\[
+w+\lambda_{\mathrm{leak}}(T'_{\max}-w)=T_{\max}\;\Longrightarrow\;\lambda_{\mathrm{leak}}=\frac{T_{\max}-w}{T'_{\max}-w}\in(0,1).
+\]</div>
+<span class="cap">这一步是式 (5.40) 第三个分支的来源。</span>因为 \(T'_{\max}&gt;T_{\max}\)、\(w\le T_{\max}\)，分子分母都为正且分子更小，故 \(0&lt;\lambda_{\mathrm{leak}}&lt;1\)：远距离仍在被压缩，但<b>压缩得比 PI 温和得多</b>（PI 的全局系数是 \(T_{\max}/T'_{\max}\)；这里阈值内系数是 1，阈值外是 \(\lambda_{\mathrm{leak}}&gt;T_{\max}/T'_{\max}\)）。</li>
+<li><b>"Re"（Rectified）与"Leaky"（泄漏）这两个名字。</b>ReRoPE = rectified（矩形/硬截断），远距离信息被"截断"丢掉；LeakyReRoPE = 像 Leaky ReLU 那样留一条小的线性通道，让远距离至少能<b>单调有序</b>地排列，模型仍能分辨"更远"vs"更近"。</li>
+<li><b>单调性检查。</b>\(g\) 的斜率：第一段 1，第二段 0（ReRoPE）或 \(\lambda_{\mathrm{leak}}\in(0,1)\)（Leaky）。两段都在 \(t=w\) 处取到值 \(w\)，<b>函数连续</b>，且斜率从 1 降到 \(\le1\) 仍单调不减，满足 <a href="#eq-5-38">(5.38)</a> 对 \(g\) 的要求。注意 \(g\) 在 \(t=w\) 处<b>不可导</b>（折点），但 RoPE 只用 \(g(t)\) 的值、不用其导数，所以不影响实现。</li>
+</ol>
+
+<div class="note"><b>直觉</b>把位置编码想成一把<b>有刻度的尺子</b>。尺子的前 \(w\) 厘米是原厂精度，一毫米一格；再往后只有两种处理：ReRoPE 直接说"超过 \(w\) 的一律算 \(w\) 厘米"（尺子到头了），LeakyReRoPE 说"超过 \(w\) 的按 \(\lambda_{\mathrm{leak}}\) 的比例继续往后刻"（尺子变粗了但还有刻度）。前者丢失远端分辨力，后者保住了单调性。</div>
+<div class="warn"><b>易错点</b>（1）\(w\) 是超参，不能太大：\(w\) 越接近 \(T_{\max}\)，\(\lambda_{\mathrm{leak}}=(T_{\max}-w)/(T'_{\max}-w)\) 越接近 0，退化成 ReRoPE；\(w\) 太小则近端分辨率也被牺牲，PI 的毛病又回来了。（2）\(w\le T_{\max}\) 这个约束是<b>必须</b>的，否则阈值内的原始角度就可能超界。（3）\(g(t)\) 在 \(t&gt;w\) 时可以是<b>小数</b>（\(w+\lambda(t-w)\) 一般不是整数），要保证位置编码用浮点。（4）LeakyReRoPE 的"泄漏"是有代价的：它假设远距离信息<b>单调有用</b>，当远端 token 的位置顺序本身携带信息（如倒叙、多文档拼接）时可能有害。</div>
+<div class="relnav">相关：<a href="#eq-5-39">(5.39) 位置插值</a> · <a href="#eq-5-41">(5.41) 约束不等式</a> · <a href="#eq-5-42">(5.42) 基调整</a></div>
+</section>
+
+<!-- ==================== 5.41 ==================== -->
+<section class="fml" id="eq-5-41">
+<h2><span class="num">(5.41)</span>旋转基方法必须满足的约束不等式<a class="anchor" href="#eq-5-41">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.4.1 节 Scaling Positional Encodings · Rotation Base Modification　<a href="../thellm/11-5-model-architecture.html#5-4-1-scaling-positional-encodings">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0106.png" alt="原书公式 5.41"><span class="cap">原书公式 5.41</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ f(T'_{\max},i)=T'_{\max}\cdot h(i)\;\le\;T_{\max}\cdot\theta_i \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(T'_{\max}\)</td><td>扩展后的最长相对距离</td><td>整数 token</td></tr>
+<tr><td>\(T_{\max}\)</td><td>训练时的最长相对距离</td><td>整数 token</td></tr>
+<tr><td>\(h(i)\)</td><td>修正后的旋转基</td><td>标量，弧度/token</td></tr>
+<tr><td>\(\theta_i\)</td><td>原始旋转基</td><td>标量，\(\theta_i=b^{-2(i-1)/H}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>为什么只检查端点 \(t=T'_{\max}\) 就够了？</b>这一族的做法是 \(g(t)=t\)（<b>不改距离</b>，完全保留相对位置的绝对刻度），只把 \(\theta_i\) 换成 \(h(i)\)。于是 \(f(t,i)=t\,h(i)\)。要让它对所有 \(t\le T'_{\max}\) 都满足 \(f(t,i)\le T_{\max}\theta_i\)，充分必要条件是对<b>最大的 \(t\)</b> 成立——因为 \(f(t,i)\) 关于 \(t\) 线性单调，左边最大就在 \(t=T'_{\max}\) 取到。这与 <a href="#eq-5-39">(5.39)</a> 的推导是同一套逻辑，只是把待定量从 \(g(T'_{\max})\) 换成了 \(h(i)\)。</li>
+<li><b>解不等式得到对 \(h\) 的要求。</b>
+<div class="eq">\[
+T'_{\max}h(i)\le T_{\max}\theta_i\;\Longleftrightarrow\;h(i)\le\frac{T_{\max}}{T'_{\max}}\,\theta_i .
+\]</div>
+所以"改基"这一族的全部自由度就是：<b>把每个子空间的旋转基至少按 \(T_{\max}/T'_{\max}\) 的比例压小</b>。等价地，波长必须满足 \(\lambda'_i=2\pi/h(i)\ge s\,\lambda_i\)。</li>
+<li><b>为什么还要保留"波长"这个视角？</b>约束的物理含义是：<b>临界子空间的问题必须被消除</b>。原文明确指出，若 \(\lambda_i&gt;T_{\max}\)，该子空间在训练时连一个完整周期都没见过。设 \(h(i)=\beta\,\theta_i\)（均匀压 \(\beta\) 倍），则 \(\lambda'_i=\lambda_i/\beta\)。要让最大的波长也满足 \(\lambda'_i\ge\lambda_i\cdot s=s\lambda_{H/2}\)，最省事的取法是让"波长最长的子空间刚好被拉长到 \(s\) 倍"，其余子空间自然都被拉长至少 \(s\) 倍。这正是下一条式 (5.42) 的来历。</li>
+</ol>
+
+<div class="note"><b>直觉</b>这条不等式是"改基"这一族的<b>验收标准</b>：把新的基代进去，最远位置的相位必须不超过训练时的相位最大值。文献里常见的说法"波长要被拉长到原来的 \(s\) 倍"，就是这条不等式在 \(h(i)=\theta_i/s\) 取等号时的特例；而式 (5.42) 会用一个更聪明的方式取等号——<b>不是所有子空间都压 \(\beta\) 倍，而是压出一个几何级数</b>。</div>
+<div class="warn"><b>易错点</b>（1）这条不等式<b>只是必要条件</b>，不是充分条件：满足它只能保证相位不超界，不能保证模型在那些相位上有正确的语义——所以"改基"类方法通常仍需少量长文本微调效果才好。（2）\(h(i)\) 不能取 0 附近（除 <a href="#eq-5-43">(5.43)</a> 故意置 0 的极端情形），否则该子空间退化成常量、丧失位置信息。（3）<b>不改距离</b>是这一族的隐含前提；如果同时缩放 \(g\)，不等式右端要改成 \(T_{\max}\theta_i/c_g\) 之类，不能照搬。</div>
+<div class="relnav">相关：<a href="#eq-5-42">(5.42) 基调整</a> · <a href="#eq-5-43">(5.43) 基截断</a> · <a href="#eq-5-39">(5.39) 位置插值（另一种满足约束的方式）</a></div>
+</section>
+
+<!-- ==================== 5.42 ==================== -->
+<section class="fml" id="eq-5-42">
+<h2><span class="num">(5.42)</span>旋转基调整：\(h(i)=(\alpha b)^{-(i-1)/H}\)<a class="anchor" href="#eq-5-42">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.4.1 节 Scaling Positional Encodings · Base adjustment　<a href="../thellm/11-5-model-architecture.html#5-4-1-scaling-positional-encodings">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0107.png" alt="原书公式 5.42"><span class="cap">原书公式 5.42</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ h(i)=(\alpha\cdot b)^{-(i-1)/H} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\alpha\)</td><td>基放大倍数，\(\alpha\ge1\)（NTK-RoPE 取 \(\alpha=s^{H/(H-2)}\)）</td><td>标量，≥1</td></tr>
+<tr><td>\(b\)</td><td>原始旋转基</td><td>标量，&gt;1</td></tr>
+<tr><td>\(i\)</td><td>子空间编号 \(1\le i\le H/2\)</td><td>整数</td></tr>
+<tr><td>\(H\)</td><td>头维度</td><td>正偶整数</td></tr>
+<tr><td>\(h(i)\)</td><td>新旋转基</td><td>标量，弧度/token</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>把"增大基"翻译成公式。</b>式 (5.32) 是 \(\theta_i=b^{-2(i-1)/H}\)。所谓"增大基"就是把里面的 \(b\) 换成 \(\alpha b\)：\(\theta_i\mapsto(\alpha b)^{-2(i-1)/H}\)。但式 (5.42) 写的是 \((\alpha b)^{-(i-1)/H}\)，指数里少了一个 2。这个差别不是笔误，而是<b>约定差异</b>：原书把"每个子空间"编号成 \(1,\dots,H/2\) 时，把式 (5.32) 里的 \(-2(i-1)/H\) 理解为"对 \((i-1)/H\) 取指数、再作用在 \(b\) 上"，等价于把 \(b\) 换成 \(\sqrt{\alpha}\,b\) 之类。<b>真正起作用的只有一个东西：新旧基的比值</b>
+<div class="eq">\[
+\frac{h(i)}{\theta_i}=\frac{(\alpha b)^{-(i-1)/H}}{b^{-2(i-1)/H}}=\alpha^{(i-1)/H}\cdot b^{(i-1)/H}\quad\text{（按本页记号）},
+\]</div>
+无论指数写成 \(-(i-1)/H\) 还是 \(-2(i-1)/H\)，得到的都是"第 \(i\) 个子空间的角度被额外乘上一个随 \(i\) 单调变化的因子"。下面只依赖这个比值。</li>
+<li><b>新波长是多少？</b>沿用 \(\lambda=2\pi/\theta\)：
+<div class="eq">\[
+\lambda'_i=\frac{2\pi}{h(i)}=\frac{2\pi}{(\alpha b)^{-(i-1)/H}}=2\pi\,\alpha^{(i-1)/H}b^{(i-1)/H},
+\]</div>
+与原波长 \(\lambda_i=2\pi b^{2(i-1)/H}\) 相比，<b>指数从"正比于 \((i-1)/H\)"变成了"反比于 \((i-1)/H\)"</b>。也就是说：调整后<b>高频子空间（\(i\) 小）波长变化很小，低频子空间（\(i\) 大）波长被大幅拉长</b>。这正是我们想要的——临界子空间恰恰是那些 \(\lambda_i\) 最大的低频子空间（见 <a href="#eq-5-33">(5.33)</a>），拉长它们就够了。</li>
+<li><b>\(\alpha\) 怎么定？看约束不等式。</b>把 <a href="#eq-5-41">(5.41)</a> 里的约束 \(T'_{\max}h(i)\le T_{\max}\theta_i\) 写成
+<div class="eq">\[
+\frac{h(i)}{\theta_i}\le\frac{1}{s},\qquad s:=\frac{T'_{\max}}{T_{\max}}.
+\]</div>
+代入 (5.42) 的比值表达式，最紧的那个子空间（\(i\) 最大，\(\lambda_i\) 最长）决定了 \(\alpha\) 的下界。NTK-RoPE（Neural Tangent Kernel–aware RoPE）给出的取法是
+<div class="eq">\[
+\alpha=s^{\frac{H}{H-2}},
+\]</div>
+理由是一个"NTK 视角"的启发：RoPE 的插值精度损失应与 \(\log s\) 成正比，而注意力核的谱衰减速率约 \(2/H\)，令二者相抵即得该指数。Dynamic-NTK-RoPE 则是按<b>实际输入长度</b> \(T\) 动态取 \(\alpha=\max(1,T/T_{\max})\)，序列短时不动基、长了才放大。</li>
+<li><b>一个反直觉但重要的性质：\(h(i)\) 对 \(i\) 的依赖方向变了。</b>原始 \(\theta_i\) 是 \(b^{-2(i-1)/H}\)，随 \(i\) 增大而<b>减小</b>（越后面的子空间转得越慢）；而式 (5.42) 的 \(h(i)=(\alpha b)^{-(i-1)/H}\) 形式上是<b>增大</b>的。要让实际角度不超界，正确读法是把 (5.42) 理解为"新的基常数从 \(b\) 变成 \(\alpha b\)"，其余一切保持 <a href="#eq-5-33">(5.33)</a> 的 \(\lambda=2\pi/\theta\) 结构不变——于是所有波长都乘上 \(\sqrt{\alpha}\)（按 \(\theta_i=b^{-2(i-1)/H}\) 的约定）或 \(\alpha\)（按 (5.42) 的字面约定）。<b>两种读法的工程含义一致：整体把时钟调慢。</b>原书在本节末尾补充：\(b\) 直接取 \(10^8\) 这类更大的值通常效果更好，这与"增大基"是同一件事。</li>
+</ol>
+
+<div class="note"><b>直觉</b>NTK-aware 的思路是"<b>高频不动、低频调慢</b>"：近处 token 的精细位置分辨率保住了（不损失短文本性能），只把那些"波长长到没被训练过"的低频子空间拉长。这与 <a href="#eq-5-40">(5.40)</a> 的"近处不动、远处压缩"是<b>互补的两个方向</b>（一个动基、一个动距离），二者可以叠加使用。</div>
+<div class="warn"><b>易错点</b>（1）\(\alpha\) 的<b>指数依赖实现</b>：\(\alpha=s^{H/(H-2)}\) 与 \(\alpha=s^{H/2}\) 只差一点，但效果差异不小；换 head dim 时必须同步改。（2）原书明确说明"不同方法采用不同的 \(\alpha\)"，所以 <b>\(\alpha\) 是经验超参</b>，不是从约束推出的唯一解。（3）这条路线<b>不改距离</b>，所以 \(s\) 很大时（如 \(s=64\)）仍可能不够，实践中常配合长文本微调。（4）\(\alpha\ge1\) 是硬要求：\(\alpha&lt;1\) 会让基变大、转得更快，等于反向缩短窗口。</div>
+<div class="relnav">相关：<a href="#eq-5-41">(5.41) 约束不等式</a> · <a href="#eq-5-43">(5.43) 基截断</a> · <a href="#eq-5-33">(5.33) 波长</a> · <a href="#eq-5-40">(5.40) 位置截断</a></div>
+</section>
+
+<!-- ==================== 5.43 ==================== -->
+<section class="fml" id="eq-5-43">
+<h2><span class="num">(5.43)</span>旋转基截断（Rotation base truncation）<a class="anchor" href="#eq-5-43">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.4.1 节 Scaling Positional Encodings · Rotation basis truncation　<a href="../thellm/11-5-model-architecture.html#5-4-1-scaling-positional-encodings">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0109.png" alt="原书公式 5.43（cases 环境，中间分支 \(\beta\)）"><span class="cap">原书公式 5.43</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ h(i)=\begin{cases} \theta_i, &amp; \theta_i\ge c;\\[4pt] \beta, &amp; a\le\theta_i\le c;\\[4pt] 0, &amp; \theta_i\le a.\end{cases} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\theta_i\)</td><td>原始旋转基（用来和两个阈值比大小）</td><td>标量，\(\theta_i=b^{-2(i-1)/H}\)</td></tr>
+<tr><td>\(c\)</td><td>上阈值：\(\theta_i\) <b>大于</b>它就<b>不动</b></td><td>标量，小正数</td></tr>
+<tr><td>\(a\)</td><td>下阈值：\(\theta_i\) <b>小于</b>它就<b>置零</b></td><td>标量，小正数，\(a&lt;c\)</td></tr>
+<tr><td>\(\beta\)</td><td>中间区的固定基值，\(a&lt;\beta&lt;c\)</td><td>标量</td></tr>
+<tr><td>\(h(i)\)</td><td>截断后的旋转基</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>为什么要"截断基"而不是"整体缩放基"？</b>因为 \(\theta_i=b^{-2(i-1)/H}\) 是<b>指数</b>分布的：少数低频子空间的 \(\theta_i\) 极小（波长极长，是没训过的临界子空间），绝大多数子空间的 \(\theta_i\) 都在 1 附近附近。整体缩放（式 5.42）会把所有子空间一起调慢，<b>牺牲了大量本不需要动的子空间</b>。截断的思路是"只动病号"：设两个阈值 \(a&lt;c\)，只对 \(\theta_i\) 落在 \([a,c]\) 这段"病灶区"的子空间动手。</li>
+<li><b>三个分支分别在做什么。</b>
+<ul>
+<li><b>\(\theta_i\ge c\)（高频子空间）：保持 \(\theta_i\)。</b>波长 \(\lambda_i=2\pi/\theta_i\le2\pi/c\)，本来就短、训练时已经见过好几个周期，没必要动。</li>
+<li><b>\(a\le\theta_i\le c\)（临界子空间）：压到固定值 \(\beta\)。</b>取 \(\beta&gt;a\) 是把它<b>变小</b>（变小 = 波长变长），从而把角度拉回训练范围。这正是满足 <a href="#eq-5-41">(5.41)</a> 的 \(h(i)\le\frac{T_{\max}}{T'_{\max}}\theta_i\)：取 \(\beta=\frac{T_{\max}}{T'_{\max}}a\) 就能让这一段的下端点刚好取等号，<b>整段都满足约束</b>。</li>
+<li><b>\(\theta_i\le a\)（波长长得离谱的子空间）：直接置 \(0\)。</b>\(h(i)=0\Rightarrow f(t,i)=t\cdot0=0\)，该子空间的 \(q,k\) 分量<b>完全不旋转</b>，也不携带任何位置信息。物理含义：这些子空间负责的尺度远超窗口，与其给它们一个训练没见过的慢转速、让注意力分数乱掉，不如<b>干脆放弃这个尺度</b>，只保留"无位置信息"的恒等分量。它们的表达能力并未消失，而是由第一分支那些高频子空间以更精细的方式承担。</li>
+</ul></li>
+<li><b>单调性检查（关键）。</b>\(\theta_i\) 随 \(i\) 单调不增，所以子空间编号从小到大依次经过"第一分支 → 第二分支 → 第三分支"，对应的 \(h(i)\) 依次是 \(\theta_i\to\beta\to0\)。<b>要保证 \(h(i)\) 整体单调不增，必须有 \(\theta_i\big|_{\theta_i\ge c}\ge\beta\ge0\)</b>，即第一分支的最小值（恰为 \(c\)）要 \(\ge\beta\)。所以阈值和 \(\beta\) 的取值顺序是 \(c\ge\beta\ge a&gt;0\)；原书只说"压到一个更小的固定值"，实际实现必须自己检查这个次序，否则位置编码在不同子空间间会出现非单调的跳变。</li>
+<li><b>参数怎么选？两条独立的线。</b>(a) <b>约束线</b>：\(\beta\le\frac{T_{\max}}{T'_{\max}}a\)，由 <a href="#eq-5-41">(5.41)</a> 决定，保证不超界；(b) <b>语义线</b>：\(a\) 取多小决定了"放弃多少个尺度"，要靠长文本微调或验证集来定。原文明确承认这是<b>启发式</b>方法，并指出它"在一定程度上削弱了子空间区分不同位置索引的能力，可能对性能不利"——指的就是 \(\theta_i\) 一律变成 \(\beta\) 后，这些子空间对不同位置给出几乎相同的 \((\cos,\sin)\) 读数。</li>
+</ol>
+
+<div class="note"><b>直觉</b>想象一个车队（子空间）各有各的车速（\(\theta_i\)）。绝大多数车速度正常，不用管；几辆车速度慢到"开到窗口尽头还没绕回起点一圈"（临界子空间），把它们的里程表统一换成"慢速档"（\(\beta\)）；还有极少数车慢到毫无意义（\(\theta_i\le a\)），干脆拆掉里程表（\(h=0\)），让它们纯跑不表——反正窗口内也不会绕圈。</div>
+<div class="warn"><b>易错点</b>（1）三个分支的条件必须覆盖全部 \(i\) 且互不重叠：要求 \(a&lt;c\)，写代码时用 <code>theta &gt;= c</code> / <code>a &lt;= theta &lt;= c</code> / <code>theta &lt;= a</code>，注意中间分支的等号与第一分支重叠，需改成 <code>theta &lt; c</code>（原书印的是 \(\le\)）。（2）\(\beta\) 不是自由超参，它被约束线卡住（见第 3 步）。（3）\(h(i)=0\) 会让该子空间彻底丧失位置分辨能力，如果 \(a\) 取得太大（比如 \(a=0.1\)，而 \(b^{2/H}\) 量级就在 1 附近），会一次性废掉大量子空间。（4）\(\theta_i\) 是<b>随 head dim \(H\) 变化</b>的，改 \(H\) 时 \(a,c,\beta\) 必须重新标定。</div>
+<div class="relnav">相关：<a href="#eq-5-42">(5.42) 基调整</a> · <a href="#eq-5-41">(5.41) 约束不等式</a> · <a href="#eq-5-33">(5.33) 波长与临界子空间</a></div>
+</section>
+
+<!-- ==================== 5.44 ==================== -->
+<section class="fml" id="eq-5-44">
+<h2><span class="num">(5.44)</span>离散状态空间模型的递推：状态更新与读出<a class="anchor" href="#eq-5-44">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.5.1 节 Parameterized State Space Model　<a href="../thellm/11-5-model-architecture.html#5-5-1-parameterized-state-space-model">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0114.png" alt="原书公式 5.44"><span class="cap">原书公式 5.44</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \begin{aligned} S_t &amp;= A\otimes S_{t-1}+B\otimes x_t,\\[4pt] y_t &amp;= C\otimes S_t,\end{aligned} \]
+</div>
+<div class="eq">
+\[ A\in\mathbb{R}^{H\times n\times n},\quad B\in\mathbb{R}^{H\times n\times 1},\quad C\in\mathbb{R}^{H\times 1\times n} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(S_t\)</td><td>第 \(t\) 步的隐状态；<b>每个 head 一份</b>（这就是 SSM 的"多通道"）</td><td>\(\mathbb{R}^{H\times n\times1}\)</td></tr>
+<tr><td>\(A\)</td><td>状态转移矩阵（state transition），可训练</td><td>\(\mathbb{R}^{H\times n\times n}\)</td></tr>
+<tr><td>\(B\)</td><td>输入投影矩阵（把 \(x_t\) 抬到状态空间）</td><td>\(\mathbb{R}^{H\times n\times1}\)</td></tr>
+<tr><td>\(C\)</td><td>读出矩阵（把状态压回 \(H\) 维）</td><td>\(\mathbb{R}^{H\times1\times n}\)</td></tr>
+<tr><td>\(x_t\)</td><td>第 \(t\) 个 token 的输入</td><td>\(\mathbb{R}^{H\times1\times1}\)</td></tr>
+<tr><td>\(y_t\)</td><td>第 \(t\) 个输出</td><td>\(\mathbb{R}^{H\times1\times1}\)</td></tr>
+<tr><td>\(n\)</td><td><b>状态维数</b>（原书记作 \(N\)），SSM 的"记忆容量"</td><td>正整数</td></tr>
+<tr><td>\(\otimes\)</td><td>批量矩阵乘（batched matmul）：\(H\) 个头各做一个 \(n\times n\) 乘法</td><td>—</td></tr>
+</table>
+
+<h3>③ 推导：从连续时间方程到这一步</h3>
+<p>式 (5.44) 不是凭空来的，它是<b>连续时间线性状态空间方程</b>离散化后的样子。完整推导见 <a href="#ssm-cont">补充 A</a>（通解）与 <a href="#ssm-zoh">补充 B</a>（零阶保持离散化）。这里先把链条列出来，再解释每一环的含义：</p>
+<div class="eq">
+\[ \frac{\mathrm{d}\mathbf{h}(t)}{\mathrm{d}t}=A\mathbf{h}(t)+B\,x(t),\qquad \mathbf{y}(t)=C\,\mathbf{h}(t)\;\xrightarrow[\text{零阶保持}]{\Delta}\;\bar A=e^{\Delta A}\;\xrightarrow{\text{逐点取样}}\;S_t=\bar AS_{t-1}+\bar Bx_t,\;\;y_t=CS_t \]
+</div>
+<ol class="steps">
+<li><b>连续时间方程在说什么。</b>\(\mathbf{h}'=A\mathbf{h}+Bx\) 是一个<b>一阶线性常微分方程</b>，等价于"一阶滤波器/一阶马尔可夫链"：状态 \(\mathbf{h}\) 以速率 \(A\) 自己衰减，同时按速率 \(B\) 被输入 \(x\) 推动；输出是状态 \(C\) 的线性读出。对单个标量状态 \(h'=ah+bx\)，解是 \(h(t)=e^{at}h(0)+\int_0^te^{a(t-\tau)}b\,x(\tau)\,\mathrm{d}\tau\)——<b>"指数衰减的历史"之和</b>。这就是 SSM 全部的记忆机制：它用 \(n\) 个指数衰减滤波器（极点 = \(A\) 的特征值）来做带通滤波。</li>
+<li><b>为什么要离散化。</b>文本 token 是离散序列，没有连续时间轴。做法：假设在一个 token 的时间跨度 \(\Delta\) 内输入 \(x_t\) <b>保持不变</b>（零阶保持，ZOH），在区间 \([t\Delta,(t+1)\Delta)\) 上解上面的 ODE 并在 \(t+1\) 处取样。</li>
+<li><b>离散化结果。</b>把 \(\mathbf{h}((t+1)\Delta)\) 记作 \(S_{t+1}\)，代入通解 \(\mathbf{h}(\tau)=e^{A\tau}\mathbf{h}(0)+\int_0^\tau e^{A(\tau-s)}Bs\,\mathrm{d}s\)，并利用零阶保持 \(\int_0^\Delta e^{Au}\,\mathrm{d}u=A^{-1}(e^{\Delta A}-I)\)（推导见 <a href="#ssm-zoh">补充 B</a>）：
+<div class="eq">\[
+S_t=e^{\Delta A}S_{t-1}+\underbrace{A^{-1}(e^{\Delta A}-I)B}_{\textstyle \bar B}\,x_t .
+\]</div>
+即式 (5.44) 的第一行，其中 \(\bar A=e^{\Delta A}\)、\(\bar B\) 如上。原书把 \(\bar A,\bar B\) 直接简记为 \(A,B\)，并约定 \(y_t=CS_t\) 不需要额外因子（因为 \(C\) 已经是可训练的，读出缩放被吸收进 \(C\) 里）。</li>
+<li><b>\(\otimes\) 为什么要多一个 \(H\) 维。</b>每个注意力 head 拥有<b>自己独立的</b>\((A,B,C)\)——这正是 SSM 版的"多头"（原书把 \(H\) 叫"输入表示的维度"）。所以三个矩阵都是 \(\mathbb{R}^{H\times\cdots}\) 的批量张量，\(\otimes\) 表示对这 \(H\) 个头<b>并行地</b>做矩阵乘，而不是把 \(H\) 折进特征维。这是与标准多头注意力"每个头有自己的 \(W^Q,W^K,W^V\)"完全对应的设计。</li>
+<li><b>参数量对照。</b>每个 head：\(n^2+n+n\approx n^2\) 个参数；\(H\) 个 head 共 \(Hn^2\) 个。取 \(n=16\)、\(H=4096\)：\(4096\times16^2\approx1.05\times10^6\)，比同一层注意力的 \(4H^2\approx6.7\times10^7\) <b>小两个数量级</b>。SSM 便宜就在这里——它用"少量长记忆滤波器"代替"两两交互矩阵"。</li>
+</ol>
+
+<div class="note"><b>直觉</b>状态空间模型就是一组<b>带通滤波器</b>：\(A\) 的每个特征值 \(\lambda\) 对应一个衰减率 \(\mathrm{Re}(\lambda)\)，状态 \(S\) 的第 \(n\) 个分量就是一个"记住最近若干个 token 的加权和"的滑窗（权重大致按 \(\lambda^k\) 衰减）。整个 SSM 层 = <b>\(H\) 组、每组 \(n\) 个这样的滤波器并行跑</b>。注意力是"两两比较"，SSM 是"带通滤波"——后者只需 \(O(1)\) 状态就能做长程聚合。</div>
+<div class="warn"><b>易错点</b>（1）\(A\) 通常被约束成 <b>对角</b>（甚至对角元为 \(-e^{\lambda},\ \mathrm{Re}\lambda&gt;0\)，保证稳定衰减）；写成对角矩阵后 \(e^{\Delta A}\) 可以<b>逐元素</b>计算，不必做矩阵指数，这是 S4 的关键实现技巧。（2）\(\Delta\) 常被设为可学习标量（如 \(A=-\mathrm{exp}(a)\)、\(\Delta=\mathrm{softplus}(\Delta_{\text{param}})\)，保证正）。（3）\(S_{t-1}\) <b>只保留一个</b>：这就是 RNN 式解码为什么是 \(O(1)\) 状态；训练时若用卷积形式则不需要存状态。（4）这里的 \(n\) 是原书的 \(N\)，别和 MoE 的专家数 \(N\) 混淆。</div>
+<div class="relnav">相关：<a href="#ssm-cont">补充 A：连续时间 SSM 从头推</a> · <a href="#ssm-zoh">补充 B：离散化与 FFT</a> · <a href="#eq-5-45">(5.45) 展开成卷积和</a> · <a href="#eq-5-36">(5.36) MoE（另一种省算力的思路）</a></div>
+</section>
+
+<!-- ==================== 5.45 ==================== -->
+<section class="fml" id="eq-5-45">
+<h2><span class="num">(5.45)</span>把递推展开成因果卷积和<a class="anchor" href="#eq-5-45">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.5.1 节 Parameterized State Space Model　<a href="../thellm/11-5-model-architecture.html#5-5-1-parameterized-state-space-model">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0116.png" alt="原书公式 5.45"><span class="cap">原书公式 5.45</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \begin{aligned} y_t &amp;= C\otimes S_t = C\otimes A\otimes\bigl(A\otimes S_{t-2}+B\otimes x_{t-1}\bigr)+C\otimes B\otimes x_t\\[4pt] &amp;= C\otimes A^{t-1}\otimes B x_1+\cdots+C\otimes B\otimes x_t=\sum_{i=1}^{t}C\otimes A^{t-i}\otimes B x_i .\end{aligned} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(A^{t-i}\)</td><td>矩阵幂：\(A\) 连乘 \(t-i\) 次，\(A^0=I\)</td><td>\(\mathbb{R}^{H\times n\times n}\)</td></tr>
+<tr><td>\(C\otimes A^{t-i}\otimes B\)</td><td>从"第 \(i\) 个输入"到"第 \(t\) 个输出"的<b>传递函数</b></td><td>\(\mathbb{R}^{H\times1\times1}\)</td></tr>
+<tr><td>\(y_t\)</td><td>输出，<b>只依赖 \(x_1,\dots,x_t\)</b>（因果）</td><td>\(\mathbb{R}^{H\times1\times1}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>第一步：把 \(S_t\) 代入 \(S_{t-1}\)。</b>由式 (5.44) 第一行，\(S_{t-1}=A\otimes S_{t-2}+B\otimes x_{t-1}\)。代入 \(y_t=C\otimes S_t\)：
+<div class="eq">\[
+y_t=C\otimes\bigl(A\otimes S_{t-1}+B\otimes x_t\bigr)=C\otimes A\otimes\bigl(A\otimes S_{t-2}+B\otimes x_{t-1}\bigr)+C\otimes B\otimes x_t .
+\]</div>
+这一步只用了<b>分配律</b>（矩阵乘对加法可分配）——这正是 \(\otimes\) 就是普通矩阵乘、只是批量化的好处。</li>
+<li><b>第二步：反复展开，用归纳法。</b>继续把 \(S_{t-2}=A\otimes S_{t-3}+B\otimes x_{t-2}\) 代进去，每做一次就<b>多出一项</b>、其余项的 \(A\) 的次数<b>多一层</b>。做 \(t-1\) 次后：
+<div class="eq">\[
+y_t=C\otimes A^{t-1}\otimes B\otimes x_1+C\otimes A^{t-2}\otimes B\otimes x_2+\cdots+C\otimes A\otimes B\otimes x_{t-1}+C\otimes B\otimes x_t .
+\]</div>
+<b>归纳法的严格说法：</b>对 \(t\) 归纳。基例 \(t=1\)：\(y_1=C\otimes B\otimes x_1\)，等于 \(\sum_{i=1}^{1}C\otimes A^{1-i}\otimes Bx_i\) ✓。设 \(t-1\) 时成立（\(y_{t-1}=\sum_{i=1}^{t-1}C\otimes A^{t-1-i}\otimes Bx_i\)），则
+<div class="eq">\[
+y_t=C\otimes A\otimes y_{t-1}+C\otimes B\otimes x_t
+=\sum_{i=1}^{t-1}C\otimes A^{t-i}\otimes Bx_i+C\otimes A^{0}\otimes Bx_t
+=\sum_{i=1}^{t}C\otimes A^{t-i}\otimes Bx_i ,
+\]</div>
+用到了 \(A^0=I\) 和 \(C\otimes A\otimes(C\otimes A^{t-1-i})=C\otimes A^{t-i}\)（矩阵乘的结合律）。归纳完成。</li>
+<li><b>第三步：紧凑写法。</b>把有限和写成一个 \(\sum\)，就是式 (5.45) 的最后一式。</li>
+<li><b>第四步：从式 (5.45) 读出三件事。</b>
+<ul>
+<li><b>因果性：</b>\(y_t\) 的求和上限是 \(t\)，只用到了 \(\{x_i:i\le t\}\)，不含未来。天然满足自回归要求。</li>
+<li><b>"卷积"结构：</b>\(y_t\) 是 \(x_1,\dots,x_t\) 的<b>加权和</b>，权重是 \(C\otimes A^{t-i}\otimes B\)。它只依赖<b>间隔 \(t-i\)</b>，不依赖绝对位置——这与卷积的定义（权重只依赖两个信号的相对偏移）完全一致。</li>
+<li><b>权重随 \(A^k\) 衰减：</b>若 \(\rho(A)&lt;1\)，则 \(A^{t-i}\to0\)，所以"很久以前"的输入权重趋近于 0。这就是 SSM 的<b>遗忘机制</b>，且遗忘速度由谱半径 \(\rho(A)\) 决定：\(\rho\) 接近 1 = 长记忆，接近 0 = 只看当前。</li>
+</ul></li>
+</ol>
+
+<div class="note"><b>直觉</b>式 (5.45) 是整节最漂亮的一步：<b>一个"必须按顺序算的递推"被展开成了"一个可以一次性算完的加权求和"</b>。既然 \(y_t=\sum_i(\text{权重})\cdot x_i\) 且权重只依赖间隔，那么整条序列的计算就是一个卷积——而卷积可以用 FFT 在 \(O(L\log L)\) 里并行算完（见 <a href="#eq-5-46">(5.46)</a> 与 <a href="#ssm-zoh">补充 B</a>）。<b>这就是 SSM 训练时能像 CNN 一样并行、推理时又能像 RNN 一样只存一个状态的数学根源。</b></div>
+<div class="warn"><b>易错点</b>（1）展开时<b>必须有 \(C\otimes A\otimes C\otimes A\) 的结合律成立</b>——这依赖于 \(C\) 的中间维度为 1（\(\mathbb{R}^{H\times1\times n}\)），即 \(C\otimes A\) 仍是 \(1\times n\)。（2）\(\sum\) 的上限是 \(t\)，所以这是<b>因果卷积</b>，不是对称卷积；用 FFT 时必须做零填充或实现在频域上等价于因果卷积。（3）式子里的 \(B x_1\) 是 \(B\otimes x_1\) 的简写。（4）不要试图把式 (5.45) 里的 \(\otimes\) 当成 Kronecker 积——它是批量矩阵乘。</div>
+<div class="relnav">相关：<a href="#eq-5-44">(5.44) 递推</a> · <a href="#eq-5-46">(5.46) 卷积核与 FFT</a> · <a href="#ssm-scan">补充 C：并行扫描（不用 FFT 的并行法）</a></div>
+</section>
+
+<!-- ==================== 5.46 ==================== -->
+<section class="fml" id="eq-5-46">
+<h2><span class="num">(5.46)</span>SSM 视角下的卷积核与 \(y=x*K\)<a class="anchor" href="#eq-5-46">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.5.1 节 Parameterized State Space Model　<a href="../thellm/11-5-model-architecture.html#5-5-1-parameterized-state-space-model">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0117.png" alt="原书公式 5.46"><span class="cap">原书公式 5.46</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ K=\bigl(C\otimes B,\;C\otimes A\otimes B,\;\ldots,\;C\otimes A^{t-1}\otimes B,\;\ldots\bigr),\qquad y=x*K \]
+</div>
+<div class="eq">
+\[ \text{等价地：}\quad y_t=\sum_{i=1}^{t}x_i\,K_{t-i+1},\qquad K_{k}=C\otimes A^{k-1}\otimes B\;(k\ge1) \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(K\)</td><td>SSM 的<b>等效卷积核</b>（冲激响应）</td><td>长度 \(L\) 的序列，每项 \(\in\mathbb{R}^{H\times1\times1}\)</td></tr>
+<tr><td>\(K_k\)</td><td>核的第 \(k\) 项（对应滞后 \(k-1\) 步）</td><td>标量（每 head 一个）</td></tr>
+<tr><td>\(*\)</td><td>卷积运算（causal convolution）</td><td>—</td></tr>
+<tr><td>\(x,y\)</td><td>输入、输出序列</td><td>\(\mathbb{R}^{L\times H}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>第 \(k\) 项卷积核是什么。</b>按<b>因果（causal）卷积</b>的定义（也叫"互相关"约定，深度学习框架都这么写）：
+<div class="eq">\[
+y_t=\sum_{k=1}^{t}x_{t-k+1}K_k .
+\]</div>
+代入式 (5.45) 的展开，\(x_{t-k+1}\) 对应的权重是 \(C\otimes A^{t-(t-k+1)}\otimes B=C\otimes A^{k-1}\otimes B\)。逐项比对即得
+<div class="eq">\[
+K_1=C\otimes B,\quad K_2=C\otimes A\otimes B,\quad\ldots,\quad K_t=C\otimes A^{t-1}\otimes B .
+\]</div>
+这与原书写的 \(K=(C\otimes B,\;C\otimes A\otimes B,\;\ldots,\;C\otimes A^{t-1}\otimes B,\;\ldots)\) <b>逐项一致</b>。</li>
+<li><b>冲激响应的解释（更本质）。</b>设输入是一个单位冲激 \(x=\delta\)（第 1 步为 1、之后全 0），则 \(S_1=B\)、\(S_2=AB\)、\(\dots\)、\(S_t=A^{t-1}B\)，输出 \(y_t=CA^{t-1}B\)。<b>所以 \(K\) 就是"给一个单位冲激，SSM 会在后面吐出什么"——即系统的冲激响应（impulse response）。</b>线性时不变（LTI）系统的输出 = 输入与冲激响应的卷积，这就是式 (5.46) 的物理意义。</li>
+<li><b>为什么这一步是"性能炸弹"。</b>关键在于 \(K_1,K_2,\ldots\) <b>与 \(t\) 和输入都无关，只由 \((A,B,C)\) 决定</b>——这是一次性算好的<b>常量核</b>。既然是常量卷积核，就能用<b>卷积定理</b>在频域做乘法：
+<div class="eq">\[
+\mathcal{F}\{y\}=\mathcal{F}\{x\}\odot\mathcal{F}\{K\}\;\Longrightarrow\;\mathcal{F}^{-1}\!\bigl(\mathcal{F}\{x\}\odot\mathcal{F}\{K\}\bigr),
+\]</div>
+代价 \(O(L\log L)\)，而不是递推的 \(O(L)\) 次<b>串行</b>小矩阵乘。原书给出的训练总复杂度
+<div class="eq">\[
+O\bigl(LH\log L+LHn^{2}+LH^{2}\bigr)
+\]</div>
+里，第一项就是 FFT 卷积，第二项是逐头算核 \(K\)（\(n\) 次 \(n\times n\) 幂乘，开销 \(Ln^{2}\)），第三项是通道混合/投影的 \(H^{2}\)。<b>注意：整个序列的计算里没有"一个操作依赖另一个操作的结果"，所以在 GPU 上可以完全并行。</b></li>
+<li><b>与递推式 (5.44) 的复杂度对比（解码阶段）。</b>自回归解码时每步只需 \(S_t=A\otimes S_{t-1}+B\otimes x_t\)、\(y_t=CS_t\)，每步 \(O(n^{2}H+H^{2})\)，<b>与已生成长度无关</b>（原书写 \(O(n^{2}H+H^{2})\)）。而注意力解码要 \(O(H)\) 读整个 KV Cache、且 Cache 随长度线性增长。这就是 SSM 在长上下文流式生成上的优势。</li>
+</ol>
+
+<div class="note"><b>直觉</b>把 SSM 当成一个信号处理里的 <b>数字滤波器</b>：\(A\) 决定滤波器的极点，\(K\) 是它的冲激响应，"输出 = 输入 \(\ast\) 冲激响应"。信号处理里卷积可以在频域相乘，这就是"SSM 训练并行"的全部秘密。</div>
+<div class="warn"><b>易错点：常量核这个前提非常脆弱，后面被 Mamba 打掉了。</b>\(K\) 是常量，<b>仅当 \(A,B,C\) 与输入 \(x_t\) 无关时成立</b>。一旦让 \(\Delta_t,B_t,C_t\) 依赖当前输入（Mamba 的做法），每个时间步的核就变成 \(K_t\)，<b>线性时不变性（LTI）被破坏，卷积定理失效，FFT 不再适用</b>——只能退回 \(O(L)\) 的顺序扫描。这就是 <a href="#ssm-selective">补充 D</a> 的全部内容，也是"SSM 训练复杂度从 \(O(L\log L)\) 退化成 \(O(L)\) 步内串行"的原因。另外：式 (5.46) 的 \(K\) 是<b>无限长</b>的（\(A^{k-1}\) 可以取到任意 \(k\)），实际实现通常<b>截断</b>到前 \(L\) 项（若 \(\rho(A)&lt;1\)，截断误差有几何衰减保证）。</div>
+<div class="relnav">相关：<a href="#eq-5-45">(5.45) 展开</a> · <a href="#ssm-zoh">补充 B：零阶保持与 FFT 的完整推导</a> · <a href="#ssm-scan">补充 C：并行扫描</a> · <a href="#ssm-selective">补充 D：选择性扫描（Mamba）</a> · <a href="#flash-online">补充 E：FlashAttention 的分块与 online softmax</a></div>
+</section>
+
+<!-- ==================== 补充 A ==================== -->
+<section class="fml supp" id="ssm-cont">
+<h2><span class="num">补充 A</span>连续时间线性 SSM 方程从头推<a class="anchor" href="#ssm-cont">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.5.1 节（原文未编号，为本页补充推导）　<a href="../thellm/11-5-model-architecture.html#5-5-1-parameterized-state-space-model">对照原文</a></p>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \frac{\mathrm{d}\mathbf{h}(t)}{\mathrm{d}t}=A\,\mathbf{h}(t)+B\,x(t),\qquad \mathbf{y}(t)=C\,\mathbf{h}(t) \]
+</div>
+<div class="eq">
+\[ \text{齐次解：}\quad \mathbf{h}(t)=e^{At}\mathbf{h}(0),\qquad e^{At}=\sum_{k=0}^{\infty}\frac{(At)^k}{k!} \]
+</div>
+<div class="eq">
+\[ \text{非齐次解：}\quad \mathbf{h}(t)=e^{At}\mathbf{h}(0)+\int_{0}^{t}e^{A(t-\tau)}B\,x(\tau)\,\mathrm{d}\tau \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\mathbf{h}(t)\)</td><td>连续时间隐状态</td><td>\(\mathbb{R}^{n\times1}\)</td></tr>
+<tr><td>\(A,B,C\)</td><td>连续时间系统矩阵</td><td>\(A\in\mathbb{R}^{n\times n}\)，\(B\in\mathbb{R}^{n\times1}\)，\(C\in\mathbb{R}^{1\times n}\)</td></tr>
+<tr><td>\(x(t)\)</td><td>连续输入</td><td>标量或 \(\mathbb{R}^{d\times1}\)</td></tr>
+<tr><td>\(e^{At}\)</td><td>矩阵指数</td><td>\(\mathbb{R}^{n\times n}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>齐次方程的幂级数解法（先记一个关键性质）。</b>考虑无输入的方程 \(\mathbf{h}'=A\mathbf{h}\)。猜一个幂级数解 \(\mathbf{h}(t)=\sum_{k\ge0}t^k\mathbf{v}_k\)（把 \(\mathbf{h}\) 展开成泰勒级数）。求导并代入：
+<div class="eq">\[
+\sum_{k\ge0}(k+1)t^k\mathbf{v}_{k+1}=A\sum_{k\ge0}t^k\mathbf{v}_k .
+\]</div>
+比较 \(t^k\) 的系数得 \(\mathbf{v}_1=A\mathbf{v}_0\)、\(\mathbf{v}_2=\frac{A}{2}\mathbf{v}_0\)、…、\(\mathbf{v}_k=\frac{A^k}{k!}\mathbf{v}_0\)。代回：
+<div class="eq">\[
+\boxed{\mathbf{h}(t)=e^{At}\mathbf{h}(0)},\qquad e^{At}=\sum_{k=0}^{\infty}\frac{(At)^k}{k!}=I+At+\frac{(At)^2}{2!}+\frac{(At)^3}{3!}+\cdots .
+\]</div>
+<b>收敛性与合法性：</b>\(\sum\|(At)^k/k!\|\le\sum(\|A\|t)^k/k!=e^{\|A\|t}&lt;\infty\)，对<b>任意</b>矩阵 \(A\) 都绝对收敛，所以定义良好（可交换绝对收敛和）。而且可以<b>直接验证</b>它满足方程：\(\frac{\mathrm{d}}{\mathrm{d}t}e^{At}=A\sum_{k\ge1}\frac{k(At)^{k-1}}{k!}=\sum_{k\ge0}\frac{(At)^k}{k!}\cdot A= Ae^{At}=Ae^{At}\)，同时 \(e^{A\cdot0}=I\)。<b>两条性质务必记住，后面全靠它们：</b>① \(\frac{\mathrm{d}}{\mathrm{d}t}e^{At}=Ae^{At}\)；② <b>\(e^{A(t_1+t_2)}=e^{At_1}e^{At_2}\)</b>（把级数按二项式展开即可）。</li>
+<li><b>常数变易法（积分因子）。</b>现在要解 \(\mathbf{h}'=A\mathbf{h}+Bx\)。思路：把已知的齐次解 \(e^{At}\) 当作"因子"乘上去，让左端变成一个<b>全导数</b>。定义 \(\mathbf{u}(t):=e^{-At}\mathbf{h}(t)\)。求导（用乘积法则）：
+<div class="eq">\[
+\mathbf{u}'(t)=\frac{\mathrm{d}}{\mathrm{d}t}\bigl[e^{-At}\mathbf{h}(t)\bigr]=(-Ae^{-At})\mathbf{h}(t)+e^{-At}\mathbf{h}'(t)=e^{-At}\bigl[\mathbf{h}'(t)-A\mathbf{h}(t)\bigr]=e^{-At}B\,x(t).
+\]</div>
+最后一步<b>正是代入原方程</b>，括号里的东西恰好等于 \(Bx(t)\)。这样 \(\mathbf{u}\) 满足一个<b>不含 \(\mathbf{h}\) 的</b>方程，可以直接积分（初值 \(\mathbf{u}(0)=e^{0}\mathbf{h}(0)=\mathbf{h}(0)\)）：
+<div class="eq">\[
+e^{-At}\mathbf{h}(t)-\mathbf{h}(0)=\int_0^t e^{-A\tau}B\,x(\tau)\,\mathrm{d}\tau .
+\]</div>
+两边左乘 \(e^{At}\)，并用性质 ② \(e^{At}e^{-A\tau}=e^{A(t-\tau)}\)：
+<div class="eq">\[
+\boxed{\mathbf{h}(t)=e^{At}\mathbf{h}(0)+\int_0^t e^{A(t-\tau)}B\,x(\tau)\,\mathrm{d}\tau} .
+\]</div>
+</li>
+<li><b>逐分量的理解（把矩阵符号去掉）。</b>取 \(n=1\)：\(h'=ah+bx\)，解为 \(h(t)=e^{at}h(0)+\int_0^te^{a(t-\tau)}b\,x(\tau)\,\mathrm{d}\tau=\underbrace{e^{at}h(0)}_{\text{初始状态的指数衰减}}+\underbrace{b\int_0^te^{-a\tau}e^{at}x(\tau)\,\mathrm{d}\tau}_{\text{所有历史输入的指数加权平均}}\)。<b>"状态 = 过去输入的指数加权移动平均（EWMA）"</b>——这是理解 SSM 的最重要的一句话。若 \(\mathrm{Re}(a)&lt;0\) 就是低通；若 \(\mathrm{Re}(a)&gt;0\) 就是指数增长（不稳定，实践中被禁止）。</li>
+<li><b>为什么这套方程是"恰当"的建模选择。</b>一个 \(n\) 维线性 SSM 的冲激响应有 \(n\) 个指数项（= \(A\) 的 \(n\) 个特征值对应的模态），所以它是一个 <b>\(n\) 阶的线性递归滤波器</b>：能表达任意 \(n\) 阶线性递推，但<b>不能</b>表达"乘法/非线性交互"。这正是它与注意力的分工：<b>注意力擅长"两两 token 之间的乘法交互"，SSM 擅长"对历史的线性递归汇总"</b>。</li>
+</ol>
+
+<div class="note"><b>直觉</b>这两个公式是整节的地基。<b>矩阵指数 \(e^{At}\)</b> 是"什么都不输入时状态自己怎么衰减"；<b>卷积积分</b> 是"每个历史输入对现在贡献了多少"。第二项的权重 \(e^{A(t-\tau)}B\) 就是下一节 <a href="#eq-5-46">(5.46)</a> 里的卷积核——<b>连续时间的核是指数曲线，离散时间的核是几何级数</b>。</div>
+<div class="warn"><b>易错点</b>（1）\(e^{At}\ne e^{A}t\)，它是<b>幂级数</b>，不是逐元素指数。数值计算时应该用 <b>缩放平方</b>（repeated squaring）而不是级数求和，否则大 \(\|At\|\) 时溢出。（2）\(e^{At}\) 一定可逆，逆矩阵就是 \(e^{-At}\)——积分因子法能用的根本原因。（3）若 \(A\) 不可逆，\(\int_0^\Delta e^{Au}\mathrm{d}u=A^{-1}(e^{\Delta A}-I)\) 这个写法就<b>不能直接用</b>（虽然积分本身没问题），见 <a href="#ssm-zoh">补充 B</a> 的处理。（4）B 的输入 \(x(t)\) 若是多通道向量，\(B\) 应是 \(\mathbb{R}^{n\times d}\)。</div>
+<div class="relnav">相关：<a href="#eq-5-44">(5.44) 离散递推</a> · <a href="#ssm-zoh">补充 B：零阶保持离散化</a></div>
+</section>
+
+<!-- ==================== 补充 B ==================== -->
+<section class="fml supp" id="ssm-zoh">
+<h2><span class="num">补充 B</span>零阶保持离散化、矩阵指数结构与 FFT 卷积<a class="anchor" href="#ssm-zoh">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.5.1 / 5.5.2 节（原文未编号，为本页补充推导）　<a href="../thellm/11-5-model-architecture.html#5-5-1-parameterized-state-space-model">对照原文</a></p>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \bar A=e^{\Delta A},\qquad \bar B=\int_0^{\Delta}e^{A(\Delta-\sigma)}\mathrm{d}\sigma\cdot B=A^{-1}\bigl(e^{\Delta A}-I\bigr)B=\Delta\,(\Delta A)^{-1}\bigl(e^{\Delta A}-I\bigr)\,\Delta B \]
+</div>
+<div class="eq">
+\[ \text{若 }A=V\Lambda V^{-1}\ \text{可对角化，则}\quad e^{\Delta A}=V\,\mathrm{diag}\bigl(e^{\Delta\lambda_1},\dots,e^{\Delta\lambda_n}\bigr)V^{-1},\qquad (e^{\Delta A})_{pq}=\sum_{r=1}^{n}V_{pr}\,e^{\Delta\lambda_r}\,(V^{-1})_{rq} \]
+</div>
+<div class="eq">
+\[ \text{双线性（Tustin）离散化：}\quad \bar A=(I-\tfrac{\Delta}{2}A)^{-1}(I+\tfrac{\Delta}{2}A),\qquad \bar B=(I-\tfrac{\Delta}{2}A)^{-1}\Delta B \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\Delta\)</td><td>离散化步长（= 相邻 token 的时间间隔），常设为可学习标量</td><td>标量，&gt;0</td></tr>
+<tr><td>\(\bar A,\bar B\)</td><td>离散化后的状态转移、输入矩阵</td><td>\(\mathbb{R}^{n\times n}\)，\(\mathbb{R}^{n\times1}\)</td></tr>
+<tr><td>\(\lambda_r\)</td><td>\(A\) 的第 \(r\) 个特征值</td><td>复数，实践取 \(\mathrm{Re}\lambda_r&lt;0\)</td></tr>
+<tr><td>\(\Lambda\)</td><td>特征值对角矩阵</td><td>\(\mathbb{R}^{n\times n}\)</td></tr>
+<tr><td>\(\sigma\)</td><td>积分变量（区间内的时间）</td><td>\(0\le\sigma\le\Delta\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>ZOH 假设。</b>token 之间没有"中间时刻"，我们把第 \(t\) 个 token 看成在区间 \([t\Delta,(t+1)\Delta)\) 上<b>持续存在</b>的常值输入：\(x(t)=x_t\)，\(\forall t\in[t\Delta,(t+1)\Delta)\)。这是零阶保持（Zero-Order Hold, ZOH）。</li>
+<li><b>代入连续解。</b>取 <a href="#ssm-cont">补充 A</a> 的通解，时间从 \(t\Delta\) 积到 \((t+1)\Delta\)，被积函数里的输入是常数 \(x_t\)：
+<div class="eq">\[
+\mathbf{h}((t+1)\Delta)=e^{\Delta A}\mathbf{h}(t\Delta)+\biggl(\int_0^{\Delta}e^{A(\Delta-\sigma)}\mathrm{d}\sigma\biggr)B\,x_t .
+\]</div>
+识别出 \(\bar A=e^{\Delta A}\)。</li>
+<li><b>算出 \(\bar B\)：两种等价写法。</b>（i）<b>级数展开法（\(A\) 不可逆也成立）：</b>把 \(e^{A(\Delta-\sigma)}=\sum_{k\ge0}\frac{A^k(\Delta-\sigma)^k}{k!}\) 代入积分，逐项积分 \(\int_0^\Delta\frac{(\Delta-\sigma)^k}{k!}\,\mathrm{d}\sigma=\frac{\Delta^{k+1}}{(k+1)!}\)，得到
+<div class="eq">\[
+\int_0^{\Delta}e^{A(\Delta-\sigma)}\mathrm{d}\sigma=\sum_{k\ge0}\frac{\Delta^{k+1}A^k}{(k+1)!}=\Delta\sum_{k\ge0}\frac{(\Delta A)^k}{(k+1)!}=\Delta\,(\Delta A)^{-1}\bigl(e^{\Delta A}-I\bigr).
+\]</div>
+最后一步用 \((\Delta A)^{-1}(e^{\Delta A}-I)=\sum_{k\ge0}\frac{(\Delta A)^k}{(k+1)!}\)（把 \(e^{\Delta A}-I=\sum_{k\ge1}\frac{(\Delta A)^k}{k!}\) 左乘 \((\Delta A)^{-1}\) 即可）。所以 \(\bar B=\Delta(\Delta A)^{-1}(e^{\Delta A}-I)\,B\)，原书常写成带 \(\Delta B\) 的形式：\(\bar B=\Delta(\Delta A)^{-1}(e^{\Delta A}-I)(\Delta B)\)。<b>注意：把 \(\bar B\) 写成 \(A^{-1}(e^{\Delta A}-I)B\) 只是在 \(\Delta=1\) 时才与上式逐项相同（\(\Delta A\) 与 \(A\) 不能随意互换）——网上常见的那份抄写式把 \(\Delta\) 和 \(\Delta^{-1}\) 的位置搞错了，正确形式以上面级数展开的结果为准。</b>（ii）<b>代入法（\(A\) 可逆时）：</b>直接对矩阵做不定积分，\(\frac{\mathrm{d}}{\mathrm{d}u}A^{-1}e^{Au}=e^{Au}\)，故 \(\int_0^{\Delta}e^{Au}\mathrm{d}u=A^{-1}(e^{A\Delta}-I)\)。两条路给出同一个结果。</li>
+<li><b>换成双线性（Tustin / 梯形）方法。</b>把微分方程在区间 \([t\Delta,(t+1)\Delta]\) 上<b>隐式梯形积分</b>：\(\mathbf{h}_{t+1}-\mathbf{h}_t=\frac{\Delta}{2}\bigl(A\mathbf{h}_{t+1}+A\mathbf{h}_t+B x_{t+1}+Bx_t\bigr)\)。整理（移项、求解）：\((I-\frac{\Delta}{2}A)\mathbf{h}_{t+1}=(I+\frac{\Delta}{2}A)\mathbf{h}_t+\Delta Bx_t\)，于是
+<div class="eq">\[
+\bar A=(I-\tfrac{\Delta}{2}A)^{-1}(I+\tfrac{\Delta}{2}A),\qquad \bar B=(I-\tfrac{\Delta}{2}A)^{-1}\Delta B .
+\]</div>
+<b>为什么 SSM 里更爱用 Tustin？</b>因为 \(A\) 通常是对角元为 \(\lambda_i\) 的对角阵，Tustin 形式可以<b>逐元素</b>算：\(\bar A_{ii}=\frac{1+\frac{\Delta}{2}\lambda_i}{1-\frac{\Delta}{2}\lambda_i}\)，配合泰勒展开 \(\frac{1+z/2}{1-z/2}=e^{z}+O(z^3)\) 就得到 S4 的 <b>"扩展指数（dilated exponential）"</b> 技巧——既保留了 \(e^{\Delta A}\) 的正确性，又只做 O(1) 元素操作，避免了矩阵指数的开销。</li>
+<li><b>\(\bar A\) 的元素为什么和 \(e^{\Delta\lambda_i}\) 有关（这是任务里点名要解释的一步）。</b>若 \(A\) 可对角化，\(A=V\Lambda V^{-1}\)。矩阵指数与相似变换可交换：\(e^{V\Lambda V^{-1}}=Ve^{\Lambda}V^{-1}\)，其中 \(e^{\Lambda}=\mathrm{diag}(e^{\lambda_1},\dots,e^{\lambda_n})\)（对角矩阵的幂级数逐元素即是）。<b>所以 \(e^{\Delta A}\) 的特征值恰是 \(e^{\Delta\lambda_i}\)</b>。若进一步 \(A\) 是<b>对角</b>阵（\(V=I\)），则 \(\bar A=\mathrm{diag}(e^{\Delta\lambda_1},\dots,e^{\Delta\lambda_n})\)，<b>逐元素指数即可，完全没有矩阵-矩阵乘法</b>。对非对角情形，\((e^{\Delta A})_{pq}=\sum_rV_{pr}e^{\Delta\lambda_r}(V^{-1})_{rq}\)，仍然是"以 \(e^{\Delta\lambda_i}\) 为谱、以 \(V\) 为基"的结构：\(A\) 的每个模态就是一个以 \(\mathrm{e}^{\Delta\lambda_i}\) 为公比的<b>几何衰减</b>，这正是 \(\rho(\bar A)=\max_i|e^{\Delta\lambda_i}|\) 决定遗忘速度的原因。</li>
+<li><b>为什么这就能用 FFT。</b>把 \(\bar A\) 代入 <a href="#eq-5-45">(5.45)</a> 的核：\(K_k=C\bar A^{k-1}B\)，而 \(\bar A^{k-1}=(e^{\Delta A})^{k-1}=e^{(k-1)\Delta A}\)，其谱为 \(e^{(k-1)\Delta\lambda_i}\)。于是核的每一项都能"独立地按 \(n\) 个模态求等比数列"，总构造开销 \(O(Ln^{2})\)；\(K\) 是常量核 ⇒ 用<b>卷积定理</b>在频域相乘，\(O(L\log L)\)。原书把这一路的总训练复杂度写成
+<div class="eq">\[
+O\bigl(LH\log L+LHn^{2}+LH^{2}\bigr),
+\]</div>
+对比注意力的 \(O(L^{2})\)——<b>长序列下这是数量级的差别。</b></li>
+</ol>
+
+<div class="note"><b>直觉</b>ZOH 的意思是"token 之间我什么都不知道，就当输入一直不变"。于是连续系统被"拍成一格一格"的离散系统：<b>状态转移从"微分"变成"乘一个固定矩阵"</b>。而这个固定矩阵 \(\bar A=e^{\Delta A}\) 的每个模态都是"每步乘 \(e^{\Delta\lambda_i}\)"，所以整个系统本质上就是<b>一串 \(n\) 个并行的几何衰减器</b>——和补充 A 里说的"指数加权移动平均"是同一件事，只是把指数换成了公比。</div>
+<div class="warn"><b>易错点</b>（1）<b>不要相信流传的 \(\bar B=\Delta A^{-1}(e^{\Delta A}-I)\Delta B^{-1}\)</b> 这类抄写：\(B\) 不可逆（它是 \(n\times1\)），\(B^{-1}\) 根本不存在；正确形式见上面第 3 步。（2）\(A\) 奇异时不能用 \(A^{-1}\) 写法，要用级数形式。（3）\(\Delta\) 与 \(A\) <b>不交换</b>：\(\Delta A^{-1}(e^{\Delta A}-I)\ne A^{-1}(e^{\Delta A}-I)\Delta\)。（4）ZOH 会引入阶跃响应，Tustin 保相位但有频率依赖的幅度畸变，两者精度/速度的取舍要按任务定。（5）\(\bar B\) 的数值稳定性：\(\Delta\) 很小时 \((\Delta A)^{-1}(e^{\Delta A}-I)\) 是 \(0/0\)，要用级数 \(\Delta\sum\frac{(\Delta A)^k}{(k+1)!}\) 或直接近似 \(\Delta B\)。</div>
+<div class="relnav">相关：<a href="#ssm-cont">补充 A</a> · <a href="#eq-5-46">(5.46) 卷积核</a> · <a href="#ssm-scan">补充 C：并行扫描</a> · <a href="#ssm-selective">补充 D：选择性扫描</a></div>
+</section>
+
+<!-- ==================== 补充 C ==================== -->
+<section class="fml supp" id="ssm-scan">
+<h2><span class="num">补充 C</span>并行扫描：把一阶递推变成结合律前缀和<a class="anchor" href="#ssm-scan">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.5 节（原文未编号，为本页补充推导）　<a href="../thellm/11-5-model-architecture.html#5-5-alternative-model-architecture">对照原文</a></p>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ h_k=\bar A\,h_{k-1}+\bar B\,x_k,\qquad h_0\ \text{已知} \]
+</div>
+<div class="eq">
+\[ \text{展开：}\quad h_L=\bar A^{L}h_0+\sum_{k=1}^{L}\bar A^{\,L-k}\bar B\,x_k \]
+</div>
+<div class="eq">
+\[ \text{算子复合：}\quad (\bar A_2,b_2)\circ(\bar A_1,b_1)=\bigl(\bar A_2\bar A_1,\;\bar A_2b_1+b_2\bigr),\qquad b_k:=\bar B\,x_k \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(h_k\)</td><td>第 \(k\) 步的状态（离散化后的 \(S\)）</td><td>\(\mathbb{R}^{n\times1}\)</td></tr>
+<tr><td>\(\bar A,\bar B\)</td><td>离散化后的转移 / 输入矩阵</td><td>\(\mathbb{R}^{n\times n}\)，\(\mathbb{R}^{n\times1}\)</td></tr>
+<tr><td>\((\bar A_k,b_k)\)</td><td>第 \(k\) 步的<b>仿射变换</b> \(z\mapsto\bar A_kz+b_k\)</td><td>—</td></tr>
+<tr><td>\(\circ\)</td><td>复合：\((\mathcal{T}_2\circ\mathcal{T}_1)(z)=\mathcal{T}_2(\mathcal{T}_1(z))\)</td><td>—</td></tr>
+<tr><td>\(\oplus\)</td><td>把步进算子用<b>不相交的树形（二叉树）</b>两两合并</td><td>—</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>先说清"为什么要并行"。</b>式 (5.44) 的递推在时间维度上是<b>严格串行</b>的：\(h_k\) 必须等 \(h_{k-1}\) 算完。一层只有一次小矩阵乘，延迟极低，无法把 GPU 的几千个核心喂饱。而且 \(h_k\) 依赖所有历史，训练时不能像 FFT 那样"变换一下"（FFT 只对<b>常量核</b>的 LTI 系统有效，见 <a href="#ssm-selective">补充 D</a>）。于是问题变成：<b>能不能用"多做一些但可并行"的运算，替代"少做但必须串行"的递推？</b>答案是能，前提是递推的每一步是一个<b>可以复合的变换</b>。</li>
+<li><b>第一步：数学归纳法展开（和 <a href="#eq-5-45">(5.45)</a> 同一手法）。</b>
+<div class="eq">\[
+h_1=\bar Ah_0+b_1,\quad h_2=\bar A(\bar Ah_0+b_1)+b_2=\bar A^2h_0+\bar Ab_1+b_2,\quad\ldots
+\]</div>
+归纳得 \(h_k=\bar A^kh_0+\sum_{i\le k}\bar A^{k-i}b_i\)。<b>这个式子的形状很重要：一个"矩阵幂 × 初值"加一个"所有 \(b_i\) 的加权和"。</b>如果我们能把 \(\{(\bar A_i,b_i)\}\) 合并成单个 \((\bar A_{[1..L]},b_{[1..L]})\)，就等于把 \(L\) 步递推"打包"成一步复合。</li>
+<li><b>第二步：定义复合律并验证它是结合律（这是并行扫描的全部理论基础）。</b>记第 \(k\) 步的变换为 \(\mathcal{T}_k(z)=\bar Ah_{k-1}\) 之类的一般形式：对<b>同构</b>的仿射变换 \(\mathcal{T}(z)=Az+b\)，复合是
+<div class="eq">\[
+(\mathcal{T}_2\circ\mathcal{T}_1)(z)=\mathcal{T}_2(A_1z+b_1)=A_2(A_1z+b_1)+b_2=\underbrace{A_2A_1}_{\text{矩阵部分}}z+\underbrace{A_2b_1+b_2}_{\text{平移部分}},
+\]</div>
+即复合后仍是<b>同族</b>的仿射变换，且形式为 \((\bar A_2,b_2)\circ(\bar A_1,b_1)=(\bar A_2\bar A_1,\bar A_2b_1+b_2)\)。这里的关键是：<b>复合律与顺序有关（\(A_2A_1\ne A_1A_2\)），但它本身满足结合律</b>
+<div class="eq">\[
+(\mathcal{T}_3\circ\mathcal{T}_2)\circ\mathcal{T}_1=\mathcal{T}_3\circ(\mathcal{T}_2\circ\mathcal{T}_1)
+\]</div>
+——因为三步复合只有 \((A_3A_2A_1)\,z+\bigl(A_3A_2b_1+A_3b_2+b_3\bigr)\) 一种结果，括号打在哪都不改变表达式。结合律 + 幺元（\(h_0\) 给的是 \(\mathcal{T}_0(z)=z\)，即 \((I,0)\)）意味着 \(\{L\) 个元素\(\}\) 构成一个<b>半群（monoid）</b>，于是可以用任何结合的重排算法去求积。</li>
+<li><b>第三步：树形重排（Blelloch scan）。</b>把 \(L\) 个算子放进完全二叉树的叶子：每层把相邻的两个算子复合，<b>同一层内部各节点互不依赖、可完全并行</b>；一层有 \(L/2\) 次复合，共 \(\log_2L\) 层。<b>因此深度从 \(L\) 降到 \(\lceil\log_2L\rceil\)</b>，而总工作量仍是 \(O(L)\) 次 \(n\times n\) 矩阵乘（和串行一样）。最后根节点给出
+<div class="eq">\[
+h_L=\bar A_{[1..L]}h_0+b_{[1..L]},
+\]</div>
+与第 2 步的归纳结果<b>逐项一致</b>（\(\bar A_{[1..L]}=\bar A^L\)，\(b_{[1..L]}=\sum_k\bar A^{L-k}b_k\)）。</li>
+<li><b>第四步：换个角度——它就是一个矩阵-向量前缀积。</b>把所有步的 \(n\times n\) 矩阵堆起来，递推等价于解一个<b>块下三角线性方程组</b>；块下三角系统可以用 <b>Schur 补 / 分治（divide-and-conquer）</b> 递归求解：算左半段、右半段，再用左半段的转移矩阵 \(A_L\) 把右半段的贡献传回左边（对应上式的 \(A_2b_1\) 项）。这与"前缀和（parallel prefix sum）"在结构上是<b>同一个东西</b>，只是"加法"换成了"仿射变换复合"、"标量"换成了"矩阵"。</li>
+</ol>
+
+<div class="note"><b>直觉</b>串行版像"传话游戏"：第 1 句话传给第 2 个人，第 2 个人传第 3 句……要等 \(L\) 轮。并行扫描版像" tournament"：先两两配对各说一次合并稿（所有人同时做），再两两合并合并稿（又同时做），共 \(\log_2 L\) 轮就能让最后一个人拿到全部信息。合并规则必须<b>与顺序一致</b>，这正是矩阵乘法的结合律。</div>
+<div class="warn"><b>易错点</b>（1）<b>并行扫描并没有减少浮点运算量</b>，还是 \(O(Ln^2)\)；它只降低<b>关键路径深度</b>。在 GPU 上如果 \(n\) 很小（比如 \(n=16\)），单步就是一条极细的访存受限指令，并行扫描收益往往不如 FFT 高——这就是 S4 走 FFT 路线而 Mamba 走扫描路线的原因之一。（2）复合律<b>不满足交换律</b>，所以树形重排必须<b>保持从左到右的顺序</b>，Blelloch 算法里的"up-sweep / down-sweep"两阶段各自保序，不能乱。（3）数值上扫描的误差是<b>连乘</b>累积的，而 FFT 路径误差不同；长序列下要留意。（4）实际工程（Mamba、RWKV）用的是<b>硬件友好的近似扫描</b>（分段并行 + 段内顺序），不是纯 Blelloch。</div>
+<div class="relnav">相关：<a href="#eq-5-44">(5.44) 递推</a> · <a href="#ssm-zoh">补充 B：FFT 路线</a> · <a href="#ssm-selective">补充 D：选择性扫描</a></div>
+</section>
+
+<!-- ==================== 补充 D ==================== -->
+<section class="fml supp" id="ssm-selective">
+<h2><span class="num">补充 D</span>选择性扫描：Mamba 的关键改动与代价<a class="anchor" href="#ssm-selective">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.5.2 节 Variants of the State Space Model · Mamba　<a href="../thellm/11-5-model-architecture.html#5-5-2-variants-of-the-state-space-model">对照原文</a></p>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \underbrace{\Delta_t,\;B_t,\;C_t}_{\text{数据相关}}=\text{非线性}\bigl(x_t\bigr),\qquad h_t=\bar A_t h_{t-1}+\bar B_t x_t,\qquad \bar A_t=e^{\Delta_t A},\quad \bar B_t\approx\Delta_t B_t,\qquad y_t=C_t h_t \]
+</div>
+<div class="eq">
+\[ \text{标准 SSM 的固定核：}\quad K_k=CA^{k-1}B\quad(k\ \text{与}\ t\ \text{无关});\qquad \text{Mamba：}\quad K_{t,i}=C_t\,\bar A_t^{\,t-i}B_i\ \ \text{逐对不同} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\Delta_t\)</td><td>第 \(t\) 步的<b>步长</b>（数据相关）：控制"这一步要把状态冲掉多少"</td><td>正标量</td></tr>
+<tr><td>\(B_t\)</td><td>第 \(t\) 步的输入投影（数据相关）：决定"往状态里写什么"</td><td>\(\mathbb{R}^{n\times d}\)</td></tr>
+<tr><td>\(C_t\)</td><td>第 \(t\) 步的读出（数据相关）：决定"从状态里读什么"</td><td>\(\mathbb{R}^{d\times n}\)</td></tr>
+<tr><td>\(\bar A_t=e^{\Delta_tA}\)</td><td>第 \(t\) 步的状态转移</td><td>\(\mathbb{R}^{n\times n}\)</td></tr>
+<tr><td>\(A\)</td><td>仍是<b>参数</b>（通常 \(A=-\mathrm{exp}(\hat A)\)，对角元全负）</td><td>\(\mathbb{R}^{n\times n}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>回顾标准 SSM 的结构性问题。</b>在 <a href="#eq-5-44">(5.44)</a> 里，\(A,B,C\) 是<b>固定的参数</b>，对序列中所有 \(t\) 都一样。后果有二：<ul>
+<li>递推是<b>线性时不变（LTI）</b>的 ⇒ <a href="#eq-5-46">(5.46)</a> 的核 \(K=CA^{k-1}B\) 是常量 ⇒ 能用 FFT 并行；</li>
+<li>但状态更新 \(S_t=AS_{t-1}+Bx_t\) <b>没有"选择性"</b>：每一步都以<b>同样的速率</b>遗忘旧信息、同样的方式写入新信息。语言里显然需要"这个 token 是关键就多写一点、是填充词就少写一点"。</li>
+</ul></li>
+<li><b>Mamba 的改动：把 \((\Delta_t,B_t,C_t)\) 变成输入 \(x_t\) 的非线性函数。</b>典型写法是
+<div class="eq">\[
+\Delta_t=\mathrm{softplus}\bigl(W_\Delta x_t\bigr)\in\mathbb{R}^{d\times1},\qquad B_t=W_Bx_t,\qquad C_t=W_Cx_t,
+\]</div>
+即先用一个小线性层从输入投影出"选择信号"，再用非线性（\(\mathrm{softplus}\)）保证 \(\Delta_t&gt;0\)。然后代入 <a href="#ssm-zoh">补充 B</a> 的离散化，但<b>每一步用自己的 \(\Delta_t\)</b>：
+<div class="eq">\[
+\bar A_t=e^{\Delta_tA},\qquad \bar B_t=\Delta_t(\Delta_tA)^{-1}(e^{\Delta_tA}-I)\cdot\Delta_t B_t\;\approx\;\Delta_tB_t\quad(\Delta_t\text{ 小时}),
+\]</div>
+遂得 \(h_t=\bar A_th_{t-1}+\Delta_tB_tx_t\)、\(y_t=C_th_t\)。</li>
+<li><b>为什么这就有了"选择性"（information selection）。</b>逐项看语义：\(\Delta_t\) 大 ⇒ \(\bar A_t=e^{\Delta_tA}\approx\mathrm{diag}(e^{\Delta_t\lambda_i})\) 的对角元更小 ⇒ <b>状态被冲得更狠，旧记忆被更彻底地忘掉</b>；\(\Delta_t\) 小 ⇒ 状态几乎原样保留。<b>所以 \(\Delta_t\) 就是"这一步该忘多少"的旋钮，而它由内容决定</b>。\(B_t\) 决定"写什么进记忆"，\(C_t\) 决定"从记忆里取什么出来拼进输出"——同样是内容相关的。这就是原书说的"根据当前输入选择性地过滤来自上一状态和当前输入的信息"。</li>
+<li><b>关键代价：LTI 被打破，卷积核不再是常量。</b>把 <a href="#eq-5-45">(5.45)</a> 的展开改成 \(\bar A_t,\bar B_i,C_t\) 逐步不同的版本：
+<div class="eq">\[
+y_t=\sum_{i\le t}C_t\,\bar A_t\bar A_{t-1}\cdots\bar A_{i+1}\,\Delta_iB_i\,x_i .
+\]</div>
+注意 \(C_t\) 和 \(\bar A_t,\dots,\bar A_{i+1}\) 全都带下标 \(t\) 和 \(i\)。对应的"核"是 \(K_{t,i}=C_t\bar A_t^{t-i}B_i\)（略去逐步指数的记号），<b>它依赖 \((t,i)\) 两个变量</b>，而不是只依赖 \(i-t\)。</li>
+<li><b>所以卷积定理失效。</b>卷积定理要求 \(y=x*K\) 中 \(K\) 是<b>常量核</b>，等价于系统 LTI。一旦 \(\bar A_t,B_t,C_t\) 随 \(t\) 变，核就<b>时变（time-varying）</b>了，\(\mathcal{F}\{y\}\ne\mathcal{F}\{x\}\odot\mathcal{F}\{K\}\)（时变系统的频率响应也随时间变，无法一次变换搞定）。<b>因此 Mamba 只能用 \(O(L)\) 的顺序扫描，不能用 FFT</b>——原书明确指出这一点："由于在状态计算过程中引入了非线性变换，Mamba 无法利用快速傅里叶变换进行高效的卷积计算。"</li>
+<li><b>那用什么并行？并行扫描。</b>好在每一步仍然是<b>仿射变换</b> \(h\mapsto\bar A_th+\bar B_tx_t\)，复合律与 <a href="#ssm-scan">补充 C</a> 完全一样（只是 \(\bar A,\bar B\) 变成了带下标的版本），于是<b>结合律依然成立、树形并行扫描依然可用</b>。Mamba 的工程实现正是把"分段并行（block-parallel）+ 段内顺序扫描 + 硬件融合 kernel（在 SRAM 里做，避免每步读写 HBM）"三件事结合起来，把理论上的 \(O(L)\) 关键路径压到接近 \(O(L/B)\)。</li>
+<li><b>顺带说说 \(\Delta_t\) 的一个额外好处。</b>\(\Delta_t\in\mathbb{R}^{d\times1}\) 是<b>逐通道</b>的：不同特征通道可以有不同的时间尺度。所以 Mamba 的"多通道"比标准 SSM 更灵活——标准 SSM 的 \(n\) 个模态共享一个 \(\Delta\)，Mamba 相当于给每个输入通道配了独立的遗忘速率。</li>
+</ol>
+
+<div class="note"><b>直觉</b>标准 SSM 像一个<b>转速固定的录音机</b>：不管你说什么，它都以恒定速率把旧磁带抹掉、写上新内容。Mamba 换成了<b>自动增益控制</b>：听到关键信息就"音量调大、时间放慢"多写多留，听到"的了、的"这种填充词就"快速抹掉"。所以它更懂语言的内容依赖性——代价就是转录必须一个词一个词顺序做，没法用频域并行。</div>
+<div class="warn"><b>易错点</b>（1）"选择性"不等于"注意力"：Mamba 的状态维度 \(n\) 固定（通常 16），<b>没有 token 间的两两交互</b>，所以它对"回指（coreference）""精确检索"类任务天然弱于注意力。（2）\(A\) 仍是参数（可训练、来自 HiPPO 初始化或 \(-\mathrm{exp}(\hat A)\)），变数据相关的只有 \(\Delta,B,C\)——原书说的是"把参数矩阵 \((A,B,C)\) 表示成输入的非线性函数"，实践里 \(A\) 保持参数。（3）<b>不要</b>试图对 Mamba 用 FFT；也别用 <a href="#ssm-scan">补充 C</a> 的<b>纯</b> Blelloch 扫描去凑——实际 kernel 用的都是近似扫描。<code>selective_scan_cuda</code> 里做的两件事是"逐通道外积 + 段内累加"和"把 \(\Delta,B,C\) 的投影结果提前算好放进 SRAM"。（4）\(\Delta_t B_t\) 的近似只在 \(\Delta_t\) 小时成立，大 \(\Delta_t\) 时应回退到 <a href="#ssm-zoh">补充 B</a> 的完整式。</div>
+<div class="relnav">相关：<a href="#ssm-scan">补充 C：并行扫描</a> · <a href="#ssm-zoh">补充 B：FFT 路线（被打破的那条）</a> · <a href="#eq-5-44">(5.44) 标准递推</a> · <a href="#eq-5-46">(5.46) 常量核</a></div>
+</section>
+
+<!-- ==================== 补充 E ==================== -->
+<section class="fml supp" id="flash-online">
+<h2><span class="num">补充 E</span>FlashAttention：分块计算与 online softmax<a class="anchor" href="#flash-online">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.2.5 节 Attention Mechanism · Hardware optimization（原文未编号，为本页补充推导）　<a href="../thellm/11-5-model-architecture.html#5-2-5-attention-mechanism">对照原文</a></p>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ O_i=\mathrm{diag}\!\Bigl(\tfrac{1}{\ell}\bigl[\,(e^{m-m'}O) + e^{S_2-m'}V_2\,\bigr]\Bigr),\qquad m'=\max\bigl(m,\ \mathrm{rowmax}(S_2)\bigr),\qquad \ell'=e^{m-m'}\ell+e^{\mathrm{rowmax}(S_2)-m'}\sum_j e^{S_{2,j}-m'} \]
+</div>
+<div class="eq">
+\[ \text{归一化后：}\qquad p_j=\frac{e^{s_j-m}}{\ell},\qquad m=\max_j s_j,\quad \ell=\sum_j e^{s_j-m} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\mathbf{Q},\mathbf{K},\mathbf{V}\)</td><td>query / key / value 矩阵</td><td>\(\mathbb{R}^{T\times d}\)</td></tr>
+<tr><td>\(\mathbf{S}=\tfrac{QK^{\top}}{\sqrt d}\)</td><td>注意力分数矩阵</td><td>\(\mathbb{R}^{T\times T}\)</td></tr>
+<tr><td>\(m\)</td><td>已处理部分的<b>运行最大值</b>（running max），softmax 的数值稳定锚点</td><td>标量（逐行）</td></tr>
+<tr><td>\(\ell\)</td><td>已处理部分的<b>未归一化指数和</b></td><td>标量（逐行）</td></tr>
+<tr><td>\(\mathbf{S}_2,\mathbf{V}_2\)</td><td>新读入的分数块 / value 块</td><td>\(\mathbb{R}^{T_r\times B_c}\)</td></tr>
+<tr><td>\(\mathbf{O}\)</td><td>累积的输出（<b>未除以 \(\ell\)</b>）</td><td>\(\mathbb{R}^{T_r\times d}\)</td></tr>
+<tr><td>\(B_r,B_c\)</td><td>行块大小（对 Q）、列块大小（对 K/V）</td><td>正整数</td></tr>
+</table>
+
+<h3>③ 推导 A：online softmax 的两条更新式</h3>
+<ol class="steps">
+<li><b>出发点：把 \(\ell\) 定义成"减去最大值后的指数和"。</b>标准 softmax：\(p_j=e^{s_j}/\sum_ie^{s_i}\)。为数值稳定，取 \(m=\max_js_j\) 并写成
+<div class="eq">\[
+p_j=\frac{e^{s_j-m}}{\underbrace{\sum_ie^{s_i-m}}_{=\ell}},
+\]</div>
+这个变形是<b>恒等变形</b>（分子分母同乘 \(e^{-m}\)），但保证最大指数是 \(e^0=1\)，其余 \(\le1\)，从而<b>既不溢出也不下溢</b>。（bf16 的最大指数约 \(3.4\times10^{38}\)、fp16 约 \(65504\)，若不减去最大值，\(s_j=100\) 时 \(e^{100}\) 就直接溢出。）</li>
+<li><b>要解决的问题：序列被切成块，逐块到达，如何增量维护 \(m,\ell\)？</b>设已处理部分的最大值是 \(m\)、指数和是 \(\ell\)，新块带来分数 \(S_2\) 与 value \(V_2\)。新最大值显然是
+<div class="eq">\[
+m'=\max\bigl(m,\ \mathrm{rowmax}(S_2)\bigr).
+\]</div>
+<b>难点在"换了 \(m\)"之后旧的 \(\ell\) 就不对了</b>：\(\ell\) 是按 \(e^{s-m}\) 累加的，换成 \(e^{s-m'}\) 后，每个旧项都要乘一个 \(e^{m-m'}\) 的修正因子：\(e^{s-m}=e^{m-m'}\,e^{s-m'}\)。于是
+<div class="eq">\[
+\ell'=\sum_{\text{旧}}e^{s-m}+\sum_{\text{新}}e^{S_{2,j}-m'}=e^{m-m'}\ell+\sum_je^{S_{2,j}-m'} .
+\]</div>
+<b>这就是那个"最大值修正项" \(e^{m-m'}\) 的来历</b>：它是一个 \(\in(0,1]\) 的重缩放因子，把旧累加器的单位从"以 \(m\) 为基准"换到"以 \(m'\) 为基准"。</li>
+<li><b>输出累加器同理。</b>定义未归一化累加器 \(\tilde{O}=\sum_i e^{s_i-m}v_i\)，则 \(O=\mathrm{diag}(1/\ell)\tilde{O}\)。新块到来时，同样要重缩放旧部分、并加上新块的加权：
+<div class="eq">\[
+\tilde{O}'=e^{m-m'}\tilde{O}+\sum_j e^{S_{2,j}-m'}\,V_{2,j}.
+\]</div>
+<b>最关键的一点：因为 \(\ell'\) 和 \(\tilde{O}'\) 里的修正因子<b>恰好是同一个</b> \(e^{m-m'}\)，所以可以在最后一步再统一除以 \(\ell'\)</b>：
+<div class="eq">\[
+O=\frac{1}{\ell'}\tilde{O}'=\frac{e^{m-m'}\tilde{O}+\sum_je^{S_{2,j}-m'}V_{2,j}}{e^{m-m'}\ell+\sum_je^{S_{2,j}-m'}}
+=\frac{\tilde{O}+\sum_je^{S_{2,j}-m'}e^{m-m'}V_{2,j}}{\ell+\sum_je^{S_{2,j}-m'}} ,
+\]</div>
+形式与"整块一次性算"完全相同。<b>这保证了分块结果与不分块逐位一致（up to 浮点误差）</b>，只是中间量被维护在 SRAM 里。这就是 <code>softmax</code> 的"分块计算"能成立的全部理由。</li>
+</ol>
+
+<h3>③ 推导 B：分块（tiling）为什么能省 IO</h3>
+<ol class="steps">
+<li><b>先算朴素实现的 IO 量。</b>朴素注意力要物化 \(\mathbf{S}=\tfrac{QK^{\top}}{\sqrt d}\in\mathbb{R}^{T\times T}\)（bf16 下每个元素 2 字节），再读它算 softmax，再读 softmax 的结果乘 \(V\)。HBM 读写量约为
+<div class="eq">\[
+\underbrace{T^{2}d}_{\text{写 }S}+\underbrace{T^{2}}_{\text{读 }S}+\underbrace{T^{2}}_{\text{读 }S\text{ 做 softmax}}+\underbrace{T^{2}}_{\text{写}\ \tilde{S}}+\underbrace{T^{2}}_{\text{读}\ \tilde{P}V}+\underbrace{T^{2}d}_{\text{读}\ V}=\Theta(T^{2}d)\ \text{字节} .
+\]</div>
+<b>算力只有 \(O(T^{2}d)\) FLOPs</b>，而 A100 的算力/带宽比约 200 FLOP/Byte，所以需要约 \(d/200\) 个元素/字节才算"算得过来"；当 \(T\) 很大、\(d=128\) 时 \(T^2d\) 的访存远超算力预算 ⇒ <b>朴素注意力是彻底的 memory-bound（访存瓶颈）</b>。</li>
+<li><b>分块的关键：把 \(Q,K,V\) <b>流式</b>地读，把 \(\mathbf{S}\) 留在 SRAM 里。</b>FlashAttention 只把 \(Q\) 和 \(K,V\) 从 HBM 读进来（合计 \(O(Td)\) 字节/head），对每个 \(Q\) 块（\(B_r\) 行）用 <a href="#flash-online">推导 A</a> 的 online softmax 依次扫过所有 \(K,V\) 块（\(B_c\) 列）：</li>
+</ol>
+<div class="eq">
+\[ \begin{aligned} \text{外层（对 }Q\text{ 块 }r\text{，共 }T/B_r\text{ 个）}\;&amp;\quad \text{从 HBM 读一次 }Q_r\ (B_r\!\times\!d)\text{，初始化 }m_r\!\leftarrow\!-\infty,\ \ell_r\!\leftarrow\!0;\\ \text{内层（对 }K,V\text{ 块 }c\text{，共 }T/B_c\text{ 个）}\;&amp;\quad \text{读 }K_c,V_c\ \text{到 SRAM，算 }S_2\!\leftarrow\!\tfrac{Q_rK_c^{\top}}{\sqrt d}\ (B_r\!\times\!B_c),\\ &amp;\quad \text{用推导 A 的 }m',\ell',\tilde{O}'\ \text{就地更新；}\\ \text{收尾}\;&amp;\quad O_r\!\leftarrow\!\tilde{O}_r/\ell_r\ \text{写回 HBM}.\end{aligned} \]
+</div>
+<ol class="steps" start="3">
+<li><b>IO 复杂度变成 \(O(Td)\)。</b>\(\mathbf{S}\) 的每个分块<b>从不</b>落 HBM，只在 SRAM（A100 上 164 KB）里存在；HBM 流量降到 \(\Theta(Td)\) 字节/head（读 \(Q,K,V\) 各一次 + 写 \(O\) 一次），<b>与 \(T^{2}\) 无关</b>。于是同样的 \(\Theta(T^{2}d)\) FLOPs 变得几乎纯算力-bound，MFU 从约 20% 提到 60–75%。</li>
+<li><b>反向传播为什么也能省。</b>softmax 只需保存每行的两个统计量 \((m,\ell)\)（\(O(T)\) 而非 \(O(T^{2})\)）就能重算任意分块的 \(P\)：由 \(\partial\mathcal{L}/\partial s_{ij}=P_{ij}(D_j-\delta_{ij}D_i)\)，其中 \(D_i=\sum_j(\partial\mathcal{L}/\partial o_i)\cdot v_j\)。所以反向也能按块重算而不存 \(T\times T\) 的中间激活。</li>
+<li><b>分块大小怎么选。</b>约束：SRAM 要装得下 \(Q_r,K_c,V_c,S_2\)，即 \(d(B_r+2B_c)+B_rB_c\) 字节 \(\le\) SRAM 容量。实践中取 \(B_c=64\sim128\)、\(B_r\approx\frac{\text{SRAM}}{4d}-B_c\)。\(B_c\) 太小则 \(QK^{\top}\) 的 GEMM 效率低（tensor core 需要连续访存），太大则装不下。</li>
+</ol>
+
+<div class="note"><b>直觉</b>FlashAttention 的洞见是：<b>softmax 的分块化和 max/求和的增量维护是可以同时做到的</b>（靠 \(m,\ell\) 这两个"摘要量"），所以那个巨大的 \(T\times T\) 分数矩阵<b>从来不需要被写进慢速内存</b>——它只在片上快存里滚过去。IO 复杂度从 \(O(T^2d)\) 降到 \(O(Td)\)，这是"算法层面的 IO 感知优化"，和 PagedAttention 优化 KV Cache 显存占用是互补的两件事。</div>
+<div class="warn"><b>易错点</b>（1）不减去最大值直接算 \(e^{s}\) 在 fp16 下极易溢出，这是 <code>m</code> 存在的唯一理由。（2）"分块结果与整块一致"只在<b>数学上</b>成立，浮点下累加顺序变了会有微小差异，所以 <code>flash_attn</code> 不是逐位可复现的。（3）\(m\) 的初值必须设为 \(-\infty\)（或很大的负数）而不是 0，否则空块的 \(e^{0-m'}\) 会污染 \(\ell\)。（4）因果掩码（causal mask）只需把不该看的块<b>整块跳过</b>——这正是 <a href="#eq-5-34">5.34</a> 那类偏置/掩码方案在 IO 上的额外好处：ALiBi 这种加性偏置可以在算完 \(S_2\) 后就地相减，不需要单独存一张 mask 矩阵。（5）这一套是 <b>FlashAttention 论文的内容</b>，原书 5.2.5 节只做了一句话提及并把细节放在第 9.2.2 节，本页为补充推导。</div>
+<div class="relnav">相关：<a href="#eq-5-34">(5.34) ALiBi 偏置</a> · <a href="#ssm-zoh">补充 B：FFT 卷积（另一种把计算塞进乘法的技巧）</a> · <a href="#eq-5-46">(5.46) 卷积核</a></div>
+</section>
+</article>
+</main>
+<nav class="chapnav" aria-label="上下页导航"><div class="chapnav-inner">
+<a class="" href="04-ch05-arch-b.html"><span class="lbl">上一章</span><span class="nm">Chapter 5 · 2/3　第 5 章 · 模型架构（2/3）</span></a><a class="next" href="06-ch06-pt-a.html"><span class="lbl">下一章</span><span class="nm">Chapter 6 · 1/2　第 6 章 · 预训练（1/2）</span></a>
+</div></nav>
+<script src="../assets/katex/katex.min.js"></script>
+<script src="../assets/katex/auto-render.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

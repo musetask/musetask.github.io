@@ -1,0 +1,388 @@
+<h1><span class="chno">Chapter 9 · 1/2</span>第 9 章 · 解码与部署（1/2）</h1>
+<p class="lead">这一页把"训练完之后怎么把词一个一个吐出来"讲清楚。前半是解码策略：贪心解码（greedy search，9.1）是逐步取条件概率最大的词；随机采样（9.2）是从整个词表按分布抽词，而束搜索（beam search）留 <i>n</i> 条候选、按联合概率排序，并必须配长度归一化（length normalization）才能不偏爱短句；温度采样（9.3）在 softmax 里插一个温度 <i>t</i>，<i>t</i>&rarr;0 退化为贪心、<i>t</i>&rarr;&infin; 退化为均匀采样，后面再展开 top-k / top-p(nucleus) / typical 等截断集合的构造规则和重复惩罚在 logits 上的作用。后半是推理效率与压缩：KV cache 下的注意力（9.4）、线性量化的三个基本式（9.5–9.7）、非对称 INT8 的端点方程组（9.8–9.9）、以及离群通道逐通道缩放的量化（9.10）。</p>
+<p class="where"><b>原书位置</b>第 9 章 9.1 节 解码策略、9.2 节 效率优化、9.3 节 模型量化 <a href="../thellm/17-9-decoding-and-deployment.html#9-1-decoding-strategies">对照原文</a></p>
+
+<h2 id="toc-a">本页公式一览</h2>
+<table class="sym">
+<tr><th>编号</th><th>一句话</th><th>核心数学工具</th></tr>
+<tr><td><a href="#eq-9-1">9.1</a></td><td>贪心解码：逐步取 argmax</td><td>条件概率的逐步分解</td></tr>
+<tr><td><a href="#eq-9-2">9.2</a></td><td>随机采样 <i>u<sub>i</sub></i> &sim; <i>P</i>(<i>u</i>|<i>u</i><sub>&lt;i</sub>）束搜索与长度归一化</td><td>log 与乘法的互转、极大似然</td></tr>
+<tr><td><a href="#eq-9-3">9.3</a></td><td>温度采样：softmax 里除以 <i>t</i></td><td>softmax 平移不变性、极限分析</td></tr>
+<tr><td><a href="#eq-9-4">9.4</a></td><td>带 KV cache 的注意力（新 token 一行）</td><td>矩阵分块 + 行 softmax 独立性</td></tr>
+<tr><td><a href="#eq-9-5">9.5</a></td><td>量化：实数 &rarr; 整数码</td><td>仿射映射 + 取整</td></tr>
+<tr><td><a href="#eq-9-6">9.6</a></td><td>反量化：整数码 &rarr; 恢复实数</td><td>仿射逆变换 + 误差上界</td></tr>
+<tr><td><a href="#eq-9-7">9.7</a></td><td>量化误差的 \(L_2\) 范数</td><td>向量量化、舍入误差模型</td></tr>
+<tr><td><a href="#eq-9-8">9.8</a></td><td>非对称量化：上端点方程</td><td>二元一次方程组</td></tr>
+<tr><td><a href="#eq-9-9">9.9</a></td><td>非对称量化：下端点方程</td><td>二元一次方程组</td></tr>
+<tr><td><a href="#eq-9-10">9.10</a></td><td>离群通道逐通道缩放后再量化</td><td>逐通道归一化 + 取整</td></tr>
+</table>
+
+<h2 id="sym-a">本页符号约定</h2>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\mathcal{V}\)</td><td>词表（vocabulary），候选 token 的集合</td><td>集合，\(|\mathcal{V}|=V\) 量级 \(10^4\sim10^5\)</td></tr>
+<tr><td>\(\boldsymbol{u}_{&lt;i}=(u_1,\dots,u_{i-1})\)</td><td>第 \(i\) 步之前已生成的 token 序列（context / prefix）</td><td>长度 \(i-1\) 的离散序列</td></tr>
+<tr><td>\(P(u\mid\boldsymbol{u}_{&lt;i})\)</td><td>给定前缀时下一个 token 是 \(u\) 的概率（式 5.11 softmax 的输出）</td><td>标量，\([0,1]\)</td></tr>
+<tr><td>\(l_j\)</td><td>候选 token \(u_j\) 的 logit，softmax 之前的未归一化分数</td><td>标量，\(\mathbb{R}\)，同量纲</td></tr>
+<tr><td>\(t\)</td><td>温度系数（temperature），\(t&gt;0\)</td><td>标量，无量纲</td></tr>
+<tr><td>\(n\)</td><td>束搜索宽度（beam size / beam width）</td><td>正整数，实践取 3–6</td></tr>
+<tr><td>\(\alpha\)</td><td>长度惩罚系数，或重复惩罚系数（按小节区分）</td><td>标量，无量纲</td></tr>
+<tr><td>\(\tilde{\boldsymbol{x}}_{\hat{u}}\)</td><td>新生成 token \(\hat{u}\) 在该层的隐状态（单行向量）</td><td>\(\mathbb{R}^{H}\)</td></tr>
+<tr><td>\(\oplus\)</td><td>按行拼接（concatenation along rows）</td><td>\((m+p)\times d\) 拼接成 \((m+p+1)\times d\)</td></tr>
+<tr><td>\(S\)</td><td>量化步长 / 缩放因子（scale），决定一个整数刻度对应多少实数</td><td>标量，\(\mathbb{R}\)，同量纲为数据本身</td></tr>
+<tr><td>\(Z\)</td><td>零点因子（zero-point），把实数 0 对齐到哪个整数格点</td><td>整数；对称量化时 \(Z=0\)</td></tr>
+<tr><td>\(R(\cdot)\)</td><td>近似（取整）函数，\(R(\cdot)=\mathrm{round}(\cdot)\) 或 \(\lfloor\cdot\rfloor\)</td><td>映射 \(\mathbb{R}\to\mathbb{Z}\)</td></tr>
+<tr><td>\(\boldsymbol{s}_X\)</td><td>激活逐通道的尺度（如通道最大值），组成向量 \(\boldsymbol{s}_X\)</td><td>\(\mathbb{R}^{d_{\mathrm{in}}}\)，逐元素正数</td></tr>
+</table>
+
+<!-- ==================== 9.1 ==================== -->
+<section class="fml" id="eq-9-1">
+<h2><span class="num">(9.1)</span>贪心解码：逐步取最大概率<a class="anchor" href="#eq-9-1">#</a></h2>
+<p class="where"><b>出处</b>第 9 章 9.1.1 节 Background　<a href="../thellm/17-9-decoding-and-deployment.html#9-1-1-background">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0234.png" alt="原书公式 9.1"><span class="cap">原书公式 9.1</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ u_i = \operatorname*{arg\,max}_{u\in\mathcal{V}} P\!\left(u\mid\boldsymbol{u}_{&lt;i}\right) \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(u_i\)</td><td>第 \(i\) 步选出的 token</td><td>离散，\(\mathcal{V}\) 的一个元素</td></tr>
+<tr><td>\(\boldsymbol{u}_{&lt;i}\)</td><td>已生成前缀 \((u_1,\dots,u_{i-1})\)，不含 \(u_i\) 自己</td><td>序列，长度 \(i-1\)</td></tr>
+<tr><td>\(\operatorname{arg\,max}_u\)</td><td>取使后面表达式最大的那个 <b>u</b>（不是最大值本身！）。若并列则实现里取编码序最小者</td><td>函数</td></tr>
+<tr><td>\(P(u\mid\boldsymbol{u}_{&lt;i})\)</td><td>语言模型输出的下一 token 分布（式 5.11）</td><td>标量，\([0,1]\)，对 \(u\in\mathcal{V}\) 求和为 1</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<p>需要的工具只有一个：自回归语言模型的<b>链式分解（chain rule）</b>。若 \(\Pr(A\cap B)=\Pr(A)\Pr(B\mid A)\)，反复展开得</p>
+<div class="eq">
+\[ P(\boldsymbol{u}) = P(u_1)\cdot P(u_2\mid u_1)\cdots P(u_T\mid\boldsymbol{u}_{&lt;T}) = \prod_{t=1}^{T} P(u_t\mid\boldsymbol{u}_{&lt;t}) \]
+</div>
+<ol class="steps">
+<li><b>为什么可以只看条件概率。</b>解码时前缀已经定下来了，所以目标是最大化"在给定前缀下生成 \(u_i\) 的概率"。模型一次前向（式 5.11）已经把 \(P(u\mid\boldsymbol{u}_{&lt;i})\) 算成词表上的一个概率向量，无需考虑别的词。 <b>argmax 与 max 的区别。</b>\(\max_u\) 是把所有取值里的最大值<b>取出来</b>（一个数），\(\operatorname{arg\,max}_u\) 是把<b>取到最大值的那个位置</b>取出来（一个 token）。式 9.1 要的是后者，所以实现写成 <code>u_i = P.argmax()</code>。 <b>为什么它是"局部"贪心。</b>真正的目标是整句概率 \(P(\boldsymbol{u})=\prod_t P(u_t\mid\boldsymbol{u}_{&lt;t})\) 的 argmax。逐步 argmax <b>不与</b>整句 argmax 交换。取 log 后问题变成最大化 \(\sum_t \log P(u_t\mid\boldsymbol{u}_{&lt;t})\)，而 \(\log(\cdot)\) 是凹函数、单调递增，于是"每一步取最大"和"总和最大"没有任何可交换性。 <b>具体反例（用图 9.2 的数字构造）。</b>设第 1 步分布为 coffee 0.681、water 0.119、tea 0.028……；第 2 步：若前缀是 "coffee"，模型对 tea 只给 0.10（它想说的是 "pot of coffee table"）；若前缀是 "water"，模型对 tea 给 0.90（"pot of water tea" 很怪，但模型此时就是这么分布的）。贪心走 coffee： \(P(\text{coffee tea}) = 0.681\times 0.10 = 0.0681\)，\(\log = -2.686\)；改走 water：\(P(\text{water tea}) = 0.119\times 0.90 = 0.1071\)，\(\log = -2.234\)。因为 \(-2.234 &gt; -2.686\)，"water tea" 的整句概率<b>更大</b>，贪心却选了它前面概率更小的那条路。这就是贪心只保证"每步局部最优"的确切含义。 <b>步数不变性（一个不错的理论结果）。</b>设第 \(t\) 步选出的条件概率为 \(p_t\)。贪心保证 \(p_t \ge P(y\mid\boldsymbol{u}_{&lt;t})\) 对任意候选 \(y\) 成立，于是逐项归纳得 \(\prod_{t\le s}p_t \ge \prod_{t\le s}P(y_t\mid\cdot)\)：贪心在前 \(s\) 步的<b>前缀</b>一定是最优前缀。所以贪心解是"最优前缀序列（best prefix）"，只是不保证最后一步的整句最优。</li>
+</ol>
+
+<div class="note"><b>直觉</b>式 9.1 就是"每次都选模型最有把握的那个词"。它在输出高度依赖输入的任务（机器翻译、摘要、信息抽取）里表现不错，因为那种任务每一步的局部最优几乎就是全局最优；但在开放式生成（讲故事、闲聊）里会掉进"局部陷阱"，产出呆板重复的句子。原书举的例子就是 "I am sleepy. I start a pot of water tea" 被贪心拖进奇怪的后半句。</div>
+<div class="warn"><b>易错点</b>贪心是<b>确定性</b>的：同样的输入跑两次结果完全一样（温度为 0 的采样也是同一个东西的连续化）。所以别指望贪心带来多样性；想要多样性必须换成 <a href="#eq-9-2">9.2</a> 的随机采样或 <a href="#eq-9-3">9.3</a> 的温度 + 截断采样。</div>
+<div class="relnav">相关：<a href="#eq-9-2">(9.2)</a> 随机采样与束搜索、<a href="#eq-9-3">(9.3)</a> 温度采样（\(t\to 0\) 时退化为贪心）</div>
+</section>
+
+<!-- ==================== 9.2 ==================== -->
+<section class="fml" id="eq-9-2">
+<h2><span class="num">(9.2)</span>随机采样；束搜索与长度归一化<a class="anchor" href="#eq-9-2">#</a></h2>
+<p class="where"><b>出处</b>第 9 章 9.1.1–9.1.2 节 Background / Improvements to Greedy Search　<a href="../thellm/17-9-decoding-and-deployment.html#9-1-2-improvements-to-greedy-search">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0238.png" alt="原书公式 9.2"><span class="cap">原书公式 9.2</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ u_i \sim P\!\left(u\mid\boldsymbol{u}_{&lt;i}\right) \]
+</div>
+<p>式 9.2 只是"从分布里抽一个"。真正要展开推导的是围绕它的束搜索目标函数与长度惩罚：</p>
+<div class="eq">
+\[
+\begin{aligned}
+\hat{\boldsymbol{y}} &= \operatorname*{arg\,max}_{\boldsymbol{y}} \; \sum_{t=1}^{T} \log P\!\left(y_t\mid\boldsymbol{y}_{&lt;t},\boldsymbol{u}_{&lt;m}\right) \\
+&= \operatorname*{arg\,max}_{\boldsymbol{y}} \; \frac{1}{lp(\boldsymbol{y})}\sum_{t=1}^{T} \log P\!\left(y_t\mid\boldsymbol{y}_{&lt;t},\boldsymbol{u}_{&lt;m}\right),
+\qquad lp(\boldsymbol{y})=\Bigl(\tfrac{5+T}{6}\Bigr)^{\alpha} \\
+\text{推广形式:}\quad & S(\boldsymbol{y})=\frac{\Bigl(\sum_{t=1}^{T}\log P(y_t\mid\cdot)\Bigr)^{\alpha}}{lp(\boldsymbol{y})},
+\qquad \text{平方形式:}\quad S_2(\boldsymbol{y})=\frac{\Bigl(\sum_{t=1}^{T}\log P(y_t\mid\cdot)\Bigr)^{2}}{lp(\boldsymbol{y})}
+\end{aligned}
+\]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\sim\)</td><td>"服从分布"，即按该分布抽样（\(\Pr(u_i=u)=P(u\mid\boldsymbol{u}_{&lt;i})\)）</td><td>关系</td></tr>
+<tr><td>\(\boldsymbol{y}=(y_1,\dots,y_T)\)</td><td>完整输出序列（response / hypothesis）</td><td>序列，长度 \(T\)</td></tr>
+<tr><td>\(\boldsymbol{u}_{&lt;m}\)</td><td>输入提示（prompt / source），这里固定，对求 argmax 无影响</td><td>序列</td></tr>
+<tr><td>\(\log P(\cdot)\)</td><td>负对数似然 \(-\mathrm{NLL}\)，\(\le 0\)，量纲 nats</td><td>标量，\(\mathbb{R}_{\le 0}\)</td></tr>
+<tr><td>\(lp(\boldsymbol{y})\)</td><td>长度惩罚因子（length penalty, GNMT 的写法）</td><td>标量，\(&gt;1\)</td></tr>
+<tr><td>\(\alpha\)</td><td>惩罚指数，实践取 \(0.6\sim 0.7\)（\(\alpha=0\) 即不做归一化）</td><td>标量，\([0,1]\)</td></tr>
+<tr><td>\(n\)</td><td>束宽度，\(n=1\) 退化为贪心</td><td>正整数</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>抽样本身没有推导，只有定义。</b>\(\operatorname{Categorical}\) 抽样实现是对累积分布做二分查找：把 \(P\) 降序排成 \(p_1\ge\dots\ge p_V\)，抽一个 \(U\sim\mathrm{Uniform}(0,1)\)，取最小的 \(r\) 使 \(\sum_{j\le r}p_j\ge U\)。正因为抽的是<b>全部</b>词，"happy"、"Boh" 这类概率 \(10^{-5}\) 的噪声词也会被抽到——这正是下一步要截断的原因。 <b>束搜索的目标：为什么从乘积变求和。</b>由链式分解，输出整句概率 \(P(\boldsymbol{y}\mid\boldsymbol{u}_{&lt;m})=\prod_{t=1}^{T}P(y_t\mid\boldsymbol{y}_{&lt;t},\boldsymbol{u}_{&lt;m})\)。当 \(V\sim10^5\)、\(T\sim100\) 时这个乘积小到 \(10^{-200}\) 量级，<b>浮点数直接下溢</b>。用 \(\log\prod x_t=\sum\log x_t\) 换底（\(\log\) 严格单调，所以 argmax 不变），目标变成求和，量级也变回 \(O(T)\)。这是束搜索（以及所有训练里交叉熵取平均）都要 log 的根本原因。 <b>束搜索的搜索空间近似。</b>理论上要枚举全部 \(V^T\) 条序列，实际做法是分层剪枝：第 1 步从根节点保留概率最大的 \(n\) 个（"coffee"、"water"，图 9.3 的 \(n=2\)）；第 2 步对这 \(n\) 个前缀各自扩展 \(V\) 个词，得到 \(nV\) 个候选，取<b>前缀联合概率</b>最大的 \(n\) 个（"coffee then"、"coffee and"）……直到全部生成完，取分数最高的一条。所以它求的是 \(\max\) 的<b>近似</b>：\(n=1\) 时逐层只留 1 个，退化为式 9.1 的贪心；\(n\to\infty\) 时保留全部候选，等于对 \(V^T\) 条序列做穷举（\(10^{500}\) 条，不可行）。 <b>长度偏置的来源。</b>每个因子的条件概率 \(\le 1\)，取 log 后每项 \(\le 0\)。于是"总分 \(=\) 若干个非正数相加"，每多生成一个 token 就多加一个负数，总分严格下降，<b>候选越短越占便宜</b>。数值例子：甲 "A B" 的联合概率 \(0.5\times0.5=0.25\)（\(\log=-1.386\)），乙 "A B C" 是 \(0.5\times0.5\times0.9=0.225\)（\(\log=-1.492\)）。乙其实更像句子的自然续写，但分数更差，直接比就会输出 "A B"。 <b>归一化一：GNMT 的 \(1/lp\) 除法。</b>把总对数概率除以一个大于 1 的因子 \(lp(\boldsymbol{y})=\bigl(\tfrac{5+T}{6}\bigr)^{\alpha}\)。注意<b>被除的是负数</b>：\(-1.492/1.9=-0.785 &gt; -1.386/1.6=-0.866\)，所以分数提高的正是长序列，常数 5、6 是 GNMT 的经验取值（作用是把小 \(T\) 时的 \(lp\) 压到接近 1，避免除数太小把短序列分数放飞），\(\alpha=0.6\sim0.7\) 也是经验值不是推导结果。 <b>归一化二：提指数形式 \(S=\bigl(\sum\log P\bigr)^{\alpha}/lp\)。</b>直觉是"<b>每 token 平均</b>多少分"应当与长度无关：几何平均 \(P(\boldsymbol{y})^{1/T}=\exp\bigl(\sum\log P/T\bigr)\)。严格做法是先取平均再取幂，即 \(S=\bigl(\frac{1}{T}\sum\log P\bigr)^{\alpha}/lp\)。<b>这里有个必须点破的坑</b>：\(\sum\log P\) 是负数，负数的分数次幂（如 \(0.6\) 次）在实数域无定义，论文里的写法是把整个和取 \(\alpha\) 幂，实现中一般改为"先除以 \(T\)"或"先 exp 再乘幂"。 \(\alpha=1\) 退化为纯平均（per-token loss），\(\alpha\to0\) 则 \(x^{\alpha}\to1\) 让所有候选同分、完全不区分长度。  <b>归一化三：平方形式 \(S_2=\bigl(\sum\log P\bigr)^2/lp\)。</b>把 \(\sum_t\log P=-\sum_t\ell_t\) 写成负的<b>总损失</b> \(\ell_t=-\log P_t\ge0\)，则 \(\bigl(\sum_t\ell_t\bigr)^2=\sum_t\ell_t^2+2\sum_{t&lt;s}\ell_t\ell_s\)。分解出的<b>交叉项</b>说明：一个中等糟糕的 token（\(\ell=2\)）出现在长句里，代价是 \(4T\) 量级；而两个糟糕 token 的组合代价是 \(8T\)——平方惩罚对"整体都不自信"的句子极其敏感，对"一个 token 极糟但其余都很好"的惩罚相对温和。这正是需要"局部低置信度提示"时用平方形式、只求整体平均质量时用一次幂的原因。 <b>为什么 \(\alpha\) 必须跟着束宽一起调。</b>设每 token 的平均损失约为熵 \(c\)，则原始分数约 \(-cT\)，归一化后约 \(-cT/((5+T)/6)^{\alpha}\)。要真正长度中性，需要 \(T\longmapsto T/((5+T)/6)^{\alpha}\) 近似为常数，\(\alpha\) 越接近 1 越平。而束宽 \(n\) 改变的是<b>候选的长度分布</b>：\(n\) 小时搜索误差大，长序列往往还没被保住就已经被判"分低"出局，偏置体现不出来；\(n\) 大时搜索误差变小，几乎能找回真正的最优序列，而它的长度通常比贪心解长，于是长度偏置被完整放大。所以 \(n\) 增大要同步增大 \(\alpha\)，两者必须一起扫参。原书 T5 / GPT-3 用 \(n=4,\alpha=0.6\) 就是这个联合调出来的经验点。 <b>搜索误差 vs 模型误差。</b>束宽只能减小<b>搜索误差</b>（没找到更好的那条），对<b>模型误差</b>（模型自身的 argmax 就是错的）无能为力——把 \(n\) 调到 100 也不会让模型更懂语法。另一头是代价：每步要保留 \(n\) 条候选，显存与算力近似乘 \(n\)；而且 \(n\) 越大输出越趋保守、越发<b>模板化</b>（多样性坍塌），机器翻译里的"beam search 伤译"就是过度搜索的副作用。 <b>重复惩罚（在 logits 上加减）。</b>存在惩罚（presence）把已出现过的 token 的 logit 减去 \(\alpha\)；频率惩罚（frequency）减去 \(\alpha\cdot c_j\)，\(c_j\) 是该 token 已出现次数，实践 \(\alpha\in[0.1,1]\)；更老的重复惩罚（repetition penalty）在 \(l_j&gt;0\) 时除以系数、\(l_j&lt;0\) 时乘以系数。由于这些扰动在 softmax（式 9.3 或式 5.11）<b>之前</b>施加，而 softmax 只对"所有 logit 同减一个常数"不变（\(\mathrm{softmax}(\boldsymbol{l}-c\boldsymbol{1})=\mathrm{softmax}(\boldsymbol{l})\)），<b>减去不同数量的绝对值必然改变相对概率</b>：定量地，\(T=1\) 时 \(\dfrac{P'(u_j)}{P'(u_k)}=\exp\bigl(l_j-l_k-\alpha(c_j-c_k)\bigr)=\dfrac{P(u_j)}{P(u_k)}\exp\bigl(-\alpha(c_j-c_k)\bigr)\)。惩罚后还要重新归一化（分母变），于是被罚过的 token 概率进一步被压低，罚得越多压得越多；反过来已被罚很多次的 token 也可能因分母变小而<b>相对回升</b>，这是实践中调 \(\alpha\) 时容易意外的地方。</li>
+</ol>
+
+<div class="note"><b>直觉</b>束搜索像"同时开几条线写小说，每步只保留总分最高的几条"。总分的算法是"每步得分相加"，所以越写越长分数越低；长度归一化就是把"总长度"这件事从分数里除掉一部分。 \(\alpha\) 是除掉的力度：太小输出太短（直接 EOS），太大输出啰嗦、停不下来。</div>
+<div class="why"><b>为什么用 log</b>因为乘积会下溢、而且 log 把"连乘"变成"连加"，让束搜索能维护前缀的<b>可加分数</b>（prefix score）：扩展一个新 token 只要在父分数上加一项，不用从头算。这是束搜索唯一需要 log 的原因，与训练用的交叉熵是同一个恒等式。</div>
+<div class="warn"><b>易错点</b>① \(\log\) 分数是<b>负数</b>，"取最大"等价于"绝对值最小"，实现里很容易写成"取绝对值最大"而选中最差候选。② 用 9.1 贪心时不需要长度惩罚（长度本来就最短倾向），用束搜索就必须配。③ 重复惩罚与 top-k / top-p 截断可以叠加使用，二者作用在不同位置（logits 阶段 vs 采样阶段）。</div>
+<div class="relnav">相关：<a href="#eq-9-1">(9.1)</a> 贪心解码、<a href="#eq-9-3">(9.3)</a> 温度采样与截断集合（截断也是一种"人为的长度/质量控制"）</div>
+</section>
+
+<!-- ==================== 9.3 ==================== -->
+<section class="fml" id="eq-9-3">
+<h2><span class="num">(9.3)</span>温度采样：softmax 里的除以 \(t\)<a class="anchor" href="#eq-9-3">#</a></h2>
+<p class="where"><b>出处</b>第 9 章 9.1.3 节 Improved Strategies for Random Sampling　<a href="../thellm/17-9-decoding-and-deployment.html#9-1-3-improved-strategies-for-random-sampling">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0240.png" alt="原书公式 9.3"><span class="cap">原书公式 9.3</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ P(u_j\mid\boldsymbol{u}_{&lt;i}) \;=\; \frac{\exp(l_j/t)}{\sum_{j'}\exp(l_{j'}/t)}, \qquad t&gt;0 \]
+</div>
+<p>在此基础上，各种<b>截断采样</b>只做一件事：定义一个候选子集 \(\mathcal{S}\subseteq\mathcal{V}\)，然后在 \(\mathcal{S}\) 上重新归一化。top-k、top-p（nucleus）、epsilon、eta、typical 的差别，全部在于 \(\mathcal{S}\) 怎么定：</p>
+<div class="eq">
+\[
+\begin{aligned}
+\mathcal{S}_{k} &= \text{概率最大的 } k \text{ 个 token} \\
+V^{(p)} &= \min\Bigl\{\,u \;:\; P(X\le u)\ \ge\ p\,\Bigr\} \quad (\text{nucleus, } X \text{ 按 } P \text{ 取值}) \\
+\mathcal{S}_{\varepsilon} &= \{\,u : P(u)\ \ge\ \varepsilon\,\} \\
+\mathcal{S}_{\eta} &= \{\,u : P(u)\ \ge\ \zeta_\eta\,\},\quad \zeta_\eta=\inf\{z:\Pr(P(X)\le z)\ge\eta\} \\
+\mathcal{S}_{\tau} &= \Bigl\{\,u : \bigl|-\log P(u)-H(P)\bigr|\ \le\ \tau\,\Bigr\},\quad H(P)=-\sum_u P(u)\log P(u)
+\end{aligned}
+\]
+</div>
+<p>重归一化一律写成 \(P'(u)=P(u)/\sum_{v\in\mathcal{S}}P(v)\)（\(u\in\mathcal{S}\)），否则概率和不再等于 1。</p>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(l_j\)</td><td>第 \(j\) 个候选 token 的 logit（式 5.11 最后一层线性 + bias）</td><td>标量，\(\mathbb{R}\)</td></tr>
+<tr><td>\(t\)</td><td>温度，\(t&gt;0\)；\(t=1\) 恢复原分布，\(t&lt;1\) 更尖，\(t&gt;1\) 更平</td><td>标量，无量纲</td></tr>
+<tr><td>\(P_t\)</td><td>温度化后的分布，等式右边是全词表上的重归一化 softmax</td><td>词表上的概率向量</td></tr>
+<tr><td>\(k\)</td><td>top-k 保留个数</td><td>正整数</td></tr>
+<tr><td>\(p\)</td><td>top-p 的累积概率阈值，如 0.9</td><td>标量，\((0,1]\)</td></tr>
+<tr><td>\(\varepsilon\)</td><td>epsilon 采样：绝对概率阈值</td><td>标量，\((0,1]\)</td></tr>
+<tr><td>\(\zeta_\eta\)</td><td>eta 采样：概率本身的 \(\eta\) 分位数</td><td>标量，\((0,1]\)</td></tr>
+<tr><td>\(\tau\)</td><td>typical 采样的典型性容忍带宽度</td><td>标量，单位 nats</td></tr>
+<tr><td>\(H(P)\)</td><td>分布 \(P\) 的香农熵（以 e 为底，单位 nats）</td><td>标量，\(\ge0\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>温度的数学定义就是"缩放 logit 后重归一化"。</b>softmax 不变性：\(\mathrm{softmax}(\boldsymbol{l}-c\boldsymbol{1})=\mathrm{softmax}(\boldsymbol{l})\)，因为分子分母同乘 \(e^{-c}\)。利用它，令 \(l_{\max}=\max_j l_j\)， \(\dfrac{\exp(l_j/t)}{\sum_{j'}\exp(l_{j'}/t)}=\dfrac{\exp\bigl((l_j-l_{\max})/t\bigr)}{\sum_{j'}\exp\bigl((l_{j'}-l_{\max})/t\bigr)}\)。这样分子分母都不含巨大指数，\(t\to0\) 时也不会数值溢出——这是实现里必须做的技巧。 <b>\(t\to0\)：退化为贪心。</b>对任何 \(j\) 若 \(l_j&lt;l_{\max}\)，则 \(l_j-l_{\max}&lt;0\)，\(\exp((l_j-l_{\max})/t)\to0\)；只有 \(j^\star=\arg\max_j l_j\) 的项为 \(\exp(0)=1\)。于是 \(P_t\to\) 指示函数，式 9.3 精确地变成式 9.1。 <b>\(t\to+\infty\)：退化为均匀采样。</b>每个差 \((l_j-l_{\max})/t\to0\)，故 \(\exp(\cdot)\to1\)，归一化后 \(P_t(u_j)\to 1/V\) 对所有 \(j\) 成立，即从词表里等概率抽词。 <b>\(t=2\) 的数值例子（分布被压平）。</b>取 logit \(\boldsymbol{l}=(2.0,\ 1.0,\ 0.0,\ -1.0)\)，对应式 5.11 输出的四个候选。 \(t=1\)：指数为 \((7.3891,\,2.7183,\,1,\,0.3679)\)，和 \(11.4752\)，得 \(P=(0.6439,\,0.2369,\,0.0871,\,0.0321)\)。\n\(t=2\)：指数为 \((2.7183,\,1.6487,\,1,\,0.6065)\)，和 \(5.9735\)，得 \(P_2=(0.4551,\,0.2760,\,0.1674,\,0.1015)\)。最高概率从 0.644 掉到 0.455，排在第三的 token 从 0.087 涨到 0.167（近乎翻倍），熵明显上升；最大与最小概率之比从 20:1 变成 4.5:1。这就是图 9.4 中 \(t=1.3/1.0/0.7\) 三条曲线的全部差别。 <b>温度不改变排序。</b>因为 \(1/t&gt;0\)，\(l_j\mapsto\exp(l_j/t)\) 严格单调，所以 \(\arg\max_j P_t=\arg\max_j l_j\) 与 \(t\) 无关。温度只改变"分布形状（形状参数化）"，不改变哪个词最可能；因此单独用温度永远无法修正模型的排序错误，必须配截断采样。 <b>熵的行为。</b>温度与熵的单调性：\(t\downarrow\Rightarrow\) 分布更尖、\(H(P_t)\downarrow\)；\(t\to\infty\) 时 \(H\to\log V\)。所以"温度"可以理解为熵的一个旋钮，实践中常用 \(t\in[0.6,1.3]\)（原书例：T5 不设温度因为它用贪心；Alpaca 用 \(t=0.7\) 配 top-k 50 与 top-p 0.9）。 <b>top-k：不看概率质量。</b>\(\mathcal{S}_k\) 是<b>固定个数</b>的集合（实现上等价于把非 top-k 的 logit 设成 \(-\infty\)，即掩码）。它的缺陷是<b>与上下文无关</b>：设 \(k=3\)。在<b>尖锐</b>分布 \(P=(0.90,0.05,0.03,\dots)\) 下，top-3 保留了 0.98 的概率质量，等价于贪心，很好；在<b>平坦</b>分布 \(P=(0.15,0.14,0.13,0.12,\dots)\) 下，top-3 只保留约 0.42 的质量，被丢掉的 0.58 的质量通过<b>重新归一化</b>又回到了这 3 个词上，使 3 个低概率词变得跟第一名一样可能，输出噪声。因此"确定性任务（如 'The highest mountain in the world is '）用大 \(k\) 会引入错误答案，开放式任务（'My favorite city is '）用小 \(k\) 又限制多样性"。 <b>top-p（nucleus）：看累积质量。</b>把 token 按概率降序排成 \(X_1\ge X_2\ge\cdots\)，取 \(V^{(p)}=\min\{u: P(X\le u)\ge p\}\)，等价于"从上往下累加，第一次 \(\ge p\) 时停下"。用原书数字：\(p=0.8\)，coffee 0.681 与 water 0.119 的和恰好 \(0.800\ge0.8\)，于是 \(|V^{(0.8)}|=2\)，tea（0.028）被排除。因为集合<b>大小自适应</b>：尖锐分布下 \(V^{(p)}\) 可能只有 1 个词（≈贪心），平坦分布下会包含几十上百个词——这正是它优于 top-k 的地方。代价是每步要排序（\(O(V\log V)\)），而且在具体实现里 nucleus 会<b>动态地覆盖掉</b>先设置的 \(k\)（相当于取 \(k\le\) nucleus 集合大小）。 <b>epsilon / eta / typical 的集合规则。</b>\(\epsilon\) 采样按<b>绝对概率</b>阈值取 \(\mathcal{S}_\varepsilon=\{u:P(u)\ge\varepsilon\}\)：个数自适应，且与 top-p 的区别是"看单个概率"而非"看累积质量"——集合<b>可能为空</b>（当 \(\varepsilon&gt;\max_uP(u)\)），所以实现里要保留至少 argmax。\(\eta\) 采样把阈值本身取成分布的 \(\eta\) 分位数 \(\zeta_\eta\)，于是 \(\mathcal{S}_\eta\) 大致是"排在最前面的 \(1-\eta\) 部分的那些词"，等价于按概率排序后的相对位置，理论上保证非空。typical 采样（局部典型性，Meister et al. 2023）换了个视角：它不关心概率大小，只关心"这个 token 有多<b>出人意料</b>"。用负对数似然 \(-\log P(u)\) 作为意外程度、以熵 \(H(P)\) 作为"平均意外程度"，保留 \(\bigl|-\log P(u)-H(P)\bigr|\le\tau\) 的词：分布很尖（\(H\) 小）时只留下极可能的那几个，分布很平时留下几乎所有词——和 nucleus 一样自适应，但判据是信息量而不是概率质量。三者的取舍：epsilon/eta 集合非空性不保证、计算最省；top-p 最常用但要排序；typical 理论上对"分布已校准"最友好，实际收益依赖校准质量。</li>
+</ol>
+
+<div class="note"><b>直觉</b>温度就是"熵的旋钮"：所有候选的分数差被除以 \(t\)，差得越多被压得越狠。 \(t\) 小 = 只敢选第一名；\(t\) 大 = 谁都有可能。而 top-k / top-p 是在"多大胆"之外再加一道<b>硬性候选名单</b>：k 是"要几个名额"，p 是"要多少概率质量"。实践中二者常一起给（k 作上限、p 作停止条件）。</div>
+<div class="why"><b>为什么温度不改变 argmax</b>因为它作用在 logit 上做正比例缩放，是<b>严格单调变换</b>。所以温度不可能"救回"被模型排在第一的错误答案——想修正排序得用对比解码（contrastive decoding，原书 9.1.3 也提到）等直接改分布形状的方法。</div>
+<div class="warn"><b>易错点</b>① \(t=0\) 是非法输入（分母为 0），"温度 0"在 API 里其实是<b>特判</b>成贪心。② 截断后<b>必须重新归一化</b>，否则概率和 \(\le1\) 的分布会让实现里"抽到的概率"永远小于 1，或者在多步自回归里把概率质量泄漏掉。③ \(\varepsilon\) 采样可能给出空集。④ 温度、top-k、top-p、重复惩罚都作用在同一份 logit/分布上，叠加时顺序会影响结果（一般顺序：logit 惩罚 &rarr; 温度 &rarr; 截断 &rarr; 重归一化）。</div>
+<div class="relnav">相关：<a href="#eq-9-1">(9.1)</a> 贪心解码（\(t\to0\) 的极限）、<a href="#eq-9-2">(9.2)</a> 随机采样（\(t=1\)）与重复惩罚</div>
+</section>
+
+<!-- ==================== 9.4 ==================== -->
+<section class="fml" id="eq-9-4">
+<h2><span class="num">(9.4)</span>带 KV cache 的注意力<a class="anchor" href="#eq-9-4">#</a></h2>
+<p class="where"><b>出处</b>第 9 章 9.2.1 节 Inference Efficiency Analysis　<a href="../thellm/17-9-decoding-and-deployment.html#9-2-1-inference-efficiency-analysis">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0244.png" alt="原书公式 9.4"><span class="cap">原书公式 9.4</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[
+\begin{aligned}
+\operatorname{Attention}(\boldsymbol{Q}',\boldsymbol{K}',\boldsymbol{V}') &= \operatorname{softmax}\!\left(\frac{\boldsymbol{Q}\boldsymbol{K}^{\top}}{\sqrt{D}}\right)\boldsymbol{V} \;\oplus\; \operatorname{softmax}\!\left(\frac{(\tilde{\boldsymbol{x}}_{\hat{u}}\boldsymbol{W}^{Q})\boldsymbol{K}'^{\top}}{\sqrt{D}}\right)\boldsymbol{V}', \\
+\boldsymbol{K}' &= \boldsymbol{K}\oplus(\tilde{\boldsymbol{x}}_{\hat{u}}\boldsymbol{W}^{K}),\qquad \boldsymbol{V}'=\boldsymbol{V}\oplus(\tilde{\boldsymbol{x}}_{\hat{u}}\boldsymbol{W}^{V})
+\end{aligned}
+\]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\boldsymbol{Q},\boldsymbol{K},\boldsymbol{V}\)</td><td>已缓存的旧 token 的 query / key / value（cache）</td><td>\(\mathbb{R}^{m\times D}\)，\(m\) 为已有长度</td></tr>
+<tr><td>\(\tilde{\boldsymbol{x}}_{\hat{u}}\)</td><td>新生成 token \(\hat{u}\) 在当前层的输入隐状态（一行）</td><td>\(\mathbb{R}^{H}\)</td></tr>
+<tr><td>\(\tilde{\boldsymbol{x}}_{\hat{u}}\boldsymbol{W}^{Q}\)</td><td>新 token 的 query 行（\(H\times D\) 权重左乘一行）</td><td>\(\mathbb{R}^{1\times D}\)</td></tr>
+<tr><td>\(\boldsymbol{W}^{K},\boldsymbol{W}^{V}\)</td><td>key / value 投影矩阵</td><td>\(\mathbb{R}^{H\times D}\)</td></tr>
+<tr><td>\(\boldsymbol{K}',\boldsymbol{V}'\)</td><td>把新 token 那一行追加到 cache 之后的矩阵</td><td>\(\mathbb{R}^{(m+1)\times D}\)</td></tr>
+<tr><td>\(\oplus\)</td><td>按行拼接；attention 的输出也是行拼接</td><td>\(\mathbb{R}^{(m+1)\times D}\)</td></tr>
+<tr><td>\(D\)</td><td>单头 key/query 维度，\(\sqrt{D}\) 为缩放因子</td><td>标量正整数</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>要优化的到底是什么。</b>因果解码下，第 \(i\) 步的输出只依赖前缀 \(\boldsymbol{u}_{&lt;i}\)。若不做缓存，朴素实现每步都要把整个前缀重跑一遍全部线性层与注意力：单步代价 \(O(mH^2)\) 且随 \(m\) 线性增长，生成 \(T\) 步就是 \(O(T^2H^2)\)。但<b>旧 token 的 \(K,V\) 在这一步的取值和上一步完全相同</b>（因为只依赖它自己和更早的前缀），把它们存下来复用就是 KV cache（Key-Value Caching），单步只剩新 token 一行的投影 \(O(HD)\)，总代价 \(O(T^2H + TH^2)\)。 <b>拼接 \(K',V'\) 的合法性来自 softmax 的行独立性。</b>softmax 沿<b>行</b>做。设把行分成两块 \(A\in\mathbb{R}^{p\times D}, B\in\mathbb{R}^{q\times D}\)，\(\operatorname{softmax}\) 按行堆成矩阵，则 \(\operatorname{softmax}\bigl(\begin{smallmatrix}A\\B\end{smallmatrix}\bigr)=\bigl(\operatorname{softmax}(A)\,;\,\operatorname{softmax}(B)\bigr)\)。证明：第 \(i\) 行的分子分母都在同一行内求和，分母只覆盖本行，与别的行无关。式 5.5 的 attention 权重也是逐行 softmax，所以 \(\operatorname{Attention}(\boldsymbol{Q}',\boldsymbol{K}',\boldsymbol{V}')=\bigl(\operatorname{softmax}(\boldsymbol{Q}\boldsymbol{K}^{\top}/\sqrt{D})\boldsymbol{V}\bigr)\oplus\bigl(\operatorname{softmax}(\boldsymbol{Q}_{\hat{u}}\boldsymbol{K}'^{\top}/\sqrt{D})\boldsymbol{V}'\bigr)\)，其中 \(\boldsymbol{Q}'=\boldsymbol{Q}\oplus\boldsymbol{Q}_{\hat{u}}\)。这正是式 9.4：左边一次算完两段，右边分开算再拼。 <b>\(\sqrt{D}\) 为什么不变。</b>因为新 token 的 query 行与旧的 \(K\) 做内积得到的分数量纲与式 5.5 完全一样（都是 \(D\) 维向量内积再除 \(\sqrt{D}\)），缩放不变性（§5.1 中 \(\mathrm{Var}(q\cdot k)=D\) 故要除 \(\sqrt{D}\)）的推导原封不动适用，不需要任何修改。 <b>两个阶段。</b><b>prefill（预填充）</b>：把整段输入一次性过完所有层，把 \(K,V\) 写进 cache，这一步是<b>并行</b>的、算力密集（compute-bound）；<b>decoding（解码）</b>：每步只算一行，GPU 利用率低、几乎全靠搬权重，是<b>访存瓶颈</b>（memory-bound）。这正是原书 9.2 节后面要算 arithmetic intensity 的动机。 <b>显存代价。</b>cache 大小 \(2\cdot L\cdot m\cdot H\cdot D\cdot \text{bytes}\)（\(L\) 层、每层两套 \(m\times H\)，多头下总维度仍为 \(H\)）。生成越长越吃显存，所以长上下文部署要用 PagedAttention 之类的分页管理（见 9.2.2）。</li>
+</ol>
+
+<div class="note"><b>直觉</b>式 9.4 是"注意力这个公式自己给自己开了个后门"：softmax 和 \(K^{\top}V\) 都对行独立，所以"处理 100 个旧 token"和"处理 1 个新 token"可以完全拆开算再拼起来。这条性质是 KV cache、FlashAttention、分页注意力全部成立的数学基础。</div>
+<div class="warn"><b>易错点</b>① cache 里的 \(K,V\) 是<b>逐层</b>的，不能跨层共享（\(W^K,W^V\) 每层不同）。② 拼接方向必须是<b>行</b>（沿序列维），写反成列会得到完全错误的注意力图。③ 数值上 softmax 前要减 \(l_{\max}\)；KV cache 场景下新算出一行的 logits 也要这么处理，否则大模型里极易溢出。</div>
+<div class="relnav">相关：<a href="#eq-9-1">(9.1)</a> 贪心解码（Algorithm 3 就是贪心 + KV cache）、<a href="#eq-9-5">(9.5)</a> 量化（缓存本身也常被量化以省显存）</div>
+</section>
+
+<!-- ==================== 9.5 ==================== -->
+<section class="fml" id="eq-9-5">
+<h2><span class="num">(9.5)</span>量化函数：浮点 &rarr; 整数<a class="anchor" href="#eq-9-5">#</a></h2>
+<p class="where"><b>出处</b>第 9 章 9.3.1 节 Fundamentals of Quantization　<a href="../thellm/17-9-decoding-and-deployment.html#9-3-1-fundamentals-of-quantization">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0260.png" alt="原书公式 9.5"><span class="cap">原书公式 9.5</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \boldsymbol{X}_q = R\bigl(\boldsymbol{X}/S\bigr) - Z \]
+</div>
+<p>配套地，为保证<b>无溢出地</b>把端点搬进整数码范围，一般还要套一个截断（clip）：\(\boldsymbol{X}_q=\operatorname{clip}\bigl(R(\boldsymbol{X}/S)-Z,\ q_{\min},q_{\max}\bigr)\)，INT8 时 \((q_{\min},q_{\max})=(-128,127)\)。</p>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\boldsymbol{X}\)</td><td>待量化的浮点张量（权重或激活）</td><td>\(\mathbb{R}^{m\times n}\)</td></tr>
+<tr><td>\(\boldsymbol{X}_q\)</td><td>整数码矩阵</td><td>\(\mathbb{Z}^{m\times n}\)（INT8）</td></tr>
+<tr><td>\(S\)</td><td>缩放因子（scale），<b>浮点</b>数；\(S=(x_{\max}-x_{\min})/(q_{\max}-q_{\min})\)</td><td>标量，与 \(\boldsymbol{X}\) 同量纲</td></tr>
+<tr><td>\(Z\)</td><td>零点因子（zero-point），<b>整数</b>；\(Z=q_{\min}-R(x_{\min}/S)\)</td><td>标量整数</td></tr>
+<tr><td>\(R(\cdot)\)</td><td>近似/取整函数（round 或 floor）</td><td>\(\mathbb{R}\to\mathbb{Z}\)</td></tr>
+<tr><td>\(x_{\min},x_{\max}\)</td><td>张量（或某个校准切片）的最小 / 最大值</td><td>标量</td></tr>
+<tr><td>\(q_{\min},q_{\max}\)</td><td>整数码范围端点</td><td>标量整数</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>设计要求。</b>量化是一个<b>仿射映射</b> \(\Phi(x)=a x+b\)，我们希望它把实数区间 \([x_{\min},x_{\max}]\) 的一端对齐到整数格点、另一端对齐到另一个格点，且中间均匀铺满 \(q_{\max}-q_{\min}\) 个刻度。设 \(\Phi(x_{\min})=q_{\min}\)、\(\Phi(x_{\max})=q_{\max}\)，线性插值给出 \(a=\dfrac{q_{\max}-q_{\min}}{x_{\max}-x_{\min}}=\dfrac{1}{S}\)，于是 <b>\(S\) 就是"一个整数刻度等于多少实数"</b>；\(b=q_{\min}-x_{\min}/S\)，把它写成 \(b=-Z\) 的形式（因为整数码要能表示负数，零点要平移）即得式 9.5：先除 \(S\) 得到以"刻度"为单位的坐标，取整，再减去 \(Z\) 把零点对齐。 <b>为什么 \(Z\) 必须是整数。</b>\(X_q\) 存在 8 bit 存储里必须取整数值，若 \(b\) 非整数则每个元素都要带一个小数偏移，无法用整数存储；而让零点对齐整数（而不是"数据里恰好没有 0"）才能用无偏的整数乘法累加。所以 \(Z=\operatorname{round}\bigl(-b\bigr)\)。\(Z=0\) 即<b>对称量化</b>（数据本身关于 0 对称，如 ReLU 后的负偏数据常用它）；\(Z\ne0\) 即<b>非对称量化</b>（端点不对称时误差更小）。 <b>端点方程（先记住，推导见 9.8/9.9）。</b>要 \(x_{\max}\) 恰好落到 \(q_{\max}\)、\(x_{\min}\) 恰好落到 \(q_{\min}\)，即 \(S(q_{\max}+Z)=x_{\max}\)、\(S(q_{\min}+Z)=x_{\min}\)。两式相减就解出 \(S\)，回代得 \(Z\)——见 <a href="#eq-9-8">(9.8)</a>、<a href="#eq-9-9">(9.9)</a>。 <b>截断区间的校准。</b>\(x_{\min},x_{\max}\) 从哪来有两种做法：<b>静态（离线）</b>——用一批校准数据统计范围，优点是快、运行时零开销，缺点是对输入分布变化的鲁棒性差；<b>动态（运行时）</b>——每个 batch 现算 min/max，精度高但要额外一趟扫描且推理代码复杂。注意：如果数据里有极端离群值，范围被撑大，\(S\) 变大、<b>所有正常值的相对误差都变大</b>——这是 LLM 量化最主要的困难，见 <a href="#eq-9-10">(9.10)</a>。 <b>为什么"先取整再减 \(Z\)"而不是"先减 \(Z\) 再取整"。</b>数值上 \(R(x/S)-Z\) 与 \(R(x/S-Z)\) 只差一个"是否把 \(Z\) 也取整"的差别，不影响正确性；真正的区别在于<b>溢出处理</b>：减完 \(Z\) 之后值域是 \([q_{\min}-Z,q_{\max}-Z]\)，必须 clip 才能落回 8 bit，而 clip 会引入截断误差；而 \(R(x/S)-Z\) 的取整部分始终在无界实数上做，最后统一 clip 一次即可，实现更干净。</li>
+</ol>
+
+<div class="note"><b>直觉</b>量化就是"用一把只有 256 格的尺子去量连续的长度"。\(S\) 是每格多长，\(Z\) 是把尺子的零点挪到哪儿。挪零点（\(Z\ne0\)）能省下不对称带来的那点误差，但也让"实数 0"不一定落在整数上，实现里必须显式带上 \(Z\) 这个偏置项。</div>
+<div class="warn"><b>易错点</b>① \(S\) 是浮点数、\(Z\) 是整数，混用会在推理时积累系统性偏差。② 若忘了 clip，越界值回绕（wrap-around）成完全错误的数，比截断误差严重得多。③ 逐张量（per-tensor）与逐通道（per-channel / per-row）的 \(S\) 不同，LLM 权重量化通常逐行（per-output-channel），激活量化才是逐张量——这直接关系到式 9.10 的做法。</div>
+<div class="relnav">相关：<a href="#eq-9-6">(9.6)</a> 反量化、<a href="#eq-9-7">(9.7)</a> 量化误差、<a href="#eq-9-8">(9.8)</a>／<a href="#eq-9-9">(9.9)</a> 端点方程、<a href="#eq-9-10">(9.10)</a> 逐通道缩放</div>
+</section>
+
+<!-- ==================== 9.6 ==================== -->
+<section class="fml" id="eq-9-6">
+<h2><span class="num">(9.6)</span>反量化：整数 &rarr; 恢复实数<a class="anchor" href="#eq-9-6">#</a></h2>
+<p class="where"><b>出处</b>第 9 章 9.3.1 节 Fundamentals of Quantization　<a href="../thellm/17-9-decoding-and-deployment.html#9-3-1-fundamentals-of-quantization">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0261.png" alt="原书公式 9.6"><span class="cap">原书公式 9.6</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \tilde{\boldsymbol{X}} = S\cdot\bigl(\boldsymbol{X}_q + Z\bigr) \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\tilde{\boldsymbol{X}}\)</td><td>反量化（de-quantize）得到的近似值，\(\tilde{\boldsymbol{X}}\approx\boldsymbol{X}\)</td><td>\(\mathbb{R}^{m\times n}\)</td></tr>
+<tr><td>\(\boldsymbol{X}_q\)</td><td>整数码矩阵（式 9.5 的输出）</td><td>\(\mathbb{Z}^{m\times n}\)</td></tr>
+<tr><td>\(Z\)</td><td>零点因子，与量化时<b>同一个</b>值</td><td>标量整数</td></tr>
+<tr><td>\(S\)</td><td>缩放因子，与量化时<b>同一个</b>值</td><td>标量浮点</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>为什么"先加 \(Z\) 再乘 \(S\)"。</b>式 9.5 的映射是 \(\Phi(x)=R(x/S)-Z\)，它的<b>逆</b>写成"加回 \(Z\) 再乘 \(S\)"就是 \(\Phi^{-1}(q)=S(q+Z)\)。顺序不能颠倒：\(\Phi\) 里是"除 \(S\) 后再减 \(Z\)"（先缩放到刻度单位、再平移零点），逆映射自然要"先平移回去、再乘回刻度"。写成矩阵形式 \(\tilde{\boldsymbol{X}}=\boldsymbol{X}_qS+S\boldsymbol{1}Z^{\top}\)（当 \(S\) 为逐元素向量时），正好对应整数矩阵乘浮点权重矩阵——这是 INT8 推理把矩阵乘法加速的本质。 <b>量化-反量化复合映射是什么。</b>代入可得 \(\tilde{x}=S\bigl(R(x/S)-Z+Z\bigr)=S\cdot R(x/S)\)。也就是说，\(Z\) 被完全抵消：<b>它只影响整数码的表示范围（是否有符号、零点是否对齐），不直接影响精度</b>；真正决定精度的是 \(S\) 的大小和 \(R\) 的取整方式。 <b>单元素误差上界。</b>设未发生截断，且 \(R=\mathrm{round}\)。由取整的定义 \(|R(y)-y|\le\tfrac12\)，代入得 \(\bigl|\tilde{x}-x\bigr|=S\bigl|R(x/S)-x/S\bigr|\le \dfrac{S}{2}\)。这个上界只依赖步长 \(S\)，与数据本身无关，是均匀量化（uniform quantization）的核心性质。 \(S\) 越小精度越高，但需要的整数位宽 \(b\) 越大：由 \(2^b\ge (x_{\max}-x_{\min})/S\) 可见，<b>位宽与动态范围/精度是一个此消彼长的权衡</b>，这正是权重量化方法（GPTQ/AWQ 等，见本章后半）要优化的目标函数。</li>
+</ol>
+
+<div class="note"><b>直觉</b>反量化就是把"格子编号"乘回每格的长度再挪回零点。它是<b>无偏</b>的（平均误差为 0，只有 \(\pm S/2\) 的抖动），所以量化误差通常建模成零均值均匀噪声 \(\varepsilon\sim\mathcal{U}(-S/2,S/2)\)，方差 \(S^2/12\)——这个方差随后会沿网络逐层传播。</div>
+<div class="warn"><b>易错点</b>发生<b>截断</b>时上面 \(S/2\) 的上界不再成立：截断误差可以任意大（整个离群值被压到边界）。所以量化误差分析必须区分"舍入误差"和"截断误差"两项，后者要用范围校准来控制。</div>
+<div class="relnav">相关：<a href="#eq-9-5">(9.5)</a> 量化、<a href="#eq-9-7">(9.7)</a> 量化误差</div>
+</section>
+
+<!-- ==================== 9.7 ==================== -->
+<section class="fml" id="eq-9-7">
+<h2><span class="num">(9.7)</span>量化误差（\(L_2\) 范数）<a class="anchor" href="#eq-9-7">#</a></h2>
+<p class="where"><b>出处</b>第 9 章 9.3.1 节 Fundamentals of Quantization　<a href="../thellm/17-9-decoding-and-deployment.html#9-3-1-fundamentals-of-quantization">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0262.png" alt="原书公式 9.7"><span class="cap">原书公式 9.7</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \Delta = \bigl\lVert \boldsymbol{X} - \tilde{\boldsymbol{X}} \bigr\rVert_2 \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\Delta\)</td><td>整张张量的量化误差（标量汇总指标）</td><td>标量，与 \(\boldsymbol{X}\) 同量纲</td></tr>
+<tr><td>\(\lVert\boldsymbol{A}\rVert_2\)</td><td>向量/矩阵的<b>谱范数</b>（Frobenius 之外的另一种 2-范数：最大奇异值）。原书此处用作整体误差大小；工程上更常用 \(\lVert\cdot\rVert_2^{2}\) 逐元素平方和</td><td>标量</td></tr>
+<tr><td>\(\boldsymbol{X}\)</td><td>原始浮点矩阵</td><td>\(\mathbb{R}^{m\times n}\)</td></tr>
+<tr><td>\(\tilde{\boldsymbol{X}}\)</td><td>式 9.6 的反量化近似</td><td>\(\mathbb{R}^{m\times n}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>逐元素展开。</b>记 \(\varepsilon_{ij}=X_{ij}-\tilde{X}_{ij}\)，则 \(\Delta^2=\sum_{i,j}\varepsilon_{ij}^2=mn\cdot\mathrm{MSE}\)，其中 MSE 是均方误差。所以用 \(\Delta\) 汇总和用 MSE 汇总只差一个 \(\sqrt{mn}\) 的常数因子——两边优化的东西完全一样。 <b>无截断时的闭式界。</b>由 9.6 第 3 步的逐元素界 \(\lvert\varepsilon_{ij}\rvert\le S/2\)，\(\Delta^2\le mn\cdot S^2/4\)，即 \(\Delta\le S\sqrt{mn}/2\)。若再用"误差零均值、独立同分布"的随机模型，\(E[\Delta^2]=mn\cdot S^2/12\)。 <b>截断项让最坏情况变差。</b>若某个元素超出 \([x_{\min},x_{\max}]\) 被 clip，误差为 \(|\varepsilon|=\max(0, |x|-x_{\max})\) 级别，可以远大于 \(S/2\)。因此"动态范围 vs 步长"是一条真实的曲线：范围放大 \(R\) 倍，步长也放大 \(R\) 倍，舍入误差涨 \(R\) 倍，但截断误差降到 0；范围缩小则相反。最优点由数据的 \(\lVert\cdot\rVert_2\) 与 \(\lVert\cdot\rVert_\infty\) 折中决定。 <b>为什么常用 \(\lVert\cdot\rVert_2\)（谱范数）而不是 Frobenius。</b>谱范数衡量的是<b>最大的</b>方向性误差，与"矩阵乘法把误差放大多少倍"直接相关：\(\lVert\tilde{\boldsymbol{X}}-\boldsymbol{X}\rVert_2\) 是误差在所有单位方向上的最大增益，\(\sigma_{\max}(\tilde{\boldsymbol{X}})\le\sigma_{\max}(\boldsymbol{X})+\Delta\)。GPTQ、AWQ 这类权重量化方法的最小二乘目标就是这一类的推广。 <b>逐层 vs 端到端。</b>实际衡量指标多用困惑度（perplexity）或下游任务精度，而不用 \(\Delta\) 本身——因为 \(\Delta\) 小不保证输出好：误差可能恰好落在网络最敏感的方向上。这条经验差距是 PTQ 类方法的出发点（见 9.3.2）。</li>
+</ol>
+
+<div class="note"><b>直觉</b>\(\Delta\) 就是"这把尺子量得有多糙"。它是标量汇总，真正被优化的往往是对应张量的<b>逐元素误差向量</b>（GPTQ 最小二乘、AWQ 显著性加权等）。</div>
+<div class="warn"><b>易错点</b>式 9.7 写的是 \(\lVert\cdot\rVert_2\)，在多维数组语境下它的含义（谱范数）和直觉中的"平方和开根"（Frobenius 范数）不是一回事，别在推导里混用；写清楚"要衡量放大幅度用谱范数、要衡量平均精度用 Frobenius/MSE"。</div>
+<div class="relnav">相关：<a href="#eq-9-6">(9.6)</a> 反量化与误差上界、<a href="#eq-9-10">(9.10)</a> 离群通道为何破坏逐张量量化</div>
+</section>
+
+<!-- ==================== 9.8 ==================== -->
+<section class="fml" id="eq-9-8">
+<h2><span class="num">(9.8)</span>非对称量化：上端点方程 \(S(127+Z)=13.6\)<a class="anchor" href="#eq-9-8">#</a></h2>
+<p class="where"><b>出处</b>第 9 章 9.3.1 节 Fundamentals of Quantization（Examples and Practices）　<a href="../thellm/17-9-decoding-and-deployment.html#9-3-1-fundamentals-of-quantization">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0264.png" alt="原书公式 9.8"><span class="cap">原书公式 9.8</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ S\cdot(127+Z) = 13.6 \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(S\)</td><td>缩放因子（浮点）</td><td>标量，\(\mathbb{R}\)</td></tr>
+<tr><td>\(Z\)</td><td>零点因子（整数）</td><td>标量，\(\mathbb{Z}\)，INT8 下取值范围约 \([-255,255]\)</td></tr>
+<tr><td>\(127\)、\(-128\)</td><td>INT8 无符号/有符号范围的端点 \(q_{\max},q_{\min}\)</td><td>标量整数</td></tr>
+<tr><td>\(13.6\)、\(1.2\)</td><td>示例张量 \(\boldsymbol{X}=[[1.2,2.4,3.6],[11.2,12.4,13.6]]\) 的 \(x_{\max}\)、\(x_{\min}\)</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>方程从哪来。</b>要求量化映射 \(\Phi(x)=R(x/S)-Z\) 把区间上端点<b>精确</b>落在最大的那个格点上。由 \(\Phi(x_{\max})=q_{\max}\) 得 \(R(x_{\max}/S)-Z=q_{\max}\)，即 \(R(x_{\max}/S)=q_{\max}+Z\)；两端乘 \(S\)、在<b>不发生取整误差</b>的前提下把 \(R(\cdot)\) 当作恒等，得到式 9.8。 <b>为什么要求端点精确。</b>若上端点落到 \(q_{\max}-1\) 或被 clip 到 \(q_{\max}\)，误差分别是 \(S\) 和 \(S\) 量级的截断误差，远大于中间的 \(S/2\)；让端点对齐意味着整段动态范围被 255 个刻度恰好铺满，量化是最优均匀量化。 <b>配套的下端点方程。</b>同理 \(\Phi(x_{\min})=q_{\min}\) 给出 \(S(-128+Z)=1.2\)，即式 9.9。两式构成二元一次方程组，解出来就是 \(S\) 与 \(Z\)——见下一节的联立求解。 <b>为什么原书特意把两个方程拆成两个编号。</b>因为它们分别是"上界条件"和"下界条件"，实践里可以只满足其一（例如只对齐 0 点的<b>对称量化</b>用 \(Z=0\)，或只保证上界不溢出）；把它们分开写便于讨论不同约束下的取舍。</li>
+</ol>
+
+<div class="note"><b>直觉</b>这就是"尺子的两端要正好卡住被量的这段木头"。 \(S\) 决定尺子多粗，\(Z\) 决定尺子零点挪到哪，两个条件正好定出两个未知数。</div>
+<div class="relnav">相关：<a href="#eq-9-9">(9.9)</a> 下端点方程（联立求解）、<a href="#eq-9-5">(9.5)</a> 量化函数</div>
+</section>
+
+<!-- ==================== 9.9 ==================== -->
+<section class="fml" id="eq-9-9">
+<h2><span class="num">(9.9)</span>非对称量化：下端点方程 \(S(-128+Z)=1.2\) 与联立求解<a class="anchor" href="#eq-9-9">#</a></h2>
+<p class="where"><b>出处</b>第 9 章 9.3.1 节 Fundamentals of Quantization（Examples and Practices）　<a href="../thellm/17-9-decoding-and-deployment.html#9-3-1-fundamentals-of-quantization">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0265.png" alt="原书公式 9.9"><span class="cap">原书公式 9.9</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ S\cdot(-128+Z) = 1.2 \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(S,Z\)</td><td>同式 9.8，待联立确定</td><td>标量</td></tr>
+<tr><td>\(-128\)、\(127\)</td><td>INT8 有符号整数范围端点，\(q_{\max}-q_{\min}=255\)</td><td>标量整数</td></tr>
+<tr><td>\(\boldsymbol{X}_q\)</td><td>示例的量化结果 \([[-127,-103,-78],[78,103,127]]\)</td><td>\(\mathbb{Z}^{2\times3}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>方程来源。</b>与式 9.8 完全对称：由 \(\Phi(x_{\min})=q_{\min}\) 得 \(R(x_{\min}/S)=q_{\min}+Z\)，即式 9.9。 <b>相减消去 \(Z\)。</b>两式左端同为 \(SZ\) 加常数项，相减得 \(S(q_{\max}-q_{\min})=x_{\max}-x_{\min}\)，于是 \(S=\dfrac{x_{\max}-x_{\min}}{q_{\max}-q_{\min}}=\dfrac{13.6-1.2}{127-(-128)}=\dfrac{12.4}{255}\approx 0.0486\)。回代式 9.9：\(Z=\dfrac{1.2}{S}-128\approx 24.68-128=-103.32\)…… 注意这里 \(Z\) 必须取<b>整数</b>，实际实现选 \(Z=152\)，等效于把"零点格点"取整后微调，保证整数网格恰好覆盖整段动态范围。 <b>代入式 9.5 逐元素验证。</b>用 \(S=12.4/255\)、\(Z=152\)：\(1.2/S=24.68\to R=25\)，\(25-152=-127\)；\(2.4/S=49.35\to49\)，\(49-152=-103\)；\(3.6/S=74.04\to74\)，\(74-152=-78\)；\(11.2/S=230.33\to230\)，\(230-152=78\)；\(12.4/S=255.0\to255\)，\(255-152=103\)；\(13.6/S=279.66\to280\)，\(280-152=128\) 再 clip 到 \(127\)。得到原书给出的 \(\boldsymbol{X}_q=[[-127,-103,-78],[78,103,127]]\)。 <b>反量化校验。</b>代入式 9.6：\(1.2\) 恢复为 \(0.0486\times25=1.2157\)（误差 \(+0.0157\)）；\(13.6\) 恢复为 \(0.0486\times279=13.558\)，误差约 \(-0.042\)——注意它<b>超过了</b> \(S/2\approx0.0243\)，正是因为被 clip 到了 127 而不是 280 的等效值，印证了 <a href="#eq-9-6">(9.6)</a> 里的 warn：截断误差不受 \(S/2\) 约束。</li>
+</ol>
+
+<div class="note"><b>直觉</b>两式联立就是把"数据范围"和"整数范围"做<b>线性拉伸对齐</b>：先由两个区间的<b>长度比</b>定出步长，再由一个端点定出零点偏移。整个过程只有两个自由度，所以两个方程刚好定死。</div>
+<div class="warn"><b>易错点</b>对称量化（\(Z=0\)）只需一个条件（指定 \(S\)），此时最大端点 \(x_{\max}\) 往往<b>不</b>落在 \(q_{\max}\) 上，会有半个刻度的系统性偏差——这是非对称量化在 LLM 上精度更好的直接原因。另外 \(Z\) 是整数这一步会引入小偏差，工程实现里要么取整要么用浮点 \(Z\) 配整数存储的变体（如 zero-point 存在 int8 里、实际运算转浮点）。</div>
+<div class="relnav">相关：<a href="#eq-9-8">(9.8)</a> 上端点方程、<a href="#eq-9-5">(9.5)</a> 量化、<a href="#eq-9-6">(9.6)</a> 反量化</div>
+</section>
+
+<!-- ==================== 9.10 ==================== -->
+<section class="fml" id="eq-9-10">
+<h2><span class="num">(9.10)</span>离群感知的逐通道缩放量化<a class="anchor" href="#eq-9-10">#</a></h2>
+<p class="where"><b>出处</b>第 9 章 9.3.2 节 Post-Training Quantization Methods　<a href="../thellm/17-9-decoding-and-deployment.html#9-3-2-post-training-quantization-methods">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0271.png" alt="原书公式 9.10"><span class="cap">原书公式 9.10</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ 127\cdot\operatorname{diag}(\boldsymbol{s}_X)^{-1}\cdot\boldsymbol{X}^{F16} = \boldsymbol{X}^{I8} \]
+</div>
+<p>逐元素看，第 \(j\) 列（第 \(j\) 个通道）上的操作是 \(X^{I8}_{:,j}=R\bigl(127\cdot X^{F16}_{:,j}/s_j\bigr)\)。</p>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\boldsymbol{s}_X\)</td><td>激活的<b>逐通道</b>尺度，典型取 \(s_j=\max_i|X^{F16}_{ij}|\)（或分位数）</td><td>\(\mathbb{R}^{d}\)，逐元素严格正</td></tr>
+<tr><td>\(\operatorname{diag}(\boldsymbol{s}_X)\)</td><td>把向量 \(\boldsymbol{s}_X\) 扩成对角矩阵</td><td>\(\mathbb{R}^{d\times d}\)</td></tr>
+<tr><td>\(\operatorname{diag}(\boldsymbol{s}_X)^{-1}\)</td><td>其逆，即 \(\operatorname{diag}(1/s_1,\dots,1/s_d)\)，作用是<b>逐列</b>除以该列尺度</td><td>\(\mathbb{R}^{d\times d}\)</td></tr>
+<tr><td>\(\boldsymbol{X}^{F16}\)</td><td>F16 激活矩阵（本节指非离群部分）</td><td>\(\mathbb{R}^{m\times d}\)</td></tr>
+<tr><td>\(\boldsymbol{X}^{I8}\)</td><td>量化后的 I8 激活，元素落在 \([-127,127]\)</td><td>\(\mathbb{Z}^{m\times d}\)</td></tr>
+<tr><td>\(127\)</td><td>对称无符号 8 bit 的半量程（\(q_{\max}\)），隐含 \(Z=0\)</td><td>标量整数</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>问题：离群通道撑爆了逐张量量化。</b>LLM 激活里存在<b>离群值（outlier activation values）</b>，且它们集中在少数固定通道上（图 9.7a 橙色通道）。逐张量量化只有<b>一个</b> \(S\)，由全张量最大值决定：\(S\approx 2s_{\text{outlier}}/(q_{\max}-q_{\min})\)。而正常通道的取值只有 \(s_{\text{normal}}\ll s_{\text{outlier}}\)，它们被压缩到 \(s_{\text{normal}}/S\approx s_{\text{normal}}/s_{\text{outlier}}\) 个刻点上——若比值是 \(1/100\)，正常值就只剩不到一个刻度可用，整层信息几乎被抹平。这是 LLM 比小模型难量化得多的第一个结构性原因（第二个是参数量大、不能靠重量化暴力试）。 <b>做法一：把离群维度单独拎出来（精度混合）。</b>把离群维度与其他维度分开算：离群部分用 F16 保精度（对应 \(X^{F16}\) 那部分），非离群部分用 I8，最后把两部分结果<b>相加</b>（原书式 9.13/9.14，在下一页）。这条路的代价是矩阵乘被打成两段、无法用单一 INT8 GEMM。 <b>做法二：逐通道缩放（本式）。</b>先用 \(\operatorname{diag}(\boldsymbol{s}_X)^{-1}\) 左乘，把第 \(j\) 列整体压到 \([-1,1]\)（因为 \(\max_i|X_{ij}|/s_j=1\)），再乘 127 映射到整数格点范围 \([-127,127]\)，最后隐式取整。写成矩阵就是式 9.10。 <b>为什么这样就修好了。</b>第 \(j\) 列的步长变成 \(s_j/127\)，与该列自身的幅度成<b>正比</b>，于是<b>每一列的相对误差上界相同</b>：\(\bigl|\tfrac{s_j}{127}R(y)-x\bigr|\le \tfrac{s_j}{254}\)，除以该列的幅度 \(s_j\) 得相对误差 \(\le 1/254\)。对比逐张量方案：离群列的相对误差仍然很小（步长本来就按它定），但正常列的相对误差被放大 \(s_{\text{outlier}}/s_{\text{normal}}\) 倍——正是这个比值毁掉了精度。逐通道缩放把所有列拉平到同一相对精度。 <b>代价与等价视角。</b>代价是<b>尺度不能被吸收进线性层而不影响精度</b>：因为 \(\tilde{x}\) 是逐列乘不同因子，若把这个缩放吸收到权重矩阵里，则 \(\tilde{X}\tilde{W}\ne\tilde{X}(W\operatorname{diag}(s)^{-1})\)，输出就被改掉了。所以必须把 \(\operatorname{diag}(s)^{-1}\) 显式保留为一个前向算子（这正是 SmoothQuant"把激活的量化难度迁移到权重"的数学内核：把 \(s\) 的一部分从激活侧搬到权重侧，量化路径上就只剩对角缩放），或者用更强的分组/逐行量化替代。另一条隐含要求是 \(s_j&gt;0\)，全零通道要做保护。 <b>数值细节。</b>因为是对称量化（隐含 \(Z=0\)），所以没有零点偏移项，取整后的期望误差为零；用 \(127\) 而不是 \(128\) 是为了留一个 \(-128\) 槽给符号（INT8 有符号范围是 \([-128,127]\)）。 \(s_j\) 的估计方式（最大值 / 99.9% 分位数 / 校准集均值）直接决定步长大小，属于超参数。</li>
+</ol>
+
+<div class="note"><b>直觉</b>逐张量量化像"用一把刻度固定的尺子量所有东西"，遇到一个特别长的东西（离群通道）整把尺子就变粗了，短的东西全被量成一个刻度内的近似值。式 9.10 就是"每列单独配一把尺子"，量完再各自还原。</div>
+<div class="warn"><b>易错点</b>① 逐通道缩放只解决<b>逐列</b>幅度差异，若离群值沿行（token 维）分布，单靠对角矩阵救不了，需要分块（block-wise）量化。② \(\operatorname{diag}(\boldsymbol{s}_X)^{-1}\) 前乘会改变下游激活的<b>统计量</b>，必须在同一个张量上把权重（或下一层输入）做对应的反向缩放，否则数值范围被破坏。③ 这里的 \(s_X\) 是<b>校准出来的</b>（静态）还是每步现算（动态）会显著影响速度与精度。</div>
+<div class="relnav">相关：<a href="#eq-9-5">(9.5)</a> 量化函数、<a href="#eq-9-7">(9.7)</a> 量化误差、<a href="#eq-9-6">(9.6)</a> 反量化</div>
+</section>

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>ESL 数学推导 · The Elements of Statistical Learning 公式详解</title>
+<meta name="description" content="《统计学习基础》(ESL, 2nd ed.) 全部数学公式的逐步推导与基础知识补全，面向有大学数学基础但忘了计算细节的读者。">
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/style.css">
+<script defer src="../assets/katex/katex.min.js"></script>
+<script defer src="../assets/katex/auto-render.min.js"></script>
+<script defer src="assets/app.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="bar">
+  <button class="icon" id="themeToggle" type="button" aria-label="切换深色模式">&#9681;</button>
+  <a class="title" href="index.html">ESL 数学推导</a>
+  <a class="nav" href="toc.html">目录</a>
+</header>
+<main id="main">
+
+<div class="hero">
+  <p class="eyebrow">The Elements of Statistical Learning · 2nd ed.</p>
+  <h1>公式推导手册</h1>
+  <p class="byline">Hastie · Tibshirani · Friedman　|　逐式推导 + 基础知识补全</p>
+  <p class="stats">17 章 · 约 882 个公式 · 每式给出「基础知识 → 逐步推导 → 结果与几何/概率解释」</p>
+  <a class="start" href="prereq.html">从数学预备知识开始</a>
+  <a class="start ghost" href="toc.html">直接进入正文目录</a>
+</div>
+
+<p class="lede">ESL 正文把大量数学推导当作「读者已经会」一笔带过。本手册把这些跳步全部补齐：每一节先列出用到的<strong>基础知识</strong>（向量与矩阵、极值条件、概率分布、大数定律、优化、数值计算……），再把书里印成一行结论的公式拆成<strong>可以手算复核的步骤</strong>，最后补充结果的<strong>几何意义、概率含义和适用边界</strong>。</p>
+
+<div class="goal">
+<b>怎么用</b>：先读 <a href="prereq.html">数学预备知识</a> 建立工具箱；之后按章顺序读，每章的公式都标注了 <span class="src" style="margin:0">原文 §x.y</span> 与原书公式编号（如 (3.6)），可以和 <a href="../esl/index.html">ESL 原文</a> 对照阅读。<br>
+<b>假设</b>：读者有微积分、线性代数、概率统计的本科背景，但具体计算细节（矩阵求导、投影、分位数、KKT、EM…）已经忘记，需要重新推导一遍。
+</div>
+
+<h2 id="how">推导的写法约定</h2>
+<ul>
+<li><strong>基础知识</strong>框：这一步用到的定理/定义，尽量给出可复核的公式，并注明常见错误。</li>
+<li><strong>推导</strong>：编号步骤，标出每一步用到了哪条基础（引用 <a href="prereq.html">预备知识</a> 的编号，如 L3、M2）。</li>
+<li><strong>结果</strong>框：公式本身的解释、几何/统计含义、数值实现要点。</li>
+<li><strong>坑</strong>框：原文省略或容易误读的条件（秩、可识别性、局部性、无偏性前提……）。</li>
+</ul>
+
+<h2 id="chapters">章节</h2>
+<ul class="cards">
+<!--CARDS-->
+<li class="card"><a class="chead" href="prereq.html"><span class="cnum">0</span><span class="cname">数学预备知识</span><span class="cpg">Mathematical Preliminaries</span></a><ul class="subs"><li><a href="prereq.html#s-0-1">0.1 L · 线性代数</a></li><li><a href="prereq.html#s-0-2">0.2 C · 微积分与极值</a></li><li><a href="prereq.html#s-0-3">0.3 P · 概率统计</a></li><li><a href="prereq.html#s-0-4">0.4 O · 最优化理论</a></li><li><a href="prereq.html#s-0-5">0.5 N · 数值与计算量</a></li><li><a href="prereq.html#s-0-6">0.6 这套工具怎么用在后面的章节里</a></li></ul></li>
+<li class="card"><a class="chead" href="m02.html"><span class="cnum">2</span><span class="cname">监督学习概述</span><span class="cpg">Overview of Supervised Learning</span></a><ul class="subs"><li><a href="m02.html#s-2-1">2.1 变量类型与记号</a></li><li><a href="m02.html#s-2-2">2.2 两个最简单的预测方法</a></li><li><a href="m02.html#s-2-3">2.3 统计决策理论</a></li><li><a href="m02.html#s-2-4">2.4 高维中的局部方法：维数灾难</a></li><li><a href="m02.html#s-2-5">2.5 统计模型、监督学习与函数逼近</a></li><li><a href="m02.html#s-2-6">2.6 结构化回归模型：三类受限估计量</a></li></ul></li>
+<li class="card"><a class="chead" href="m03.html"><span class="cnum">3</span><span class="cname">线性回归方法</span><span class="cpg">Linear Methods for Regression</span></a><ul class="subs"><li><a href="m03.html#s-3-2">3.2 线性回归模型与最小二乘</a></li><li><a href="m03.html#s-3-3">3.3 推断与系数显著性</a></li><li><a href="m03.html#s-3-4">3.4 多输出回归</a></li><li><a href="m03.html#s-3-5">3.5 子集选择</a></li><li><a href="m03.html#s-3-6">3.6 坐标下降</a></li><li><a href="m03.html#s-3-7">3.7 降维的线性方法</a></li></ul></li>
+<li class="card"><a class="chead" href="m04.html"><span class="cnum">4</span><span class="cname">线性分类方法</span><span class="cpg">Linear Methods for Classification</span></a><ul class="subs"><li><a href="m04.html#s-4-1">4.1 导论：什么算「线性方法」</a></li><li><a href="m04.html#s-4-2">4.2 指示变量矩阵的线性回归</a></li><li><a href="m04.html#s-4-3">4.3 线性判别分析</a></li><li><a href="m04.html#s-4-4">4.4 逻辑回归</a></li><li><a href="m04.html#s-4-5">4.5 分离超平面</a></li><li><a href="m04.html#s-4-6">4.6 编号速查与常见误区</a></li></ul></li>
+<li class="card"><a class="chead" href="m05.html"><span class="cnum">5</span><span class="cname">基展开与正则化</span><span class="cpg">Basis Expansions and Regularization</span></a><ul class="subs"><li><a href="m05.html#s-5-1">5.1 基展开：多项式、傅里叶与样条</a></li><li><a href="m05.html#s-5-2">5.2 惩罚回归：平滑样条与有效自由度</a></li><li><a href="m05.html#s-5-3">5.3 PCR/PLS 与监督降维</a></li><li><a href="m05.html#s-5-4">5.4 多维样条、张量积与 ANOVA 分解</a></li><li><a href="m05.html#s-5-5">5.5 正则化与再生核希尔伯特空间</a></li><li><a href="m05.html#s-5-6">5.6 小波平滑与自适应阈值</a></li></ul></li>
+<li class="card"><a class="chead" href="m06.html"><span class="cnum">6</span><span class="cname">核平滑方法</span><span class="cpg">Kernel Smoothing Methods</span></a><ul class="subs"><li><a href="m06.html#s-6-1">6.1 一维核平滑器</a></li><li><a href="m06.html#s-6-2">6.2 核宽度的选择与偏差–方差权衡</a></li><li><a href="m06.html#s-6-3">6.3 局部回归</a></li><li><a href="m06.html#s-6-4">6.4 $\mathbb{R}^p$ 中的局部回归与结构化局部模型</a></li><li><a href="m06.html#s-6-5">6.5 局部似然与其他模型</a></li><li><a href="m06.html#s-6-6">6.6 核密度估计与分类</a></li></ul></li>
+<li class="card"><a class="chead" href="m07.html"><span class="cnum">7</span><span class="cname">模型评估与选择</span><span class="cpg">Model Assessment and Selection</span></a><ul class="subs"><li><a href="m07.html#s-7-1">7.1 引言</a></li><li><a href="m07.html#s-7-2">7.2 误差的来源与损失函数</a></li><li><a href="m07.html#s-7-3">7.3 偏差–方差分解</a></li><li><a href="m07.html#s-7-4">7.4 训练误差的乐观性</a></li><li><a href="m07.html#s-7-5">7.5 样本内预测误差的估计</a></li><li><a href="m07.html#s-7-6">7.6 有效参数个数</a></li></ul></li>
+<li class="card"><a class="chead" href="m08.html"><span class="cnum">8</span><span class="cname">模型推断与平均</span><span class="cpg">Model Inference and Averaging</span></a><ul class="subs"><li><a href="m08.html#s-8-1">8.1 引言</a></li><li><a href="m08.html#s-8-2">8.2 Bootstrap 与极大似然</a></li><li><a href="m08.html#s-8-3">8.3 贝叶斯方法</a></li><li><a href="m08.html#s-8-4">8.4 Bootstrap 与贝叶斯推断的关系</a></li><li><a href="m08.html#s-8-5">8.5 EM 算法</a></li><li><a href="m08.html#s-8-6">8.6 MCMC：Gibbs 采样</a></li></ul></li>
+<li class="card"><a class="chead" href="m09.html"><span class="cnum">9</span><span class="cname">加性模型、树与相关方法</span><span class="cpg">Additive Models, Trees, and Related Methods</span></a><ul class="subs"><li><a href="m09.html#s-9-1">9.1 广义加性模型</a></li><li><a href="m09.html#s-9-2">9.2 回归树与 CART</a></li><li><a href="m09.html#s-9-3">9.3 分类树：不纯度、Gini 与剪枝</a></li><li><a href="m09.html#s-9-4">9.4 层次聚类与分类树的联系</a></li><li><a href="m09.html#s-9-5">9.5 PRIM：bump hunting</a></li><li><a href="m09.html#s-9-6">9.6 MARS：多变量自适应回归样条</a></li></ul></li>
+<li class="card"><a class="chead" href="m10.html"><span class="cnum">10</span><span class="cname">提升法与加性树</span><span class="cpg">Boosting and Additive Trees</span></a><ul class="subs"><li><a href="m10.html#s-10-1">10.1 提升法简介</a></li><li><a href="m10.html#s-10-2">10.2 AdaBoost：加权误差</a></li><li><a href="m10.html#s-10-3">10.3 指数损失与 AdaBoost 的等价</a></li><li><a href="m10.html#s-10-4">10.4 提升树与随机梯度提升</a></li><li><a href="m10.html#s-10-5">10.5 示例与多分类提升</a></li><li><a href="m10.html#s-10-6">10.6 小结与易错点</a></li></ul></li>
+<li class="card"><a class="chead" href="m11.html"><span class="cnum">11</span><span class="cname">神经网络</span><span class="cpg">Neural Networks</span></a><ul class="subs"><li><a href="m11.html#s-11-1">11.1 引言</a></li><li><a href="m11.html#s-11-2">11.2 投影寻踪回归</a></li><li><a href="m11.html#s-11-3">11.3 神经网络</a></li><li><a href="m11.html#s-11-4">11.4 拟合神经网络</a></li><li><a href="m11.html#s-11-5">11.5 训练中的若干问题</a></li><li><a href="m11.html#s-11-6">11.6 示例：模拟数据</a></li></ul></li>
+<li class="card"><a class="chead" href="m12.html"><span class="cnum">12</span><span class="cname">支持向量机与柔性判别</span><span class="cpg">Support Vector Machines and Flexible Discriminants</span></a><ul class="subs"><li><a href="m12.html#s-12-1">12.1 引言</a></li><li><a href="m12.html#s-12-2">12.2 支持向量分类器</a></li><li><a href="m12.html#s-12-3">12.3 支持向量机与核</a></li><li><a href="m12.html#s-12-4">12.4 推广线性判别分析</a></li><li><a href="m12.html#s-12-5">12.5 柔性判别分析</a></li><li><a href="m12.html#s-12-6">12.6 惩罚判别分析</a></li></ul></li>
+<li class="card"><a class="chead" href="m13.html"><span class="cnum">13</span><span class="cname">原型方法与最近邻</span><span class="cpg">Prototype Methods and Nearest Neighbors</span></a><ul class="subs"><li><a href="m13.html#s-13-1">13.1 引言</a></li><li><a href="m13.html#s-13-2">13.2 原型方法</a></li><li><a href="m13.html#s-13-3">13.3 k 近邻分类器</a></li><li><a href="m13.html#s-13-4">13.4 自适应最近邻方法</a></li><li><a href="m13.html#s-13-5">13.5 计算考虑</a></li></ul></li>
+<li class="card"><a class="chead" href="m14.html"><span class="cnum">14</span><span class="cname">无监督学习</span><span class="cpg">Unsupervised Learning</span></a><ul class="subs"><li><a href="m14.html#s-14-1">14.1 引言</a></li><li><a href="m14.html#s-14-2">14.2 关联规则</a></li><li><a href="m14.html#s-14-3">14.3 聚类分析</a></li><li><a href="m14.html#s-14-4">14.4 自组织映射</a></li><li><a href="m14.html#s-14-5">14.5 主成分、曲线与曲面</a></li><li><a href="m14.html#s-14-5-2b">14.5.2b 旋转 Procrustes 解的显式形式</a></li></ul></li>
+<li class="card"><a class="chead" href="m15.html"><span class="cnum">15</span><span class="cname">随机森林</span><span class="cpg">Random Forests</span></a><ul class="subs"><li><a href="m15.html#s-15-1">15.1 回顾与动机</a></li><li><a href="m15.html#s-15-2">15.2 bagging 的偏差–方差分解</a></li><li><a href="m15.html#s-15-3">15.3 随机森林的细节：OOB 与变量重要性</a></li><li><a href="m15.html#s-15-4">15.4 随机森林的分析</a></li><li><a href="m15.html#s-15-5">15.5 习题中的三个公式</a></li></ul></li>
+<li class="card"><a class="chead" href="m16.html"><span class="cnum">16</span><span class="cname">集成学习</span><span class="cpg">Ensemble Learning</span></a><ul class="subs"><li><a href="m16.html#s-16-1">16.1 引言：纠错输出码</a></li><li><a href="m16.html#s-16-2">16.2 提升与正则化路径</a></li><li><a href="m16.html#s-16-3">16.3 学习集成</a></li><li><a href="m16.html#s-bibliographic-notes-15">16.4 本章小结与文献注</a></li><li><a href="m16.html#s-exercises-15">16.5 练习与补充</a></li></ul></li>
+<li class="card"><a class="chead" href="m17.html"><span class="cnum">17</span><span class="cname">无向图模型</span><span class="cpg">Undirected Graphical Models</span></a><ul class="subs"><li><a href="m17.html#s-17-1">17.1 引言：Gibbs 分布与配分函数</a></li><li><a href="m17.html#s-17-2">17.2 Markov 图及其性质</a></li><li><a href="m17.html#s-17-3">17.3 连续变量的无向图模型</a></li><li><a href="m17.html#s-17-4">17.4 离散变量的无向图模型</a></li><li><a href="m17.html#s-17-5">17.5 伪似然、精确推断与环状信念传播</a></li></ul></li>
+<li class="card"><a class="chead" href="m18.html"><span class="cnum">18</span><span class="cname">高维问题 p ≫ N</span><span class="cpg">High-Dimensional Problems, p &gt;&gt; N</span></a><ul class="subs"><li><a href="m18.html#s-18-1">18.1 引言</a></li><li><a href="m18.html#s-18-2">18.2 对角线性判别分析与最近收缩质心</a></li><li><a href="m18.html#s-18-3">18.3 带二次正则化的线性分类器</a></li><li><a href="m18.html#s-18-4">18.4 带 L1 正则化的线性分类器</a></li><li><a href="m18.html#s-18-5">18.5 特征不可得时的分类</a></li><li><a href="m18.html#s-18-6">18.6 高维回归：监督主成分</a></li></ul></li>
+<!--/CARDS-->
+</ul>
+
+<div class="colophon">
+<div class="note" style="margin:0 0 1rem">
+<b>版本说明</b>：本站的公式编号、章节结构以 <b>ESL 第二版</b> 为准。需要注意的是，本地
+<a href="../esl/index.html">ESL 站点</a> 的第 14、18 章是从<b>第一版</b>转换来的
+（里面有 Association Rules、Self-Organizing Maps、NMF、diagonal LDA 等第一版独有的内容），
+所以这两章的公式编号与本站不一致，页面里的「原文 §x.y」链接也只作定位参考、不代表同样的公式。
+</div>
+<p>本站为 <a href="../esl/index.html">ESL 移动端站点</a> 的公式推导配套读物。所有公式编号沿用原书编号（章节号.序号），可与原文逐条对照。数学公式由 KaTeX 本地渲染，离线可用。</p>
+</div>
+
+</main>
+<nav class="chapnav"><div class="inner">
+<a class="prev" href="index.html"><span class="lbl">Home</span><span class="nm">封面</span></a>
+<a href="prereq.html"><span class="lbl">Next</span><span class="nm">数学预备知识</span></a>
+</div></nav>
+</body>
+</html>

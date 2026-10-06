@@ -1,0 +1,6 @@
+# 构建期依赖与产物，不入库（KaTeX 走全站共享的 assets/katex/）
+node_modules/
+__pycache__/
+*.pyc
+.playwright-mcp/
+.DS_Store

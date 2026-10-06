@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Ch 3 RL 与 RLHF 目标 · RLHF 数学推导手册</title>
+<link rel="icon" href="assets/icon.svg">
+<link rel="stylesheet" href="assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('rlhf-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light')}catch(e){}}());</script>
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="bar">
+<a class="ib" href="index.html" aria-label="目录">&#9776;</a>
+<span class="title">Ch 3 RL 与 RLHF 目标</span>
+<button class="ib" id="theme" type="button" aria-label="切换深色模式">&#9681;</button>
+</header>
+<main id="main">
+<h1 class="chapter"><span class="chno">Ch 3</span>RL 与 RLHF 的目标函数</h1>
+<div class="callout"><div class="lab">This chapter covers</div><ul><li>Eq 3.1 轨迹分布：为什么是连乘</li><li>Eq 3.2 折扣回报目标：γ 在干什么</li><li>Eq 3.3 RLHF 的 bandit 简化：T＝1 怎么来的</li><li>Eq 3.4 KL 正则：D<sub>KL</sub> 的定义与直觉</li></ul></div>
+
+<h2 id="e31"><a class="anchor" href="#e31">#</a>Eq 3.1 轨迹概率：p(τ)＝ρ<sub>0</sub>·∏ π·p</h2>
+<div class="math"><span class="eqtag">原书 Eq 3.1</span><br>p<sub>π</sub>(τ) ＝ ρ<sub>0</sub>(s<sub>0</sub>) ∏<sub>t＝0</sub><sup>T−1</sup> π(a<sub>t</sub>|s<sub>t</sub>) · p(s<sub>t+1</sub>|s<sub>t</sub>,a<sub>t</sub>)，τ＝(s<sub>0</sub>,a<sub>0</sub>,r<sub>0</sub>,…,s<sub>T</sub>,a<sub>T</sub>,r<sub>T</sub>)</div>
+<div class="recall"><div class="lab">前置 · 链式乘法</div>P(A,B)＝P(A)P(B|A)。轨迹是“初始状态→动作→下一状态→…”的长链，每一步都以前面为条件，连乘就是反复用这条规则。ρ<sub>0</sub> 是起点分布，π 是你（策略），p 是环境。</div>
+<ol class="steps">
+<li><b>拆一步：</b>t 时刻你在 s<sub>t</sub>，按 π 抽 a<sub>t</sub>（概率 π(a<sub>t</sub>|s<sub>t</sub>)），环境按 p 推到 s<sub>t+1</sub>。这一步的联合概率＝π·p。</li>
+<li><b>串起来：</b>各步条件独立相乘，再乘起点 ρ<sub>0</sub>(s<sub>0</sub>)，即得整条轨迹概率。取 log 后连乘变连加：log p(τ)＝log ρ<sub>0</sub>＋Σlog π＋Σlog p——Ch 6 求导全靠这一加。</li>
+<li><b>小例子：</b>T＝1，ρ<sub>0</sub>＝1，π(左)＝0.7，p(成功|左)＝0.9，则 τ＝(s<sub>0</sub>,左,成功) 概率＝0.7×0.9＝0.63。</li>
+</ol>
+
+<h2 id="e32"><a class="anchor" href="#e32">#</a>Eq 3.2 有限时域目标：J(π)＝E[Σ γ<sup>t</sup>r]</h2>
+<div class="math"><span class="eqtag">原书 Eq 3.2</span><br>J(π) ＝ E<sub>τ∼p<sub>π</sub></sub>[ Σ<sub>t＝0</sub><sup>T−1</sup> γ<sup>t</sup> r(s<sub>t</sub>,a<sub>t</sub>) ]，0≤γ≤1</div>
+<div class="recall"><div class="lab">前置 · 折扣</div>γ<sup>t</sup> 是“远的奖励打折”。γ＝1 不打折（无穷和可能发散）；γ&lt;1 保证 T→∞ 时 Σγ<sup>t</sup>＝1/(1−γ) 收敛。E 是对上面 Eq 3.1 的分布求平均。</div>
+<ol class="steps">
+<li><b>为什么要 E？</b>同一策略每次 roll 出的轨迹不同（采样随机＋环境随机），目标是“平均表现”，不是某一次运气。</li>
+<li><b>为什么要 γ？</b>① 数学：无限任务求和收敛；② 语义：先拿到手的好处更值钱；③ 方差：远期奖励噪声大，打折后梯度更稳。</li>
+<li><b>算一笔：</b>r＝[1,1,1]，γ＝0.9，则 J＝1＋0.9＋0.81＝2.71；γ＝0 则 J＝1（只看眼前）。</li>
+</ol>
+
+<h3 id="cartpole">无编号：CartPole 状态方程（欧拉积分）</h3>
+<p>原书 3.1.1 把 s<sub>t</sub>＝(x,ẋ,θ,θ̇)，a<sub>t</sub>∈{−F,+F}，r<sub>t</sub>＝1（不倒就给 1，倒了结束），转移 s<sub>t+1</sub>＝f(s<sub>t</sub>,a<sub>t</sub>) 用欧拉法：x<sub>t+1</sub>＝x<sub>t</sub>＋Δt·ẋ<sub>t</sub> 等四行。它就是 Eq 3.1 里那个抽象的 p(s′|s,a) 的<b>具体实例</b>（这里还是确定性的，p 是点质量）。读法：先算角加速度 θ̈、线加速度 ẍ（那两个分式），再用“位置＋速度×Δt”往前推。RLHF 里这整套动力学会被删掉（下一节）。</p>
+
+<h2 id="e33"><a class="anchor" href="#e33">#</a>Eq 3.3 RLHF 简化：J(π)＝E[r<sub>θ</sub>]</h2>
+<div class="math"><span class="eqtag">原书 Eq 3.3</span><br>J(π) ＝ E<sub>τ∼π</sub>[ r<sub>θ</sub>(s,a) ]（单轮、无 γ、无求和）</div>
+<ol class="steps">
+<li><b>三处删除：</b>① 奖励函数 r(s,a) → 学出来的奖励模型 r<sub>θ</sub>(x,y)；② 无状态转移：prompt x 从数据集抽，completion y 不决定下一个 x；③ 整句一个分（bandit）：不用 per-token 累加。</li>
+<li><b>对照表 3.1：</b>标准 RL 是 T&gt;1 多步＋每步有分；RLHF 单轮是 T＝1，Eq 3.2 的 Σ<sub>t</sub> 只剩一项、γ<sup>0</sup>＝1，自然坍缩成 Eq 3.3。</li>
+<li><b>一句话：</b>RLHF 把“下棋走多步”退化成“一次写完作文打一次分”——优化器还是 RL 的，但问题本身简单了一个量级。</li>
+</ol>
+
+<h2 id="e34"><a class="anchor" href="#e34">#</a>Eq 3.4 加 KL 约束：J＝E[r]−βD<sub>KL</sub></h2>
+<div class="math"><span class="eqtag">原书 Eq 3.4</span><br>J(π) ＝ E<sub>τ∼π</sub>[r<sub>θ</sub>] − β·D<sub>KL</sub>(π<sub>RL</sub>(·|s) ‖ π<sub>ref</sub>(·|s))，D<sub>KL</sub>(P‖Q)＝E<sub>x∼P</sub>[log P(x)−log Q(x)]</div>
+<div class="recall"><div class="lab">前置 · KL 直觉</div>D<sub>KL</sub>≥0，P＝Q 时为 0。reverse KL（P＝正在训的模型）对“P 大而 Q 小”的地方罚得极重：新模型不敢说参考模型觉得离谱的话。</div>
+<ol class="steps">
+<li><b>为什么要减一项？</b>从强基座微调起步，纯最大化 r<sub>θ</sub> 会 over-optimize（Ch 16）：奖励模型是代理，一味刷分会刷出人类不喜欢的怪话。β 是“KL 预算”的价格：β 大＝拴得紧，β 小＝放得开。</li>
+<li><b>手算 KL：</b>P＝(0.5,0.5)，Q＝(0.9,0.1)，则 D＝0.5·log(0.5/0.9)＋0.5·log(0.5/0.1)≈0.51（自然对数）。若 P＝Q 则两项 log1＝0。</li>
+<li><b>实现预告：</b>实践中 E<sub>x∼P</sub>[logP−logQ] 只需“从自己采样、查两个模型的 token log prob 相减”（Eq 15.4），β 常见 0.01–0.1。DPO 里 β 同名同义，见 Ch 8。</li>
+</ol>
+<div class="warnbox"><div class="lab">常见误解</div>KL 罚的是<b>分布之差</b>，不是参数之差。两个权重差很远但输出分布相近的模型，KL 可以很小。Ch 15 会给出 KL 的 3 种估计器，别在这里硬背。</div>
+</main>
+<nav class="pager" aria-label="翻页">
+<a class="pv" href="01-preliminaries.html"><span class="dir">上一章</span><span class="t">数学基础速查</span></a>
+<a class="nx" href="03-reward-modeling.html"><span class="dir">下一章</span><span class="t">奖励模型 Eq 5</span></a>
+</nav>
+<script src="assets/app.js"></script>
+</body>
+</html>

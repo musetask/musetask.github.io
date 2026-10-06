@@ -1,0 +1,644 @@
+{
+ "chapter": "3",
+ "cn": "线性回归",
+ "en": "Linear Regression",
+ "book": "04-linear-regression.html",
+ "count": 63,
+ "equations": [
+  {
+   "id": "eq-3-1",
+   "num": "(3.1)",
+   "page": 79,
+   "img": "eq-p079-609y623-215x385.png",
+   "section": "3.1 Simple Linear Regression",
+   "link": "../isl/04-linear-regression.html#eq-3-1",
+   "before": "7. Is there synergy among the advertising media? Perhaps spending $50,000 on television advertising and $50,000 on radio advertising is associated with higher sales than allocating $100,000 to either television or radio individually. In marketing, this is known as a synergy effect, while in statistics it is called an interaction effect. It turns out that linear regression can be used to answer each of these questions. We will first discuss all of these questions in a general context, and then re…",
+   "after": "You might read “≈” as “is approximately modeled as”. We will sometimes describe (3.1) by saying that we are regressing Y on X (or Y onto X). For example, X may represent TV advertising and Y may represent sales. Then we can regress sales onto TV by fitting the model In Equation 3.1, β0 and β1 are two unknown constants that represent the intercept and slope terms in the linear model. Together, β0 and β1 are known as the model coefficients or parameters.Once we have used our training data to produce estimates β̂0 and β̂1 for the model coefficients, we can predict future sales on the basis of a particular value of TV advertising by computing"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 80,
+   "img": "eq-p080-87y106-199x306.png",
+   "section": "3.1 Simple Linear Regression",
+   "link": "../isl/04-linear-regression.html",
+   "before": "Simple linear regression lives up to its name: it is a very straightforward approach for predicting a quantitative response Y on the basis of a single predictor variable X. It assumes that there is approximately a linear relationship between X and Y. Mathematically, we can write this linear relationship as (3.1) You might read “≈” as “is approximately modeled as”. We will sometimes describe (3.1) by saying that we are regressing Y on X (or Y onto X). For example, X may represent TV advertising a…",
+   "after": "In Equation 3.1, β0 and β1 are two unknown constants that represent the intercept and slope terms in the linear model. Together, β0 and β1 are known as the model coefficients or parameters.Once we have used our training data to produce estimates β̂0 and β̂1 for the model coefficients, we can predict future sales on the basis of a particular value of TV advertising by computing (3.2) where ŷ indicates a prediction of Y on the basis of X = x. Here we use a hat symbol, ̂ , to denote the estimated value for an unknown parameter or coefficient, or to denote the predicted value of the response. 3.1.1Estimating the Coefficients#"
+  },
+  {
+   "id": "eq-3-2",
+   "num": "(3.2)",
+   "page": 80,
+   "img": "eq-p080-183y194-218x385.png",
+   "section": "3.1 Simple Linear Regression",
+   "link": "../isl/04-linear-regression.html#eq-3-2",
+   "before": "You might read “≈” as “is approximately modeled as”. We will sometimes describe (3.1) by saying that we are regressing Y on X (or Y onto X). For example, X may represent TV advertising and Y may represent sales. Then we can regress sales onto TV by fitting the model In Equation 3.1, β0 and β1 are two unknown constants that represent the intercept and slope terms in the linear model. Together, β0 and β1 are known as the model coefficients or parameters.Once we have used our training data to produ…",
+   "after": "where ŷ indicates a prediction of Y on the basis of X = x. Here we use a hat symbol, ̂ , to denote the estimated value for an unknown parameter or coefficient, or to denote the predicted value of the response. 3.1.1Estimating the Coefficients# In practice, β0 and β1 are unknown. So before we can use (3.1) to make predictions, we must use data to estimate the coefficients. Let"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 80,
+   "img": "eq-p080-299y317-183x322.png",
+   "section": "3.1 Simple Linear Regression › 3.1.1 Estimating the Coefficients",
+   "link": "../isl/04-linear-regression.html",
+   "before": "(3.2) where ŷ indicates a prediction of Y on the basis of X = x. Here we use a hat symbol, ̂ , to denote the estimated value for an unknown parameter or coefficient, or to denote the predicted value of the response. 3.1.1Estimating the Coefficients# In practice, β0 and β1 are unknown. So before we can use (3.1) to make predictions, we must use data to estimate the coefficients. Let",
+   "after": "represent n observation pairs, each of which consists of a measurement of X and a measurement of Y. In the Advertising example, this data set consists of the TV advertising budget and product sales in n = 200 different markets. (Recall that the data are displayed in Figure 2.1.) Our goal is to obtain coefficient estimates β̂0 and β̂1 such that the linear model (3.1) fits the available data well—that is, so that yi ≈β̂0 + β̂1xi for i = 1,⋯, n. In other words, we want to find an intercept β̂0 and a slope β̂1 such that the resulting line is as close as possible to the n = 200 data points. There are a number of ways of measuring closeness. However, by far the most common approach involves minimi…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 80,
+   "img": "eq-p080-530y538-192x313.png",
+   "section": "3.1 Simple Linear Regression › 3.1.1 Estimating the Coefficients",
+   "link": "../isl/04-linear-regression.html",
+   "before": "represent n observation pairs, each of which consists of a measurement of X and a measurement of Y. In the Advertising example, this data set consists of the TV advertising budget and product sales in n = 200 different markets. (Recall that the data are displayed in Figure 2.1.) Our goal is to obtain coefficient estimates β̂0 and β̂1 such that the linear model (3.1) fits the available data well—that is, so that yi ≈β̂0 + β̂1xi for i = 1,⋯, n. In other words, we want to find an intercept β̂0 and …",
+   "after": "or equivalently as (3.3) (3.4) FIGURE 3.1 For the Advertising data, the least squares fit for the regression of sales onto TV is shown. The fit is found by minimizing the residual sum of squares. Each grey line segment represents a residual. In this case a linear fit captures the essence of the relationship, although it overestimates the trend in the left of the plot."
+  },
+  {
+   "id": "eq-3-3",
+   "num": "(3.3)",
+   "page": 80,
+   "img": "eq-p080-554y576-91x385.png",
+   "section": "3.1 Simple Linear Regression › 3.1.1 Estimating the Coefficients",
+   "link": "../isl/04-linear-regression.html#eq-3-3",
+   "before": "The least squares approach chooses β̂0 and β̂1 to minimize the RSS. Using some calculus, one can show that the minimizers are where ȳ ≡1 Let ŷi = β̂0 + β̂1xi be the prediction for Y based on the ith value of X. Then ei = yi −ŷi represents the ith residual—this is the difference between the ith observed response value and the ith response value that is predicted by our linear model. We define the residual sum of squares (RSS) as or equivalently as",
+   "after": "(3.4) FIGURE 3.1 For the Advertising data, the least squares fit for the regression of sales onto TV is shown. The fit is found by minimizing the residual sum of squares. Each grey line segment represents a residual. In this case a linear fit captures the essence of the relationship, although it overestimates the trend in the left of the plot. ni=1 yi and x̄ ≡n1i=1 xi are the sample means. In other words, (3.4) defines the least squares coefficient estimates for simple linear regression."
+  },
+  {
+   "id": "eq-3-4",
+   "num": "(3.4)",
+   "page": 80,
+   "img": "eq-p080-605y657-187x385.png",
+   "section": "3.1 Simple Linear Regression › 3.1.1 Estimating the Coefficients",
+   "link": "../isl/04-linear-regression.html#eq-3-4",
+   "before": "Let ŷi = β̂0 + β̂1xi be the prediction for Y based on the ith value of X. Then ei = yi −ŷi represents the ith residual—this is the difference between the ith observed response value and the ith response value that is predicted by our linear model. We define the residual sum of squares (RSS) as or equivalently as (3.3)",
+   "after": "FIGURE 3.1 For the Advertising data, the least squares fit for the regression of sales onto TV is shown. The fit is found by minimizing the residual sum of squares. Each grey line segment represents a residual. In this case a linear fit captures the essence of the relationship, although it overestimates the trend in the left of the plot. ni=1 yi and x̄ ≡n1i=1 xi are the sample means. In other words, (3.4) defines the least squares coefficient estimates for simple linear regression. Figure 3.1 displays the simple linear regression fit to the Advertising data, where β̂0 = 7.03 and β̂1 = 0.0475. In other words, according to this approximation, an additional $1,000 spent on TV advertising is ass…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 81,
+   "img": "eq-p081-331y339-145x257.png",
+   "section": "3.1 Simple Linear Regression › 3.1.1 Estimating the Coefficients",
+   "link": "../isl/04-linear-regression.html",
+   "before": "or equivalently as (3.3) (3.4) FIGURE 3.1 For the Advertising data, the least squares fit for the regression of sales onto TV is shown. The fit is found by minimizing the residual sum of squares. Each grey line segment represents a residual. In this case a linear fit captures the essence of the relationship, although it overestimates the trend in the left of the plot.",
+   "after": "ni=1 yi and x̄ ≡n1i=1 xi are the sample means. In other words, (3.4) defines the least squares coefficient estimates for simple linear regression. Figure 3.1 displays the simple linear regression fit to the Advertising data, where β̂0 = 7.03 and β̂1 = 0.0475. In other words, according to this approximation, an additional $1,000 spent on TV advertising is associated with selling approximately 47.5 additional units of the product. In Figure 3.2, we have computed RSS for a number of values of β0 and β1, using the advertising data with sales as the response and TV as the predictor. In each plot, the red dot represents the pair of least squares estimates (β̂0, β̂1) given by (3.4). These values cl…"
+  },
+  {
+   "id": "eq-3-5",
+   "num": "(3.5)",
+   "page": 81,
+   "img": "eq-p081-558y575-207x385.png",
+   "section": "3.1 Simple Linear Regression › 3.1.1 Estimating the Coefficients › 3.1.2 Assessing the Accuracy of the Coefficient Estimates",
+   "link": "../isl/04-linear-regression.html#eq-3-5",
+   "before": "ni=1 yi and x̄ ≡n1i=1 xi are the sample means. In other words, (3.4) defines the least squares coefficient estimates for simple linear regression. Figure 3.1 displays the simple linear regression fit to the Advertising data, where β̂0 = 7.03 and β̂1 = 0.0475. In other words, according to this approximation, an additional $1,000 spent on TV advertising is associated with selling approximately 47.5 additional units of the product. In Figure 3.2, we have computed RSS for a number of values of β0 an…",
+   "after": "Here β0 is the intercept term—that is, the expected value of Y when X = 0, and β1 is the slope—the average increase in Y associated with a one-unit increase in X. The error term is a catch-all for what we miss with this simple model: the true relationship is probably not linear, there may be other variables that cause variation in Y, and there may be measurement error. We typically assume that the error term is independent of X. FIGURE 3.2 Contour and three-dimensional plots of the RSS on the Advertising data, using sales as the response and TV as the predictor. The red dots correspond to the least squares estimates β̂0 and β̂1, given by (3.4). The model given by (3.5) defines the population…"
+  },
+  {
+   "id": "eq-3-6",
+   "num": "(3.6)",
+   "page": 82,
+   "img": "eq-p082-350y370-212x385.png",
+   "section": "3.1 Simple Linear Regression › 3.1.1 Estimating the Coefficients › 3.1.2 Assessing the Accuracy of the Coefficient Estimates",
+   "link": "../isl/04-linear-regression.html#eq-3-6",
+   "before": "Here β0 is the intercept term—that is, the expected value of Y when X = 0, and β1 is the slope—the average increase in Y associated with a one-unit increase in X. The error term is a catch-all for what we miss with this simple model: the true relationship is probably not linear, there may be other variables that cause variation in Y, and there may be measurement error. We typically assume that the error term is independent of X. FIGURE 3.2 Contour and three-dimensional plots of the RSS on the Ad…",
+   "after": "where ϵ was generated from a normal distribution with mean zero. The red line in the left-hand panel of Figure 3.3 displays the true relationship, f(X) = 2 + 3X, while the blue line is the least squares estimate based on the observed data. The true relationship is generally not known for real data, but the least squares line can always be computed using the coefficient estimates given in (3.4). In other words, in real applications, we have access to a set of observations from which we can compute the least squares line; however, the population regression line is unobserved. In the right-hand panel of Figure 3.3 we have generated ten different data sets from the model given by (3.6) and plott…"
+  },
+  {
+   "id": "eq-3-7",
+   "num": "(3.7)",
+   "page": 84,
+   "img": "eq-p084-183y214-196x385.png",
+   "section": "3.1 Simple Linear Regression › 3.1.1 Estimating the Coefficients › 3.1.2 Assessing the Accuracy of the Coefficient Estimates",
+   "link": "../isl/04-linear-regression.html#eq-3-7",
+   "before": ")n ȳ = 1 ni=1 yi is the sample mean. The sample mean and the population mean are different, but in general the sample mean will provide a good estimate of the population mean. In the same way, the unknown coefficients β0 and β1 in linear regression define the population regression line. We seek to estimate these unknown coefficients using β̂0 and β̂1 given in (3.4). These coefficient estimates define the least squares line. Standard errors can be used to compute confidence intervals. A 95% conf…",
+   "after": "where σ is the standard deviation of each of the realizations yi of Y.2 Roughly speaking, the standard error tells us the average amount that this estimate µ̂ differs from the actual value of µ. Equation 3.7 also tells us how this deviation shrinks with n—the more observations we have, the smaller the standard error of µ̂. In a similar vein, we can wonder how close β̂0 and β̂1 are to the true values β0 and β1. To compute the standard errors associated with β̂0 and β̂1, we use the following formulas: (3.8) where σ2 = Var(ϵ). For these formulas to be strictly valid, we need to assume that the errors ϵi for each observation have common variance σ2 and are uncorrelated. This is clearly not true …"
+  },
+  {
+   "id": "eq-3-8",
+   "num": "(3.8)",
+   "page": 84,
+   "img": "eq-p084-305y343-93x385.png",
+   "section": "3.1 Simple Linear Regression › 3.1.1 Estimating the Coefficients › 3.1.2 Assessing the Accuracy of the Coefficient Estimates",
+   "link": "../isl/04-linear-regression.html#eq-3-8",
+   "before": "Standard errors can be used to compute confidence intervals. A 95% confidence interval is defined as a range of values such that with 95% probability, the range will contain the true unknown value of the parameter. The range is defined in terms of lower and upper limits computed from the sample of data. A 95% confidence interval has the following property: if we take repeated samples and construct the confidence interval for each sample, 95% of the intervals will contain the true unknown value o…",
+   "after": "where σ2 = Var(ϵ). For these formulas to be strictly valid, we need to assume that the errors ϵi for each observation have common variance σ2 and are uncorrelated. This is clearly not true in Figure 3.1, but the formula still turns out to be a good approximation. Notice in the formula that SE(β̂1) is smaller when the xi are more spread out; intuitively we have more leverage to estimate a slope when this is the case. We also see that SE(β̂0) would be the same as SE(̂µ) if x̄ were zero (in which case β̂0 would be equal to ȳ). In general, σ2 is not known, but can be estimated from the data. This estimate 5 of σ is known as the residual standard error, and is given by the formula RSE =RSS/(n −2…"
+  },
+  {
+   "id": "eq-3-9",
+   "num": "(3.9)",
+   "page": 84,
+   "img": "eq-p084-605y635-214x385.png",
+   "section": "3.1 Simple Linear Regression › 3.1.1 Estimating the Coefficients › 3.1.2 Assessing the Accuracy of the Coefficient Estimates",
+   "link": "../isl/04-linear-regression.html#eq-3-9",
+   "before": "(3.8) where σ2 = Var(ϵ). For these formulas to be strictly valid, we need to assume that the errors ϵi for each observation have common variance σ2 and are uncorrelated. This is clearly not true in Figure 3.1, but the formula still turns out to be a good approximation. Notice in the formula that SE(β̂1) is smaller when the xi are more spread out; intuitively we have more leverage to estimate a slope when this is the case. We also see that SE(β̂0) would be the same as SE(̂µ) if x̄ were zero (in w…",
+   "after": "注2 This formula holds provided that the n observations are uncorrelated. (3.10) will contain the true value of β1.3 Similarly, a confidence interval for β0 approximately takes the form (3.11)"
+  },
+  {
+   "id": "eq-3-10",
+   "num": "(3.10)",
+   "page": 85,
+   "img": "eq-p085-72y102-175x380.png",
+   "section": "3.1 Simple Linear Regression › 3.1.1 Estimating the Coefficients › 3.1.2 Assessing the Accuracy of the Coefficient Estimates",
+   "link": "../isl/04-linear-regression.html#eq-3-10",
+   "before": "5 of σ is known as the residual standard error, and is given by the formula RSE =RSS/(n −2). Strictly speaking, when σ2 is estimated from the data we should write 6 SE(β̂1) to indicate that an estimate has been made, but for simplicity of notation we will drop this extra “hat”. (3.9) 注2 This formula holds provided that the n observations are uncorrelated.",
+   "after": "will contain the true value of β1.3 Similarly, a confidence interval for β0 approximately takes the form (3.11) In the case of the advertising data, the 95% confidence interval for β0 is [6.130, 7.935] and the 95% confidence interval for β1 is [0.042, 0.053]. Therefore, we can conclude that in the absence of any advertising, sales will, on average, fall somewhere between 6,130 and 7,935 units. Furthermore, for each $1,000 increase in television advertising, there will be an average increase in sales of between 42 and 53 units. Standard errors can also be used to perform hypothesis tests on the coefficients. The most common hypothesis test involves testing the null hypothesis of"
+  },
+  {
+   "id": "eq-3-11",
+   "num": "(3.11)",
+   "page": 85,
+   "img": "eq-p085-137y162-214x380.png",
+   "section": "3.1 Simple Linear Regression › 3.1.1 Estimating the Coefficients › 3.1.2 Assessing the Accuracy of the Coefficient Estimates",
+   "link": "../isl/04-linear-regression.html#eq-3-11",
+   "before": "(3.9) 注2 This formula holds provided that the n observations are uncorrelated. (3.10) will contain the true value of β1.3 Similarly, a confidence interval for β0 approximately takes the form",
+   "after": "In the case of the advertising data, the 95% confidence interval for β0 is [6.130, 7.935] and the 95% confidence interval for β1 is [0.042, 0.053]. Therefore, we can conclude that in the absence of any advertising, sales will, on average, fall somewhere between 6,130 and 7,935 units. Furthermore, for each $1,000 increase in television advertising, there will be an average increase in sales of between 42 and 53 units. Standard errors can also be used to perform hypothesis tests on the coefficients. The most common hypothesis test involves testing the null hypothesis of (3.12) versus the alternative hypothesis"
+  },
+  {
+   "id": "eq-3-12",
+   "num": "(3.12)",
+   "page": 85,
+   "img": "eq-p085-290y300-144x380.png",
+   "section": "3.1 Simple Linear Regression › 3.1.1 Estimating the Coefficients › 3.1.2 Assessing the Accuracy of the Coefficient Estimates",
+   "link": "../isl/04-linear-regression.html#eq-3-12",
+   "before": "will contain the true value of β1.3 Similarly, a confidence interval for β0 approximately takes the form (3.11) In the case of the advertising data, the 95% confidence interval for β0 is [6.130, 7.935] and the 95% confidence interval for β1 is [0.042, 0.053]. Therefore, we can conclude that in the absence of any advertising, sales will, on average, fall somewhere between 6,130 and 7,935 units. Furthermore, for each $1,000 increase in television advertising, there will be an average increase in s…",
+   "after": "versus the alternative hypothesis (3.13) Mathematically, this corresponds to testing H0 : β1 = 0"
+  },
+  {
+   "id": "eq-3-13",
+   "num": "(3.13)",
+   "page": 85,
+   "img": "eq-p085-334y345-137x380.png",
+   "section": "3.1 Simple Linear Regression › 3.1.1 Estimating the Coefficients › 3.1.2 Assessing the Accuracy of the Coefficient Estimates",
+   "link": "../isl/04-linear-regression.html#eq-3-13",
+   "before": "In the case of the advertising data, the 95% confidence interval for β0 is [6.130, 7.935] and the 95% confidence interval for β1 is [0.042, 0.053]. Therefore, we can conclude that in the absence of any advertising, sales will, on average, fall somewhere between 6,130 and 7,935 units. Furthermore, for each $1,000 increase in television advertising, there will be an average increase in sales of between 42 and 53 units. Standard errors can also be used to perform hypothesis tests on the coefficient…",
+   "after": "Mathematically, this corresponds to testing H0 : β1 = 0 versus Ha : β1̸ = 0, since if β1 = 0 then the model (3.5) reduces to Y = β0 + ϵ, and X is not associated with Y. To test the null hypothesis, we need to determine whether β̂1, our estimate for β1, is sufficiently far from zero that we can be confident that β1 is non-zero. How far is far enough? This of course depends on the accuracy of β̂1—that is, it depends on SE(β̂1). If SE(β̂1) is small, then even relatively small values of β̂1 may provide strong evidence that β1̸ = 0, and hence that there is a relationship between X and Y. In contrast, if SE(β̂1) is large, then β̂1 must be large in absolute value in order for us to reject the null …"
+  },
+  {
+   "id": "eq-3-14",
+   "num": "(3.14)",
+   "page": 85,
+   "img": "eq-p085-546y577-221x380.png",
+   "section": "3.1 Simple Linear Regression › 3.1.1 Estimating the Coefficients › 3.1.2 Assessing the Accuracy of the Coefficient Estimates",
+   "link": "../isl/04-linear-regression.html#eq-3-14",
+   "before": "Mathematically, this corresponds to testing H0 : β1 = 0 versus Ha : β1̸ = 0, since if β1 = 0 then the model (3.5) reduces to Y = β0 + ϵ, and X is not associated with Y. To test the null hypothesis, we need to determine whether β̂1, our estimate for β1, is sufficiently far from zero that we can be confident that β1 is non-zero. How far is far enough? This of course depends on the accuracy of β̂1—that is, it depends on SE(β̂1). If SE(β̂1) is small, then even relatively small values of β̂1 may prov…",
+   "after": "3Approximately for several reasons. Equation 3.10 relies on the assumption that the 注errors are Gaussian. Also, the factor of 2 in front of the SE(β̂1) term will vary slightly depending on the number of observations n in the linear regression. To be precise, rather than the number 2, (3.10) should contain the 97.5% quantile of a t-distribution with n−2 degrees of freedom. Details of how to compute the 95% confidence interval precisely in R will be provided later in this chapter. TABLE 3.1 For the Advertising data, coefficients of the least squares model for the regression of number of units sold on TV advertising budget. An increase of $1,000 in the TV advertising budget is associated with a…"
+  },
+  {
+   "id": "eq-3-15",
+   "num": "(3.15)",
+   "page": 87,
+   "img": "eq-p087-284y327-149x380.png",
+   "section": "3.1 Simple Linear Regression › 3.1.1 Estimating the Coefficients › 3.1.2 Assessing the Accuracy of the Coefficient Estimates › 3.1.3 Assessing the Accuracy of the Model",
+   "link": "../isl/04-linear-regression.html#eq-3-15",
+   "before": "TABLE 3.2 For the Advertising data, more information about the least squares model for the regression of number of units sold on TV advertising budget. The RSE is considered a measure of the lack of fit of the model (3.5) to the data. If the predictions obtained using the model are very close to the true outcome values—that is, if ŷi ≈yi for i = 1,⋯, n—then (3.15) will be small, and we can conclude that the model fits the data very well. On the other hand, if ŷi is very far from yi for one or …",
+   "after": "Note that RSS was defined in Section 3.1.1, and is given by the formula (3.16) In the case of the advertising data, we see from the linear regression output in Table 3.2 that the RSE is 3.26. In other words, actual sales in each market deviate from the true regression line by approximately 3,260 units, on average. Another way to think about this is that even if the model were correct and the true values of the unknown coefficients β0 and β1 were known exactly, any prediction of sales on the basis of TV advertising would still be off by about 3,260 units on average. Of course, whether or not 3,260 units is an acceptable prediction error depends on the problem context. In the advertising data …"
+  },
+  {
+   "id": "eq-3-16",
+   "num": "(3.16)",
+   "page": 87,
+   "img": "eq-p087-344y380-203x380.png",
+   "section": "3.1 Simple Linear Regression › 3.1.1 Estimating the Coefficients › 3.1.2 Assessing the Accuracy of the Coefficient Estimates › 3.1.3 Assessing the Accuracy of the Model",
+   "link": "../isl/04-linear-regression.html#eq-3-16",
+   "before": "Table 3.2 displays the RSE, the R2 statistic, and the F-statistic (to be described in Section 3.2.2) for the linear regression of number of units sold on TV advertising budget. Residual Standard Error Recall from the model (3.5) that associated with each observation is an error term ϵ. Due to the presence of these error terms, even if we knew the true regression line (i.e. even if β0 and β1 were known), we would not be able to perfectly predict Y from X. The RSE is an estimate of the standard de…",
+   "after": "In the case of the advertising data, we see from the linear regression output in Table 3.2 that the RSE is 3.26. In other words, actual sales in each market deviate from the true regression line by approximately 3,260 units, on average. Another way to think about this is that even if the model were correct and the true values of the unknown coefficients β0 and β1 were known exactly, any prediction of sales on the basis of TV advertising would still be off by about 3,260 units on average. Of course, whether or not 3,260 units is an acceptable prediction error depends on the problem context. In the advertising data set, the mean value of sales over all markets is approximately 14,000 units, an…"
+  },
+  {
+   "id": "eq-3-17",
+   "num": "(3.17)",
+   "page": 88,
+   "img": "eq-p088-124y152-183x380.png",
+   "section": "3.1 Simple Linear Regression › 3.1.1 Estimating the Coefficients › 3.1.2 Assessing the Accuracy of the Coefficient Estimates › 3.1.3 Assessing the Accuracy of the Model",
+   "link": "../isl/04-linear-regression.html#eq-3-17",
+   "before": "Note that RSS was defined in Section 3.1.1, and is given by the formula (3.16) In the case of the advertising data, we see from the linear regression output in Table 3.2 that the RSE is 3.26. In other words, actual sales in each market deviate from the true regression line by approximately 3,260 units, on average. Another way to think about this is that even if the model were correct and the true values of the unknown coefficients β0 and β1 were known exactly, any prediction of sales on the basi…",
+   "after": "where TSS = )(yi −ȳ)2 is the total sum of squares, and RSS is defined in (3.16). TSS measures the total variance in the response Y, and can be thought of as the amount of variability inherent in the response before the regression is performed. In contrast, RSS measures the amount of variability that is left unexplained after performing the regression. Hence, TSS −RSS measures the amount of variability in the response that is explained (or removed) by performing the regression, and R2 measures the proportion of variability in Y that can be explained using X. An R2 statistic that is close to 1 indicates that a large proportion of the variability in the response is explained by the regression.…"
+  },
+  {
+   "id": "eq-3-18",
+   "num": "(3.18)",
+   "page": 88,
+   "img": "eq-p088-525y558-143x380.png",
+   "section": "3.1 Simple Linear Regression › 3.1.1 Estimating the Coefficients › 3.1.2 Assessing the Accuracy of the Coefficient Estimates › 3.1.3 Assessing the Accuracy of the Model",
+   "link": "../isl/04-linear-regression.html#eq-3-18",
+   "before": "where TSS = )(yi −ȳ)2 is the total sum of squares, and RSS is defined in (3.16). TSS measures the total variance in the response Y, and can be thought of as the amount of variability inherent in the response before the regression is performed. In contrast, RSS measures the amount of variability that is left unexplained after performing the regression. Hence, TSS −RSS measures the amount of variability in the response that is explained (or removed) by performing the regression, and R2 measures t…",
+   "after": "注5 We note that in fact, the right-hand side of (3.18) is the sample correlation; thus, ! it would be more correct to write Cor(X, Y); however, we omit the “hat” for ease of notation. TABLE 3.3 More simple linear regression models for the Advertising data. Coefficients of the simple linear regression model for number of units sold on Top: radio advertising budget and Bottom: newspaper advertising budget. A $1,000 in- crease in spending on radio advertising is associated with an average increase in sales by around 203 units, while the same increase in spending on newspaper ad- vertising is associated with an average increase in sales by around 55 units. (Note that the sales variable is in tho…"
+  },
+  {
+   "id": "eq-3-19",
+   "num": "(3.19)",
+   "page": 90,
+   "img": "eq-p090-242y266-158x380.png",
+   "section": "3.2 Multiple Linear Regression",
+   "link": "../isl/04-linear-regression.html#eq-3-19",
+   "before": "Simple linear regression is a useful approach for predicting a response on the basis of a single predictor variable. However, in practice we often have more than one predictor. For example, in the Advertising data, we have examined the relationship between sales and TV advertising. We also have data for the amount of money spent advertising on the radio and in newspapers, and we may want to know whether either of these two media is associated with sales. How can we extend our analysis of the adv…",
+   "after": "where Xj represents the jth predictor and βj quantifies the association between that variable and the response. We interpret βj as the average effect on Y of a one unit increase in Xj, holding all other predictors fixed. In the advertising example, (3.19) becomes sales = β0 + β1 × TV + β2 × radio + β3 × newspaper + ϵ.(3.20) 3.2.1Estimating the Regression Coefficients# The values β̂0, β̂1,⋯, β̂p that minimize (3.22) are the multiple least squares regression coefficient estimates. Unlike the simple linear regression estimates given in (3.4), the multiple regression coefficient estimates have somewhat complicated forms that are most easily represented using matrix algebra. For this reason, we d…"
+  },
+  {
+   "id": "eq-3-21",
+   "num": "(3.21)",
+   "page": 90,
+   "img": "eq-p090-420y444-171x380.png",
+   "section": "3.2 Multiple Linear Regression › 3.2.1 Estimating the Regression Coefficients",
+   "link": "../isl/04-linear-regression.html#eq-3-21",
+   "before": "sales = β0 + β1 × TV + β2 × radio + β3 × newspaper + ϵ.(3.20) 3.2.1Estimating the Regression Coefficients# The values β̂0, β̂1,⋯, β̂p that minimize (3.22) are the multiple least squares regression coefficient estimates. Unlike the simple linear regression estimates given in (3.4), the multiple regression coefficient estimates have somewhat complicated forms that are most easily represented using matrix algebra. For this reason, we do not provide them here. Any statistical software package can be…",
+   "after": "The parameters are estimated using the same least squares approach that we saw in the context of simple linear regression. We choose β0, β1,⋯, βp to minimize the sum of squared residuals (3.22) FIGURE 3.4 In a three-dimensional setting, with two predictors and one response, the least squares regression line becomes a plane. The plane is chosen to minimize the sum of the squared vertical distances between each observation (shown in red) and the plane. Does it make sense for the multiple regression to suggest no relationship between sales and newspaper while the simple linear regression implies the opposite? In fact it does. Consider the correlation matrix for the three predictor variables and…"
+  },
+  {
+   "id": "eq-3-22",
+   "num": "(3.22)",
+   "page": 90,
+   "img": "eq-p090-488y563-129x380.png",
+   "section": "3.2 Multiple Linear Regression › 3.2.1 Estimating the Regression Coefficients",
+   "link": "../isl/04-linear-regression.html#eq-3-22",
+   "before": "The values β̂0, β̂1,⋯, β̂p that minimize (3.22) are the multiple least squares regression coefficient estimates. Unlike the simple linear regression estimates given in (3.4), the multiple regression coefficient estimates have somewhat complicated forms that are most easily represented using matrix algebra. For this reason, we do not provide them here. Any statistical software package can be used to compute these coefficient estimates, and later in this chapter we will show how this can be done i…",
+   "after": "FIGURE 3.4 In a three-dimensional setting, with two predictors and one response, the least squares regression line becomes a plane. The plane is chosen to minimize the sum of the squared vertical distances between each observation (shown in red) and the plane. Does it make sense for the multiple regression to suggest no relationship between sales and newspaper while the simple linear regression implies the opposite? In fact it does. Consider the correlation matrix for the three predictor variables and response variable, displayed in Table 3.5. Notice that the correlation between radio and newspaper is 0.35. This indicates that markets with high newspaper advertising tend to also have high ra…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 93,
+   "img": "eq-p093-302y316-187x318.png",
+   "section": "3.2 Multiple Linear Regression › 3.2.1 Estimating the Regression Coefficients › 3.2.2 Some Important Questions",
+   "link": "../isl/04-linear-regression.html",
+   "before": "4. Given a set of predictor values, what response value should we predict, and how accurate is our prediction? The F-statistic for the multiple linear regression model obtained by regressing sales onto radio, TV, and newspaper is shown in Table 3.6. In this example the F-statistic is 570. Since this is far larger than 1, it provides compelling evidence against the null hypothesis H0. In other words, the large F-statistic suggests that at least one of the advertising media must be related to sale…",
+   "after": "versus the alternative Ha : at least one βj is non-zero. This hypothesis test is performed by computing the F-statistic, (3.23)"
+  },
+  {
+   "id": "eq-3-23",
+   "num": "(3.23)",
+   "page": 93,
+   "img": "eq-p093-377y412-199x380.png",
+   "section": "3.2 Multiple Linear Regression › 3.2.1 Estimating the Regression Coefficients › 3.2.2 Some Important Questions",
+   "link": "../isl/04-linear-regression.html#eq-3-23",
+   "before": "versus the alternative Ha : at least one βj is non-zero. This hypothesis test is performed by computing the F-statistic,",
+   "after": "where, as with simple linear regression, TSS = )(yi −ȳ)2 and RSS = )(yi −ŷi)2. If the linear model assumptions are correct, one can show that and that, provided H0 is true,"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 93,
+   "img": "eq-p093-464y472-191x313.png",
+   "section": "3.2 Multiple Linear Regression › 3.2.1 Estimating the Regression Coefficients › 3.2.2 Some Important Questions",
+   "link": "../isl/04-linear-regression.html",
+   "before": "Ha : at least one βj is non-zero. This hypothesis test is performed by computing the F-statistic, (3.23) where, as with simple linear regression, TSS = )(yi −ȳ)2 and RSS = )(yi −ŷi)2. If the linear model assumptions are correct, one can show that",
+   "after": "and that, provided H0 is true, Hence, when there is no relationship between the response and predictors, one would expect the F-statistic to take on a value close to 1. On the other hand, if Ha is true, then E{(TSS −RSS)/p} > σ2, so we expect F to be greater than 1. TABLE 3.6 More information about the least squares model for the regression of number of units sold on TV, newspaper, and radio advertising budgets in the Advertising data. Other information about this model was displayed in Table 3.4."
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 93,
+   "img": "eq-p093-493y516-192x313.png",
+   "section": "3.2 Multiple Linear Regression › 3.2.1 Estimating the Regression Coefficients › 3.2.2 Some Important Questions",
+   "link": "../isl/04-linear-regression.html",
+   "before": "(3.23) where, as with simple linear regression, TSS = )(yi −ȳ)2 and RSS = )(yi −ŷi)2. If the linear model assumptions are correct, one can show that and that, provided H0 is true,",
+   "after": "Hence, when there is no relationship between the response and predictors, one would expect the F-statistic to take on a value close to 1. On the other hand, if Ha is true, then E{(TSS −RSS)/p} > σ2, so we expect F to be greater than 1. TABLE 3.6 More information about the least squares model for the regression of number of units sold on TV, newspaper, and radio advertising budgets in the Advertising data. Other information about this model was displayed in Table 3.4. In (3.23) we are testing H0 that all the coefficients are zero. Sometimes we want to test that a particular subset of q of the coefficients are zero. This corresponds to a null hypothesis"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 94,
+   "img": "eq-p094-329y347-160x345.png",
+   "section": "3.2 Multiple Linear Regression › 3.2.1 Estimating the Regression Coefficients › 3.2.2 Some Important Questions",
+   "link": "../isl/04-linear-regression.html",
+   "before": "Hence, when there is no relationship between the response and predictors, one would expect the F-statistic to take on a value close to 1. On the other hand, if Ha is true, then E{(TSS −RSS)/p} > σ2, so we expect F to be greater than 1. TABLE 3.6 More information about the least squares model for the regression of number of units sold on TV, newspaper, and radio advertising budgets in the Advertising data. Other information about this model was displayed in Table 3.4. In (3.23) we are testing H0 …",
+   "after": "where for convenience we have put the variables chosen for omission at the end of the list. In this case we fit a second model that uses all the variables except those last q. Suppose that the residual sum of squares for that model is RSS0. Then the appropriate F-statistic is (3.24) Notice that in Table 3.4, for each individual predictor a t-statistic and a p-value were reported. These provide information about whether each individual predictor is related to the response, after adjusting for the other predictors. It turns out that each of these is exactly equivalent7 to the Ftest that omits that single variable from the model, leaving all the others in—i.e. q=1 in (3.24). So it reports the p…"
+  },
+  {
+   "id": "eq-3-24",
+   "num": "(3.24)",
+   "page": 94,
+   "img": "eq-p094-402y432-199x380.png",
+   "section": "3.2 Multiple Linear Regression › 3.2.1 Estimating the Regression Coefficients › 3.2.2 Some Important Questions",
+   "link": "../isl/04-linear-regression.html#eq-3-24",
+   "before": "TABLE 3.6 More information about the least squares model for the regression of number of units sold on TV, newspaper, and radio advertising budgets in the Advertising data. Other information about this model was displayed in Table 3.4. In (3.23) we are testing H0 that all the coefficients are zero. Sometimes we want to test that a particular subset of q of the coefficients are zero. This corresponds to a null hypothesis where for convenience we have put the variables chosen for omission at the e…",
+   "after": "Notice that in Table 3.4, for each individual predictor a t-statistic and a p-value were reported. These provide information about whether each individual predictor is related to the response, after adjusting for the other predictors. It turns out that each of these is exactly equivalent7 to the Ftest that omits that single variable from the model, leaving all the others in—i.e. q=1 in (3.24). So it reports the partial effect of adding that variable to the model. For instance, as we discussed earlier, these p-values indicate that TV and radio are related to sales, but that there is no evidence that newspaper is associated with sales, when TV and radio are held fixed. Given these individual p…"
+  },
+  {
+   "id": "eq-3-25",
+   "num": "(3.25)",
+   "page": 97,
+   "img": "eq-p097-628y657-194x380.png",
+   "section": "3.2 Multiple Linear Regression › 3.2.1 Estimating the Regression Coefficients › 3.2.2 Some Important Questions",
+   "link": "../isl/04-linear-regression.html#eq-3-25",
+   "before": "Recall that in simple regression, R2 is the square of the correlation of the response and the variable. In multiple linear regression, it turns out that it equals Cor(Y, Ŷ)2, the square of the correlation between the response and the fitted linear model; in fact one property of the fitted linear model is that it maximizes this correlation among all possible linear models. An R2 value close to 1 indicates that the model explains a large portion of the variance in the response variable. As an exa…",
+   "after": "FIGURE 3.5 For the Advertising data, a linear regression fit to sales using TV and radio as predictors. From the pattern of the residuals, we can see that there is a pronounced non-linear relationship in the data. The positive residuals (those visible above the surface), tend to lie along the 45-degree line, where TV and Radio budgets are split evenly. The negative residuals (most not visible), tend to lie away from this line, where budgets are more lopsided. In addition to looking at the RSE and R2 statistics just discussed, it can be useful to plot the data. Graphical summaries can reveal problems with a model that are not visible from numerical statistics. For example, Figure 3.5 displays…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 98,
+   "img": "eq-p098-634y657-197x332.png",
+   "section": "3.2 Multiple Linear Regression › 3.2.1 Estimating the Regression Coefficients › 3.2.2 Some Important Questions",
+   "link": "../isl/04-linear-regression.html",
+   "before": "FIGURE 3.5 For the Advertising data, a linear regression fit to sales using TV and radio as predictors. From the pattern of the residuals, we can see that there is a pronounced non-linear relationship in the data. The positive residuals (those visible above the surface), tend to lie along the 45-degree line, where TV and Radio budgets are split evenly. The negative residuals (most not visible), tend to lie away from this line, where budgets are more lopsided. In addition to looking at the RSE an…",
+   "after": "is only an estimate for the true population regression plane The inaccuracy in the coefficient estimates is related to the reducible error from Chapter 2. We can compute a confidence interval in order to determine how close Ŷ will be to f(X). 2. Of course, in practice assuming a linear model for f(X) is almost always an approximation of reality, so there is an additional source of potentially reducible error which we call model bias. So when we use a linear model, we are in fact estimating the best linear approximation to the true surface. However, here we will ignore this discrepancy, and operate as if the linear model were correct."
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 99,
+   "img": "eq-p099-78y99-188x341.png",
+   "section": "3.2 Multiple Linear Regression › 3.2.1 Estimating the Regression Coefficients › 3.2.2 Some Important Questions",
+   "link": "../isl/04-linear-regression.html",
+   "before": "Four: Predictions Once we have fit the multiple regression model, it is straightforward to apply (3.21) in order to predict the response Y on the basis of a set of values for the predictors X1, X2,⋯, Xp. However, there are three sorts of uncertainty associated with this prediction. 1. The coefficient estimates β̂0, β̂1,⋯, β̂p are estimates for β0, β1,⋯, βp. That is, the least squares plane is only an estimate for the true population regression plane",
+   "after": "The inaccuracy in the coefficient estimates is related to the reducible error from Chapter 2. We can compute a confidence interval in order to determine how close Ŷ will be to f(X). 2. Of course, in practice assuming a linear model for f(X) is almost always an approximation of reality, so there is an additional source of potentially reducible error which we call model bias. So when we use a linear model, we are in fact estimating the best linear approximation to the true surface. However, here we will ignore this discrepancy, and operate as if the linear model were correct. 3. Even if we knew f(X)—that is, even if we knew the true values for β0, β1,⋯, βp—the response value cannot be predict…"
+  },
+  {
+   "id": "eq-3-26",
+   "num": "(3.26)",
+   "page": 100,
+   "img": "eq-p100-422y430-143x380.png",
+   "section": "3.3 Other Considerations in the Regression Model › 3.3.1 Qualitative Predictors",
+   "link": "../isl/04-linear-regression.html#eq-3-26",
+   "before": "In our discussion so far, we have assumed that all variables in our linear regression model are quantitative. But in practice, this is not necessarily the case; often some predictors are qualitative. For example, the Credit data set displayed in Figure 3.6 records variables for a number of credit card holders. The response is balance (average credit card debt for each individual) and there are several quantitative predictors: age, cards (number of credit cards), education (years of education), i…",
+   "after": "Table 3.7 displays the coefficient estimates and other information associated with the model (3.27). The average credit card debt for non-owners is estimated to be $509.80, whereas owners are estimated to carry $19.73 in additional debt for a total of $509.80 + $19.73 = $529.53. However, we notice that the p-value for the dummy variable is very high. This indicates that there is no statistical evidence of a difference in average credit card balance based on house ownership. and use this variable as a predictor in the regression equation. This results in the model (3.27)"
+  },
+  {
+   "id": "eq-3-27",
+   "num": "(3.27)",
+   "page": 100,
+   "img": "eq-p100-495y503-91x380.png",
+   "section": "3.3 Other Considerations in the Regression Model › 3.3.1 Qualitative Predictors",
+   "link": "../isl/04-linear-regression.html#eq-3-27",
+   "before": "(3.26) Table 3.7 displays the coefficient estimates and other information associated with the model (3.27). The average credit card debt for non-owners is estimated to be $509.80, whereas owners are estimated to carry $19.73 in additional debt for a total of $509.80 + $19.73 = $529.53. However, we notice that the p-value for the dummy variable is very high. This indicates that there is no statistical evidence of a difference in average credit card balance based on house ownership. and use this v…",
+   "after": "Now β0 can be interpreted as the average credit card balance among those who do not own, β0 + β1 as the average credit card balance among those who do own their house, and β1 as the average difference in credit card balance between owners and non-owners. 注10 In the machine learning community, the creation of dummy variables to handle qualitative predictors is known as “one-hot encoding”. FIGURE 3.6 The Credit data set contains information about balance, age, cards, education, income, limit, and rating for a number of potential cus- tomers. and use this variable in the regression equation. This results in the model Now β0 can be interpreted as the overall average credit card balance (ignoring…"
+  },
+  {
+   "id": "eq-3-28",
+   "num": "(3.28)",
+   "page": 102,
+   "img": "eq-p102-365y373-141x380.png",
+   "section": "3.3 Other Considerations in the Regression Model › 3.3.1 Qualitative Predictors",
+   "link": "../isl/04-linear-regression.html#eq-3-28",
+   "before": "TABLE 3.7 Least squares coefficient estimates associated with the regression of balance onto own in the Credit data set. The linear model is given in (3.27). That is, ownership is encoded as a dummy variable, as in (3.26). Qualitative Predictors with More than Two Levels When a qualitative predictor has more than two levels, a single dummy variable cannot represent all possible values. In this situation, we can create additional dummy variables. For example, for the region variable we create two…",
+   "after": "(3.29) Then both of these variables can be used in the regression equation, in order to obtain the model  β0+β1+ϵiif ith person is from the South  yi = β0+β1xi1+β2xi2+ϵi =β0+β2+ϵiif ith person is from the West   β0+ϵiif ith person is from the East. (3.30) Now β0 can be interpreted as the average credit card balance for individuals from the East, β1 can be interpreted as the difference in the average balance between people from the South versus the East, and β2 can be interpreted as the difference in the average balance between those from the West versus the East. There will always be one fewer dummy variable than the number of levels. The level with no dummy variable—East in this exampl…"
+  },
+  {
+   "id": "eq-3-29",
+   "num": "(3.29)",
+   "page": 102,
+   "img": "eq-p102-420y428-143x380.png",
+   "section": "3.3 Other Considerations in the Regression Model › 3.3.1 Qualitative Predictors",
+   "link": "../isl/04-linear-regression.html#eq-3-29",
+   "before": "Qualitative Predictors with More than Two Levels When a qualitative predictor has more than two levels, a single dummy variable cannot represent all possible values. In this situation, we can create additional dummy variables. For example, for the region variable we create two dummy variables. The first could be (3.28)",
+   "after": "Then both of these variables can be used in the regression equation, in order to obtain the model  β0+β1+ϵiif ith person is from the South  yi = β0+β1xi1+β2xi2+ϵi =β0+β2+ϵiif ith person is from the West   β0+ϵiif ith person is from the East. (3.30) Now β0 can be interpreted as the average credit card balance for individuals from the East, β1 can be interpreted as the difference in the average balance between people from the South versus the East, and β2 can be interpreted as the difference in the average balance between those from the West versus the East. There will always be one fewer dummy variable than the number of levels. The level with no dummy variable—East in this example—is kn…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 104,
+   "img": "eq-p104-347y366-187x318.png",
+   "section": "3.3 Other Considerations in the Regression Model › 3.3.1 Qualitative Predictors › 3.3.2 Extensions of the Linear Model",
+   "link": "../isl/04-linear-regression.html",
+   "before": "Removing the Additive Assumption In our previous analysis of the Advertising data, we concluded that both TV and radio seem to be associated with sales. The linear models that formed the basis for this conclusion assumed that the effect on sales of increasing one advertising medium is independent of the amount spent on the other media. For example, the linear model (3.20) states that the average increase in sales associated with a one-unit increase in TV is always β1, regardless of the amount sp…",
+   "after": "According to this model, a one-unit increase in X1 is associated with an average increase in Y of β1 units. Notice that the presence of X2 does not alter this statement—that is, regardless of the value of X2, a oneunit increase in X1 is associated with a β1-unit increase in Y. One way of extending this model is to include a third predictor, called an interaction term, which is constructed by computing the product of X1 and X2. This results in the model (3.31) How does inclusion of this interaction term relax the additive assumption? Notice that (3.31) can be rewritten as (3.32)"
+  },
+  {
+   "id": "eq-3-31",
+   "num": "(3.31)",
+   "page": 104,
+   "img": "eq-p104-458y481-163x380.png",
+   "section": "3.3 Other Considerations in the Regression Model › 3.3.1 Qualitative Predictors › 3.3.2 Extensions of the Linear Model",
+   "link": "../isl/04-linear-regression.html#eq-3-31",
+   "before": "However, this simple model may be incorrect. Suppose that spending money on radio advertising actually increases the effectiveness of TV advertising, so that the slope term for TV should increase as radio increases. In this situation, given a fixed budget of $100,000, spending half on radio and half on TV may increase sales more than allocating the entire amount to either TV or to radio. In marketing, this is known as a synergy effect, and in statistics it is referred to as an interaction effect…",
+   "after": "How does inclusion of this interaction term relax the additive assumption? Notice that (3.31) can be rewritten as (3.32) where β̃1 = β1 + β3X2. Since β̃1 is now a function of X2, the association between X1 and Y is no longer constant: a change in the value of X2 will change the association between X1 and Y. A similar argument shows that a change in the value of X1 changes the association between X2 and Y. TABLE 3.9 For the Advertising data, least squares coefficient estimates asso- ciated with the regression of sales onto TV and radio, with an interaction term, as in (3.33)."
+  },
+  {
+   "id": "eq-3-32",
+   "num": "(3.32)",
+   "page": 104,
+   "img": "eq-p104-512y551-160x380.png",
+   "section": "3.3 Other Considerations in the Regression Model › 3.3.1 Qualitative Predictors › 3.3.2 Extensions of the Linear Model",
+   "link": "../isl/04-linear-regression.html#eq-3-32",
+   "before": "According to this model, a one-unit increase in X1 is associated with an average increase in Y of β1 units. Notice that the presence of X2 does not alter this statement—that is, regardless of the value of X2, a oneunit increase in X1 is associated with a β1-unit increase in Y. One way of extending this model is to include a third predictor, called an interaction term, which is constructed by computing the product of X1 and X2. This results in the model (3.31) How does inclusion of this interacti…",
+   "after": "where β̃1 = β1 + β3X2. Since β̃1 is now a function of X2, the association between X1 and Y is no longer constant: a change in the value of X2 will change the association between X1 and Y. A similar argument shows that a change in the value of X1 changes the association between X2 and Y. TABLE 3.9 For the Advertising data, least squares coefficient estimates asso- ciated with the regression of sales onto TV and radio, with an interaction term, as in (3.33). In this example, the p-values associated with TV, radio, and the interaction term all are statistically significant (Table 3.9), and so it is obvious that all three variables should be included in the model. However, it is sometimes the ca…"
+  },
+  {
+   "id": "eq-3-33",
+   "num": "(3.33)",
+   "page": 105,
+   "img": "eq-p105-374y384-147x380.png",
+   "section": "3.3 Other Considerations in the Regression Model › 3.3.1 Qualitative Predictors › 3.3.2 Extensions of the Linear Model",
+   "link": "../isl/04-linear-regression.html#eq-3-33",
+   "before": "units≈1.2 + 3.4 × lines + 0.22 × workers + 1.4 × (lines × workers) =1.2 + (3.4 + 1.4 × workers) × lines + 0.22 × workers. In other words, adding an additional line will increase the number of units produced by 3.4 + 1.4 × workers. Hence the more workers we have, the stronger will be the effect of lines. We now return to the Advertising example. A linear model that uses radio, TV, and an interaction between the two to predict sales takes the form sales=β0 + β1 × TV + β2 × radio + β3 × (radio × TV…",
+   "after": "We can interpret β3 as the increase in the effectiveness of TV advertising associated with a one-unit increase in radio advertising (or vice-versa). The coefficients that result from fitting the model (3.33) are given in Table 3.9. The results in Table 3.9 strongly suggest that the model that includes the interaction term is superior to the model that contains only main effects. The p-value for the interaction term, TV×radio, is extremely low, indicating that there is strong evidence for Ha : β3̸ = 0. In other words, it is clear that the true relationship is not additive. The R2 for the model (3.33) is 96.8%, compared to only 89.7% for the model that predicts sales using TV and radio without…"
+  },
+  {
+   "id": "eq-3-37",
+   "num": "(3.37)",
+   "page": 114,
+   "img": "eq-p114-623y657-189x380.png",
+   "section": "3.3 Other Considerations in the Regression Model › 3.3.1 Qualitative Predictors › 3.3.2 Extensions of the Linear Model › 3.3.3 Potential Problems",
+   "link": "../isl/04-linear-regression.html#eq-3-37",
+   "before": "If we believe that an outlier has occurred due to an error in data collection or recording, then one solution is to simply remove the observation. However, care should be taken, since an outlier may instead indicate a deficiency with the model, such as a missing predictor. FIGURE 3.13 Left: Observation 41 is a high leverage point, while 20 is not. The red line is the fit to all the data, and the blue line is the fit with observation 41 removed. Center: The red observation is not unusual in terms…",
+   "after": "FIGURE 3.14 Scatterplots of the observations from the Credit data set. Left: A plot of age versus limit. These two variables are not collinear. Right: A plot of rating versus limit. There is high collinearity. Figure 3.15 illustrates some of the difficulties that can result from collinearity. The left-hand panel of Figure 3.15 is a contour plot of the RSS (3.22) associated with different possible coefficient estimates for the regression of balance on limit and age. Each ellipse represents a set of coefficients β for various regressions involving the Credit data set. In each plot, the black dots represent the coefficient values corresponding to the minimum RSS. Left: A contour plot of RSS for…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 116,
+   "img": "eq-p116-120y129-86x286.png",
+   "section": "3.3 Other Considerations in the Regression Model › 3.3.1 Qualitative Predictors › 3.3.2 Extensions of the Linear Model › 3.3.3 Potential Problems",
+   "link": "../isl/04-linear-regression.html",
+   "before": "Figure 3.15 illustrates some of the difficulties that can result from collinearity. The left-hand panel of Figure 3.15 is a contour plot of the RSS (3.22) associated with different possible coefficient estimates for the regression of balance on limit and age. Each ellipse represents a set of coefficients β for various regressions involving the Credit data set. In each plot, the black dots represent the coefficient values corresponding to the minimum RSS. Left: A contour plot of RSS for the regre…",
+   "after": "FIGURE 3.15 Contour plots for the RSS values as a function of the parameters Since collinearity reduces the accuracy of the estimates of the regression coefficients, it causes the standard error for β̂j to grow. Recall that the t-statistic for each predictor is calculated by dividing β̂j by its standard β̂limit increases 12-fold in the second regression, due to collinearity. that correspond to the same RSS, with ellipses nearest to the center taking on the lowest values of RSS. The black dots and associated dashed lines represent the coefficient estimates that result in the smallest possible RSS—in other words, these are the least squares estimates. The axes for limit and age have been scale…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 116,
+   "img": "eq-p116-194y212-171x367.png",
+   "section": "3.3 Other Considerations in the Regression Model › 3.3.1 Qualitative Predictors › 3.3.2 Extensions of the Linear Model › 3.3.3 Potential Problems",
+   "link": "../isl/04-linear-regression.html",
+   "before": "FIGURE 3.15 Contour plots for the RSS values as a function of the parameters Since collinearity reduces the accuracy of the estimates of the regression coefficients, it causes the standard error for β̂j to grow. Recall that the t-statistic for each predictor is calculated by dividing β̂j by its standard β̂limit increases 12-fold in the second regression, due to collinearity.",
+   "after": "that correspond to the same RSS, with ellipses nearest to the center taking on the lowest values of RSS. The black dots and associated dashed lines represent the coefficient estimates that result in the smallest possible RSS—in other words, these are the least squares estimates. The axes for limit and age have been scaled so that the plot includes possible coefficient estimates that are up to four standard errors on either side of the least squares estimates. Thus the plot includes all plausible values for the coefficients. For example, we see that the true limit coefficient is almost certainly somewhere between 0.15 and 0.20. In contrast, the right-hand panel of Figure 3.15 displays contour…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 117,
+   "img": "eq-p117-568y607-194x311.png",
+   "section": "3.3 Other Considerations in the Regression Model › 3.3.1 Qualitative Predictors › 3.3.2 Extensions of the Linear Model › 3.3.3 Potential Problems",
+   "link": "../isl/04-linear-regression.html",
+   "before": "TABLE 3.11 The results for two multiple regression models involving the Credit data set are shown. Model 1 is a regression of balance on age and limit, and Model 2 a regression of balance on rating and limit. The standard error of error. Consequently, collinearity results in a decline in the t-statistic. As a result, in the presence of collinearity, we may fail to reject H0 : βj = 0. This means that the power of the hypothesis test—the probability of correctly detecting a non-zero coefficient—is…",
+   "after": "Xj|X−j is the R2 from a regression of Xj onto all of the other predictors. If R2 where R2 Xj|X−j is close to one, then collinearity is present, and so the VIF will be large. In the Credit data, a regression of balance on age, rating, and limit indicates that the predictors have VIF values of 1.01, 160.67, and 160.59. As we suspected, there is considerable collinearity in the data!"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 122,
+   "img": "eq-p122-144y152-86x270.png",
+   "section": "3.5 Comparison of Linear Regression with K-Nearest Neighbors",
+   "link": "../isl/04-linear-regression.html",
+   "before": "In practice, the true relationship between X and Y is rarely exactly linear. Figure 3.19 examines the relative performances of least squares regression and KNN under increasing levels of non-linearity in the relationship between X and Y. In the top row, the true relationship is nearly linear. In this case we see that the test MSE for linear regression is still superior y0.10 y In contrast, larger values of K provide a smoother and less variable fit; the prediction in a region is an average of se…",
+   "after": "FIGURE 3.17 Plots of f̂(X) using KNN regression on a one-dimensional data set with 50 observations. The true relationship is given by the black solid line. Left: The blue curve corresponds to K = 1 and interpolates (i.e. passes directly through) the training data. Right: The blue curve corresponds to K = 9, and represents a smoother fit. FIGURE 3.18 The same data set shown in Figure 3.17 is investigated further. Left: The blue dashed line is the least squares fit to the data. Since f(X) is in fact linear (displayed as the black line), the least squares regression line provides a very good estimate of f(X). Right: The dashed horizontal line represents the least squares test set MSE, while the…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 122,
+   "img": "eq-p122-224y242-174x353.png",
+   "section": "3.5 Comparison of Linear Regression with K-Nearest Neighbors",
+   "link": "../isl/04-linear-regression.html",
+   "before": "In what setting will a parametric approach such as least squares linear regression outperform a non-parametric approach such as KNN regression? The answer is simple: the parametric approach will outperform the nonparametric approach if the parametric form that has been selected is close to the true form of f. Figure 3.17 provides an example with data generated from a one-dimensional linear regression model. The black solid lines represent f(X), while the blue curves correspond to the KNN fits us…",
+   "after": "FIGURE 3.18 The same data set shown in Figure 3.17 is investigated further. Left: The blue dashed line is the least squares fit to the data. Since f(X) is in fact linear (displayed as the black line), the least squares regression line provides a very good estimate of f(X). Right: The dashed horizontal line represents the least squares test set MSE, while the green solid line corresponds to the MSE for KNN as a function of 1/K (on the log scale). Linear regression achieves a lower test MSE than does KNN regression, since f(X) is in fact linear. For KNN regression, the best results occur with a very large value of K, corresponding to a small value of 1/K."
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 122,
+   "img": "eq-p122-502y519-174x359.png",
+   "section": "3.5 Comparison of Linear Regression with K-Nearest Neighbors",
+   "link": "../isl/04-linear-regression.html",
+   "before": "FIGURE 3.17 Plots of f̂(X) using KNN regression on a one-dimensional data set with 50 observations. The true relationship is given by the black solid line. Left: The blue curve corresponds to K = 1 and interpolates (i.e. passes directly through) the training data. Right: The blue curve corresponds to K = 9, and represents a smoother fit. FIGURE 3.18 The same data set shown in Figure 3.17 is investigated further. Left: The blue dashed line is the least squares fit to the data. Since f(X) is in fa…",
+   "after": ""
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 123,
+   "img": "eq-p123-192y208-173x357.png",
+   "section": "3.5 Comparison of Linear Regression with K-Nearest Neighbors",
+   "link": "../isl/04-linear-regression.html",
+   "before": "FIGURE 3.18 The same data set shown in Figure 3.17 is investigated further. Left: The blue dashed line is the least squares fit to the data. Since f(X) is in fact linear (displayed as the black line), the least squares regression line provides a very good estimate of f(X). Right: The dashed horizontal line represents the least squares test set MSE, while the green solid line corresponds to the MSE for KNN as a function of 1/K (on the log scale). Linear regression achieves a lower test MSE than d…",
+   "after": "Figures 3.18 and 3.19 display situations in which KNN performs slightly worse than linear regression when the relationship is linear, but much better than linear regression for nonlinear situations. In a real life situation in which the true relationship is unknown, one might suspect that KNN should be favored over linear regression because it will at worst be slightly inferior to linear regression if the true relationship is linear, and may give substantially better results if the true relationship is non-linear. But in reality, even when the true relationship is highly non-linear, KNN may still provide inferior results to linear regression. In particular, both Figures 3.18 and 3.19 illustr…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 123,
+   "img": "eq-p123-357y373-173x357.png",
+   "section": "3.5 Comparison of Linear Regression with K-Nearest Neighbors",
+   "link": "../isl/04-linear-regression.html",
+   "before": "Figures 3.18 and 3.19 display situations in which KNN performs slightly worse than linear regression when the relationship is linear, but much better than linear regression for nonlinear situations. In a real life situation in which the true relationship is unknown, one might suspect that KNN should be favored over linear regression because it will at worst be slightly inferior to linear regression if the true relationship is linear, and may give substantially better results if the true relation…",
+   "after": "1/K (green) are displayed. Bottom Left and Bottom Right: As in the top panel, but with a strongly non-linear relationship between X and Y. to that of KNN for low values of K. However, for K ≥4, KNN outperforms linear regression. The second row illustrates a more substantial deviation from linearity. In this situation, KNN substantially outperforms linear regression for all values of K. Note that as the extent of non-linearity increases, there is little change in the test set MSE for the non-parametric KNN method, but there is a large increase in the test set MSE of linear regression. FIGURE 3.20 Test MSE for linear regression (black dashed lines) and KNN (green curves) as the number of varia…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 136,
+   "img": "eq-p136-568y583-111x369.png",
+   "section": "3.7 Exercises › Conceptual",
+   "link": "../isl/04-linear-regression.html",
+   "before": "In the first line above, we made allvars a list, so that we could add the interaction terms two lines down. Our model-matrix builder has created a ShelveLoc[Good] dummy variable that takes on a value of 1 if the shelving location is good, and 0 otherwise. It has also created a ShelveLoc[Medium] dummy variable that equals 1 if the shelving location is medium, and 0 otherwise. A bad shelving location corresponds to a zero for each of the two dummy variables. The fact that the coefficient for Shelv…",
+   "after": "Which answer is correct, and why? i. For a fixed value of IQ and GPA, high school graduates earn more, on average, than college graduates. ii. For a fixed value of IQ and GPA, college graduates earn more, on average, than high school graduates. iii. For a fixed value of IQ and GPA, high school graduates earn more, on average, than college graduates provided that the GPA is high enough. iv. For a fixed value of IQ and GPA, college graduates earn more, on average, than high school graduates provided that the GPA is high enough. Predict the salary of a college graduate with IQ of 110 and a GPA of 4.0.True or false: Since the coefficient for the GPA/IQ interaction term is very small, there is ve…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 137,
+   "img": "eq-p137-244y258-111x253.png",
+   "section": "3.7 Exercises › Conceptual",
+   "link": "../isl/04-linear-regression.html",
+   "before": "Which answer is correct, and why? i. For a fixed value of IQ and GPA, high school graduates earn more, on average, than college graduates. ii. For a fixed value of IQ and GPA, college graduates earn more, on average, than high school graduates. iii. For a fixed value of IQ and GPA, high school graduates earn more, on average, than college graduates provided that the GPA is high enough. iv. For a fixed value of IQ and GPA, college graduates earn more, on average, than high school graduates provid…",
+   "after": "Suppose that the true relationship between X and Y is linear, i.e. Y = β0 + β1X + ϵ. Consider the training residual sum of squares (RSS) for the linear regression, and also the training RSS for the cubic regression. Would we expect one to be lower than the other, would we expect them to be the same, or is there not enough information to tell? Justify your answer.Answer (a) using test rather than training RSS.Suppose that the true relationship between X and Y is not linear, but we don’t know how far it is from linear. Consider the training RSS for the linear regression, and also the training RSS for the cubic regression. Would we expect one to be lower than the other, would we expect them to …"
+  },
+  {
+   "id": "eq-3-38",
+   "num": "(3.38)",
+   "page": 137,
+   "img": "eq-p137-541y549-197x380.png",
+   "section": "3.7 Exercises › Conceptual",
+   "link": "../isl/04-linear-regression.html#eq-3-38",
+   "before": "iii. For a fixed value of IQ and GPA, high school graduates earn more, on average, than college graduates provided that the GPA is high enough. iv. For a fixed value of IQ and GPA, college graduates earn more, on average, than high school graduates provided that the GPA is high enough. Predict the salary of a college graduate with IQ of 110 and a GPA of 4.0.True or false: Since the coefficient for the GPA/IQ interaction term is very small, there is very little evidence of an interaction effect. …",
+   "after": "n 0 ŷi =ai′yi′. i′=1 What is ai′? Note: We interpret this result by saying that the fitted values from linear regression are linear combinations of the response values. Using (3.4), argue that in the case of simple linear regression, the least squares line always passes through the point (̄x, ̄y).It is claimed in the text that in the case of simple linear regression of Y onto X, the R2 statistic (3.17) is equal to the square of the correlation between X and Y (3.18). Prove that this is the case. For simplicity, you may assume that x̄ = ȳ = 0. Applied#"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 140,
+   "img": "eq-p140-178y223-207x344.png",
+   "section": "3.7 Exercises › Conceptual › Applied",
+   "link": "../isl/04-linear-regression.html",
+   "before": "Copyrng = np.random.default_rng(1) x = rng.normal(size=100) y = 2 * x + rng.normal(size=100) Perform a simple linear regression of y onto x, without an intercept. Report the coefficient estimate β̂, the standard error of this coefficient estimate, and the t-statistic and p-value associated with the null hypothesis H0 : β = 0. Comment on these results. (You can perform regression without an intercept using the keywords argument intercept=False to ModelSpec().)Now perform a simple linear regressio…",
+   "after": "(These formulas are slightly different from those given in Sections 3.1.1 and 3.1.2, since here we are performing regression without an intercept.) Show algebraically, and confirm numerically in R, that the t-statistic can be written as Using the results from (d), argue that the t-statistic for the regression of y onto x is the same as the t-statistic for the regression of x onto y.In R, show that when regression is performed with an intercept, the t-statistic for H0 : β1 = 0 is the same for the regression of y onto x as it is for the regression of x onto y.This problem involves simple linear regression without an intercept.Recall that the coefficient estimate β̂ for the linear regression of…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 140,
+   "img": "eq-p140-276y320-182x371.png",
+   "section": "3.7 Exercises › Conceptual › Applied",
+   "link": "../isl/04-linear-regression.html",
+   "before": "y = 2 * x + rng.normal(size=100) Perform a simple linear regression of y onto x, without an intercept. Report the coefficient estimate β̂, the standard error of this coefficient estimate, and the t-statistic and p-value associated with the null hypothesis H0 : β = 0. Comment on these results. (You can perform regression without an intercept using the keywords argument intercept=False to ModelSpec().)Now perform a simple linear regression of x onto y without an intercept, and report the coefficie…",
+   "after": "Using the results from (d), argue that the t-statistic for the regression of y onto x is the same as the t-statistic for the regression of x onto y.In R, show that when regression is performed with an intercept, the t-statistic for H0 : β1 = 0 is the same for the regression of y onto x as it is for the regression of x onto y.This problem involves simple linear regression without an intercept.Recall that the coefficient estimate β̂ for the linear regression of Y onto X without an intercept is given by (3.38). Under what circumstance is the coefficient estimate for the regression of X onto Y the same as the coefficient estimate for the regression of Y onto X?Generate an example in Python with …"
+  },
+  {
+   "id": "eq-3-39",
+   "num": "(3.39)",
+   "page": 141,
+   "img": "eq-p141-150y172-227x380.png",
+   "section": "3.7 Exercises › Conceptual › Applied",
+   "link": "../isl/04-linear-regression.html#eq-3-39",
+   "before": "(These formulas are slightly different from those given in Sections 3.1.1 and 3.1.2, since here we are performing regression without an intercept.) Show algebraically, and confirm numerically in R, that the t-statistic can be written as Using the results from (d), argue that the t-statistic for the regression of y onto x is the same as the t-statistic for the regression of x onto y.In R, show that when regression is performed with an intercept, the t-statistic for H0 : β1 = 0 is the same for the…",
+   "after": "What is the length of the vector y? What are the values of β0 and β1 in this linear model? Create a scatterplot displaying the relationship between x and y. Comment on what you observe.Fit a least squares linear model to predict y using x. Comment on the model obtained. How do β̂0 and β̂1 compare to β0 and β1?Display the least squares line on the scatterplot obtained in (d). Draw the population regression line on the plot, in a different color. Use the legend() method of the axes to create an appropriate legend.Now fit a polynomial regression model that predicts y using x and x2. Is there evidence that the quadratic term improves the model fit? Explain your answer.Repeat (a)–(f) after modify…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 143,
+   "img": "eq-p143-98y122-194x357.png",
+   "section": "3.7 Exercises › Conceptual › Applied",
+   "link": "../isl/04-linear-regression.html",
+   "before": "x2 = np.concatenate([x2, [0.8]]) y = np.concatenate([y, [6]]) Re-fit the linear models from (c) to (e) using this new data. What effect does this new observation have on the each of the models? In each model, is this observation an outlier? A high-leverage point? Both? Explain your answers. This problem involves the Boston data set, which we saw in the lab for this chapter. We will now try to predict per capita crime rate using the other variables in this data set. In other words, per capita cri…",
+   "after": "← 上一章Statistical Learning下一章 →Classification"
+  },
+  {
+   "id": "eq-3-20",
+   "num": "(3.20)",
+   "page": 89,
+   "img": null,
+   "section": "（原书有编号，网页版解析器未切图）",
+   "link": "../isl/04-linear-regression.html#eq-3-20",
+   "before": "",
+   "after": "",
+   "fromPdf": true
+  },
+  {
+   "id": "eq-3-30",
+   "num": "(3.30)",
+   "page": 101,
+   "img": null,
+   "section": "（原书有编号，网页版解析器未切图）",
+   "link": "../isl/04-linear-regression.html#eq-3-30",
+   "before": "",
+   "after": "",
+   "fromPdf": true
+  },
+  {
+   "id": "eq-3-34",
+   "num": "(3.34)",
+   "page": 105,
+   "img": null,
+   "section": "（原书有编号，网页版解析器未切图）",
+   "link": "../isl/04-linear-regression.html#eq-3-34",
+   "before": "",
+   "after": "",
+   "fromPdf": true
+  },
+  {
+   "id": "eq-3-35",
+   "num": "(3.35)",
+   "page": 106,
+   "img": null,
+   "section": "（原书有编号，网页版解析器未切图）",
+   "link": "../isl/04-linear-regression.html#eq-3-35",
+   "before": "",
+   "after": "",
+   "fromPdf": true
+  },
+  {
+   "id": "eq-3-36",
+   "num": "(3.36)",
+   "page": 107,
+   "img": null,
+   "section": "（原书有编号，网页版解析器未切图）",
+   "link": "../isl/04-linear-regression.html#eq-3-36",
+   "before": "",
+   "after": "",
+   "fromPdf": true
+  }
+ ]
+}

@@ -1,0 +1,309 @@
+{
+ "chapter": "11",
+ "cn": "生存分析与删失数据",
+ "en": "Survival Analysis and Censored Data",
+ "book": "12-survival-analysis-and-censored-data.html",
+ "count": 30,
+ "equations": [
+  {
+   "id": "eq-11-1",
+   "num": "(11.1)",
+   "page": 476,
+   "img": "eq-p476-295y317-214x380.png",
+   "section": "11.1 Survival and Censoring Times",
+   "link": "../isl/12-survival-analysis-and-censored-data.html#eq-11-1",
+   "before": "11.1Survival and Censoring Times# For each individual, we suppose that there is a true survival time, T, as well as a true censoring time, C. (The survival time is also known as the failure time or the event time.) The survival time represents the time at which the event of interest occurs: for instance, the time at which the patient dies, or the customer cancels his or her subscription. By contrast, the censoring time is the time at which censoring occurs: for example, the time at which the pat…",
+   "after": "In other words, if the event occurs before censoring (i.e. T < C) then we observe the true survival time T; however, if censoring occurs before the event (T > C) then we observe the censoring time. We also observe a status Thus, δ = 1 if we observe the true survival time, and δ = 0 if we instead observe the censoring time. Now, suppose we observe n (Y, δ) pairs, which we denote as (y1, δ1),⋯, (yn, δn). Figure 11.1 displays an example from a (fictitious) medical study in which we observe n = 4 patients for a 365-day follow-up period. For patients 1 and 3, we observe the time to event (such as death or disease relapse) T = ti. Patient 2 was alive when the study ended, and patient 4 dropped out…"
+  },
+  {
+   "id": "eq-11-2",
+   "num": "(11.2)",
+   "page": 478,
+   "img": "eq-p478-111y119-209x380.png",
+   "section": "11.3 The Kaplan–Meier Survival Curve",
+   "link": "../isl/12-survival-analysis-and-censored-data.html#eq-11-2",
+   "before": "注1 The assumption of independent censoring can be relaxed somewhat using the notion of non-informative censoring; however, the definition of non-informative censoring is too technical for this book. 11.3The Kaplan–Meier Survival Curve# We have seen that estimating S(t) is complicated by the presence of censoring. We now present an approach to overcome these challenges. We let d1 < d2 < ⋯ < dK denote the K unique death times among the noncensored patients, and we let qk denote the number of patie…",
+   "after": "This decreasing function quantifies the probability of surviving past time t. For example, suppose that a company is interested in modeling customer churn. Let T represent the time that a customer cancels a subscription to the company’s service. Then S(t) represents the probability that a customer cancels later than time t. The larger the value of S(t), the less likely that the customer will cancel before time t. In this section, we will consider the task of estimating the survival curve. Our investigation is motivated by the BrainCancer dataset, which contains the survival times for patients with primary brain tumors undergoing treatment with stereotactic radiation methods.2 The predictors …"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 479,
+   "img": "eq-p479-105y143-133x371.png",
+   "section": "11.3 The Kaplan–Meier Survival Curve",
+   "link": "../isl/12-survival-analysis-and-censored-data.html",
+   "before": "Now, we consider the task of estimating the survival curve (11.2) for these data. To estimate S(20) = Pr(T > 20), the probability that a patient survives for at least t = 20 months, it is tempting to simply compute the proportion of patients who are known to have survived past 20 months, i.e. the proportion of patients for whom Y > 20. This turns out to be 48/88, or approximately 55%. However, this does not seem quite right, since Y and T represent different quantities. In particular, 17 of the …",
+   "after": "The fact that dk−1 < dk implies that Pr(T > dk|T ≤dk−1) = 0 (it is impossible for a patient to survive past time dk if he or she did not survive until an earlier time dk−1). Therefore, Plugging in (11.2) again, we see that"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 479,
+   "img": "eq-p479-192y216-119x385.png",
+   "section": "11.3 The Kaplan–Meier Survival Curve",
+   "link": "../isl/12-survival-analysis-and-censored-data.html",
+   "before": "注2 This dataset is described in the following paper: Selingerová et al. (2016) Survival of patients with primary brain tumors: Comparison of two statistical approaches. PLoS One, 11(2):e0148733. By the law of total probability,3 The fact that dk−1 < dk implies that Pr(T > dk|T ≤dk−1) = 0 (it is impossible for a patient to survive past time dk if he or she did not survive until an earlier time dk−1). Therefore,",
+   "after": "Plugging in (11.2) again, we see that This implies that"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 479,
+   "img": "eq-p479-241y265-163x341.png",
+   "section": "11.3 The Kaplan–Meier Survival Curve",
+   "link": "../isl/12-survival-analysis-and-censored-data.html",
+   "before": "The fact that dk−1 < dk implies that Pr(T > dk|T ≤dk−1) = 0 (it is impossible for a patient to survive past time dk if he or she did not survive until an earlier time dk−1). Therefore, Plugging in (11.2) again, we see that",
+   "after": "This implies that We now must simply plug in estimates of each of the terms on the righthand side of the previous equation. It is natural to use the estimator"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 479,
+   "img": "eq-p479-290y314-97x408.png",
+   "section": "11.3 The Kaplan–Meier Survival Curve",
+   "link": "../isl/12-survival-analysis-and-censored-data.html",
+   "before": "Plugging in (11.2) again, we see that This implies that",
+   "after": "We now must simply plug in estimates of each of the terms on the righthand side of the previous equation. It is natural to use the estimator which is the fraction of the risk set at time dj who survived past time dj. This leads to the Kaplan–Meier estimator of the survival curve: k+ E"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 479,
+   "img": "eq-p479-349y375-168x336.png",
+   "section": "11.3 The Kaplan–Meier Survival Curve",
+   "link": "../isl/12-survival-analysis-and-censored-data.html",
+   "before": "This implies that We now must simply plug in estimates of each of the terms on the righthand side of the previous equation. It is natural to use the estimator",
+   "after": "which is the fraction of the risk set at time dj who survived past time dj. This leads to the Kaplan–Meier estimator of the survival curve: k+ E (11.3) For times t between dk and dk+1, we set SW(t) = SW(dk). Consequently, the Kaplan–Meier survival curve has a step-like shape."
+  },
+  {
+   "id": "eq-11-3",
+   "num": "(11.3)",
+   "page": 479,
+   "img": "eq-p479-455y463-195x380.png",
+   "section": "11.3 The Kaplan–Meier Survival Curve",
+   "link": "../isl/12-survival-analysis-and-censored-data.html#eq-11-3",
+   "before": "We now must simply plug in estimates of each of the terms on the righthand side of the previous equation. It is natural to use the estimator which is the fraction of the risk set at time dj who survived past time dj. This leads to the Kaplan–Meier estimator of the survival curve: k+ E",
+   "after": "For times t between dk and dk+1, we set SW(t) = SW(dk). Consequently, the Kaplan–Meier survival curve has a step-like shape. The Kaplan–Meier survival curve for the BrainCancer data is displayed in Figure 11.2. Each point in the solid step-like curve shows the estimated probability of surviving past the time indicated on the horizontal axis. The estimated probability of survival past 20 months is 71%, which is quite a bit higher than the naive estimates of 55% and 68% presented earlier. The sequential construction of the Kaplan–Meier estimator — starting at time zero and mapping out the observed events as they unfold in time — is fundamental to many of the key techniques in survival analysis…"
+  },
+  {
+   "id": "eq-11-4",
+   "num": "(11.4)",
+   "page": 481,
+   "img": "eq-p481-336y370-212x380.png",
+   "section": "11.4 The Log-Rank Test",
+   "link": "../isl/12-survival-analysis-and-censored-data.html#eq-11-4",
+   "before": "TABLE 11.1 Among the set of patients at risk at time dk, the number of patients who died and survived in each of two groups is reported. Recall from Section 11.3 that d1 < d2 < ⋯ < dK are the unique death times among the non-censored patients, rk is the number of patients at risk at time dk, and qk is the number of patients who died at time dk. We further define r1k and r2k to be the number of patients in groups 1 and 2, respectively, who are at risk at time dk. Similarly, we define q1k and q2k …",
+   "after": "To construct the log-rank test statistic, we compute a quantity that takes exactly the form (11.4), with X = )K k=1 q1k, where q1k is given in the top left of Table 11.1. In greater detail, if there is no difference in survival between the two groups, and conditioning on the row and column totals in Table 11.1, the expected value of q1k is (11.5)"
+  },
+  {
+   "id": "eq-11-5",
+   "num": "(11.5)",
+   "page": 481,
+   "img": "eq-p481-449y465-221x380.png",
+   "section": "11.4 The Log-Rank Test",
+   "link": "../isl/12-survival-analysis-and-censored-data.html#eq-11-5",
+   "before": "(11.4) To construct the log-rank test statistic, we compute a quantity that takes exactly the form (11.4), with X = )K k=1 q1k, where q1k is given in the top left of Table 11.1. In greater detail, if there is no difference in survival between the two groups, and conditioning on the row and column totals in Table 11.1, the expected value of q1k is",
+   "after": "So the expected value of X = )K k=1 q1k is µ = )kK=1rk qk. Furthermore, it can be shown5 that the variance of q1k is (11.6) Though q11,⋯, q1K may be correlated, we nonetheless estimate"
+  },
+  {
+   "id": "eq-11-6",
+   "num": "(11.6)",
+   "page": 481,
+   "img": "eq-p481-504y535-151x380.png",
+   "section": "11.4 The Log-Rank Test",
+   "link": "../isl/12-survival-analysis-and-censored-data.html#eq-11-6",
+   "before": "In greater detail, if there is no difference in survival between the two groups, and conditioning on the row and column totals in Table 11.1, the expected value of q1k is (11.5) So the expected value of X = )K k=1 q1k is µ = )kK=1rk qk. Furthermore, it can be shown5 that the variance of q1k is",
+   "after": "Though q11,⋯, q1K may be correlated, we nonetheless estimate (11.7) 注4 The log-rank test is also known as the Mantel–Haenszel test or Cochran–Mantel– Haenszel test. 5For details, see Exercise 7 at the end of this chapter. Therefore, to compute the log-rank test statistic, we simply proceed as in (11.4), with X = )K"
+  },
+  {
+   "id": "eq-11-7",
+   "num": "(11.7)",
+   "page": 481,
+   "img": "eq-p481-554y607-97x380.png",
+   "section": "11.4 The Log-Rank Test",
+   "link": "../isl/12-survival-analysis-and-censored-data.html#eq-11-7",
+   "before": "So the expected value of X = )K k=1 q1k is µ = )kK=1rk qk. Furthermore, it can be shown5 that the variance of q1k is (11.6) Though q11,⋯, q1K may be correlated, we nonetheless estimate",
+   "after": "注4 The log-rank test is also known as the Mantel–Haenszel test or Cochran–Mantel– Haenszel test. 5For details, see Exercise 7 at the end of this chapter. Therefore, to compute the log-rank test statistic, we simply proceed as in (11.4), with X = )K The hazard function or hazard rate — also known as the force of mortality — is formally defined as where T is the (unobserved) survival time. It is the death rate in the instant after time t, given survival past that time.7 In (11.9), we take the limit as ∆t approaches zero, so we can think of ∆t as being an extremely tiny number. Thus, more informally, (11.9) implies that k=1 q1k, making use of (11.5) and (11.7). That is, we calculate"
+  },
+  {
+   "id": "eq-11-8",
+   "num": "(11.8)",
+   "page": 482,
+   "img": "eq-p482-96y152-102x380.png",
+   "section": "11.4 The Log-Rank Test",
+   "link": "../isl/12-survival-analysis-and-censored-data.html#eq-11-8",
+   "before": "注4 The log-rank test is also known as the Mantel–Haenszel test or Cochran–Mantel– Haenszel test. 5For details, see Exercise 7 at the end of this chapter. Therefore, to compute the log-rank test statistic, we simply proceed as in (11.4), with X = )K The hazard function or hazard rate — also known as the force of mortality — is formally defined as where T is the (unobserved) survival time. It is the death rate in the instant after time t, given survival past that time.7 In (11.9), we take the limi…",
+   "after": "When the sample size is large, the log-rank test statistic W has approximately a standard normal distribution; this can be used to compute a p-value for the null hypothesis that there is no difference between the survival curves in the two groups.6 Comparing the survival times of females and males on the BrainCancer data gives a log-rank test statistic of W = 1.2, which corresponds to a twosided p-value of 0.2 using the theoretical null distribution, and a p-value of 0.25 using the permutation null distribution with 1,000 permutations. Thus, we cannot reject the null hypothesis of no difference in survival curves between females and males. The log-rank test is closely related to Cox’s propor…"
+  },
+  {
+   "id": "eq-11-9",
+   "num": "(11.9)",
+   "page": 482,
+   "img": "eq-p482-577y612-163x380.png",
+   "section": "11.5 Regression Models With a Survival Response › 11.5.1 The Hazard Function",
+   "link": "../isl/12-survival-analysis-and-censored-data.html#eq-11-9",
+   "before": "11.5Regression Models With a Survival Response# We now consider the task of fitting a regression model to survival data. As in Section 11.1, the observations are of the form (Y, δ), where Y = min(T, C) is the (possibly censored) survival time, and δ is an indicator variable that equals 1 if T ≤C. Furthermore, X ∈Rp is a vector of p features. We wish to predict the true survival time T. Since the observed quantity Y is positive and may have a long right tail, we might be tempted to fit a linear r…",
+   "after": "注6 Alternatively, we can estimate the p-value via permutations, using ideas that will be presented in Section 13.5. The permutation distribution is obtained by randomly swapping the labels for the observations in the two groups. 7Due to the ∆t in the denominator of (11.9), the hazard function is a rate of death, is the probability of surviving at least until time yi. Assuming that the n observations are independent, the likelihood for the data takes the form for some arbitrarily small ∆t."
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 483,
+   "img": "eq-p483-109y136-176x328.png",
+   "section": "11.5 Regression Models With a Survival Response › 11.5.1 The Hazard Function",
+   "link": "../isl/12-survival-analysis-and-censored-data.html",
+   "before": "11.5.1The Hazard Function# (11.9) 注6 Alternatively, we can estimate the p-value via permutations, using ideas that will be presented in Section 13.5. The permutation distribution is obtained by randomly swapping the labels for the observations in the two groups. 7Due to the ∆t in the denominator of (11.9), the hazard function is a rate of death, is the probability of surviving at least until time yi. Assuming that the n observations are independent, the likelihood for the data takes the form",
+   "after": "for some arbitrarily small ∆t. Why should we care about the hazard function? First of all, it is closely related to the survival curve (11.2), as we will see next. Second, it turns out that a key approach for modeling survival data as a function of covariates relies heavily on the hazard function; we will introduce this approach — Cox’s proportional hazards model — in Section 11.5.2. We now consider the hazard function h(t) in a bit more detail. Recall that for two events A and B, the probability of A given B can be expressed as Pr(A | B) = Pr(A ∩B)/ Pr(B), i.e. the probability that A and B both occur divided by the probability that B occurs. Furthermore, recall from (11.2) that S(t) = Pr(T …"
+  },
+  {
+   "id": "eq-11-10",
+   "num": "(11.10)",
+   "page": 483,
+   "img": "eq-p483-274y359-135x375.png",
+   "section": "11.5 Regression Models With a Survival Response › 11.5.1 The Hazard Function",
+   "link": "../isl/12-survival-analysis-and-censored-data.html#eq-11-10",
+   "before": "for some arbitrarily small ∆t. Why should we care about the hazard function? First of all, it is closely related to the survival curve (11.2), as we will see next. Second, it turns out that a key approach for modeling survival data as a function of covariates relies heavily on the hazard function; we will introduce this approach — Cox’s proportional hazards model — in Section 11.5.2. We now consider the hazard function h(t) in a bit more detail. Recall that for two events A and B, the probabilit…",
+   "after": "where (11.11) is the probability density function associated with T, i.e. it is the instantaneous rate of death at time t. The second equality in (11.10) made use of the fact that if t < T ≤t + ∆t, then it must be the case that T > t. Equation 11.10 implies a relationship between the hazard function h(t), the survival function S(t), and the probability density function f(t). In fact, these are three equivalent ways8 of describing the distribution of T."
+  },
+  {
+   "id": "eq-11-11",
+   "num": "(11.11)",
+   "page": 483,
+   "img": "eq-p483-376y394-178x375.png",
+   "section": "11.5 Regression Models With a Survival Response › 11.5.1 The Hazard Function",
+   "link": "../isl/12-survival-analysis-and-censored-data.html#eq-11-11",
+   "before": "Why should we care about the hazard function? First of all, it is closely related to the survival curve (11.2), as we will see next. Second, it turns out that a key approach for modeling survival data as a function of covariates relies heavily on the hazard function; we will introduce this approach — Cox’s proportional hazards model — in Section 11.5.2. We now consider the hazard function h(t) in a bit more detail. Recall that for two events A and B, the probability of A given B can be expressed…",
+   "after": "is the probability density function associated with T, i.e. it is the instantaneous rate of death at time t. The second equality in (11.10) made use of the fact that if t < T ≤t + ∆t, then it must be the case that T > t. Equation 11.10 implies a relationship between the hazard function h(t), the survival function S(t), and the probability density function f(t). In fact, these are three equivalent ways8 of describing the distribution of T. The likelihood associated with the ith observation is"
+  },
+  {
+   "id": "eq-11-12",
+   "num": "(11.12)",
+   "page": 483,
+   "img": "eq-p483-515y534-157x375.png",
+   "section": "11.5 Regression Models With a Survival Response › 11.5.1 The Hazard Function",
+   "link": "../isl/12-survival-analysis-and-censored-data.html#eq-11-12",
+   "before": "is the probability density function associated with T, i.e. it is the instantaneous rate of death at time t. The second equality in (11.10) made use of the fact that if t < T ≤t + ∆t, then it must be the case that T > t. Equation 11.10 implies a relationship between the hazard function h(t), the survival function S(t), and the probability density function f(t). In fact, these are three equivalent ways8 of describing the distribution of T. The likelihood associated with the ith observation is",
+   "after": "The intuition behind (11.12) is as follows: if Y = yi and the ith observation is not censored, then the likelihood is the probability of dying in a tiny interval around time yi. If the ith observation is censored, then the likelihood 注rather than a probability of death. However, higher values of h(t) directly correspond to a higher probability of death, just as higher values of a probability density function correspond to more likely outcomes for a random variable. In fact, h(t) is the probability density function for T conditional on T > t. 8See Exercise 8. (11.13) where the second equality follows from (11.10)."
+  },
+  {
+   "id": "eq-11-13",
+   "num": "(11.13)",
+   "page": 484,
+   "img": "eq-p484-86y125-154x375.png",
+   "section": "11.5 Regression Models With a Survival Response › 11.5.1 The Hazard Function",
+   "link": "../isl/12-survival-analysis-and-censored-data.html#eq-11-13",
+   "before": "(11.12) The intuition behind (11.12) is as follows: if Y = yi and the ith observation is not censored, then the likelihood is the probability of dying in a tiny interval around time yi. If the ith observation is censored, then the likelihood 注rather than a probability of death. However, higher values of h(t) directly correspond to a higher probability of death, just as higher values of a probability density function correspond to more likely outcomes for a random variable. In fact, h(t) is the p…",
+   "after": "where the second equality follows from (11.10). We now consider the task of modeling the survival times. If we assume exponential survival, i.e. that the probability density function of the survival time T takes the form f(t) = λ exp(−λt), then estimating the parameter λ by maximizing the likelihood in (11.13) is straightforward.9 Alternatively, we could assume that the survival times are drawn from a more flexible family of distributions, such as the Gamma or Weibull family. Another possibility is to model the survival times non-parametrically, as was done in Section 11.3 using the Kaplan–Meier estimator. However, what we would really like to do is model the survival time as a function of t…"
+  },
+  {
+   "id": "eq-11-14",
+   "num": "(11.14)",
+   "page": 484,
+   "img": "eq-p484-490y513-176x375.png",
+   "section": "11.5 Regression Models With a Survival Response › 11.5.1 The Hazard Function › 11.5.2 Proportional Hazards",
+   "link": "../isl/12-survival-analysis-and-censored-data.html#eq-11-14",
+   "before": "9See Exercise 9. 10Given the close relationship between the hazard function h(t) and the density funcxi ∈{0, 1}, the log hazard and the survival function under the model (11.14) are shown (green for xi = 0 and black for xi = 1). Because of the proportional hazards assumption (11.14), the log hazard functions differ by a constant, and the survival functions do not cross. Bottom: Again we have a single binary covariate xi ∈{0, 1}. However, the proportional hazards assumption (11.14) does not hold.…",
+   "after": "0. The name “proportional hazards” arises from the fact that the hazard function for an individual with feature vector xi is some unknown function 注tion f(t) explored in Exercise 8, posing an assumption about the form of the hazard function is closely related to posing an assumption about the form of the density func- tion, as was done in the previous paragraph. 11The notation h(t|xi) indicates that we are now considering the hazard function for the ith observation conditional on the values of the covariates, xi. FIGURE 11.4 Top: In a simple example with p = 1 and a binary covariate"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 485,
+   "img": "eq-p485-364y374-202x419.png",
+   "section": "11.5 Regression Models With a Survival Response › 11.5.1 The Hazard Function › 11.5.2 Proportional Hazards",
+   "link": "../isl/12-survival-analysis-and-censored-data.html",
+   "before": "(11.14) 0. The name “proportional hazards” arises from the fact that the hazard function for an individual with feature vector xi is some unknown function 注tion f(t) explored in Exercise 8, posing an assumption about the form of the hazard function is closely related to posing an assumption about the form of the density func- tion, as was done in the previous paragraph. 11The notation h(t|xi) indicates that we are now considering the hazard function for the ith observation conditional on the val…",
+   "after": "h0(t) times the factor expj=1 xijβj. The quantity expj=1 xijβj is called the relative risk for the feature vector xi = (xi1,⋯, xip)T , relative to that for the feature vector xi = (0,⋯, 0)T . What does it mean that the baseline hazard function h0(t) in (11.14) is unspecified? Basically, we make no assumptions about its functional form. We allow the instantaneous probability of death at time t, given that one has survived at least until time t, to take any form. This means that the hazard function is very flexible and can model a wide range of relationships between the covariates and survival time. Our only assumption is that a one-unit increase in xij corresponds to an increase in h(t|xi) by…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 486,
+   "img": "eq-p486-240y286-177x328.png",
+   "section": "11.5 Regression Models With a Survival Response › 11.5.1 The Hazard Function › 11.5.2 Proportional Hazards",
+   "link": "../isl/12-survival-analysis-and-censored-data.html",
+   "before": "Cox’s Proportional Hazards Model Because the form of h0(t) in the proportional hazards assumption (11.14) is unknown, we cannot simply plug h(t|xi) into the likelihood (11.13) and then estimate β = (β1,⋯, βp)T by maximum likelihood. The magic of Cox’s proportional hazards model lies in the fact that it is in fact possible to estimate β without having to specify the form of h0(t). 12Recall that the “at risk” observations at time yi are those that are still at risk of to particular null hypotheses…",
+   "after": "Therefore, the probability that the ith observation is the one to fail at time yi (as opposed to one of the other observations in the risk set) is (11.15) Notice that the unspecified baseline hazard function h0(yi) cancels out of the numerator and denominator! The partial likelihood is simply the product of these probabilities over all of the uncensored observations,"
+  },
+  {
+   "id": "eq-11-15",
+   "num": "(11.15)",
+   "page": 486,
+   "img": "eq-p486-317y370-100x375.png",
+   "section": "11.5 Regression Models With a Survival Response › 11.5.1 The Hazard Function › 11.5.2 Proportional Hazards",
+   "link": "../isl/12-survival-analysis-and-censored-data.html#eq-11-15",
+   "before": "To accomplish this, we make use of the same “sequential in time” logic that we used to derive the Kaplan–Meier survival curve and the log-rank test. For simplicity, assume that there are no ties among the failure, or death, times: i.e. each failure occurs at a distinct time. Assume that δi = 1, i.e. the ith observation is uncensored, and thus yi is its failure time. Then the hazard function for the ith observation at time yi is h(yi|xi) = 2 1)p h0(yi) expj=1 xijβj, and the total hazard at time y…",
+   "after": "Notice that the unspecified baseline hazard function h0(yi) cancels out of the numerator and denominator! The partial likelihood is simply the product of these probabilities over all of the uncensored observations, (11.16) Critically, the partial likelihood is valid regardless of the true value of h0(t), making the model very flexible and robust.13"
+  },
+  {
+   "id": "eq-11-16",
+   "num": "(11.16)",
+   "page": 486,
+   "img": "eq-p486-426y474-150x375.png",
+   "section": "11.5 Regression Models With a Survival Response › 11.5.1 The Hazard Function › 11.5.2 Proportional Hazards",
+   "link": "../isl/12-survival-analysis-and-censored-data.html#eq-11-16",
+   "before": "Therefore, the probability that the ith observation is the one to fail at time yi (as opposed to one of the other observations in the risk set) is (11.15) Notice that the unspecified baseline hazard function h0(yi) cancels out of the numerator and denominator! The partial likelihood is simply the product of these probabilities over all of the uncensored observations,",
+   "after": "Critically, the partial likelihood is valid regardless of the true value of h0(t), making the model very flexible and robust.13 To estimate β, we simply maximize the partial likelihood (11.16) with respect to β. As was the case for logistic regression in Chapter 4, no closedform solution is available, and so iterative algorithms are required. In addition to estimating β, we can also obtain other model outputs that we saw in the context of least squares regression in Chapter 3 and logistic regression in Chapter 4. For example, we can obtain p-values corresponding 注failure, i.e. those that have not yet failed or been censored before time yi. 13In general, the partial likelihood is used in sett…"
+  },
+  {
+   "id": "eq-11-17",
+   "num": "(11.17)",
+   "page": 490,
+   "img": "eq-p490-483y534-116x375.png",
+   "section": "11.6 Shrinkage for the Cox Model",
+   "link": "../isl/12-survival-analysis-and-censored-data.html#eq-11-17",
+   "before": "TABLE 11.3 Results for Cox’s proportional hazards model fit to the Publication data, using all of the available features. The features posres, multi, and clinend are binary. The feature mech is qualitative with 14 levels; it is coded so that the baseline level is Contract. In (11.17), λ is a non-negative tuning parameter; typically we will minimize it over a range of values of λ. When λ = 0, then minimizing (11.17) is equivalent to simply maximizing the usual Cox partial likelihood (11.16). Howe…",
+   "after": "with respect to β = (β1,⋯, βp)T . We might take P(β) = )pj=1 βj2 , which corresponds to a ridge penalty, or P(β) = )p j=1 |βj|, which corresponds to a lasso penalty. FIGURE 11.6 For the Publication data, we display survival curves for time until publication, stratified by whether or not the study produced a positive result, after adjusting for all other covariates. We now apply the lasso-penalized Cox model to the Publication data, described in Section 11.5.4. We first randomly split the 244 trials into equallysized training and test sets. The cross-validation results from the training set are shown in Figure 11.7. The “partial likelihood deviance”, shown on the y-axis, is twice the cross-va…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 491,
+   "img": "eq-p491-539y561-170x335.png",
+   "section": "11.6 Shrinkage for the Cox Model",
+   "link": "../isl/12-survival-analysis-and-censored-data.html",
+   "before": "FIGURE 11.6 For the Publication data, we display survival curves for time until publication, stratified by whether or not the study produced a positive result, after adjusting for all other covariates. We now apply the lasso-penalized Cox model to the Publication data, described in Section 11.5.4. We first randomly split the 244 trials into equallysized training and test sets. The cross-validation results from the training set are shown in Figure 11.7. The “partial likelihood deviance”, shown on…",
+   "after": "where β̂budget and β̂impact are the coefficient estimates for these two features from the training set. We then use these risk scores to categorize the observations based on their “risk”. For instance, the high risk group consists of the observations for which budgeti · β̂budget + impacti · β̂impact is largest; by 注15 Cross-validation for the Cox model is more involved than for linear or logistic re- gression, because the objective function is not a sum over the observations. FIGURE 11.7 For the Publication data described in Section 11.5.4, cross-val- idation results for the lasso-penalized Cox model are shown. The y-axis displays the partial likelihood deviance, which plays the role of the …"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 493,
+   "img": "eq-p493-353y361-182x323.png",
+   "section": "11.7 Additional Topics › 11.7.1 Area Under the Curve for Survival Analysis",
+   "link": "../isl/12-survival-analysis-and-censored-data.html",
+   "before": "However, in other settings, the definitions of time zero and failure time may be more subtle. For example, when examining the association between risk factors and disease occurrence in an epidemiological study, one might use the patient’s age to define time, so that time zero is the patient’s date of birth. With this choice, the association between age and survival cannot be measured; however, there is no need to adjust for age in the analysis. When examining covariates associated with disease-f…",
+   "after": "where the indicator variable I(̂ηi′ > η̂i) equals one if η̂i′ > η̂i, and equals zero otherwise. The numerator and denominator are multiplied by the status indicator δi′, since if the i′th observation is uncensored (i.e. if δi′ = 1), then yi > yi′ implies that ti > ti′. By contrast, if δi′ = 0, then yi > yi′ does not imply that ti > ti′. We fit a Cox proportional hazards model on the training set of the Publication data, and computed the C-index on the test set. This yielded C = 0.733. Roughly speaking, given two random papers from the test set, the model can predict with 73.3% accuracy which will be published first. 11.7.2Choice of Time Scale# In the examples considered thus far in this chap…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 506,
+   "img": "eq-p506-256y264-205x345.png",
+   "section": "11.9 Exercises › Conceptual",
+   "link": "../isl/12-survival-analysis-and-censored-data.html",
+   "before": "For each example, state whether or not the censoring mechanism is independent. Justify your answer.In a study of disease relapse, due to a careless research scientist, all patients whose phone numbers begin with the number “2” are lost to follow up.In a study of longevity, a formatting error causes all patient ages that exceed 99 years to be lost (i.e. we know that those patients are more than 99 years old, but we do not know their exact ages).Hospital A conducts a study of longevity. However, v…",
+   "after": "(The previous equation is for illustration only: it is not the correct answer!) Sketch the survival function given by the equation"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 506,
+   "img": "eq-p506-358y366-194x334.png",
+   "section": "11.9 Exercises › Conceptual",
+   "link": "../isl/12-survival-analysis-and-censored-data.html",
+   "before": "(The previous equation is for illustration only: it is not the correct answer!) Sketch the survival function given by the equation",
+   "after": "Your answer should look something like Figure 11.9. FIGURE 11.9 A Kaplan-Meier survival curve used in Exercise 4. This problem makes use of the data displayed in Figure 11.1. In completing this problem, you can refer to the observation times as y1,⋯, y4. The ordering of these observation times can be seen from Figure 11.1; their exact values are not required.Report the values of δ1,⋯, δ4, K, d1,⋯, dK, r1,⋯, rK, and q1,⋯, qK. The relevant notation is defined in Sections 11.1 and 11.3.Sketch the Kaplan-Meier survival curve corresponding to this data set. (You do not need to use any software to do this — you can sketch it by hand using the results obtained in (a).)Based on the survival curve es…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 507,
+   "img": "eq-p507-379y428-192x337.png",
+   "section": "11.9 Exercises › Conceptual",
+   "link": "../isl/12-survival-analysis-and-censored-data.html",
+   "before": "Your answer should look something like Figure 11.9. FIGURE 11.9 A Kaplan-Meier survival curve used in Exercise 4. This problem makes use of the data displayed in Figure 11.1. In completing this problem, you can refer to the observation times as y1,⋯, y4. The ordering of these observation times can be seen from Figure 11.1; their exact values are not required.Report the values of δ1,⋯, δ4, K, d1,⋯, dK, r1,⋯, rK, and q1,⋯, qK. The relevant notation is defined in Sections 11.1 and 11.3.Sketch the K…",
+   "after": "In this exercise, we will explore the consequences of assuming that the survival times follow an exponential distribution.Suppose that a survival time follows an Exp(λ) distribution, so that its density function is f(t) = λ exp(−λt). Using the relationships provided in Exercise 8, show that S(t) = exp(−λt).Now suppose that each of n independent survival times follows an Exp(λ) distribution. Write out an expression for the likelihood function (11.13).Show that the maximum likelihood estimator for λ is Use your answer to (c) to derive an estimator of the mean survival time. Hint: For (d), recall that the mean of an Exp(λ) random variable is 1/λ. Applied#"
+  }
+ ]
+}

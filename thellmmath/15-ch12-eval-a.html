@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>第 12 章 · 评测（1/2） · 《Large Language Models》公式推导手册</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23a11f27'/%3E%3Ctext x='16' y='23' font-size='20' font-family='Georgia,serif' fill='%23fff' text-anchor='middle'%3E%E2%88%91%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="style.css">
+<script>(function(){try{var t=localStorage.getItem('thellmmath-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn idxbtn" href="index.html" aria-label="目录"><span aria-hidden="true">&#9776;</span> <span class="lbl">目录</span></a>
+  <a class="brand" href="index.html">《Large Language Models》公式推导手册</a>
+  <button class="btn" id="themeToggle" aria-label="切换深色模式">&#9788;</button>
+</header>
+<main id="main">
+<article>
+<h1><span class="chno">Chapter 12 · 1/2</span>第 12 章 · 评测（1/2）</h1>
+<p class="lead">这一页覆盖 12.1.1 节里的 8 条编号公式，它们组成一条完整的链路：<strong>自回归分解 → 困惑度 → 分类指标 → 生成任务指标</strong>。重点是三处容易被"会用但忘了"的推导：(1) 从概率链式法则严格推出 \(P(\boldsymbol u)=\prod_t P(u_t\mid\boldsymbol u_{&lt;t})\)；(2) 证明困惑度的两个定义 \(P(\boldsymbol u)^{-1/T}\) 与 \(\exp\!\big(-\tfrac1T\sum\log p_t\big)\) 是<strong>恒等</strong>的，并说明为什么只有后者的形式可计算、以及它为什么等于"有效分支因子"；(3) 从混淆矩阵推出精确率/召回率，并证明 \(F_1\) 是调和平均、以及调和平均相对算术平均的<strong>精确差值</strong> \(\frac{(P-R)^2}{2(P+R)}\)。BLEU 部分把 \(n\)-gram 截断计数的分母推成"截断后的有效长度" \(l-n+1\)，从而说明长度惩罚 BP 为什么必须是指数形式。</p>
+<p class="where"><b>原书位置</b>第 12 章 12.1.1 节 Common Evaluation Metrics　<a href="../thellm/20-12-evaluation.html#12-1-1-common-evaluation-metrics">对照原文</a></p>
+
+<h2 id="toc">本页公式一览</h2>
+<table class="sym">
+<tr><th>编号</th><th>一句话</th><th>核心数学工具</th></tr>
+<tr><td><a href="#eq-12-1">12.1</a></td><td>序列概率的自回归分解</td><td>概率链式法则 + 归纳</td></tr>
+<tr><td><a href="#eq-12-2">12.2</a></td><td>困惑度定义一：\(T\) 次根倒数</td><td>几何平均数</td></tr>
+<tr><td><a href="#eq-12-3">12.3</a></td><td>困惑度定义二：负对数平均的指数（\(=\ e^{\text{CE}}\)）</td><td>对数运算法则、数值稳定性</td></tr>
+<tr><td><a href="#eq-12-4">12.4</a></td><td>精确率 Precision</td><td>条件概率定义</td></tr>
+<tr><td><a href="#eq-12-5">12.5</a></td><td>召回率 Recall</td><td>条件概率定义</td></tr>
+<tr><td><a href="#eq-12-6">12.6</a></td><td>\(F_1\) 分数</td><td>调和平均、误差恒等式</td></tr>
+<tr><td><a href="#eq-12-7">12.7</a></td><td>BLEU：长度惩罚 × 加权几何平均</td><td>Jensen 不等式、截断计数</td></tr>
+<tr><td><a href="#eq-12-8">12.8</a></td><td>BLEU 的长度惩罚 BP</td><td>连续性 / 单调性 / 上界</td></tr>
+</table>
+
+<h2 id="notation">本页符号约定</h2>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>类型 / 量纲</th></tr>
+<tr><td>\(\boldsymbol u=[u_1,\dots,u_T]\)</td><td>参考文本（reference）序列</td><td>随机变量，\(u_t\in\mathcal V\)</td></tr>
+<tr><td>\(T\)</td><td>token 数</td><td>正整数</td></tr>
+<tr><td>\(\boldsymbol u_{&lt;t}\)</td><td>前缀 \((u_1,\dots,u_{t-1})\)；\(t=1\) 时为空</td><td>\(\mathcal V^{t-1}\)</td></tr>
+<tr><td>\(\log\)</td><td>自然对数（base \(e\)）。若用 base 2，\(\log\) 项要除以 \(\ln 2\)</td><td>无量纲，\(\mathrm{nat}\)</td></tr>
+<tr><td>\(\mathrm{PPL}\)</td><td>困惑度（Perplexity）</td><td>无量纲，可解释为"候选数"</td></tr>
+<tr><td>\(\mathrm{TP/FP/FN/TN}\)</td><td>真阳性 / 假阳性 / 假阴性 / 真阴性</td><td>非负整数（计数）</td></tr>
+<tr><td>\(\mathcal P,\mathcal R\)</td><td>Precision / Recall（避免与概率 \(P\) 混淆）</td><td>\([0,1]\)</td></tr>
+<tr><td>\(p_n\)</td><td>BLEU 的 \(n\)-gram 精确率（截断计数）</td><td>\([0,1]\)</td></tr>
+<tr><td>\(l_c,l_r\)</td><td>候选串长度 / <strong>最短</strong>参考串长度</td><td>正整数</td></tr>
+</table>
+<div class="note">
+<b>为什么全文用自然对数</b>
+交叉熵与困惑度只差一个指数：\(\mathrm{PPL}=e^{\mathrm{CE}}\)。若 \(\log\) 用 base 2（得 bit），则 \(\mathrm{PPL}=2^{\mathrm{CE}_{\text{bit}}}\)。两者数值差一个 \(\ln 2\approx0.693\) 的因子。<strong>论文里报的数字默认是自然对数</strong>（GPT-2 的 PPL=29 之类）。
+</div>
+
+<!-- ============================== 12.1 ============================== -->
+<section class="fml" id="eq-12-1">
+<h2><span class="num">(12.1)</span>序列概率的自回归分解<a class="anchor" href="#eq-12-1">#</a></h2>
+<p class="where"><b>出处</b>第 12 章 12.1.1 节 Metrics for Language Modeling　<a href="../thellm/20-12-evaluation.html#12-1-1-common-evaluation-metrics">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0297.png" alt="原书公式 12.1"><span class="cap">原书公式 12.1</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ P(\boldsymbol u)=\prod_{t=1}^{T}P\big(u_t\mid \boldsymbol u_{&lt;t}\big), \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\boldsymbol u\)</td><td>参考文本序列</td><td>\(\mathcal V^{T}\)</td></tr>
+<tr><td>\(u_t\)</td><td>第 \(t\) 个 token</td><td>\(\mathcal V\)</td></tr>
+<tr><td>\(\boldsymbol u_{&lt;t}\)</td><td>前 \(t-1\) 个 token 的前缀</td><td>\(\mathcal V^{t-1}\)；\(u_{&lt;1}=\emptyset\)</td></tr>
+<tr><td>\(P(\cdot)\)</td><td><strong>真实</strong>文本分布（数据分布）</td><td>\(\Delta(\mathcal V^T)\)</td></tr>
+<tr><td>\(P(u_t\mid\boldsymbol u_{&lt;t})\)</td><td>给定前缀后的下一个 token 分布</td><td>\(\Delta(\mathcal V)\)</td></tr>
+<tr><td>\(p_\Theta(u_t\mid\boldsymbol u_{&lt;t})\)</td><td>模型的对应估计（softmax 输出）</td><td>\(\Delta(\mathcal V)\)，\(|p_\Theta-p|\le1\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<p>公式 (12.1) 不是定理，而是<strong>定义</strong>的展开——但展开过程必须会写，因为后面每一步都要在这个乘积上做变换。</p>
+<ol class="steps">
+<li><strong>工具：边际化与全概率公式。</strong>对联合分布 \(P(u,v)\)，定义边缘 \(P(u)=\sum_{v\in\mathcal V}P(u,v)\)（求和即离散积分）。两边同除 \(P(u)&gt;0\)，立刻得到
+<div class="eq">\[ P(u,v)=\underbrace{P(u)}_{\text{前缀}}\cdot\underbrace{P(v\mid u)}_{\text{条件}} \]</div>
+这就是二元链式法则。</li>
+<li><strong>三元情形。</strong>把 \((u,v)\) 当作整体再展开一次：
+<div class="eq">\[ P(u,v,w)=P(u,v)\,P(w\mid u,v)=P(u)\,P(v\mid u)\,P(w\mid u,v) \]</div>
+注意第二项的条件是 \((u,v)\) 而不是 \((v)\)。</li>
+<li><strong>一般情形：对 \(T\) 归纳。</strong>命题：对任意联合分布，\(P(u_1,\dots,u_T)=\prod_{t=1}^{T}P(u_t\mid u_1,\dots,u_{t-1})\)。
+<ul>
+<li>\(T=1\)：\(P(u_1)=P(u_1\mid\emptyset)\)，而空前缀的条件分布就是边缘分布，成立。</li>
+<li>归纳步：设 \(T-1\) 时成立。把 \((u_1,\dots,u_{T-1})\) 打包为单一随机变量 \(\boldsymbol u_{&lt;T}\)，用二元链式法则：
+\(P(\boldsymbol u_{&lt;T},u_T)=P(\boldsymbol u_{&lt;T})P(u_T\mid\boldsymbol u_{&lt;T})\)。再对 \(P(\boldsymbol u_{&lt;T})\) 用归纳假设展开。∎</li>
+</ul>
+<strong>符号上把 \(\boldsymbol u_{&lt;t}\) 直接写进 \(P(u_t\mid\boldsymbol u_{&lt;t})\)，就是在说"条件里只保留前缀"</strong>——这不是额外假设，而是"把所有条件都显式列出"的诚实写法。</li>
+<li><strong>数值例子。</strong>设 \(T=4\)，模型给出的四个条件分布分别把真实 token 排在概率 0.4 / 0.3 / 0.2 / 0.5：
+<div class="eq">\[ P(\boldsymbol u)=0.4\times0.3\times0.2\times0.5=0.012 \]</div>
+\(\log 0.012=-4.423\)。记住这组数字，后面 12.2 / 12.3 全部用它。</li>
+<li><strong>为什么这条式子是"能算"的前提。</strong>联合分布有 \(|\mathcal V|^{T}\) 个概率，无法存储；而右侧只有 \(T\) 个 \(|\mathcal V|\)-维向量。<strong>自回归分解把指数级的联合表压缩成 \(T\) 个小表</strong>，这正是所有自回归语言模型的结构来源。
+<div class="warn"><b>易错点：两处极易混淆</b>
+<ul>
+<li>\(P(\boldsymbol u)\) 与 \(P_\Theta(\boldsymbol u)\) 不是一回事。评测时我们<strong>假设真实分布无法计算</strong>，于是用模型在参考文本上的<em>似然</em> \(p_\Theta(\boldsymbol u)=\prod_t p_\Theta(u_t\mid\boldsymbol u_{&lt;t})\) 作为 \(P(\boldsymbol u)\) 的<strong>代理估计量</strong>。这一步是 MLE，不是恒等式。</li>
+<li>条件独立性<strong>不是</strong>假设。因果掩码是结构保证：位置 \(t\) 的计算图里根本不存在位置 \(t\) 之后的节点，所以 \(u_{&gt;t}\) 无法影响 \(u_t\)。这与朴素贝叶斯的"特征条件独立假设"是<strong>完全不同的两件事</strong>。</li>
+</ul></div></li>
+</ol>
+
+<div class="note">
+<b>直觉</b>
+12.1 就是"整句概率 = 每个词的接龙概率连乘"。写一句 4 个词的话，你有多大概率恰好写出来，等于第 1 词猜对的概率 × 在第 1 词已定的前提下第 2 词对的概率 × …… 连乘之后会变得极小——这正是下一条公式要解决的问题。
+</div>
+<div class="relnav">下一步：<a href="#eq-12-2">(12.2) 取 \(T\) 次根把它拉回来</a></div>
+</section>
+
+<!-- ============================== 12.2 ============================== -->
+<section class="fml" id="eq-12-2">
+<h2><span class="num">(12.2)</span>困惑度定义一：建模概率的 \(T\) 次根倒数<a class="anchor" href="#eq-12-2">#</a></h2>
+<p class="where"><b>出处</b>第 12 章 12.1.1 节 Perplexity　<a href="../thellm/20-12-evaluation.html#12-1-1-common-evaluation-metrics">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0298.png" alt="原书公式 12.2"><span class="cap">原书公式 12.2</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \mathrm{PPL}(\boldsymbol u)=P(\boldsymbol u)^{-\frac1T}, \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\mathrm{PPL}\)</td><td>Perplexity，困惑度</td><td>标量，\(\ge1\)（因 \(P\le1\)）</td></tr>
+<tr><td>\(P(\boldsymbol u)\)</td><td>整句的（估计）建模概率</td><td>\(\in(0,1]\)，\(T\) 越大越小</td></tr>
+<tr><td>\(T\)</td><td>token 数。\(-\frac1T\) 就是"开 \(T\) 次方根"</td><td>正整数</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<p>动机是 <strong>(12.1) 让 \(P(\boldsymbol u)\) 不可比</strong>：写 1000 个 token 必然比写 10 个 token 概率小几个数量级，与模型好坏无关。所以要做<strong>长度归一化</strong>。归一化有两条路：算术平均（不行）与几何平均（行）。</p>
+<ol class="steps">
+<li><strong>为什么不能取算术平均。</strong>设 \(p_t=P(u_t\mid\boldsymbol u_{&lt;t})\)。若用 \(\frac1T\sum_t p_t\)，那么"前 \(T-1\) 个词全猜对（\(p_t\approx1\)）、最后一个词完全猜错（\(p_T\approx0\)）"这种灾难性句子，仍能拿到接近 \(1\) 的平均分。而连乘形式 <a href="#eq-12-1">(12.1)</a> 会诚实地把它压到接近 0。<strong>平均抹掉了最坏的那一步。</strong></li>
+<li><strong>选几何平均。</strong>几何平均数（geometric mean）的定义是 \(G(a_1,\dots,a_T)=\big(\prod_{t}a_t\big)^{1/T}\)。要"拉回来"，就要乘它的倒数：
+<div class="eq">\[ P(\boldsymbol u)^{-\frac1T}=\left(\prod_{t=1}^{T}p_t\right)^{-1/T}=\left(\prod_{t=1}^{T}\frac{1}{p_t}\right)^{1/T}=G\!\left(\frac1{p_1},\frac1{p_2},\dots,\frac1{p_T}\right) \]</div>
+这一步用到两条初等运算法则：\((ab)^{c}=a^cb^{c}\) 与 \(\prod_t x_t^{1/T}=(\prod_t x_t)^{1/T}\)。所以
+<div class="eq">\[ \boxed{\ \mathrm{PPL}=\text{各步"倒数条件概率"的几何平均数}\ } \]</div>
+另外注意 \(P(\boldsymbol u)\le1\Rightarrow P^{-1/T}\ge1\)，所以 <strong>PPL 的下界是 1</strong>（模型给真实 token 概率 1），没有 0。</li>
+<li><strong>数值例子（用 12.1 的四个概率）。</strong>
+<div class="eq">\[ \mathrm{PPL}=0.012^{-\frac14}=\left(\frac1{0.012}\right)^{1/4}=(83.333)^{1/4}=\exp\!\Big(\tfrac14\ln 83.333\Big)=\exp(1.1057)\approx\mathbf{3.02} \]
+</div>
+用倒数验证：\(\big(\tfrac1{0.4}\cdot\tfrac1{0.3}\cdot\tfrac1{0.2}\cdot\tfrac1{0.5}\big)^{1/4}=(2.5\times3.333\times5\times2)^{1/4}=(83.333)^{1/4}\approx3.02\)。两者一致。</li>
+<li><strong>为什么它是"有效分支因子"。</strong>设词表大小为 \(|\mathcal V|=V\)。取最简单的<strong>均匀分布</strong>基线：\(p_t=1/V\) 对所有 \(t\)。代入 (12.1) 得 \(P(\boldsymbol u)=V^{-T}\)，代入 (12.2)：
+<div class="eq">\[ \mathrm{PPL}=\big(V^{-T}\big)^{-1/T}=\big(V^{T}\big)^{1/T}=V \]</div>
+<strong>模型"完全没学会"时 PPL 正好等于词表大小。</strong>所以 PPL 的正确读法是：<em>"模型在每一步的实际上有效的候选个数"</em>。若 \(\mathrm{PPL}=3\)，意思不是"猜了 3 次"，而是"每一步的真实 token 在模型的等效概率分布里，大约和另外 2 个干扰项一样有竞争力"。\(3.02\) 说明这个模型的语言知识比"在 32000 个词里瞎猜"好 4 个数量级。</li>
+<li><strong>为什么 \(-\frac1T\) 这个指数是唯一合理的选择。</strong>要让指标与 \(T\) 无关，必须消掉连乘带来的 \(T\) 次幂增长。设用 \(\mathrm{PPL}=P^{-a}\)，则均匀基线处 \(\mathrm{PPL}=V^{aT}\)——只有 \(a=1/T\) 才能让它与 \(T\) 无关。<strong>所以 (12.2) 里的指数不是随便取的，它由"长度归一化"这个要求唯一确定。</strong></li>
+</ol>
+<div class="note">
+<b>直觉</b>
+"困惑"这个名字来自一个信息论式的解读：\(H=-\frac1T\sum\ln p_t\) 是<em>每个 token 的平均不确定性</em>（熵），而 \(\mathrm{PPL}=e^{H}\) 把它换算回"候选数"的单位。熵的单位是 bit/nat（对数刻度），指数把刻度变回线性刻度，于是可以和 \(V\) 直接比较。
+</div>
+<div class="warn">
+<b>易错点</b>
+<strong>(12.2) 这个形式实际上算不出来。</strong>它要求先有 \(P(\boldsymbol u)\) 这个整体概率，而 \(P(\boldsymbol u)\le1\) 且随 \(T\) 指数衰减，几百个 token 就会下溢。历史上 GPT-2 时代真的这么算过，得到的困惑度会有数值误差。实际必须用 12.3 的对数形式。见下。</div>
+<div class="relnav">下一步：<a href="#eq-12-3">(12.3) 可计算的对数形式</a></div>
+</section>
+
+<!-- ============================== 12.3 ============================== -->
+<section class="fml" id="eq-12-3">
+<h2><span class="num">(12.3)</span>困惑度定义二：平均负对数似然的指数（\(=e^{\mathrm{CE}}\)）<a class="anchor" href="#eq-12-3">#</a></h2>
+<p class="where"><b>出处</b>第 12 章 12.1.1 节 Perplexity（数值稳定形式）　<a href="../thellm/20-12-evaluation.html#12-1-1-common-evaluation-metrics">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0299.png" alt="原书公式 12.3"><span class="cap">原书公式 12.3</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \mathrm{PPL}(\boldsymbol u)=\exp\!\left(-\frac{1}{T}\sum_{t=1}^{T}\log P\big(u_t\mid \boldsymbol u_{&lt;t}\big)\right), \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(-\frac1T\sum_t\log p_t\)</td><td>平均负对数似然 = 平均交叉熵 \( \mathrm{CE} \)</td><td>标量，单位 nat</td></tr>
+<tr><td>\(\exp(\cdot)\)</td><td>自然指数</td><td>单调函数，\(\mathbb R\to\mathbb R_{&gt;0}\)</td></tr>
+<tr><td>\(\mathrm{PPL}\)</td><td>困惑度</td><td>\(\in[1,\infty)\)</td></tr>
+</table>
+
+<h3>③ 推导：12.2 与 12.3 恒等</h3>
+<ol class="steps">
+<li><strong>第一步：代入 (12.1)。</strong>
+<div class="eq">\[ \mathrm{PPL}=\left(\prod_{t=1}^{T}p_t\right)^{-1/T} \]</div>
+这一步就是把 12.1 的乘积塞进 12.2 的根号里。</li>
+<li><strong>第二步：拆开根号（对数运算法则 \(\ln\prod x_t=\sum\ln x_t\)、\(\ln x^c=c\ln x\)）。</strong>
+<div class="eq">\[ \ln\mathrm{PPL}=-\frac1T\ln\Big(\prod_{t=1}^{T}p_t\Big)=-\frac1T\sum_{t=1}^{T}\ln p_t \]</div>
+第一个等号两边取 \(\ln\)（合法，因 \(\mathrm{PPL}&gt;0\)，且 \(\ln\) 在正数上单射）。第二个等号用了 \(\ln(ab)=\ln a+\ln b\) 对有限乘积的推广。</li>
+<li><strong>第三步：两边取指数。</strong>由 \(\ln x=-A\iff x=e^{-A}\)：
+<div class="eq">\[ \mathrm{PPL}=\exp\!\left(-\frac1T\sum_{t=1}^{T}\log p_t\right) \]</div>
+这正是 12.3。∎</li>
+<li><strong>关于"两者何时相等"的准确说法。</strong>网上（以及不少中文教材）常说"12.2 只在所有 \(p_t\) 相同时才等于 12.3"。<strong>这个说法是错的。</strong>上面三步只用了 \(\ln\prod=\sum\ln\) 和 12.1，对 \(p_1,\dots,p_T\) <strong>没有任何等值要求</strong>——只要 12.1 成立，两个定义<strong>恒等</strong>。真正的适用条件是：
+<ul>
+<li>12.2 需要<strong>整体概率</strong> \(P(\boldsymbol u)\) 作为输入；12.3 需要<strong>逐 token 的对数概率</strong>。如果你手上只有 \(P(\boldsymbol u)\) 这一个数（比如某个第三方只给了句概率），就<strong>算不出</strong> 12.3——反之亦然。</li>
+<li>如果模型给的 \(p_t\) 不是归一化概率（例如被温度缩放、被 top-\(p\) 截断后未重归一、或用启发式评分代替概率），那么"整体概率"与"逐 token 乘积"不再是同一个对象，12.2 与 12.3 就会给出不同的数。</li>
+</ul></li>
+<li><strong>数值例子 1（接 12.1）。</strong>四个 \(p_t\) 为 \(0.4,0.3,0.2,0.5\)：
+<div class="eq">\[ \ln \mathrm{PPL}=-\tfrac14\big(\ln0.4+\ln0.3+\ln0.2+\ln0.5\big)=-\tfrac14(-0.9163-1.2040-1.6094-0.6931)=1.1057 \]</div>
+\(\mathrm{PPL}=e^{1.1057}\approx3.02\)，与 12.2 的结果一致。
+<strong>顺带得到交叉熵：\(\mathrm{CE}=1.1057\ \text{nat}\)。而 \(\ln 3.02\approx1.1057\)——这不是巧合，因为定义就是 \(\ln\mathrm{PPL}=\mathrm{CE}\)。</strong></li>
+<li><strong>数值例子 2（演示为什么必须用对数形式）。</strong>设 \(T=100\)，每个 \(p_t=0.3\)。
+<ul>
+<li>整体概率：\(P(\boldsymbol u)=0.3^{100}=5.15\times10^{-53}\)。<strong>float32 的最小正规数是 \(1.18\times10^{-38}\)</strong>，所以单精度下这个值直接下溢成 0；即使双精度勉强存下，\(0^{-1/100}=\infty\)，结果彻底失效。</li>
+<li>对数形式：\(\ln\mathrm{PPL}=-\frac1{100}\cdot100\ln0.3=-\ln0.3=1.204\)，\(\mathrm{PPL}=e^{1.204}=3.33\)。<strong>每一步的中间量 \(\ln p_t\in(-1.6,\,0)\) 有界，绝不下溢。</strong></li>
+</ul>
+这就是原书说的"为避免数值下溢，通常用对数概率求和"。工程上应当<strong>逐 token 累加 log-prob（用 logsumexp 或直接取 log_softmax）</strong>，绝不能先乘后取幂。</li>
+<li><strong>数值例子 3（有效分支因子的读数）。</strong>均匀分布基线 \(\mathrm{CE}=\ln V\)。取 \(V=32000\)：\(\ln 32000=10.373\)，\(\mathrm{PPL}=32000\)。若某模型 PPL=8.0，则 \(\mathrm{CE}=\ln8=2.079\) nat，每步等效候选约 8 个。</li>
+</ol>
+
+<h3>交叉熵与困惑度的关系，以及在分类任务上的读法</h3>
+<ol class="steps">
+<li><strong>恒等式。</strong>把 (12.3) 与交叉熵的定义对齐：
+<div class="eq">\[ \mathrm{CE}(\boldsymbol u,p)=-\frac1T\sum_{t=1}^{T}\log p_\Theta(u_t\mid\boldsymbol u_{&lt;t})\quad\Longrightarrow\quad \boxed{\mathrm{PPL}=e^{\mathrm{CE}}} \]
+</div>
+所以"困惑度"就是"交叉熵换底"：\(e\) 进制 vs \(2\) 进制的类比不完全精确（换底要乘 \(\ln2\)），但 <strong>exp 把 nat 变回线性刻度</strong>这件事是精确的。</li>
+<li><strong>这正是训练目标与评测指标的同一个量。</strong>预训练最小化的 \(\mathrm{CE}\) 就是上式这个量；<strong>评测时报的 PPL 是训练损失的指数</strong>。两者单调对应，所以"训练 loss 降了"和"PPL 降了"是同一件事。</li>
+<li><strong>推广到 \(K\) 类分类。</strong>把 \(\boldsymbol u\) 缩成一个标签，模型给出真实标签的概率 \(p_{\text{true}}\in(0,1]\)，则
+<div class="eq">\[ \mathrm{CE}=-\log p_{\text{true}},\qquad \mathrm{PPL}=\frac{1}{p_{\text{true}}} \]
+</div>
+于是 <strong>PPL 在分类里就是"倒数真实类概率"</strong>，同一个"有效分支因子"读法：PPL=2 意味着模型对真实标签只有一半把握（等价于瞎猜）；PPL=1.05 意味着几乎确定。两个边界：
+<ul>
+<li>\(p_{\text{true}}\le1\Rightarrow \mathrm{CE}\ge0\Rightarrow\mathrm{PPL}\ge1\)。</li>
+<li>完全无信息的模型 \(p_{\text{true}}=1/K\Rightarrow \mathrm{CE}=\ln K,\ \mathrm{PPL}=K\)。<strong>和语言模型情形一模一样。</strong></li>
+</ul></li>
+<li><strong>数值例子（1000 样本二分类）。</strong>真实标签概率 0.8：\(\mathrm{CE}=-\ln0.8=0.223\) nat，\(\mathrm{PPL}=e^{0.223}=1.25\)。概率 0.5（瞎猜）：\(\mathrm{CE}=0.693\)，\(\mathrm{PPL}=2.00\)。概率 0.95：\(\mathrm{CE}=0.0513\)，\(\mathrm{PPL}=1.053\)。<strong>注意分类任务里 PPL 只能落在 \([1,2]\)，精度不够、要在更细的刻度上比较时必须同时报 CE 或概率本身。</strong></li>
+</ol>
+<div class="note">
+<b>直觉</b>
+12.2 与 12.3 是同一个数的两种"读法"：12.2 说"整句概率的均摊"，12.3 说"平均每一位有多惊讶"。数学上是恒等，工程上只有后者能用，因为前者会下溢——这是"数学上的定义"和"能算出来的定义"分开的典型案例。
+</div>
+<div class="warn">
+<b>易错点：PPL 跨模型比较的三个前提</b>
+<ul>
+<li><strong>tokenizer 必须一致。</strong>PPL 对 \(T\) 归一化，但 \(T\) 由分词器决定。一个 Unicode 字符被切成 1 个还是 3 个 token，直接改变 \(\frac1T\sum\ln p_t\)。<strong>不同分词器的 PPL 不可比</strong>（这也是为什么 instruct 模型报的 PPL 常常比 base 模型"低"却不代表更强——它们的模板让每个 token 更好预测）。</li>
+<li><strong>语料必须一致。</strong>PPL 是逐句平均再平均，长句权重会被放大；不同评测集的分词平均长度不同。</li>
+<li><strong>不要用 PPL 跨任务比较。</strong>它是<em>似然</em>度量，与"输出对不对"没有因果联系。一个 PPL 很低的模型可能生成语法完美但内容错误的文本（重复、套话都是高概率续写）。<strong>PPL 只测语言建模，不测任务能力。</strong></li>
+</ul></div>
+<div class="relnav"><a href="#eq-12-1">(12.1) 自回归分解</a>　<a href="#eq-12-4">(12.4) 分类任务的离散指标</a></div>
+</section>
+
+<!-- ============================== 12.4 ============================== -->
+<section class="fml" id="eq-12-4">
+<h2><span class="num">(12.4)</span>精确率 Precision<a class="anchor" href="#eq-12-4">#</a></h2>
+<p class="where"><b>出处</b>第 12 章 12.1.1 节 Metrics for Classification（二元混淆矩阵）　<a href="../thellm/20-12-evaluation.html#12-1-1-common-evaluation-metrics">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0301.png" alt="原书公式 12.4"><span class="cap">原书公式 12.4</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \mathrm{Precision}=\frac{TP}{TP+FP}, \]
+</div>
+
+<h3>② 符号：混淆矩阵（原书 Table 12.2）</h3>
+<table class="sym">
+<tr><th></th><th colspan="2">预测类别（Predicted Class）</th></tr>
+<tr><th></th><th>正 Positive</th><th>负 Negative</th></tr>
+<tr><th rowspan="2">真实类别<br>（Actual Class）</th><th>正 Positive</th><td>\(TP\)　真阳性</td><td>\(FN\)　假阴性</td></tr>
+<tr><th>负 Negative</th><td>\(FP\)　假阳性</td><td>\(TN\)　真阴性</td></tr>
+</table>
+<ul>
+<li>\(TP\)：实际为正、预测为正（猜对的正例）</li>
+<li>\(FP\)：实际为<strong>负</strong>、预测为<strong>正</strong>（误报 / 假警报）</li>
+<li>\(FN\)：实际为<strong>正</strong>、预测为<strong>负</strong>（漏报）</li>
+<li>\(TN\)：实际为负、预测为负（猜对的负例）</li>
+</ul>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>精确定义：它是一个条件概率。</strong>把预测器当作一个划分：\(\{\text{预测为正的样本}\}\subseteq\) 全部样本。在"预测为正"这个子集里，有多大比例真的为正？
+<div class="eq">\[ \mathrm{Precision}=\frac{TP}{TP+FP}=P\big(\text{真实为正}\mid\text{预测为正}\big) \]</div>
+用条件概率的计数定义即可：\(P(A\mid B)=n(A\cap B)/n(B)\)。分子 \(TP=n(\text{正}\cap\text{预测正})\)，分母 \(n(\text{预测正})=TP+FP\)（分母里必须有 \(FP\)，因为误报的样本也被算进了"预测为正"）。</li>
+<li><strong>为什么分母不含 FN。</strong>FN 的样本根本没有被"预测为正"，它们对精确率没有任何影响。<strong>精确率只回答"我报出来的有多准"，完全不管"我漏了多少"。</strong>这个信息缺失正是 12.5 存在的理由。</li>
+<li><strong>数值例子。</strong>取 \(TP=80,\ FP=20,\ FN=40,\ TN=860\)（共 1000 个样本，其中真实正例 120 个）：
+<div class="eq">\[ \mathrm{Precision}=\frac{80}{80+20}=\frac{80}{100}=0.80 \]
+"报出的 100 条警报里，80 条是真的。"</div></li>
+<li><strong>精确率可以被"少报"刷高。</strong>极端情形：模型只输出它最有把握的 1 条，且恰好正确，则 \(TP=1,FP=0\)：
+<div class="eq">\[ \mathrm{Precision}=\frac{1}{1+0}=1.00,\qquad \mathrm{Recall}=\frac{1}{120}=0.0083 \]</div>
+精确率满分，但 120 个真实正例里只找出了 1 个。<strong>所以精确率绝不能单独报告。</strong>至少要配一个召回率。</li>
+<li><strong>精确率的阈值依赖性。</strong>LLM 输出的是连续分数 \(z\)（正类概率或 logit），需要阈值 \(\tau\) 才能变成 0/1 决策：\(\hat y=\mathbf 1[z&gt;\tau]\)。\(\tau\) 提高 → \(FP\) 减少、\(FN\) 增加 → \(\mathcal P\) 上升、\(\mathcal R\) 下降。<strong>报一个"精确率 0.9"而不报阈值，等于什么都没说。</strong></li>
+</ol>
+<div class="note">
+<b>直觉</b>
+精确率 = <strong>告警准确率</strong>。火灾报警器响了 100 次，其中 80 次真有火：精确率 80%。它衡量"报警器值不值得信任"，代价是对"漏报"完全无感。
+</div>
+<div class="relnav"><a href="#eq-12-5">(12.5) 召回率</a>　<a href="#eq-12-6">(12.6) \(F_1\)</a></div>
+</section>
+
+<!-- ============================== 12.5 ============================== -->
+<section class="fml" id="eq-12-5">
+<h2><span class="num">(12.5)</span>召回率 Recall<a class="anchor" href="#eq-12-5">#</a></h2>
+<p class="where"><b>出处</b>第 12 章 12.1.1 节 Recall　<a href="../thellm/20-12-evaluation.html#12-1-1-common-evaluation-metrics">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0302.png" alt="原书公式 12.5"><span class="cap">原书公式 12.5</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \mathrm{Recall}=\frac{TP}{TP+FN}, \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>量纲</th></tr>
+<tr><td>\(TP\)</td><td>被找出来的真实正例</td><td>计数 \(\ge0\)</td></tr>
+<tr><td>\(FN\)</td><td>被漏掉的真实正例</td><td>计数 \(\ge0\)</td></tr>
+<tr><td>\(TP+FN\)</td><td>真实正例总数（与阈值无关）</td><td>计数</td></tr>
+<tr><td>\(\mathrm{Recall}\)</td><td>召回率</td><td>\([0,1]\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>它也是一个条件概率，但方向相反。</strong>这次把条件放在"真实类别"上：
+<div class="eq">\[ \mathrm{Recall}=\frac{TP}{TP+FN}=P\big(\text{预测为正}\mid\text{真实为正}\big) \]
+</div>
+在<strong>全部真实正例</strong>这个集合里，有多大比例被找了出来？分母 \(TP+FN\) 是真实正例的总数：\(TP\) 是被找出的，\(FN\) 是被漏掉的。</li>
+<li><strong>关键差异：分母不含 \(FP\)。</strong>误报的样本不影响召回率——它们本来就不是真实正例，不在分母里。<strong>所以精确率和召回率的分母是两组不同的样本。</strong>这是两个指标能同时低的根本原因（大量误报 \(\Rightarrow\mathcal P\) 低；大量漏报 \(\Rightarrow\mathcal R\) 低）。</li>
+<li><strong>数值例子。</strong>用 12.4 的混淆矩阵，真实正例 \(TP+FN=80+40=120\)：
+<div class="eq">\[ \mathrm{Recall}=\frac{80}{120}=0.6667 \]
+"120 个真实正例里找出了 80 个。"</div></li>
+<li><strong>精确率与召回率的精确反比关系（工程上极有用）。</strong>由定义，
+<div class="eq">\[ \frac{\mathcal P}{\mathcal R}=\frac{TP/(TP+FP)}{TP/(TP+FN)}=\frac{TP+FN}{TP+FP}=\frac{\text{真实正例数}}{\text{预测正例数}} \]
+</div>
+（约定 \(TP&gt;0\)；\(TP=0\) 时两者都为 0。）
+<strong>推论：设正例总数 \(P_{\text{tot}}\) 固定、\(\mathcal P=0.80\)、\(\mathcal R=0.6667\)，则预测正例数是 \(\frac{120}{0.80}=150\)。</strong>这条关系把三个数字绑在一起，很多"精确率高所以可靠"的错误结论都出在忽略了它。</li>
+<li><strong>召回率是"集合层面"的量，不是单样本的量。</strong>单看一个样本，说它"对不对"只有 0/1 两种可能；但"召回"要求先有<strong>一个决策集合</strong>（哪些被判为正）。所以 \(\mathcal P,\mathcal R,F_1\) 都不是逐样本可加的量，评测时不能"先算每条的准确率再平均"，必须<strong>先在全集上算混淆矩阵再取比值</strong>（macro 除外，见下）。</li>
+<li><strong>多类/长文本场景。</strong>实体抽取、QA 的"答案是否包含"判定等都产出二值混淆矩阵。多个类别时通常<strong>按类别分别算 \(\mathcal P,\mathcal R\) 再取宏平均（macro）或按真实例数加权（micro）</strong>；两种算法的结果不同，报告时必须说明。</li>
+</ol>
+<div class="note">
+<b>直觉</b>
+召回率 = <strong>覆盖率 / 查全率</strong>。100 个病人里有 20 个真的生病，模型只诊断出 8 个，召回率就是 \(8/20=0.4\)。它衡量"该抓的人有没有都被抓到"，代价是对"误抓"完全无感。
+</div>
+<div class="relnav"><a href="#eq-12-4">(12.4) 精确率</a>　<a href="#eq-12-6">(12.6) \(F_1\) 把两者调和平均</a></div>
+</section>
+
+<!-- ============================== 12.6 ============================== -->
+<section class="fml" id="eq-12-6">
+<h2><span class="num">(12.6)</span>\(F_1\) 分数：精确率与召回率的调和平均<a class="anchor" href="#eq-12-6">#</a></h2>
+<p class="where"><b>出处</b>第 12 章 12.1.1 节 F1 Score　<a href="../thellm/20-12-evaluation.html#12-1-1-common-evaluation-metrics">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0303.png" alt="原书公式 12.6"><span class="cap">原书公式 12.6</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ F_1=2\times\frac{\mathrm{Precision}\times\mathrm{Recall}}{\mathrm{Precision}+\mathrm{Recall}}, \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>量纲</th></tr>
+<tr><td>\(\mathcal P,\mathcal R\)</td><td>精确率、召回率（见 12.4 / 12.5）</td><td>\([0,1]\)，且非同时为 0</td></tr>
+<tr><td>\(F_1\)</td><td>精确率与召回率的<strong>调和</strong>平均</td><td>\([0,1]\)</td></tr>
+<tr><td>\(F_\beta\)</td><td>加权版，\(\beta&gt;1\) 偏重召回</td><td>\([0,1]\)</td></tr>
+</table>
+
+<h3>③ 推导 A：它确实是调和平均</h3>
+<ol class="steps">
+<li><strong>工具：调和平均的定义。</strong>两个正数 \(a,b\) 的调和平均定义为"倒数的算术平均，再取倒数"：
+<div class="eq">\[ H(a,b)=\left(\frac{1}{a}+\frac{1}{b}\right)^{-1} \]
+</div>
+这是三种"平均数"里唯一的倒数形式；几何平均 \(\sqrt{ab}\) 则是"对数的算术平均，再取指数"。</li>
+<li><strong>化成 \(\frac{2PR}{P+R}\)。</strong>用分式通分与倒数：\(\frac{1}{a}+\frac{1}{b}=\frac{a+b}{ab}\)，故
+<div class="eq">\[ H(a,b)=\left(\frac{a+b}{ab}\right)^{-1}=\frac{ab}{a+b}=\frac{2ab}{a+b} \]
+</div>
+代入 \(a=\mathcal P,\ b=\mathcal R\) 即得 \(F_1=\frac{2\mathcal P\mathcal R}{\mathcal P+\mathcal R}\)。<strong>这就是原书那句"the harmonic mean of precision and recall"的全部数学内容。</strong></li>
+<li><strong>边界检查。</strong>\(\mathcal P=0\) 或 \(\mathcal R=0\) 时 \(F_1=0\)（正确：一条都没抓到或全是误报，判 0 分）；\(\mathcal P=\mathcal R=1\) 时 \(F_1=1\)。</li>
+</ol>
+
+<h3>③ 推导 B：为什么用调和平均而不是算术平均（严格版）</h3>
+<ol class="steps">
+<li><strong>精确的差值恒等式。</strong>记算术平均为 \(A=\frac{\mathcal P+\mathcal R}{2}\)。做通分：
+<div class="eq">\[ A-F_1=\frac{(\mathcal P+\mathcal R)}{2}-\frac{2\mathcal P\mathcal R}{\mathcal P+\mathcal R}=\frac{(\mathcal P+\mathcal R)^2-4\mathcal P\mathcal R}{2(\mathcal P+\mathcal R)}=\frac{(\mathcal P-\mathcal R)^2}{2(\mathcal P+\mathcal R)}\ \ge\ 0 \]
+</div>
+最后一步用平方非负。所以：<strong>\(F_1\) 恰好等于算术平均减去一个"不平衡惩罚项"，且惩罚以偏差的<em>平方</em>计</strong>。等号仅当 \(\mathcal P=\mathcal R\)。</li>
+<li><strong>调和平均被"小的那个"支配。</strong>记 \(m=\min(\mathcal P,\mathcal R),\ M=\max(\mathcal P,\mathcal R)\)。由 \(\frac1m+\frac1M\le\frac2m\) 得 \(H\ge m\)；由 \(\frac1m+\frac1M\ge\frac2M\) 得 \(H\le M\)。所以
+<div class="eq">\[ \min(\mathcal P,\mathcal R)\;\le\;F_1\;\le\;2\min(\mathcal P,\mathcal R) \]
+</div>
+<strong>推论：只要有一个指标塌了，\(F_1\) 最多是那个塌掉的值的两倍。</strong>若 \(\mathcal R=0.1\)，则 \(F_1\le0.2\)，无论 \(\mathcal P\) 多高。</li>
+<li><strong>数值例子：差距有多大。</strong>取 \(\mathcal P=0.9,\ \mathcal R=0.1\)：
+<div class="eq">\[ A=0.50,\qquad F_1=\frac{2\cdot0.09}{1.0}=0.18,\qquad A-F_1=\frac{(0.8)^2}{2}=0.32 \]
+</div>
+算术平均给出 0.50（听起来"还行"），调和平均只有 0.18（诚实地反映出召回几乎为零）。<strong>差异 2.8 倍。</strong></li>
+<li><strong>更极端的情形说明"平方惩罚"的必要性。</strong>取 \(\mathcal P=1.0,\ \mathcal R=0.01\)：算术平均 \(0.505\)（！）而 \(F_1=\frac{0.02}{1.01}=0.0198\)。若用算术平均，一个"只报 1 条且报对了"的模型能拿 0.505 分，几乎与均衡模型持平——这显然是错的。<strong>调和平均的"倒数形式"自动把低的那一项按<em>全额</em>计入。</strong></li>
+<li><strong>用"精确率固定"写出精确的量化结论。</strong>这是最能体现 \(F_1\) 设计意图的表述。把 12.6 与 \(\mathcal R\) 视为关于 \(\mathcal R\) 的方程（视 \(\mathcal P=p\) 为已知常数）：
+<div class="eq">\[ F_1(p+R)=2pR\quad\Longrightarrow\quad F_1p+R\,F_1=2pR\quad\Longrightarrow\quad R\,(2p-F_1)=F_1p\quad\Longrightarrow\quad \boxed{\,R=\frac{F_1\,p}{2p-F_1}\,}\ \]
+</div>
+（分母 \(2p-F_1&gt;0\)，因为 \(\mathcal R\le1\) 时 \(F_1=\frac{2p\mathcal R}{p+\mathcal R}\le2p\)。）读法：<strong>精确率被钉在 \(p\) 时，要让 \(F_1\) 达到 \(f\)，召回率必须至少是 \(\frac{fp}{2p-f}\)。</strong>
+<ul>
+<li>取目标 \(f=0.8\)：\(\mathcal P=0.9\Rightarrow \mathcal R\ge\frac{0.72}{1.8-0.8}=0.720\)；\(\mathcal P=0.8\Rightarrow\mathcal R\ge\frac{0.64}{0.8}=0.800\)。</li>
+<li>该下界关于 \(p\) 单调递减（\(g(p)=\frac{fp}{2p-f}\)，\(g'(p)=\frac{-f^2}{(2p-f)^2}&lt;0\)），故<strong>最宽松的乐观情形是 \(p=1\)</strong>：此时 \(F_1=\frac{2\mathcal R}{1+\mathcal R}\)，反解得 \(\mathcal R\ge\frac{f}{2-f}\)。取 \(f=0.8\)：\(\mathcal R\ge\frac{0.8}{1.2}=0.667\)。</li>
+<li>验证：\(\mathcal P=1,\mathcal R=0.667\Rightarrow F_1=\frac{2\cdot0.667}{1.667}=0.800\) ✓。这就是 \(F_1\ge0.8\) 时召回率的<strong>绝对下界</strong>——"哪怕精确率 100%，召回率也不能低于 67%"。</li>
+</ul>
+<div class="warn"><b>易错点：一条常见的错误说法</b>
+"\(F_1\) 等于精确率固定为 \(p\)、召回率为 \(\frac{p}{2-p}\) 时的某个准确率"——这不是恒等式。代入检验：\(p=0.8,\ \mathcal R=\frac{0.8}{1.2}=0.667\)，则 \(F_1=\frac{2\cdot0.8\cdot0.667}{1.467}=0.727\neq0.8\)。<strong>正确的关系是上面那个反解 \(\mathcal R=\frac{F_1p}{2p-F_1}\)</strong>（等价地，固定 \(\mathcal R\) 时 \(\mathcal P=\frac{F_1\mathcal R}{2\mathcal R-F_1}\)）。另外注意 \(\frac{f}{2-f}\) 这个形式对应的是"精确率完美时"的最乐观下界，容易被误记成通用公式。</div></li>
+</ol>
+
+<h3>③ 推导 C：为什么 \(F_1\) 优于准确率，以及加权推广</h3>
+<ol class="steps">
+<li><strong>准确率与 \(F_1\) 会严重脱节。</strong>用 12.4 的混淆矩阵（\(TP=80,FP=20,FN=40,TN=860\)）：
+<div class="eq">\[ \mathrm{Accuracy}=\frac{TP+TN}{TP+FP+FN+TN}=\frac{940}{1000}=0.94,\qquad F_1=0.727 \]
+</div>
+94% 的准确率听起来很好，但它被 860 个 \(TN\) 撑起来了。更糟的是：<strong>在正例只占 10% 的数据上，"全部预测为负"的平凡基线准确率就有 0.90，却有 \(F_1=0\)</strong>。所以类别不平衡时必须用 \(F_1\)（或 \(PR\) 曲线下面积 AUC-PR）。
+<div class="note"><b>直觉</b>准确率是"平均每 100 个判断对几个"，被多数类淹没；\(F_1\) 是"在正例这个困难子集上做对多少"，只看困难部分。<strong>两者的分母根本不同。</strong></div></li>
+<li><strong>为什么 \(F_1\) 还不够：\(\mathcal P\) 与 \(\mathcal R\) 常常天秤不等。</strong>安全场景要召回，翻译要精确。所以定义加权调和平均 \(F_\beta\)：
+<div class="eq">\[ F_\beta=\frac{(1+\beta^2)\mathcal P\mathcal R}{\beta^2\mathcal P+\mathcal R}=\left(\frac{\beta^2/\mathcal P+1/\mathcal R}{\beta^2+1}\right)^{-1} \]
+</div>
+推导同 ③A（对倒数做加权平均再取倒数）。性质：\(\beta\to0\Rightarrow F_\beta\to\mathcal P\)；\(\beta\to\infty\Rightarrow F_\beta\to\mathcal R\)；\(\beta=1\) 就是 12.6。<strong>\(F_2\)（召回加权）在医疗/安全评测里是常用默认值。</strong></li>
+<li><strong>为什么"集合层面"这件事不是缺陷。</strong>\(F_1\) 是四个计数的比值，无法分解成"每个样本的贡献之和"。所以<strong>不能把 \(F_1\) 拿来做逐样本的早停判据或损失</strong>（那是训练时用交叉熵的原因，见 <a href="#eq-12-3">12.3</a>）。\(F_1\) 的角色只在评测：在固定阈值下对一批预测算一次。</li>
+</ol>
+<div class="note">
+<b>直觉</b>
+调和平均是"两个都要好才算好"的平均：把 \(1/\mathcal P\) 和 \(1/\mathcal R\) 平均再取倒数，等价于<strong>先算"错的比例"再平均</strong>。错误率高的那一边被完整地计入，没有折扣。所以 \(F_1\) 是"不允许任何一边偷懒"的分数。
+</div>
+<div class="relnav"><a href="#eq-12-7">(12.7) 生成任务：BLEU</a></div>
+</section>
+
+<!-- ============================== 12.7 ============================== -->
+<section class="fml" id="eq-12-7">
+<h2><span class="num">(12.7)</span>BLEU：长度惩罚 × \(n\)-gram 精确率的加权几何平均<a class="anchor" href="#eq-12-7">#</a></h2>
+<p class="where"><b>出处</b>第 12 章 12.1.1 节 BLEU　<a href="../thellm/20-12-evaluation.html#12-1-1-common-evaluation-metrics">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0304.png" alt="原书公式 12.7"><span class="cap">原书公式 12.7</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \mathrm{BLEU}=\mathrm{BP}\times\exp\!\left(\sum_{n=1}^{N}w_n\times\log p_n\right), \]
+</div>
+<p>实践中取 \(N=4\)，\(w_n=\frac1N=\frac14\)（均匀分布）——也就是 BLEU-4。</p>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>量纲 / 取值</th></tr>
+<tr><td>\(\mathcal C\)</td><td>候选译文（candidate，模型输出）</td><td>字符串，长度 \(l_c\)</td></tr>
+<tr><td>\(\mathcal R\)</td><td>参考译文集合（可能有多个参考）</td><td>集合，最短者长度 \(l_r\)</td></tr>
+<tr><td>\(N\)</td><td>最高的 \(n\)-gram 阶数（通常 4）</td><td>正整数</td></tr>
+<tr><td>\(w_n\)</td><td>\(n\)-gram 阶的权重，实践中 \(\sum_{n=1}^Nw_n=1\)</td><td>\([0,1]\)</td></tr>
+<tr><td>\(p_n\)</td><td>\(n\)-gram 精确率（截断计数，见下 ④）</td><td>\([0,1]\)</td></tr>
+<tr><td>\(\mathrm{BP}\)</td><td>长度惩罚（brevity penalty），公式 (12.8)</td><td>\(\in(0,1]\)</td></tr>
+<tr><td>\(\mathrm{BLEU}\)</td><td>双语评估替补分数</td><td>\([0,1]\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>指数形式 = 加权几何平均。</strong>用 \(e^{x+y}=e^xe^y\) 与 \(\prod x^{w}=\exp(w\ln x)\)：
+<div class="eq">\[ \exp\!\left(\sum_{n=1}^{N}w_n\log p_n\right)=\prod_{n=1}^{N}p_n^{\,w_n} \]
+</div>
+若 \(\sum_n w_n=1\)，右边就是 \(p_1,\dots,p_N\) 的<strong>加权几何平均数</strong>（权重和为 1 的加权几何平均才有"平均"的资格）。</li>
+<li><strong>为什么是几何平均而不是算术平均。</strong>用 Jensen 不等式（\(\ln\) 是<strong>凹</strong>函数，故 \(\ln(\mathbb E[X])\ge\mathbb E[\ln X]\)）：
+<div class="eq">\[ \sum_{n}w_n\ln p_n\ \le\ \ln\!\Big(\sum_{n}w_n p_n\Big)\quad\Longrightarrow\quad \prod_{n}p_n^{w_n}\ \le\ \sum_{n}w_np_n \]
+</div>
+所以几何平均 \(\le\) 算术平均。<strong>但真正决定性的理由是"零传播"性质</strong>：BLEU 的语义是"译文整体正确"，只要有一阶 \(n\)-gram 完全对不上（如 \(p_3=0\)，出现一个机器翻译标志性的错译），几何平均立刻变 <strong>0</strong>，总分归零；算术平均却会给出 \(\frac13\times\text{(其余两阶)}&gt;0\) 的部分分。<strong>BLEU 的取对数写法正是为了让"对数域求和"这件事在数值上好算</strong>（\(\prod\) 可能下溢，\(\sum\ln\) 不会）。</li>
+<li><strong>为什么 BP 可以乘在外面。</strong>长度惩罚与 \(n\)-gram 匹配是两个<strong>独立的</strong>影响因素（候选是否覆盖了参考的长度、候选的词序片段是否出现）。相乘对应"两个条件都要满足"的逻辑（\(\mathrm{BLEU}\le1\) 需要两者同时合格）。而几何平均保证"每一阶都要合格"。</li>
+<li><strong>数值例子（N=2, \(w_1=w_2=\frac12\)）。</strong>候选 \(\mathcal C=\)"the cat sat"，参考 \(\mathcal R=\)"the cat sat on"。
+<ul>
+<li>一元：候选 3 个 unigram 全部在参考中各出现 1 次，故 \(p_1=\frac{3}{3}=1\)。</li>
+<li>二元：候选含 "the cat"、"cat sat" 共 \(l_c-n+1=3-2+1=2\) 个二元组，全部命中，故 \(p_2=\frac22=1\)。</li>
+<li>长度：\(l_c=3\le l_r=4\Rightarrow \mathrm{BP}=\exp(1-\frac43)=0.7165\)（见 12.8）。</li>
+<li>\(\mathrm{BLEU}=0.7165\times\exp(\frac12\ln1+\frac12\ln1)=0.7165\)。</li>
+</ul>
+<strong>这是一个"前缀完全正确"却只得 0.72 的句子——BLEU 对短句的惩罚非常重</strong>，这也是实际使用中采用<em>语料级</em> BLEU（把多句拼起来算、用最接近的参考长度）的原因。</li>
+<li><strong>反面例子：截断计数的作用。</strong>候选 \(\mathcal C=\)"the the the the"，参考 \(\mathcal R=\)"the cat sat on"。
+<ul>
+<li>若<strong>不截断</strong>：\(count_{\mathcal C}(\text{the})=4\)，取 min 或不取都会算成 \(4/4=1\)，得满分——一条毫无意义的译文拿了 \(\mathrm{PPL}=1\) 级的分数。</li>
+<li><strong>截断后</strong>：\(\min(count_{\mathcal C},count_{\mathcal R})=\min(4,1)=1\)，故 \(p_1=\frac{1}{4}=0.25\)。</li>
+<li>二元组：候选的 "the the" 出现 3 次，参考里出现 0 次，\(\min(3,0)=0\Rightarrow p_2=0\Rightarrow\mathrm{BLEU}=0\)。</li>
+</ul>
+<strong>截断计数是 BLEU 防止"堆词刷分"的唯一机制。</strong></li>
+</ol>
+
+<h3>④ 补充推导：\(p_n\) 的截断计数定义与"截断后的有效长度"</h3>
+<p class="where">原书把这条写成 12.9（在<a href="16-ch12-eval-b.html#eq-12-9">第 12 章 · 评测（2/2）</a>页正式展开），但 12.7 用到了它，所以这里把推导做完。</p>
+<div class="origin"><img src="../thellm/assets/fig-0306.png" alt="原书公式 12.9"><span class="cap">原书公式 12.9（补充推导）</span></div>
+<div class="eq">
+\[ p_n=\frac{\sum_{n\text{-gram}\in\mathcal C}\min\big(\mathrm{count}_{\mathcal C}(n\text{-gram}),\ \max_{R\in\mathcal R}\mathrm{count}_{R}(n\text{-gram})\big)}{\sum_{n\text{-gram}\in\mathcal C}\mathrm{count}_{\mathcal C}(n\text{-gram})}, \]
+</div>
+<ol class="steps">
+<li><strong>先算分母：截断后的有效长度。</strong>设候选串有 \(l_c\) 个 token，则它包含的 \(n\)-gram 个数恰为
+<div class="eq">\[ (l_c-n+1)+(l_c-n)+\cdots+1\ \text{（逐起点计数）}\ \Longrightarrow\ \max(0,\ l_c-n+1) \]
+</div>
+更直接地：每个起点位置 \(i=1,\dots,l_c-n+1\) 产生一个 \(n\)-gram，所以 \(n\)-gram 总数是 \(l_c-n+1\)。而 \(\sum_{n\text{-gram}\in\mathcal C}\mathrm{count}_{\mathcal C}(n\text{-gram})\) 正是"把所有 \(n\)-gram 的出现次数加起来"，等于总数。因此
+<div class="eq">\[ \boxed{\ \sum_{n\text{-gram}\in\mathcal C}\mathrm{count}_{\mathcal C}(n\text{-gram})=\max(0,\ l_c-n+1)=:\ l_c^{\text{eff}}(n)\ } \]
+</div>
+<strong>这就是"截断后的有效长度"：不是 \(l_c\)（词数），也不是 \(l_c\cdot n\)（字符数），而是去掉所有不完整的 \(n\)-gram 后剩下的个数。</strong>同理参考侧为 \(l_r^{\text{eff}}(n)=\max(0,l_r-n+1)\)。</li>
+<li><strong>算分子的上界。</strong>对任意 \(n\)-gram \(g\)，匹配数 \(\min(\mathrm{count}_{\mathcal C}(g),\max_R\mathrm{count}_{R}(g))\le\max_R\mathrm{count}_{R}(g)\le\max_{R}(l_r^{\text{eff}}(n))\)。把所有 \(n\)-gram 的上界求和，得
+<div class="eq">\[ \text{分子}\ \le\ l_r^{\text{eff}}(n)=\max(0,\ l_r-n+1) \]
+</div></li>
+<li><strong>于是得到精确率的上界：</strong>
+<div class="eq">\[ p_n\ \le\ \frac{l_r^{\text{eff}}(n)}{l_c^{\text{eff}}(n)}=\frac{\max(0,l_r-n+1)}{\max(0,l_c-n+1)} \]
+</div>
+这一步解释了两件事：<ul>
+<li><strong>为什么必须截断。</strong>不截断时分子可以超过分母（例如重复堆词），\(p_n&gt;1\)，"精确率"就失去了"比率"的含义。取 \(\min\) 保证
+\(\text{匹配数}\le\mathrm{count}_{\mathcal C}(g)\)，从而 \(p_n\le1\)。</li>
+<li><strong>为什么必须乘 BP。</strong>若 \(l_c&gt;l_r\)，上式严格小于 1，说明<strong>即使每个词都对，长度不够也会扣分</strong>——但这只是"扣一点"；真正的问题是若 \(l_c&lt;l_r\)（候选太短），每个 \(p_n\) 都可能等于 1（短句的所有 \(n\)-gram 都命中），总分 \(\to1\)，这显然荒谬。BP 就是为了纠正后者，见 <a href="#eq-12-8">12.8</a>。</li>
+</ul></li>
+<li><strong>为什么高阶惩罚更重。</strong>固定 \(l_c&gt;l_r&gt;0\)，令 \(g(n)=\frac{l_r-n+1}{l_c-n+1}\)。求导：
+<div class="eq">\[ g'(n)=\frac{-(l_c-n+1)+(l_r-n+1)}{(l_c-n+1)^2}=\frac{l_r-l_c}{(l_c-n+1)^2}&lt;0 \]
+</div>
+即 <strong>\(n\) 越大，"覆盖率"上界越紧</strong>。直观理由：长 \(n\)-gram 很少重复，参考里的长片段一旦对不上就彻底失分——这正是 BLEU 能捕捉词序的原因。</li>
+<li><strong>多参考的处理：取 \(\max_R\)。</strong>人写参考译文往往有好几版，不同版本用词不同。取 \(\max_R\) 表示"只要<em>任一</em>参考命中就算数"，这是把 BLEU 从"对某一个参考"放宽成"对某个参考集合的最佳匹配"，是对多参考语料的标准做法。</li>
+</ol>
+<div class="note">
+<b>直觉</b>
+BLEU 就是一张"逐级通关表"：1-gram、2-gram、3-gram、4-gram 每一级问"你猜中的比例是多少"，四级用几何平均合成总分，任何一级为 0 则全灭；再用长度惩罚防止"只翻前三句"骗满分。整句完全正确时，\(\mathrm{PPL}\)-式的乘积会趋近 1。
+</div>
+<div class="warn">
+<b>易错点：BLEU 的四条适用边界</b>
+<ul>
+<li><strong>BLEU 与语义/语序近似无关。</strong>"the cat sat on the mat" 与 "mat the on sat cat the" 的 \(n\)-gram 统计几乎相同（4-gram 会有差异，但可被模板化绕过），BLEU 却都给高分。<strong>BLEU 只能用于有参考译文的窄域任务，不能用来评测开放生成。</strong></li>
+<li><strong>tokenizer 会改变 BLEU。</strong>分词不同 → \(n\)-gram 边界不同 → 数值不同。比较不同系统必须用同一套分词与同一参考。</li>
+<li><strong>语料级 vs 句级。</strong>句级 BLEU（尤其有 BP 的情况下）对短句惩罚过重（见 ③第 4 步的例子），所以 SOTA 报告的是 <em>corpus-level BLEU</em>：把候选串与参考串按句对齐后<strong>累加匹配计数</strong>再取比值，此时 \(l_c,l_r\) 是总和，短句问题被平均掉。</li>
+<li><strong>BLEU 只算精确率方向。</strong>参考里的内容候选完全没译出来时 \(p_n\) 仍可能不小（因为分母只看候选），必须靠 BP 间接兜底。ROUGE 走的是相反方向（召回），两者互补。</li>
+</ul></div>
+<div class="relnav"><a href="#eq-12-8">(12.8) 长度惩罚 BP</a>　<a href="#eq-12-6">(12.6) \(F_1\)</a></div>
+</section>
+
+<!-- ============================== 12.8 ============================== -->
+<section class="fml" id="eq-12-8">
+<h2><span class="num">(12.8)</span>BLEU 的长度惩罚因子 BP<a class="anchor" href="#eq-12-8">#</a></h2>
+<p class="where"><b>出处</b>第 12 章 12.1.1 节 BLEU（Brevity Penalty）　<a href="../thellm/20-12-evaluation.html#12-1-1-common-evaluation-metrics">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0305.png" alt="原书公式 12.8"><span class="cap">原书公式 12.8</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \mathrm{BP}=\begin{cases} 1, &amp; \text{if } l_c&gt;l_r,\\[4pt] \exp\!\left(1-\dfrac{l_r}{l_c}\right), &amp; \text{if } l_c\le l_r. \end{cases} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>量纲</th></tr>
+<tr><td>\(l_c\)</td><td>候选译文的 token 长度</td><td>正整数</td></tr>
+<tr><td>\(l_r\)</td><td><strong>最短</strong>参考译文的 token 长度（多参考时取最短）</td><td>正整数</td></tr>
+<tr><td>\(\mathrm{BP}\)</td><td>长度惩罚因子</td><td>\((0,1]\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>第一件事：验证 \(\mathrm{BP}\in(0,1]\)。</strong>两分支分别检查：
+<ul>
+<li>分支一 \(l_c&gt;l_r\)：\(\mathrm{BP}=1\le1\)。</li>
+<li>分支二 \(l_c\le l_r\)：令 \(x=\dfrac{l_r}{l_c}\ge1\)，则指数 \(1-x\le0\)，故 \(\mathrm{BP}=e^{1-x}\le e^0=1\)；且 \(x\) 有限故 \(\mathrm{BP}&gt;0\)。∎</li>
+</ul>
+<strong>候选不短于参考时一点都不罚</strong>——多出来的长度不该扣分（可能是合理的展开）。</li>
+<li><strong>第二件事：验证在 \(l_c=l_r\) 处连续。</strong>两分支在边界给出 \(\mathrm{BP}=1\) 与 \(\mathrm{BP}=\exp(1-1)=1\)，<strong>完全一致</strong>。这一点很关键：如果短的那支写成 \(l_r/l_c\)，边界处会给出 \(1\)，但斜率跳变；写成指数形式则两侧行为一致，长度轻微变化时分数不会突变。<strong>连续性是选指数形式的首要理由。</strong></li>
+<li><strong>第三件事：验证单调性（候选越短，分越低）。</strong>在分支二上对 \(l_c\) 求导（复合函数链式法则：\(\frac{d}{dl_c}e^{g(l_c)}=e^{g(l_c)}g'(l_c)\)，其中 \(g(l_c)=1-l_r/l_c\)，\(g'(l_c)=+\frac{l_r}{l_c^2}&gt;0\)）：
+<div class="eq">\[ \frac{\partial \mathrm{BP}}{\partial l_c}=e^{\,1-l_r/l_c}\cdot\frac{l_r}{l_c^2}&gt;0 \]
+</div>
+即 \(\mathrm{BP}\) 随 \(l_c\) 递增——候选越短，惩罚越重。✓</li>
+<li><strong>第四件事（最关键）：为什么 \(\mathrm{BP}\) 恰好能保证 BLEU \(\le1\)。</strong>从 <a href="#eq-12-7">12.7 的 ④</a> 得到 \(p_n\le\frac{l_r-n+1}{l_c-n+1}\)。因为权重和为 1，几何平均不超过各阶比值的几何平均；当 \(l_c,l_r\) 都远大于 \(N\) 时
+<div class="eq">\[ \frac{l_r-n+1}{l_c-n+1}\approx\frac{l_r}{l_c}=x\quad(\text{对每个 }n),\quad\Longrightarrow\quad \prod_{n=1}^{N}p_n^{\,1/N}\ \lesssim\ x^{\sum_n w_n}=x \]
+</div>
+把这个"未补偿的长度亏欠" \(x\) 与 \(\mathrm{BP}=e^{1-x}\) 相乘，得到总分上界 \(xe^{1-x}\)。而由 \(\ln x\le x-1\)（\(\ln\) 凹、切线在 \(x=1\)）有
+<div class="eq">\[ x\,e^{1-x}=\exp\big(\ln x+1-x\big)\le\exp\big((x-1)+1-x\big)=1 \]
+</div>
+等号仅在 \(x=1\)（即 \(l_c=l_r\)）时成立。<strong>所以 BLEU 恒 \(\le1\)，且长度惩罚与几何平均的指数形式是"配对"设计的：外侧最多抵消一个长度比（因为权重和是 1 而不是 \(N\)）。</strong>这也解释了为什么不是 \(\left(\frac{l_r}{l_c}\right)^N\) 那样的形式——那会抵消 \(N\) 个长度比，罚得重得多。
+<div class="why"><b>说明：这里是设计启发，不是定理</b>
+第 4 步中 \(\frac{l_r-n+1}{l_c-n+1}\approx\frac{l_r}{l_c}\) 是<strong>大长度近似</strong>（严格相等只在 \(l_c=l_r\) 时成立）。所以"BP 保证 BLEU≤1"更准确地说是：<strong>指数形式是满足"无跳变 + 单调 + 与几何平均的权重结构自洽"这几个要求的自然选择</strong>。\(x e^{1-x}\le1\) 这个不等式本身是严格成立的，但把它当作 BLEU 的定理需要把近似换成"每阶比值都等于 \(x\)"的保守假设。\(e^{1-x}\) 与 \((x)^{1}\) 只差一个常数因子：\(e^{1-x}\approx x\cdot e^{-(x-1)^2/2+\dots}\)，一阶近似就是 \(\mathrm{BP}\approx x^{-1}=l_c/l_r\)——<strong>线性地按长度比例罚，与阶数 \(N\) 无关</strong>。</div></li>
+<li><strong>第五件事：数值例子。</strong>
+<ul>
+<li>\(l_c=3,\ l_r=4\)：\(\mathrm{BP}=\exp(1-\frac43)=\exp(-0.3333)=0.7165\)。（这个数已在 <a href="#eq-12-7">12.7 的数值例子</a> 里用到。）</li>
+<li>\(l_c=19,\ l_r=20\)（差 5%）：\(\mathrm{BP}=\exp(1-\frac{20}{19})=\exp(-0.0526)=0.949\)，即扣 5%——与 \(1-\frac{20-19}{20}=0.95\) 几乎一致。</li>
+<li>\(l_c=10,\ l_r=20\)（差一半）：\(\mathrm{BP}=\exp(1-2)=e^{-1}=0.368\)。<strong>惩罚非常重</strong>，而算术平均 \((10+20)/2=15\) 在这个场景下毫无信息量。</li>
+<li>\(l_c=25,\ l_r=20\)：分支一，\(\mathrm{BP}=1\)。</li>
+</ul></li>
+<li><strong>第六件事：为什么取"最短参考长度" \(l_r\)。</strong>多参考时若取最长的参考作基准，一个本来正确但偏简洁的译文会被无端扣分；取最短参考使 <strong>BP 成为最宽松的惩罚</strong>——是一种"不冤枉短而正确的译文"的保守选择。代价是<strong>模型可以靠"只写最短参考那么长"来规避 BP</strong>，这正是 12.7 里 \(l_c&lt;l_r\) 时 \(p_n\) 全为 1 却仍只得 0.72 的漏洞来源（<strong>短到极限</strong>时 \(p_n\to1\) 而 \(\mathrm{BP}\to0\)，乘积才被拉住；取 \(l_c\to0\) 时 \(\mathrm{BP}=e^{1-l_r/l_c}\to0\)，所以极端情况仍会被压住——这正是第 4 步那个 \(xe^{1-x}\le1\) 的实际价值）。</li>
+</ol>
+<div class="note">
+<b>直觉</b>
+BP 就是"交作业不能只写开头"的扣分规则：写够了（\(l_c&gt;l_r\)）不扣；写短了按短的比例指数扣。写成指数而不是线性或幂次，是为了在"刚好写够"这个临界点附近<strong>平滑过渡</strong>——你少写一个词不会被扣得比少写两个词多出一大截。
+</div>
+<div class="relnav"><a href="#eq-12-7">(12.7) BLEU 总分</a></div>
+</section>
+
+<h2 id="recap">本页小结：8 条公式串成一条线</h2>
+<ol class="steps">
+<li><strong>(12.1) → (12.3) 的推导链条是本页的主干。</strong>概率链式法则给出连乘 \(\prod_t p_t\)；(12.2) 取 \(-\frac1T\) 次幂做长度归一化（唯一能消掉 \(T\) 次幂增长的指数）；(12.3) 把同一个数换写成 \(\exp(-\frac1T\sum\ln p_t)\)，从而可计算。二者<strong>恒等</strong>，差异只在"输入形式"与"数值稳定性"。</li>
+<li><strong>\(\mathrm{PPL}=e^{\mathrm{CE}}\)。</strong>训练损失与评测指标是同一个量的两种刻度；"有效分支因子"的读法统一了语言建模（\(V\) 词表的均匀基线）与 \(K\) 类分类（均匀基线给 \(K\)）。</li>
+<li><strong>(12.4)–(12.6) 是集合层面的两个条件概率 + 调和平均。</strong>\(F_1=\frac{2\mathcal P\mathcal R}{\mathcal P+\mathcal R}=\frac{\mathcal P-\mathcal R}{2}-\frac{(\mathcal P-\mathcal R)^2}{2(\mathcal P+\mathcal R)}\) 的第二项解释了一切：<strong>不平衡被平方惩罚</strong>。</li>
+<li><strong>(12.7)–(12.8) 是"几何平均 + 长度惩罚"的两块拼图。</strong>\(n\)-gram 截断计数的分母是有效长度 \(l_c^{\text{eff}}(n)=l_c-n+1\)，它给出 \(p_n\) 的上界；BP 在加权几何平均外面最多抵消一个长度比，\(x e^{1-x}\le1\) 保证总分不超过 1。</li>
+</ol>
+<div class="note">
+<b>下一页</b>
+<a href="16-ch12-eval-b.html">第 12 章 · 评测（2/2）</a>继续：ROUGE-n / ROUGE-L（召回方向）、Pass@k 与其无偏蒙特卡洛估计、Elo 排序、以及评测范式（MMLU / BIG-Bench / HELM 等）与统计显著性。
+</div>
+</article>
+</main>
+<nav class="chapnav" aria-label="上下页导航"><div class="chapnav-inner">
+<a class="" href="14-ch10-prompt.html"><span class="lbl">上一章</span><span class="nm">Chapter 10　第 10 章 · 提示工程</span></a><a class="next" href="16-ch12-eval-b.html"><span class="lbl">下一章</span><span class="nm">Chapter 12 · 2/2　第 12 章 · 评测（2/2）</span></a>
+</div></nav>
+<script src="../assets/katex/katex.min.js"></script>
+<script src="../assets/katex/auto-render.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

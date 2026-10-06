@@ -1,0 +1,1520 @@
+---
+id: m05
+n: "5"
+title: 基展开与正则化
+title_en: Basis Expansions and Regularization
+desc: 多项式/傅里叶/样条与 B 样条基的构造、平滑样条与有效自由度的谱推导、LARS 与 lasso 路径、LOOCV 的精确公式、RKHS 与小波收缩、PCR/PLS 监督降维
+prev: m04
+next: m06
+prev_title: 第 4 章 线性分类方法
+next_title: 第 6 章 核平滑方法
+---
+
+# 5 基展开与正则化 {#s-5}
+
+第 3、4 章的所有模型都对 $X$ **线性**。真函数 $f(X)=E[Y\mid X]$ 几乎不可能是线性的，于是有两条补救路线，本章把两条路线都推到底。
+
+第一条是**基展开**：把 $X$ 换成它的变换 $h_m(X)$，再在新变量上做线性模型。这条线上的具体对象包括截断幂基 (5.3)、自然样条基 (5.4)(5.5)、B 样条递推 (5.77)(5.78)、张量积基 (5.35)、小波基与核基 (5.45)。第二条是**正则化**：基函数个数不受限制，改用惩罚项 $J(f)$ 控制复杂度，ridge、lasso、弹性网、平滑样条、核岭都属于此类。
+
+两条线在 §5.2 汇合：任何「惩罚最小二乘」解都是 $y$ 的线性函数 $\hat f=Sy$，这个 $S$ 叫**平滑器矩阵**。一旦有了 $S$，自由度 (5.16)、偏差 (5.24)、方差 (5.23)、LOOCV (5.27) 全部变成对 $S$ 的一次矩阵运算。本章的核心推导就是这件事：把书里印成一行结论的 (5.17)(5.20)(5.27) 重新推出来。
+
+<a class="src" href="../esl/ch05-basis-expansions-and-regularization.html#s-5-1">原文 §5.1</a>
+
+## 5.1 基展开：多项式、傅里叶与样条 {#s-5-1}
+
+### 5.1.1 线性基展开与可加限制 {#s-5-1-1}
+
+问题：把「线性模型」推广成「线性于变换后的 $X$ 的模型」，并说明为什么这个推广仍然是线性最小二乘。
+
+记 $h_m:\mathbb{R}^p\to\mathbb{R}$ 为第 $m$ 个变换，$m=1,\dots,M$。模型写成
+
+$$
+f(X)=\sum_{m=1}^{M}\beta_m h_m(X) \eqno{5.1}
+$$
+
+一旦 $h_m$ 固定，系数 $\beta_m$ 的估计就回到第 3 章的全部内容。把设计矩阵按 $H_{im}=h_m(x_i)$ 排成 $H\in\mathbb{R}^{N\times M}$，则 (5.1) 就是 $f(x)=H^\top\beta$ 的转置版——严格地说 $\hat f(x_i)=\sum_m\beta_mh_m(x_i)=(H\beta)_i$，所以最小二乘准则、帽子矩阵、正态方程全部逐字照抄：
+
+$$
+\hat\beta=(H^\top H)^{-1}H^\top y,\qquad \hat f=HH^\top(H^\top H)^{-1}H^\top y
+$$
+
+对比第 3 章 (3.6)：只是把 $X$ 换成 $H$、把 $\beta$ 的维度从 $p$ 换成 $M$。这就是「基展开」这个技巧的全部内容——**模型形式是有限的、非线性的，但推断部分是线性的**。
+
+常用的 $h_m$ 家族：$h_m(X)=X_m$（回到线性模型）；$h_m(X)=X_j^2$ 或 $X_jX_k$（多项式，$d$ 阶时基函数个数是 $O(p^d)$）；$h_m(X)=\log X_j,\ \sqrt{X_j},\ \lVert X\rVert$（单变量非线性变换）；$h_m(X)=I(L_m\le X_k<U_m)$（分段的常数贡献）。
+
+更受限的一类是**可加**模型：假设 $f$ 可以写成各分量之和，
+
+$$
+f(X)=\sum_{j=1}^{p}f_j(X_j)=\sum_{j=1}^{p}\sum_{m=1}^{M_j}\beta_{jm}h_{jm}(X_j) \eqno{5.2}
+$$
+
+模型规模由每个 $M_j$ 决定。代价可加性的直觉是「主效应 + 边际效应」的假设：书里南非心脏病数据用每个变量 4 个自然样条基、总参数个数 $df=1+\sum_j df_j$（常数项 1 加各分量自由度之和），就是 (5.2) 的实现。
+
+> **坑** · 可加性是很强的假设：它强制 $f$ 对每个坐标的边际效应与其它坐标的取值无关。图 5.11 对比了可加样条（$df=7$）与张量积自然样条（$df=16$）在同一模拟数据上的判决边界：张量积能在边界上更灵活，但会引入虚假的交互结构。可加模型的优势是**维度不爆炸**（$1+\sum M_j$ vs $\prod M_j$）。
+
+> **坑** · 基展开并不改变过拟合的机制，只是把 $p$ 换成了 $M$。$M\gg N$ 时 $H^\top H$ 奇异，(5.1) 的最小二乘解不唯一（但 $\hat f$ 仍唯一，见预备知识 L2）。要处理这种情形只有两条路：选基（限制法）、惩罚（正则化法）——这正是本章后半部分的内容。
+
+### 5.1.2 共线性：Vandermonde 矩阵与 Hilbert 矩阵 {#s-5-1-2}
+
+问题：为什么多项式基在数值上「难用」，而傅里叶基不難。
+
+取 $h_m(X)=X^{m-1}$，$m=1,\dots,M$。若 $x_i$ 等距分布，把 $x_i\in[0,1]$ 取成 $i/N$，$i=1,\dots,N$，那么正规矩阵的元素是
+
+$$
+(H^\top H)_{jk}=\sum_{i=1}^{N}\Big(\frac{i}{N}\Big)^{j-1}\Big(\frac{i}{N}\Big)^{k-1}=N\cdot\frac{1}{N^{j+k-2}}\sum_{i=1}^{N}\Big(\frac{i}{N}\Big)^{j+k-2}\approx\frac{1}{j+k-1}
+$$
+
+推导：$N^{j+k-2}\cdot\frac{1}{N}\sum_{i=1}^{N}(i/N)^{j+k-2}=N^{j+k-3}\sum_{i=1}^Ni^{j+k-2}\approx N^{j+k-2}\int_0^1t^{j+k-2}dt=N^{j+k-2}\cdot\frac{1}{j+k-1}$。所以 $H^\top H$ 在 $N\to\infty$ 时**收敛到 Hilbert 矩阵** $G_{jk}=1/(j+k-1)$。这是多项式基一切数值麻烦的根源。
+
+Hilbert 矩阵的条件数增长极快（可数值验证，下表是 2 范数条件数）：
+
+| 阶 $M$ | 2 | 3 | 4 | 5 | 6 |
+|---|---|---|---|---|---|
+| $\kappa_2(H_M)$ | $1.9\times10^{1}$ | $5.2\times10^{2}$ | $1.6\times10^{4}$ | $4.9\times10^{5}$ | $1.5\times10^{7}$ |
+
+> **数值** · 每加一阶条件数大约乘 30。由预备知识 N1，正规方程把条件数**平方**了：$\kappa_2(H^\top H)=\kappa_2(H)^2$，所以消元法在 5 阶以上已经完全不可信。
+>
+> 对策有三条，本章分别在不同小节用到：
+>
+> - 换成**正交基**：离散傅里叶基、正交样条基。$H^\top H$ 变成对角阵，$\kappa=1$。
+> - **惩罚**：$+ \lambda I$ 把最小特征值从 $0$ 抬到 $\lambda$，见 §5.2。
+> - **降维**：只保留方差大的方向（PCR），见 §5.3。
+
+离散傅里叶基为什么正交，可以直接算。取 $x_i=2\pi i/N$，基函数 $h_k(x)=\cos(kx),\ \sin(kx)$。用积化和差 $\cos a\cos b=\tfrac12[\cos(a-b)+\cos(a+b)]$，以及单位根求和
+
+$$
+\sum_{i=1}^{N}\cos\frac{2\pi mi}{N}=\begin{cases}N,&m\equiv0\ (\mathrm{mod}\ N)\\0,&m\not\equiv0\ (\mathrm{mod}\ N)\end{cases}
+$$
+
+（推导：设 $\omega=e^{2\pi i/N}\ne1$，则 $\sum_{i=1}^{N}\omega^{mi}=\omega^{m}(1-\omega^{mN})/(1-\omega^m)=0$，当 $N\nmid m$；两个余弦之和是 $\omega^m+\omega^{-m}$ 的实部），得
+
+$$
+\sum_{i=1}^{N}\cos\frac{2\pi ki}{N}\cos\frac{2\pi li}{N}=\frac{N}{2}\mathbf 1_{\{k=l\}},\qquad
+\sum_{i=1}^{N}\sin\frac{2\pi ki}{N}\sin\frac{2\pi li}{N}=\frac{N}{2}\mathbf 1_{\{k=l\}}
+$$
+
+所以 $H^\top H$ 是 $\frac{N}{2}$ 乘单位阵，拟合退化成逐个系数的独立计算。代价是傅里叶基只有**频率**局部性，没有**时间/空间**局部性：改动一处系数会牵动全域，这正是 §5.7 小波要解决的问题。
+
+> **结果** · 两种极端的基展开：截断幂基（多项式）在边界外行为失控、外推危险；傅里叶基数值稳定但没有局部性。样条基同时给出局部支撑与低条件数，代价是必须处理结点的选择——平滑样条 (5.9) 用惩罚项代替了「选结点」这一步。
+
+### 5.1.3 分段多项式与截断幂基 {#s-5-1-3}
+
+问题：分段多项式的自由度怎么数，它的自然基是什么（书中的 (5.3)）。
+
+把定义域按结点 $\xi_1<\xi_2<\cdots<\xi_K$ 切成 $K+1$ 段，每段用一个 4 次（$M=4$）多项式表示，不加连续性约束时参数个数是 $4(K+1)$。在每个结点上要求 $f,f',f''$ 连续给出 3 个线性约束，共 $3K$ 个，故自由参数
+
+$$
+4(K+1)-3K=K+4
+$$
+
+推广到 $M$ 阶样条（$M$ 阶即每段是 $M-1$ 次多项式、导数连续到 $M-2$ 阶）：每段 $M$ 个参数、每个结点 $M-1$ 个约束，自由参数 $M(K+1)-(M-1)K=M+K$。对 $M=4,K=2$ 得 6，与书里 (5.3) 的 6 个基函数一致。
+
+截断幂基给出一组显式基：$\{1,X,\dots,X^{M-1}\}$ 加上每个结点一个 $(X-\xi_\ell)_+^{M-1}$。为什么 $t_+=\max(t,0)$ 能保证连续性：$x<\xi$ 时 $(x-\xi)_+^{M-1}\equiv0$ 且各阶导数为 0，$x>\xi$ 时是多项式，两侧在 $x=\xi$ 的 $0,1,\dots,M-2$ 阶导数都等于 0，因此拼接后 $M-2$ 阶连续。
+
+$M=4$、$\xi_1,\xi_2$ 时书上写的就是
+
+$$
+\begin{cases}
+h_1(X)=1,\quad h_3(X)=X^2,\quad h_5(X)=(X-\xi_1)^3_+\\[2pt]
+h_2(X)=X,\quad h_4(X)=X^3,\quad h_6(X)=(X-\xi_2)_+^3
+\end{cases} \eqno{5.3}
+$$
+
+这里 5 个、6 个基的排列只是为了排版方便；顺序按幂次重排后就是 $\{1,X,X^2,X^3,(X-\xi_1)^+_3,(X-\xi_2)^+_3\}$。它的自由参数计数：$3$ 段 $\times4$ 参数 $-2$ 结点 $\times3$ 约束$=6$，与 (5.3) 的 6 个基函数吻合。
+
+> **坑** · 截断幂基**概念上简单、数值上很差**：$X^j$ 中 $j$ 可以很大，$X^j$ 的量级随 $x$ 剧烈变化，导致 $B$ 矩阵的列量级差几个数量级。书中因此推荐 B 样条基 (5.77)(5.78)，它给出同一函数空间的另一组基，数值稳定且局部支撑。
+
+### 5.1.4 自然三次样条：边界条件、线性约束与基的构造 {#s-5-1-4}
+
+问题：把三次样条在定义域外压成直线会消去哪些自由度，剩下的函数空间由哪组基张成（书中 (5.4)(5.5)，以及习题 (5.70)(5.71)）。
+
+**第一步：写出自然条件。** 回到截断幂表示（习题 5.4 的 (5.70)）
+
+$$
+f(X)=\sum_{j=1}^{3}\beta_jX^j+\sum_{k=1}^{K}\theta_k(X-\xi_k)^3_+ \eqno{5.70}
+$$
+
+「自然」的定义是：在两个边界结点之外 $f$ 是直线。这可以直接翻译成对系数的线性约束。
+
+- 左侧区间 $X<\xi_1$：所有 $(X-\xi_k)_+=0$，故 $f(X)=\beta_0+\beta_1X+\beta_2X^2+\beta_3X^3$。要它是直线，必须 $\beta_2=0$ 且 $\beta_3=0$。
+- 右侧区间 $X>\xi_K$：$f(X)=\beta_0+\beta_1X+\beta_2X^2+\beta_3X^3+\sum_k\theta_k(X-\xi_k)^3$。展开 $\sum_k\theta_k(X-\xi_k)^3=\left(\sum_k\theta_k\right)X^3-3\left(\sum_k\xi_k\theta_k\right)X^2+3\left(\sum_k\xi_k^2\theta_k\right)X-\sum_k\theta_k\xi_k^3$，所以 $X^2$ 系数为 $2\beta_2$、$X^3$ 系数为 $\beta_3+\sum_k\theta_k$。代入 $\beta_2=\beta_3=0$，得 $\sum_k\theta_k=0$、$\sum_k\xi_k\theta_k=0$。
+
+四个约束合起来是书里的 (5.71)：
+
+$$
+\begin{cases}
+\beta_2=0,\quad \displaystyle\sum_{k=1}^{K}\theta_k=0\\[4pt]
+\beta_3=0,\quad \displaystyle\sum_{k=1}^{K}\xi_k\theta_k=0
+\end{cases} \eqno{5.71}
+$$
+
+**第二步：验证「等价的自然条件」。** 也可以只要求 $f''$ 在边界结点外为 0。$f''(X)=2\beta_2+6\sum_k\theta_k(X-\xi_k)_+$，代入上面的约束后
+
+$$
+f''(\xi_K)=6\sum_k\theta_k(\xi_K-\xi_k)=6\Big(\xi_K\sum_k\theta_k-\sum_k\xi_k\theta_k\Big)=0
+$$
+
+（第一步已说明 $\sum_k\theta_k=\sum_k\xi_k\theta_k=0$），两个结点处同样成立。两条表述等价，这一步不能跳——它是「四个约束不多不少」的根据。
+
+**第三步：自由度的账。** 原来 $4+K$ 个系数（$\beta_0,\beta_1,\beta_2,\beta_3$ 加 $K$ 个 $\theta_k$），减去 4 个约束，剩 $K$ 个：与书里「$K$ 个结点的自然三次样条由 $K$ 个基函数表示」一致。
+
+**第四步：构造基 (5.4)(5.5)。** 候选是
+
+$$
+d_k(X)=\frac{(X-\xi_k)^3_+-(X-\xi_K)^3_+}{\xi_K-\xi_k} \eqno{5.5}
+$$
+
+它在系数空间里的取值是「$\theta_k=1/(\xi_K-\xi_k)$、$\theta_K=-1/(\xi_K-\xi_k)$、其余为 0、$\beta_2=\beta_3=0$」。代入 (5.71)：
+
+- $\sum_j\theta_j=1/(\xi_K-\xi_k)-1/(\xi_K-\xi_k)=0$ ✓；
+- $\sum_j\xi_j\theta_j=(\xi_k-\xi_K)/(\xi_K-\xi_k)=-1\ne0$ ✗。
+
+单个 $d_k$ 只满足第一个约束。取两个之差就同时满足：$\sum_j\xi_j\theta_j=-1-(-1)=0$，$\sum_j\theta_j=0-0=0$。这就是书里 (5.4) 写成 **$d_k-d_{K-1}$** 的原因：
+
+$$
+N_1(X)=1,\qquad N_2(X)=X,\qquad N_{k+2}(X)=d_k(X)-d_{K-1}(X) \eqno{5.4}
+$$
+
+其中 $k=1,\dots,K-2$，共 $2+(K-2)=K$ 个函数。
+
+**第五步：线性无关性。** 设 $\sum_{k=1}^{K-2}c_k(d_k-d_{K-1})+c_1+c_2X\equiv0$。求二阶导：常数与一次项的二阶导为 0，而对 $X\in(\xi_{k_0},\xi_K)$，
+
+$$
+f''(X)=6\sum_{k}\frac{c_k\big[(X-\xi_k)_+-(X-\xi_K)_+\big]}{\xi_K-\xi_k}=6\,\frac{c_{k_0}(X-\xi_{k_0})}{\xi_K-\xi_{k_0}}
+$$
+
+其中 $k_0$ 是 $c_k\ne0$ 的最大下标（此时所有 $k>k_0$ 的 $c_k=0$，且 $X<\xi_K$ 使 $(X-\xi_K)_+=0$）。取 $X>\xi_{k_0}$ 得 $c_{k_0}=0$，与假设矛盾；故所有 $c_k=0$，进而 $c_1=c_2=0$。$K$ 个函数张成的空间维数也是 $K$，所以 (5.4) 确实是**一组基**。
+
+**第六步：验证「$X\ge\xi_K$ 上二、三阶导为 0」。** 对 $X>\xi_K$，$d_k''(X)=6\frac{(X-\xi_k)-(X-\xi_K)}{\xi_K-\xi_k}=6$，同样 $d_{K-1}''(X)=6$，故 $(d_k-d_{K-1})''=0$；三阶导分别为 $\frac{6}{\xi_K-\xi_k}$ 与 $\frac{6}{\xi_K-\xi_{K-1}}$，差为 $\frac{6}{\xi_K-\xi_k}-\frac{6}{\xi_K-\xi_{K-1}}\ne0$。
+
+> **坑** · 这里有个**符号错误需要注意**：书上正文说「(5.4) 的每个基函数在 $X\ge\xi_K$ 上二阶和三阶导都为 0」，但按上面的直接计算，$d_k$ 单独的三阶导并不为 0；只有组合 $d_k-d_{K-1}$ 的**二阶**导为 0。若要三阶导也为 0，需要 $\xi_k=\xi_{K-1}$（结点重复），一般不成立。三次样条的 $f''$ 在结点处本来就是分段线性的（右端点处连续），所以「$f''$ 与 $f'''$ 都不为零」并不矛盾——真正的结论是：**自然样条在 $\xi_K$ 之外 $f''\equiv0$，因此在 $\xi_K$ 右侧是线性函数**。
+>
+> 另外注意维数：$K$ 个结点的自然样条只有 $K$ 维，而 (5.70) 的 $K+4$ 个系数被 4 个约束压掉了 4 个，二者一致。
+
+> **结果** · 自然边界条件相当于「用 4 个自由度换掉边界处的爆炸式方差」。书中图 5.3 的点态方差曲线显示：三次样条在边界处方差最大，自然样条把它压下去，代价是边界附近有偏（因为那里本来就没什么信息）。
+
+<a class="src" href="../esl/ch05-basis-expansions-and-regularization.html#s-5-2-1">原文 §5.2.1</a>
+
+### 5.1.5 两个应用：加性逻辑模型与特征滤波 {#s-5-1-5}
+
+问题：基展开在分类与「函数型数据」上怎么落地（书中 (5.6)(5.7)(5.8)）。
+
+**加性自然样条逻辑回归。** 模型为
+
+$$
+\mathrm{logit}\big[\Pr(\mathrm{chd}\mid X)\big]=\theta_0+h_1(X_1)^\top\theta_1+h_2(X_2)^\top\theta_2+\cdots+h_p(X_p)^\top\theta_p \eqno{5.6}
+$$
+
+每个 $h_j(X_j)$ 是 $K_j$ 维的自然样条基向量（不含常数项，常数由 $\theta_0$ 承担）。把所有基向量拼成一个大向量 $h(X)\in\mathbb{R}^{df}$，$df=1+\sum_jdf_j$，基矩阵 $H\in\mathbb{R}^{N\times df}$，第 $i$ 行是 $h(x_i)^\top$。此时模型和第 4 章的线性逻辑回归**完全一样**，用同样的 IRLS 拟合。
+
+系数协方差的估计来自逻辑回归的得分方程 (5.32)（见 §5.2.7）：在解处 $\mathrm{Cov}(\hat\theta)\approx\hat\Sigma=(H^\top WH)^{-1}$，$W=\mathrm{diag}(p_i(1-p_i))$。分量函数 $f_j(X_j)=h_j(X_j)^\top\theta_j$ 的点态方差就是二次型
+
+$$
+v_j(X_j)=\mathrm{Var}\big[\hat f_j(X_j)\big]=h_j(X_j)^\top\hat\Sigma_{jj}h_j(X_j)
+$$
+
+推导：$\hat f_j=h_j^\top\hat\theta_j$ 是标量线性组合，由 $\mathrm{Var}(a^\top Z)=a^\top\mathrm{Cov}(Z)a$（预备知识 L5）即得。图 5.4 里画的 $\hat f_j(X_j)\pm2\sqrt{v_j(X_j)}$ 就是这个二次型的平方根。
+
+**滤波与特征提取：连续模型的离散化。** 音素识别里输入是 256 个 log-periodogram 值 $x_j$，可以看作连续曲线 $X(f)$ 在网格 $f_1,\dots,f_{256}$ 上的取值。连续版的对比函数模型是
+
+$$
+\log\frac{\Pr(\mathrm{aa}\mid X)}{\Pr(\mathrm{ao}\mid X)}=\int X(f)\,\beta(f)\,df \eqno{5.7}
+$$
+
+用 Riemann 和离散化（步长 $h$，$\beta_j\approx\beta(f_j)h$）：
+
+$$
+\sum_{j=1}^{256}X(f_j)\beta(f_j)=\sum_{j=1}^{256}x_j\beta_j \eqno{5.8}
+$$
+
+推导：$\int X(f)\beta(f)df\approx\sum_jX(f_j)\beta(f_j)h$，两边同乘 $1/h$ 即得。关键的一步是把系数限制成光滑曲线 $\beta(f)=\sum_{m=1}^{M}h_m(f)\theta_m$，于是
+
+$$
+x^\top\beta=\sum_jx_j\sum_mh_m(f_j)\theta_m=\sum_m\Big(\sum_jx_jh_m(f_j)\Big)\theta_m=(H^\top x)^\top\theta
+$$
+
+其中 $H\in\mathbb{R}^{256\times M}$ 是样条基矩阵。**结论：只要把输入特征换成滤波后的特征 $x^\star=H^\top x$，后面的学习算法完全不用改**（书里用线性逻辑回归）。这就是 §5.3「filtering and feature extraction」的通用套路：预处理可以是任意 $x^\star=g(x)$，线性与否都行。
+
+> **数值** · 音素例子中未正则化的模型训练误差 0.080、测试误差 0.255（过拟合：256 个特征、每系数只有约 4 个观测）；加光滑约束后训练误差升到 0.185、测试误差降到 0.158。这是「用基展开控制复杂度」的教科书式效果，也是本节的核心信息。
+
+<a class="src" href="../esl/ch05-basis-expansions-and-regularization.html#s-5-2-3">原文 §5.2.3</a>
+
+## 5.2 惩罚回归：平滑样条与有效自由度 {#s-5-2}
+
+<a class="src" href="../esl/ch05-basis-expansions-and-regularization.html#s-5-4">原文 §5.4–5.5</a>
+
+### 5.2.1 平滑样条：从无穷维准则到广义岭回归 {#s-5-2-1}
+
+问题：无穷维函数空间上的带惩罚最小二乘 (5.9) 为什么有有限维的唯一解，解是什么形式（书中 (5.9)–(5.13)）。
+
+惩罚残差平方和定义为
+
+$$
+\mathrm{RSS}(f,\lambda)=\sum_{i=1}^{N}\{y_i-f(x_i)\}^2+\lambda\int\{f''(t)\}^2dt \eqno{5.9}
+$$
+
+第一项是保真项，第二项是粗糙度惩罚。两个端点情形说明 $\lambda$ 的角色：$\lambda=0$ 时任何插值函数都最优（欠约束）；$\lambda\to\infty$ 时二阶导必须为 0，解退化成直线拟合。
+
+**第一步：解是自然样条。** 关键引理（习题 5.7，编号 (5.72)）：设 $g$ 是插值 $\{x_i,z_i\}$ 的自然样条、$\tilde g$ 是任何另一个二阶可微的插值函数，$h=\tilde g-g$ 在每个 $x_i$ 处为零。分部积分两次：
+
+$$
+\int_a^b g''(x)h''(x)\,dx=-\sum_{j=1}^{N-1}g'''\big(x_j^+\big)\{h(x_{j+1})-h(x_j)\}=0 \eqno{5.72}
+$$
+
+推导细节：在每一段 $(x_j,x_{j+1})$ 上 $g'''$ 为常数，$\int_{x_j}^{x_{j+1}}g''h''=[g''h']_{x_j^+}^{x_{j+1}^-}-[g'''h]_{x_j^+}^{x_{j+1}^-}+\int_{x_j}^{x_{j+1}}g^{(4)}h\,dx$。$g$ 在结点处 $g''$ 连续（自然三次样条），故跨段求和时 $[g''h']$ 的内部项相消；$g$ 是分段三次所以段内积分为 0；剩下 $-\sum_jg'''(x_j^+)\{h(x_{j+1})-h(x_j)\}$，而 $h(x_j)=0$，故整式为 0。再由
+
+$$
+\int_a^b\tilde g''^2\,dt=\int_a^b\big(g''+h''\big)^2\,dt=\int_a^b g''^2\,dt+2\underbrace{\int g''h''}_{=0}+\int h''^2\,dt\ \ge\ \int_a^b g''^2\,dt
+$$
+
+（等号仅当 $h\equiv0$）得到：**在所有插值函数中，自然样条是 $\int\{f''\}^2$ 唯一的最小者**，这就是 $g$ 又被称为「最小曲率插值」的原因。
+
+把 (5.72) 用到 (5.9)：设 $\hat f$ 是 (5.9) 的解、$g$ 是插值 $\{(x_i,y_i)\}$ 的自然样条，取 $h=g-\hat f$，则 $h(x_i)=0$，
+
+$$
+\int\hat f''^2\,dt=\int g''^2\,dt+\int h''^2\,dt\ \ge\ \int g''^2\,dt
+$$
+
+于是 $\sum_i(y_i-\hat f(x_i))^2=0=\sum_i(y_i-g(x_i))^2$，(5.9) 的目标函数值给出
+
+$$
+\mathrm{RSS}(g,\lambda)\le \mathrm{RSS}(\hat f,\lambda)
+$$
+
+且只有 $\hat f=g$ 时取等。所以 **(5.9) 的解是结点在每个 $x_i$ 处的自然样条**（$x_i$ 有重复时按重复结点的阶数处理，结论不变）。
+
+**第二步：降维到有限维。** 结点为 $N$ 个的自然样条空间维数为 $N$（由 §5.1.4 的计数），取 §5.1.4 构造的 $N_j$ 为基：
+
+$$
+f(x)=\sum_{j=1}^{N}N_j(x)\theta_j \eqno{5.10}
+$$
+
+令 $N\in\mathbb{R}^{N\times N}$ 的第 $j$ 列为 $N_j(x_i)$，并定义粗糙度矩阵 $\Omega_N$，其元素为两个基函数二阶导的内积：
+
+$$
+\{\Omega_N\}_{jk}=\int N_j''(t)N_k''(t)\,dt \eqno{5.11}
+$$
+
+于是 (5.9) 精确地化成有限维准则
+
+$$
+\mathrm{RSS}(\theta,\lambda)=(y-N\theta)^\top(y-N\theta)+\lambda\theta^\top\Omega_N\theta
+$$
+
+**第三步：解。** 这是**广义岭回归**。展开目标函数
+
+$$
+J(\theta)=y^\top y-2y^\top N\theta+\theta^\top(N^\top N+\lambda\Omega_N)\theta
+$$
+
+用预备知识 L4（$\nabla_\theta(\theta^\top A\theta)=2A\theta$，$A$ 对称）与 C2（$\nabla(b^\top\theta)=b$）：$\nabla J=-2N^\top y+2(N^\top N+\lambda\Omega_N)\theta$，令其为零：
+
+$$
+\hat\theta=(N^\top N+\lambda\Omega_N)^{-1}N^\top y \eqno{5.12}
+$$
+
+$\lambda>0$ 时 $N^\top N+\lambda\Omega_N$ 一定可逆（它半正定，且只有 $\theta$ 同时落在 $\ker\Omega_N$ 与 $\ker N^\top N$ 中时才可能奇异；由 §5.1.4，$\ker\Omega_N$ 恰是线性函数张成的 2 维空间，而线性函数在 $N\ge2$ 个不同 $x_i$ 处取零只能是零函数）。拟合值为
+
+$$
+\hat f(x)=\sum_{j=1}^{N}N_j(x)\hat\theta_j \eqno{5.13}
+$$
+
+**第四步：为什么 $\Omega_N$ 半正定且是「粗糙度」的度量。** $\theta^\top\Omega_N\theta=\int(N\theta)''^2\,dt\ge0$；等号当且仅当 $N\theta$ 是线性函数，即 $\theta\in\mathrm{span}\{N_1,N_2\}$。所以**线性部分不被惩罚**，这正是自然边界条件在矩阵形式里的样子。
+
+> **结果** · (5.9) 是一个无穷维问题，但它在 $N$ 维空间上有唯一显式解 (5.12)——解的空间维数等于数据点数，复杂度由 $\lambda$ 而不是结点个数控制。这是本手册最该记住的一句话：**惩罚项把「选结点」这个离散问题换成了「调 $\lambda$」这个一维问题**。
+
+### 5.2.2 平滑器矩阵、帽子矩阵与有效自由度 {#s-5-2-2}
+
+问题：拟合值是 $y$ 的线性函数吗？如果是，线性算子是什么，自由度怎么定义（书中 (5.14)–(5.21)）。
+
+**第一步：平滑器矩阵。** 把 (5.12)(5.13) 合起来，取 $f=\hat f$ 在训练点处的 $N$ 维向量 $\hat f=(N\hat\theta)_i$：
+
+$$
+\hat f=N\big(N^\top N+\lambda\Omega_N\big)^{-1}N^\top y \equiv S_\lambda y \eqno{5.14}
+$$
+
+$S_\lambda$ 只依赖 $x_i$ 与 $\lambda$，**不依赖 $y$**。这类「$y$ 到 $\hat f$ 的固定线性映射」称为**线性平滑器**，$S_\lambda$ 称为**平滑器矩阵**（smoother matrix）。
+
+**第二步：与帽子矩阵对照。** 固定结点的回归样条（结点数 $K$，基函数 $M\ll N$）的最小二乘拟合是
+
+$$
+\hat f=B_\xi(B_\xi^\top B_\xi)^{-1}B_\xi^\top y \equiv H_\xi y \eqno{5.15}
+$$
+
+$H_\xi$ 是**投影（帽子）矩阵**。两者的对照表：
+
+| | $H_\xi$（投影平滑器） | $S_\lambda$（收缩平滑器） |
+|---|---|---|
+| 结构 | 幂等 $H_\xi^2=H_\xi$ | 收缩 $S_\lambda S_\lambda\preceq S_\lambda$ |
+| 秩 | $M$ | $N$ |
+| 特征值 | $M$ 个 1，其余 0 | $\rho_k(\lambda)\in(0,1]$ |
+| 对 $y$ 的线性性 | 有 | 有 |
+
+**第三步：有效自由度 (5.16)。** $H_\xi$ 的迹等于投影空间的维数：设 $B_\xi=UDV^\top$（SVD，见预备知识 L3），则 $B_\xi^\top B_\xi=VD^2V^\top$，$H_\xi=UDV^\top(VD^2V^\top)^{-1}VDU^\top=UU^\top$，于是
+
+$$
+\mathrm{tr}(H_\xi)=\mathrm{tr}(U^\top U)=\sum_{j=1}^{M}u_j^\top u_j=M
+$$
+
+（用到 $\mathrm{tr}(A^\top B)=\mathrm{tr}(A B^\top)$ 与 $\sum u_j^\top u_j=M$。一般地 $\mathrm{tr}(AB)=\mathrm{tr}(BA)$ 给出 $\mathrm{tr}(uu^\top)=u^\top u=1$。）
+
+**任何正交投影矩阵的迹 = 秩 = 自由参数个数**。类比之，定义平滑样条的**有效自由度**
+
+$$
+df_\lambda=\mathrm{trace}(S_\lambda) \eqno{5.16}
+$$
+
+即 $S_\lambda$ 对角线元素之和。这是本手册最实用的一个量：$\lambda$ 与 $df_\lambda$ 之间是单调一一对应的，所以实践中直接**指定 $df$ 反解 $\lambda$**（图 5.6 里 $df=12$ 对应 $\lambda\approx0.00022$）。
+
+**第四步：Reinsch 形式 (5.17)。** 要把 (5.14) 写成 $(I+\lambda K)^{-1}y$，关键是把 $\lambda$ 从矩阵里提出来。由 (5.12) 的定义 $\hat\theta$ 满足
+
+$$
+(N^\top N+\lambda\Omega_N)\hat\theta=N^\top y
+$$
+
+两边左乘 $N$ 并移项：
+
+$$
+N^\top (y-N\hat\theta)=\lambda\,\Omega_N\hat\theta
+$$
+
+即 $\Omega_N\hat f=\frac{1}{\lambda}N^\top(y-\hat f)$。这一步说明：**惩罚矩阵在「拟合值空间」上作用，作用对象是残差的 $N$ 维投影**。由 (5.14)，$S_\lambda$ 在 $N$ 维空间上可逆，于是定义
+
+$$
+K\equiv S_\lambda^{-1}-N^\top\ \Longrightarrow\ S_\lambda=(I+\lambda K)^{-1} \eqno{5.17}
+$$
+
+验证：$S_\lambda^{-1}=S_\lambda^{-1}(N^\top N+\lambda\Omega_N)N^{-1}\cdots$，直接用 $S_\lambda=N(N^\top N+\lambda\Omega_N)^{-1}N^\top$ 与矩阵反演律 $S_\lambda^{-1}=N^{-\top}(N^\top N+\lambda\Omega_N)N^{-1}=N^\top+\lambda N^{-\top}\Omega_NN^{-1}$，即 $S_\lambda^{-1}-N^\top=\lambda K$ 且
+
+$$
+K=N^{-\top}\Omega_NN^{-1}
+$$
+
+只依赖 $x$ 与 $\Omega_N$，**与 $\lambda$ 无关**。$K$ 称为**惩罚矩阵**。等价地，$\hat f$ 是下面变分问题的解：
+
+$$
+\min_f\ (y-f)^\top(y-f)+\lambda\,f^\top Kf \eqno{5.18}
+$$
+
+验证：目标函数 $f^\top(I+\lambda K)f-2f^\top y+y^\top y$，一阶条件 $(I+\lambda K)f=y$，解为 $f=(I+\lambda K)^{-1}y=S_\lambda y$，与 (5.14) 一致（这就是习题 5.9 的结论）。$f^\top Kf$ 有「平方二阶差分加权和」的表示，二阶导在段内分段常数时
+
+$$
+\int_{x_j}^{x_{j+1}}\big(f''\big)^2\,dt=\frac{x_{j+1}-x_j}{3}\Big(f''(x_j)^2+f''(x_j)f''(x_{j+1})+f''(x_{j+1})^2\Big)
+$$
+
+（对分段线性 $g$ 用 $\int_0^1[(1-s)a+sb]^2ds=\frac13(a^2+ab+b^2)$）。
+
+**第五步：特征分解 (5.19)(5.20)。** $K$ 对称，谱分解 $K=UDU^\top$，$D=\mathrm{diag}(d_1,\dots,d_N)$。由 (5.17)
+
+$$
+S_\lambda=(I+\lambda K)^{-1}=\big(I+\lambda UDU^\top\big)^{-1}=U(I+\lambda D)^{-1}U^\top
+$$
+
+推导中间步：$I+\lambda UDU^\top=U(U^\top U+\lambda D)U^\top=U(I+\lambda D)U^\top$（因为 $U^\top U=I$），再取逆（$(ABA)^{-1}=A^{-1}B^{-1}A^{-1}$）。展开 $U(I+\lambda D)^{-1}U^\top=\sum_k\frac{1}{1+\lambda d_k}u_ku_k^\top$，即
+
+$$
+S_\lambda=\sum_{k=1}^{N}\rho_k(\lambda)\,u_ku_k^\top \eqno{5.19}
+$$
+
+其中（$d_k$ 是 $K$ 的第 $k$ 个特征值）
+
+$$
+\rho_k(\lambda)=\frac{1}{1+\lambda d_k} \eqno{5.20}
+$$
+
+**第六步：迹的谱表示。** 这是本节的核心结论。用 $\mathrm{tr}(AB)=\mathrm{tr}(BA)$ 和 $\mathrm{tr}(u_ku_k^\top)=1$：
+
+$$
+df_\lambda=\mathrm{tr}(S_\lambda)=\sum_{k=1}^{N}\rho_k(\lambda)=\sum_{k=1}^{N}\frac{1}{1+\lambda d_k}
+$$
+
+与之对应的变分形式：把 $f=U\theta$ 代入 (5.18)，$f^\top Kf=\theta^\top U^\top K U\theta=\theta^\top D\theta$（用到 $U^\top KU=D$），得到 Demmler–Reinsch 表示
+
+$$
+\min_\theta\ \lVert y-U\theta\rVert^2+\lambda\,\theta^\top D\theta \eqno{5.21}
+$$
+
+其解是 $\hat\theta=(I+\lambda D)^{-1}U^\top y$，再乘回 $U$ 得 $S_\lambda y$，与上面完全一致。这说明：**平滑样条等价于在「平滑样条自己的正交基」 $\{u_k\}$ 上做岭回归，每个方向的分量被压成原来的 $1/(1+\lambda d_k)$ 倍**。
+
+**第七步：$df_\lambda=\sum_k d_k/(d_k+\lambda)$ 这一形式的解读。** 注意 $\rho_k=1/(1+\lambda d_k)$ 也可以写成 $\frac{d_k}{d_k+\lambda}$（当 $d_k>0$）。两项极端：
+
+- $d_k=0$：$\rho_k=1$，该分量**完全不收缩**。$\ker K$ 由线性函数张成（$f$ 线性 $\Rightarrow f''\equiv0\Rightarrow f^\top Kf=0$），维数为 2（前两个特征值恒为 1）。
+- $\lambda\to0$：$\rho_k\to1$，$df_\lambda\to N$，$S_\lambda\to I$，退化为插值。
+- $\lambda\to\infty$：$\rho_k\to0$（$d_k>0$ 者），$df_\lambda\to2$，$S_\lambda\to H$，即对 $(1,x)$ 的线性最小二乘帽子矩阵。
+
+**> **结果** · $df_\lambda$ 是「这个估计量相当于估计了多少个参数」的唯一定义。它的三条合法性论证都可复核：
+>
+> 1. **$H_\xi$ 的一致性**：投影平滑器的特征值是 $M$ 个 1、$N-M$ 个 0，$\mathrm{tr}(H_\xi)=\sum_k\rho_k=M$，即真实参数个数。
+> 2. **方差论证**：$\mathrm{Cov}(\hat f)=S_\lambda S_\lambda^\top$（见 (5.23)），对角元为 $\sum_k\rho_k^2u_{k,i}^2$，故 $\mathrm{tr}(\mathrm{Cov}(\hat f))=\sigma^2\sum_k\rho_k^2$；当所有 $\rho_k\approx1$ 时它约等于「$df_\lambda$ 个独立估计」的方差。
+> 3. **拟合优度论证**：$\mathbb{E}\|y-\hat f\|^2=\sigma^2\{N-2df_\lambda+\sum_k\rho_k^2\}$，其中 $\mathbb{E}[\|y-\hat f\|^2]=\mathbb{E}\,\mathrm{tr}(S_\lambda S_\lambda^\top)+\sum_k\rho_k^2$，而 $\mathbb{E}\sum(y_i-\hat f_i)^2=\sigma^2(N-2\mathrm{tr}(S_\lambda)+\mathrm{tr}(S_\lambda S_\lambda^\top))$——这正是下一节 (5.25) EPE 公式的来源。
+
+**第八步：解读。** $u_k$ 是平滑样条自己的一组正交基，**与 $\lambda$ 无关**（$K$ 不含 $\lambda$），所以同一组 $x$ 的整条 $\lambda$ 族共享特征向量；$\rho_k$ 随 $k$ 增大按 $d_k$ 递减的方向压低，且 $d_k$ 大（高频、震荡）的分量被压得更狠。按 $\rho_k$ 递减排序时 $u_k$ 的过零次数递增（多项式式行为）；若定义域周期，$u_k$ 就是不同频率的正余弦。$S_\lambda$ 近似带状，所以平滑样条本质上是**局部**方法：图 5.8 右侧的「等效核」就是 $S_\lambda$ 的某一行画成函数。
+
+> **坑** · $df_\lambda$ 只是一个**记账量**，它不等于「估计量的方差」。$df_\lambda=12$ 的样条，其点态方差在边界处仍远大于 12 个独立参数的方差，因为 $\sum_iu_{k,i}^2$ 分布极不均匀。想用 $df$ 做 $F$ 检验或 AIC 时这只是近似（§5.5.1 明确说 $df$ 参数化「提供统一比较多种平滑方法的框架」，不是精确的检验统计量）。
+
+### 5.2.3 偏差–方差折中 {#s-5-2-3}
+
+问题：$df_\lambda$ 怎么换成「该选多大」，EPE 与 CV 长什么样（书中 (5.22)–(5.25)）。
+
+用模拟模型 (5.22) 作例子：
+
+$$
+Y=f(X)+\varepsilon,\qquad f(X)=\frac{\sin\big(12(X+0.2)\big)}{X+0.2} \eqno{5.22}
+$$
+
+$X\sim U[0,1]$，$\varepsilon\sim N(0,1)$，$N=100$。
+
+**方差 (5.23)。** 由全方差公式 $Y=f(X)+\varepsilon$ 得 $\mathrm{Cov}(y)=\sigma^2I$。$\hat f=S_\lambda y$ 是线性变换，$\mathrm{Cov}(Ay)=A\,\mathrm{Cov}(y)A^\top$（预备知识 L5）：
+
+$$
+\mathrm{Cov}(\hat f)=S_\lambda\,\mathrm{Cov}(y)\,S_\lambda^\top=S_\lambda S_\lambda^\top \eqno{5.23}
+$$
+
+（此处省略了 $\sigma^2$，单位误差下 $\sigma^2=1$。）**对角元就是点态方差**，在训练点处第 $i$ 个是 $[S_\lambda S_\lambda^\top]_{ii}=\sum_jS_\lambda(i,j)^2$。
+
+**偏差 (5.24)。** 记 $\mathbf f$ 为真函数在训练点处的取值向量，则 $E[\hat f]=E[S_\lambda y]=S_\lambda E[y]=S_\lambda\mathbf f$：
+
+$$
+\mathrm{Bias}(\hat f)=\mathbf f-E(\hat f)=\mathbf f-S_\lambda\mathbf f \eqno{5.24}
+$$
+
+用谱表示 (5.19) 看两者的对比非常直观：
+
+$$
+S_\lambda\mathbf f=\sum_k\rho_k(\lambda)\langle u_k,\mathbf f\rangle u_k
+$$
+
+投影平滑器（$H_\xi$）相当于 $\rho_k\in\{1,0\}$：$M$ 个分量全留，其余全丢，所以偏差集中在被丢掉的 $N-M$ 个分量上；平滑样条是连续收缩，偏差**分散到所有分量**上，代价小得多。这就是为什么平滑样条通常更准。
+
+**EPE (5.25)。** 由全方差公式（P2），对独立取出的预测点 $(X,Y)$：
+
+$$
+\begin{aligned}
+\mathrm{EPE}(\hat f_\lambda)&=E\big[(Y-\hat f_\lambda(X))^2\big]\\
+&=E\big[\mathrm{Var}(Y\mid X)\big]+E\big[\big(f(X)-\hat f_\lambda(X)\big)^2\big]\\
+&=\sigma^2+\mathrm{MSE}(\hat f_\lambda)
+\end{aligned} \eqno{5.25}
+$$
+
+$\mathrm{MSE}=\mathrm{Bias}^2+\mathrm{Var}$。这里 $\mathrm{EPE}$ 双重平均：对训练样本（产生 $\hat f$）和独立的预测点 $(X,Y)$ 都取期望。$\sigma^2$ 与 $\lambda$ 无关，所以**最小化 EPE 等价于最小化 $\mathrm{MSE}$**，而 $\mathrm{MSE}$ 由 (5.23)(5.24) 完全决定：
+
+$$
+\mathrm{MSE}(\hat f_\lambda)=\frac1N\sum_i\Big[(I-S_\lambda)\mathbf f\Big]_i^2+\frac{\sigma^2}{N}\sum_i\big[S_\lambda S_\lambda^\top\big]_{ii}
+$$
+
+图 5.9 三个 $df$ 的解读：$df=5$ 欠拟合（偏差大、标准误带窄——「很自信地错」）；$df=9$ 折中最好；$df=15$  wiggle 增多、方差带宽。EPE 曲线的极小点就是 $\mathrm{MSE}$ 的极小点。
+
+> **坑** · 图 5.9 画的是**单次抽样**的 $\hat f$，而偏差涉及 $E[\hat f]$。二者不要混淆。CV 曲线整体在 EPE 曲线上方，但**平均而言 CV 是 EPE 的近似无偏估计**（这个结论见第 7 章，本章只给公式）。
+
+### 5.2.4 LARS、lasso 路径与 KKT 条件 {#s-5-2-lars}
+
+问题：lasso 的解是什么形式、为什么沿 $\lambda$ 变化的路径是分段线性的，LARS 怎么在 $O(N)$ 内算出整条路径（对应第 3 章 (3.51)–(3.59)，这里把矩阵形式推出来）。
+
+**第一步：目标函数与一阶条件。** 目标（与第 3 章同）
+
+$$
+R(\beta)=\frac{1}{2N}\lVert y-X\beta\rVert^2_2+\lambda\lVert\beta\rVert_1
+$$
+
+（有的书把 $\lambda$ 与 (5.68) 一样写成 $2\lambda$，只差一个标度）。$\lVert\beta\rVert_1$ 不可微，但在 $0$ 处有次梯度 $\partial|\beta_j|=\{\mathrm{sign}\beta_j\}$（$\beta_j\ne0$）或 $[-1,1]$（$\beta_j=0$）。一阶条件（KKT，见预备知识 O2）：
+
+$$
+\frac{1}{N}X^\top(y-X\hat\beta)\in\lambda\,\partial\lVert\hat\beta\rVert_1 \eqno{3.58}
+$$
+
+矩阵形式最干净：**存在向量 $\hat s$ 满足**
+
+$$
+\frac{1}{N}X^\top(y-X\hat\beta)=\lambda\hat s,\qquad \hat s_j\in\begin{cases}\{\mathrm{sign}(\hat\beta_j)\},&\hat\beta_j\ne0\\[-2pt][-1,1],&\hat\beta_j=0\end{cases}
+$$
+
+引入「活跃集」$A=\{j:\hat\beta_j\ne0\}$ 与符号向量 $s\in\{\pm1\}^{|A|}$，KKT 就是三条：
+
+$$
+\frac1N X_A^\top(y-X\hat\beta_A)=\lambda s,\quad \frac1N X_{A^c}^\top(y-X\hat\beta)=\theta,\ |\theta|\le\lambda
+$$
+
+第一条给活跃变量定符号与大小，第二条给非活跃变量的「零阈值」条件 $\lvert x_j^\top(y-X\hat\beta)\rvert\le N\lambda$。**这就是 lasso 能选变量的全部机制**：不等式 $\le$ 在 ridge 里没有对应物（ridge 解永不精确为 0）。
+
+**第二步：KKT 的一阶最优条件与不动点。** 在活跃集固定、符号已定时，lasso 是凸二次规划，其解满足对 $\beta_j$ 的「投影梯度」条件。把 $\beta_j$ 与其余坐标分离：令 $r_{-j}=y-\sum_{l\ne j}\beta_lx_l=r+\beta_jx_j$，对 $\beta_j$ 求导得
+
+$$
+-\frac1N x_j^\top(r-\beta_jx_j)+\lambda\,\mathrm{sign}(\beta_j)=0
+$$
+
+**这就是 lasso 的不动点方程**（坐标下降的解公式见预备知识 O4）：给定其它坐标，
+
+$$
+\hat\beta_j=\frac{1}{\|x_j\|^2}\Big(x_j^\top r-\mathrm{sign}(\hat\beta_j)N\lambda\Big),\qquad x_j^\top r=Nc_j
+$$
+
+即「未收缩值 $\tilde\beta_j=\hat\beta_j+\mathrm{sign}(\hat\beta_j)\lambda$」满足最小二乘正规方程 $\hat\beta_j\|x_j\|^2=x_j^\top(r-N\lambda\,\mathrm{sign})$。
+
+矩阵形式的 KKT 一阶最优条件（这是要点）：把上面的分量形式合起来，$\lambda\hat s$ 满足
+
+$$
+(X^\top X)\hat\beta=X^\top y-N\lambda\,\hat s \quad\Longleftrightarrow\quad \hat\beta=(X^\top X+N\lambda\,\mathrm{diag}\text{-frame})^{-1}\bigl(X^\top y-N\lambda\,\hat s\bigr)
+$$
+
+对固定活跃集 $A$，可以写成**岭回归形式的线性方程组**：
+
+$$
+X_A^\top X_A\hat\beta_A+\lambda N s=X_A^\top y
+$$
+
+它与「在活跃集上做岭回归、但用符号向量代替 $\beta$」完全等价。这是理解 LARS 的桥梁：$\hat\beta_A$ 由 $\lambda$ 与活跃集**线性**决定（$s$ 固定时右端对 $\lambda$ 线性，左端与 $\lambda$ 无关，但 $\hat\beta_A$ 含 $1/\lambda$ 的因子——见下）。
+
+**第三步：为什么路径分段线性。** 固定 $A$ 与 $s$，令 $\hat\beta(\lambda)=\hat\beta(\lambda_0)+(\lambda-\lambda_0)t$（$t$ 是待定方向）。KKT 第一条左端 $\frac1NX_A^\top(y-X_A\hat\beta)$ 对 $\lambda$ 线性（因为 $\hat\beta$ 线性），右端 $\lambda s$ 也线性；在 $\lambda=\lambda_0$ 两者相等（KKT 已满足），故**在整个 $A$ 不变的 $\lambda$ 区间上 KKT 继续成立**（只要非活跃变量的阈值条件不被违反）。于是 $\hat\beta$ 对 $\lambda$ 线性——**lasso 路径是折线**。把 $\hat\beta$ 拆成正负两部分 $\hat\beta=\hat\beta^+-\hat\beta^-$（两者非负、逐坐标不同时为正），KKT (3.58) 写成
+
+$$
+\frac1N X^\top(y-X\hat\beta)=\lambda\big(\hat s^+-\hat s^-\big)
+$$
+
+其中 $\hat s^+,\hat s^-\in\{0,1\}^p$ 标记 $\hat\beta$ 的正负号。这是 LARS 算法的判据形式：**活跃集的符号向量一旦固定，$\hat\beta$ 对 $\lambda$ 就是直线**。
+
+**第四步：LARS 算法。** 维护当前活跃集 $A$ 与等相关（equicorrelation）性质：KKT 意味着所有活跃变量与当前残差的相关性**符号相同、大小相等**：
+
+$$
+\frac1N x_j^\top r=\lambda\,\mathrm{sign}(\hat\beta_j),\qquad j\in A
+$$
+
+LARS 的步骤：① 计算所有变量的相关性 $c_j=\frac1Nx_j^\top r$；② 找 $|c_j|$ 最大的非活跃变量 $k$，它将进入 $A$，符号为 $\mathrm{sign}(c_k)$；③ 沿方向 $s$（活跃集符号向量，$\hat\beta$ 增补 $(\lambda_{new}-\lambda)s$）前进，使得 (a) 非活跃变量的 $|c_j|\le\lambda$，(b) 当前无变量退出。步骤 ③ 中「新 λ 的取值」由
+
+$$
+\lambda_{\text{next}}=\min\Big\{\frac{c_k-c_j}{N\,\mathrm{sign}(s_j)}\ \Big|_{j\text{ 将进入}},\ \frac{c_j}{N\,\mathrm{sign}(s_j)}\Big|_{j\in A}
+$$
+
+决定——「谁先达到阈值就换谁」。这条路线的关键性质：**每个折点处最多有一个变量进入或退出，全程 $O(p)$ 次事件，每次更新残差只需 $O(N)$**（预备知识 N3）。原版 LARS 用 $\lVert\beta\rVert_2$ 惩罚，**lasso 版本**用 (3.58) 的 $\lVert\beta\rVert_1$，即上面的活跃集进出规则，这就是 LARS 求解 lasso 的方式。
+
+**第五步：坐标下降作为对照。** 坐标下降（预备知识 O4）不显式追踪活跃集：每轮扫过 $p$ 个坐标，各自做一次软阈值更新，$O(Np)$ 一轮。LARS 更快是因为它只碰与当前相关变量有关的方向。
+
+> **结果** · lasso 与 ridge 的差异全部来自 $\lVert\cdot\rVert_1$ 的次梯度结构：ridge 的 $\hat\beta_j=c_j/(d_j+\lambda)$ 永不为 0（只被压缩），lasso 用软阈值 $S(c_j,\lambda)$ 把 $|c_j|\le\lambda$ 的分量**精确置 0**。
+
+> **坑** · 上面第一、二步的推导依赖：$X$ 列满秩（否则 $\hat\beta$ 不唯一，只能取最小范数解）、$\lambda>0$（$\lambda=0$ 时解不唯一）、以及 $\lVert\beta\rVert_1$ 的次梯度是 $[-1,1]$。**「非活跃变量的条件 $|\theta_j|\le\lambda$ 不能省略**——它保证了解的**唯一性**（KKT 在凸问题中是最优性的充要条件，见 O2）。
+
+### 5.2.5 弹性网：为什么 lasso 会选变量 {#s-5-2-en}
+
+问题：lasso 的「选择」性质从哪来，什么情况下失效，弹性网修的是什么。
+
+**第一步：lasso 的几何来源。** 由 KKT 条件 (3.58)，解是「最小二乘拟合 + 投影到 $L_1$ 球」的临界点。等价地，把 Rlasso 看成两条约束的交点：$\lVert X\hat\beta-y\rVert^2\le t^2$ 与 $\lVert\hat\beta\rVert_1\le s$。$L_1$ 球有**尖角**，尖角是稀疏解的来源：若 $\hat\beta$ 只有 $q<N$ 个非零分量，尖角处只有 $q$ 个约束「活跃」，$L_2$ 球则是光滑的，永远切不出零点。
+
+**第二步：lasso 选变量的代价。** (3.58) 里非活跃变量需满足 $\lvert x_j^\top(y-X\hat\beta)\rvert\le N\lambda$：相关性弱的变量被置零。但当 $p\gg N$ 或变量高度相关时，相关的一组里只有**一个**被选（其余相关性落在阈值下），单个选中的系数被严重低估（有偏）。这是「lasso 的选择一致性与估计不一致性」现象。
+
+**第三步：弹性网目标函数。** 惩罚换成混合：
+
+$$
+R(\beta)=\frac{1}{2N}\lVert y-X\beta\rVert^2+\lambda\big(\alpha\lVert\beta\rVert_1+\tfrac{1}{2}\lVert\beta\rVert_2^2\big)
+$$
+
+- $\alpha=1$：lasso。
+- $\alpha=0$：ridge（此时 KKT 可整体解出 $\hat\beta=(X^\top X+\lambda N I)^{-1}X^\top y$）。
+- $0<\alpha<1$：**组选择**——相关变量成组进入或成组退出。
+
+**为什么 $\alpha<1$ 能做组选择。** KKT 的一次不动点条件：把 $\nabla$ 写出，对 $\beta_j\ne0$（已选）与 $\beta_j=0$（未选）分别考察。若 $x_j$ 与已选变量高度相关，$\tilde c_j=x_j^\top r$ 也大，$L_2$ 项使激活与保持激活的**阈值一致**，从而一组相关变量同步进入。KKT 矩阵形式（罚项梯度 $\lambda(\alpha s+(1-\alpha)\beta)$）：
+
+$$
+\frac1NX^\top(y-X\hat\beta)=\lambda\big[\alpha\hat s+(1-\alpha)\hat\beta\big]
+$$
+
+对比 lasso 的 $\lambda\hat s$：多了 $(1-\alpha)\hat\beta$ 这一项，它对**大系数**惩罚更重（因为 $\hat\beta$ 本身大），这抑制了「只挑一个、把它顶到很大」的行为，于是整组一起进。这是 elastic net 的 group selection 机制的严格来源。
+
+**第四步：非凸惩罚与随机梯度。** 若惩罚非凸（如 SCAD、MCP、或 $\lVert\beta\rVert_p$，$p<1$），优化非凸但常**保留**稀疏性与相关系数估计的一致性（因为零点附近的惩罚导数奇异，稀疏点变成「局部最优」而非「病态」）。随机梯度（SGD，预备知识 N3）：直接对 (5.68) 式目标做 SGD，每步 $O(p)$ 代价；配合非凸惩罚与恰当步长 $\gamma_m=1/(\lambda_0+\lambda_1m)$ 可收敛。此类方法在小波稀疏化 (5.68)(5.69) 与高维稀疏回归（第 18 章）里常用。
+
+**第五步：坐标下降解弹性网。** 固定 $\beta_j$，其余不变，目标是
+
+$$
+\frac{1}{2N}\sum_i\big(r_i-x_{ij}\beta_j\big)^2+\lambda\big(\alpha|\beta_j|+\tfrac12(1-\alpha)\beta_j^2\big)
+$$
+
+对 $\beta_j$ 求导并按符号分类（用预备知识 O4 的软阈值 $S$），可解出闭式更新：把 $\tfrac12(1-\alpha)\beta_j^2$ 吸收进平方项（相当于把 $\|x_j\|^2$ 换成 $\|x_j\|^2+\lambda N(1-\alpha)$），再做软阈值：
+
+$$
+\hat\beta_j\leftarrow\frac{1}{\lVert x_j\rVert^2+\lambda N(1-\alpha)}\Big(x_j^\top r-\lambda N\alpha\,\mathrm{sign}\ \text{(若激活)}\Big)
+$$
+
+（写成不动点更清楚：$\hat\beta_j=S\big(c_j+\lambda N(1-\alpha)\hat\beta_j,\ \lambda N\alpha\big)\big/\big(\lVert x_j\rVert^2\big)+\cdots$，逐坐标扫描即得。）这个「岭 + 软阈值」的组合正是小波去噪 (5.69) 用的同一个软阈值规则的来源。
+
+### 5.2.6 LOOCV 的精确公式 {#s-5-2-cv}
+
+问题：不重新拟合 $N$ 次，能不能算出留一交叉验证误差（书中 (5.26)(5.27)，以及第 3 章 (3.21)）？推导 e_i/(1-h_ii) 的来历。
+
+**第一步：LOOCV 定义 (5.26)。** 记 $\hat f_\lambda^{(-i)}$ 是去掉第 $i$ 个观测后重拟合的平滑器（对 (5.14) 即用 $N-1$ 个点重算 $S_\lambda^{(-i)}$），记残差 $e_i=y_i-\hat f_\lambda(x_i)$。留一交叉验证误差是
+
+$$
+\mathrm{CV}(\hat f_\lambda)=\frac1N\sum_{i=1}^{N}\big(y_i-\hat f_\lambda^{(-i)}(x_i)\big)^2 \eqno{5.26}
+$$
+
+**第二步：精确公式 (5.26)(5.27)。** 令人惊讶的是 (5.26) 里每一项都能用**原始拟合**的残差与平滑器矩阵的对角元算出：
+
+$$
+\mathrm{CV}(\hat f_\lambda)=\frac{1}{N}\sum_{i=1}^{N}\frac{\big(y_i-\hat f_\lambda(x_i)\big)^2}{1-S_\lambda(i,i)}=\frac1N\sum_{i=1}^{N}\frac{e_i^2}{1-S_\lambda(i,i)} \eqno{5.27}
+$$
+
+即 $\hat f^{(-i)}(x_i)=\hat f(x_i)-\frac{e_i}{1-S_\lambda(i,i)}$。对普通最小二乘这就是熟知的 $\hat y^{(-i)}=\hat y_i-\frac{e_i}{1-h_{ii}}$（第 3 章 (3.21)）。只需原始拟合的残差与 $S_\lambda$（或 $H_\xi$）的对角元。
+
+**第三步：推导（对最小二乘，秩 1 更新 + Sherman–Morrison）。** 把 (5.15) 的帽子矩阵 $H=X(X^\top X)^{-1}X^\top$ 记作 $H$，残差 $e=y-\hat f$。设 $x_i\in\mathbb{R}^p$ 是 $X$ 的第 $i$ 行（写成列向量），$X_{-i}$ 是删掉第 $i$ 行后的矩阵，$C=X_{-i}^\top X_{-i}$。
+
+**关键观察（秩 1）**：正规矩阵在删行时只差一个秩 1 项。把 $X^\top X$ 按行求和展开，
+
+$$
+X^\top X=\sum_{j=1}^{N}x_jx_j^\top=x_ix_i^\top+X_{-i}^\top X_{-i}=x_ix_i^\top+C
+$$
+
+所以 $C$ 是「少了第 $i$ 行」的正规矩阵，而 $X^\top X=C+x_ix_i^\top$。记
+
+$$
+v=C^{-1}x_i,\qquad g=x_i^\top v=x_i^\top C^{-1}x_i,\qquad \kappa=1+g
+$$
+
+由 Sherman–Morrison 公式（$(C+uv^\top)^{-1}=C^{-1}-\frac{C^{-1}uv^\top C^{-1}}{1+v^\top C^{-1}u}$，取 $u=v=x_i$）：
+
+$$
+(X^\top X)^{-1}=C^{-1}-\frac{vv^\top}{\kappa}
+$$
+
+**对角元。** $h_{ii}=x_i^\top(X^\top X)^{-1}x_i=x_i^\top C^{-1}x_i-x_i^\top\frac{vv^\top}{\kappa}x_i=g-\frac{g^2}{\kappa}=\frac{g(\kappa-g)}{\kappa}=\frac{g}{\kappa}$（用到 $\kappa-g=1$）。因此
+
+$$
+1-h_{ii}=\frac{\kappa-g}{\kappa}=\frac1\kappa
+$$
+
+**拟合值的第 $i$ 个分量。** 把 $y$ 拆成「第 $i$ 项 + 其余」：$X^\top y=x_iy_i+X_{-i}^\top y_{-i}$（行贡献之和）。于是
+
+$$
+\hat y_i=x_i^\top(X^\top X)^{-1}X^\top y=\Big(x_i^\top C^{-1}-\frac{g}{\kappa}v^\top\Big)\big(x_iy_i+X_{-i}^\top y_{-i}\big)
+$$
+
+逐项展开：$x_i^\top C^{-1}(x_iy_i)=gy_i$；$x_i^\top C^{-1}X_{-i}^\top y_{-i}=x_i^\top c$，其中 $c=(X_{-i}^\top X_{-i})^{-1}X_{-i}^\top y_{-i}$ 正是**留一拟合的系数**；$v^\top(x_iy_i)=(v^\top x_i)y_i=gy_i$；$v^\top X_{-i}^\top y_{-i}=x_i^\top C^{-1}X_{-i}^\top y_{-i}=x_i^\top c$（后两项用同一个等式）。合并得
+
+$$
+\hat y_i=gy_i+x_i^\top c-\frac{g}{\kappa}\big(gy_i+x_i^\top c\big)=\frac{g}{\kappa}y_i+\Big(1-\frac{g}{\kappa}\Big)x_i^\top c=h_{ii}\,y_i+(1-h_{ii})\,\hat y^{(-i)}
+$$
+
+这里 $\hat y^{(-i)}=x_i^\top c$ 是**只用其余 $N-1$ 个点拟合后对 $x_i$ 的预测**，系数化简用了 $g-g^2/\kappa=g(\kappa-g)/\kappa=g/\kappa=h_{ii}$。
+
+**收尾。** 代入残差定义：
+
+$$
+e_i=y_i-\hat y_i=y_i-h_{ii}y_i-(1-h_{ii})\hat y^{(-i)}=(1-h_{ii})\big(y_i-\hat y^{(-i)}\big)
+$$
+
+反解即得**精确公式**：
+
+$$
+y_i-\hat y^{(-i)}=\frac{e_i}{1-h_{ii}},\qquad \hat y^{(-i)}=\hat y_i-\frac{e_i\,h_{ii}}{1-h_{ii}}
+$$
+
+把它代入 (5.26) 的每一项就得到 (5.27)。注意整条推导只用到**原始拟合**的残差 $e_i$ 与帽子矩阵的对角元 $h_{ii}$——这就是 (5.27) 能把 LOOCV 从 $N$ 次重拟合降到 $O(N)$ 的原因。（书上习题 5.13 用的是等价说法：把样本增广一对 $(x_0,\hat f_\lambda(x_0))$ 再拟合，新拟合被迫穿过该点，这相当于给该点无穷权重，而无穷权重下的平滑器矩阵正是上面的秩 1 更新。）
+
+**第四步：同样的推导对任意广义帽子矩阵成立。** 把 $X$ 换成基矩阵 $A$（$N\times K$）并加惩罚：设 $\Lambda=A^\top A+\lambda\Omega$（$K\times K$），留一版 $\Lambda^{(-i)}=A_{-i}^\top A_{-i}+\lambda\Omega$。同样有 $\Lambda=\Lambda^{(-i)}+a_ia_i^\top$，$a_i$ 是 $A$ 的第 $i$ 行。Sherman–Morrison 给出（记 $v=\Lambda^{(-i)-1}a_i$，$\kappa=1+a_i^\top v$）
+
+$$
+\Lambda^{-1}=\Lambda^{(-i)-1}-\frac{vv^\top}{\kappa},\qquad h_{ii}=a_i^\top\Lambda^{-1}a_i=\frac{a_i^\top v}{\kappa},\qquad 1-h_{ii}=\frac1\kappa
+$$
+
+拟合值第 $i$ 分量：$A^\top y=a_iy_i+A_{-i}^\top y_{-i}$，且 $A_{-i}^\top y_{-i}=\Lambda^{(-i)}\hat\theta^{(-i)}$，故
+
+$$
+\hat f_i=a_i^\top\Lambda^{-1}A^\top y=a_i^\top\Lambda^{-1}a_i\,y_i+a_i^\top\Lambda^{-1}\Lambda^{(-i)}\hat\theta^{(-i)}
+$$
+
+用 $\Lambda^{-1}\Lambda^{(-i)}=\Lambda^{-1}\Lambda-\Lambda^{-1}a_ia_i^\top=I-\Lambda^{-1}a_ia_i^\top$，得
+
+$$
+a_i^\top\Lambda^{-1}\Lambda^{(-i)}=a_i^\top-h_{ii}a_i^\top=(1-h_{ii})a_i^\top
+$$
+
+所以
+
+$$
+\hat f_\lambda=h_{ii}y_i+(1-h_{ii})\,\hat f_\lambda^{(-i)}(x_i)\ \Longrightarrow\ y_i-\hat f_\lambda^{(-i)}(x_i)=\frac{e_i}{1-h_{ii}}
+$$
+
+**一般线性平滑器结论**：任何拟合值形如 $\hat f=Ay$、且 $A$ 只依赖设计（不依赖 $y$）的线性平滑器都满足这一恒等式，只需把 $h_{ii}$ 换成平滑器矩阵的对角元 $S_\lambda(i,i)$。整条推导**没有用到 $\Omega$ 的任何性质**，所以 (5.27) 同时适用于 ridge、lasso（此时 $A$ 为软阈值对角阵）、平滑样条、核岭、小波阈值，也适用于 §5.3 的 PCR/PLS。
+
+**第五步：计算量与解读。** 直接 LOOCV 要拟合 $N$ 次。用 (5.27)：$S_\lambda$ 只需在若干 $\lambda$ 各算一次（$O(N^3)$，或利用带状结构降到 $O(N)$，见 §5.8），对每个 $\lambda$ 算 CV 只要 $O(N)$。**并且** (5.27) 给 CV 的解析表达式，可以直接求极小点或做平滑。
+
+**第五步：计算量与解读。** 直接 LOOCV 要拟合 $N$ 次，代价 $O(N\cdot\text{cost}_{\text{fit}})$。用 (5.27)：$S_\lambda$ 只需在若干 $\lambda$ 各算一次（$O(N^3)$ 或利用带状结构 $O(N)$，见 §5.9），对每个 $\lambda$ 算 CV 只要 $O(N)$。总计 $O(N\cdot\#\lambda+N^3)$，远小于 $N^2$ 量级的重复拟合。**并且** (5.27) 对每个 $\lambda$ 给 CV 的解析表达式，可以直接求极小点。
+
+> **结果** · (5.27) 把 LOOCV 从「$N$ 次重拟合」降到「$O(N)$」。这就是书里说它「可由原始拟合值和对角元算出」的严格含义。广义自由度 $df_\lambda=\mathrm{tr}(S_\lambda)$ 在 CV 里自然出现（见第 7 章 GCV：$\mathrm{GCV}(\lambda)=\mathrm{RSS}/(1-df_\lambda/N)^2$，形式上就是把所有 $1/(1-S_{ii})$ 换成 $1/(1-\mathrm{tr}(S)/N)$）。
+
+> **坑** · (5.27) 的分母 $1-S_\lambda(i,i)$ 必须为正。若某点杠杆（leverage）很大使 $S_\lambda(i,i)\to1$，分母趋 0，LOOCV 会爆炸——这正是「$S_\lambda$ 对角元接近 1 的点一旦被留出就完全无法预测」的表现。所以 LOOCV 对高杠杆点敏感，而 GCV 用平均自由度规避了这个单点爆炸。$df_\lambda>1$ 不代表每个对角元都 $\le1$，但 $\lambda>0$ 时 $S_\lambda$ 的特征值 $\le1$ 保证 $S_\lambda(i,i)\le1$（$S_\lambda$ 半正定 $\preceq I$）。
+
+<a class="src" href="../esl/ch05-basis-expansions-and-regularization.html#s-5-5-2">原文 §5.5.2</a>
+
+### 5.2.7 加权平滑样条与非参数逻辑回归 {#s-5-2-7}
+
+问题：把平滑样条搬到分类问题（书中 (5.28)–(5.34)）。
+
+**第一步：逻辑模型 (5.28)(5.29)。** 单个定量输入，模型
+
+$$
+\log\frac{\Pr(Y=1\mid X=x)}{\Pr(Y=0\mid X=x)}=f(x) \eqno{5.28}
+$$
+
+等价地（反解）
+
+$$
+\Pr(Y=1\mid X=x)=\frac{e^{f(x)}}{1+e^{f(x)}} \eqno{5.29}
+$$
+
+**第二步：惩罚对数似然 (5.30)。** 记 $p(x)=\Pr(Y=1\mid x)$，准则为
+
+$$
+\ell(f;\lambda)=\sum_{i=1}^{N}\Big[y_i\log p(x_i)+(1-y_i)\log(1-p(x_i))\Big]-\lambda\int\{f''(t)\}^2dt \eqno{5.30}
+$$
+
+（书上的展开形式 $\sum_i[y_if(x_i)-\log(1+e^{f(x_i)})]-\lambda\int\{f''\}^2$ 与此等价，因为 $y\log p+(1-y)\log(1-p)=yf-\log(1+e^f)$。）与 (5.9) 同样的论证说明最优 $f$ 是结点在 $x_i$ 的自然样条，故 $f(x)=\sum_jN_j(x)\theta_j$。
+
+**第三步：一阶、二阶条件 (5.31)(5.32)。** 记 $\mathbf p$ 为 $p(x_i)$ 向量，$W=\mathrm{diag}(p(x_i)(1-p(x_i)))$。由 $\frac{dp}{df}=p(1-p)$（logistic 导数），
+
+$$
+\frac{\partial\ell(\theta)^\top}{\partial\theta}=N^\top(y-p)-\lambda\Omega\theta \eqno{5.31}
+$$
+
+（保真项梯度：$\sum_i[y_i-p(x_i)]\cdot p_i(1-p_i)\cdot N_j(x_i)$ 的对角权重部分给出 $N^\top W(y-p)$，再减惩罚梯度 $\lambda\Omega\theta$；对称化后如 (5.31)。）二阶：
+
+$$
+\frac{\partial^2\ell(\theta)^\top}{\partial\theta\,\partial\theta^\top}=-N^\top WN-\lambda\Omega \eqno{5.32}
+$$
+
+（保真项二阶是 $-N^\top WN$，因为 $\frac{d^2}{df^2}\log$-似然 $=\frac{dp}{df}(1-2p)$，再乘 $\frac{dp}{df}$ 得 $-[p(1-p)]^2\cdot\frac{1}{p(1-p)}\cdot$ 结构，集中起来就是 $-N^\top WN$；线性项 $\lambda\int\{f''\}^2$ 的二阶是 $\lambda\Omega$。）
+
+**第四步：Newton–Raphson 更新 (5.33)(5.34)。** 与第 4 章 (4.23)(4.26) 相同，把二阶条件取反作牛顿步。整理得
+
+$$
+\theta^{\mathrm{new}}=\big(N^\top WN+\lambda\Omega\big)^{-1}N^\top W\,z,\qquad z=f^{\mathrm{old}}+W^{-1}(y-p) \eqno{5.33}
+$$
+
+（书上的等价写法 $\theta^{\mathrm{new}}=(N^\top WN+\lambda\Omega)^{-1}N^\top W\,(N\theta^{\mathrm{old}}+W^{-1}(y-p))$；$z$ 就是逻辑回归的「工作响应」。）
+
+同样整理成拟合值的更新（$f^{\mathrm{new}}=N\theta^{\mathrm{new}}$）：
+
+$$
+f^{\mathrm{new}}=N\big(N^\top WN+\lambda\Omega\big)^{-1}N^\top W\,z\equiv S_{\lambda,w}\,z \eqno{5.34}
+$$
+
+对照 (5.12)(5.14)：**每一步 Newton 迭代都是在拟合一个加权平滑样条**——权重 $w_i$（进入 $W$）、工作响应 $z$。这就是「加权平滑样条」的由来（习题 5.12，问题 (5.73)）。它的矩阵形式与 (5.14) 结构完全相同，只是把 $y$ 换成 $z$、$I$ 换成 $W$，所以 LOOCV 的对角元论证 (5.27) 对它同样适用。
+
+**第五步：加权平滑样条 (5.73)。** 一般形式
+
+$$
+\mathrm{RSS}(f,\lambda)=\sum_{i=1}^{N}w_i\{y_i-f(x_i)\}^2+\lambda\int\{f''(t)\}^2dt \eqno{5.73}
+$$
+
+$w_i\ge0$。解完全类似：$f(x)=\sum_jN_j(x)\theta_j$，$\hat\theta=(N^\top WN+\lambda\Omega_N)^{-1}N^\top W y$，平滑器 $S_{\lambda,w}=N(N^\top WN+\lambda\Omega_N)^{-1}N^\top W$。$w_i=0$ 等价于丢掉该点；$w_i$ 大等价于强制拟合该点——(5.27) 的推导正是用它（$w_i\to\infty$）。若训练数据 $X$ 中有并列（重复的 $x_i$），同样结论成立：把重复点的权重合并，样条结点按重复次数（结点阶数）处理，$\Omega_N$ 对应更高阶导的惩罚。
+
+**第六步：可推广性。** (5.34) 的形式提示：把 $S_{\lambda,w}$ 换成任何（加权）非参数回归算子，就得到一族非参数逻辑回归模型；一维推广到多维就是**广义加性模型**（第 9 章）的核心。
+
+> **坑** · (5.31) 非线性（因为 $\mathbf p$ 含 $e^{f}$），必须迭代；牛顿法要小心步长过大导致发散，通常用第 4 章的阻尼牛顿或 IRLS 的安全步长。$W$ 可能奇异（若某点被完美分离，$p_i\to0$ 或 1，$W_{ii}\to0$），需要加小的岭项稳定。
+
+<a class="src" href="../esl/ch05-basis-expansions-and-regularization.html#s-5-6">原文 §5.6</a>
+
+### 5.2.8 变量选择方法综述 {#s-5-2-8}
+
+问题：把本章出现的选择/正则化方法放在一张图里对比。
+
+基展开带来一个字典（基函数库 $\mathcal D$，通常 $|\mathcal D|\gg N$）。用它的三条路线：
+
+| 方法 | 用字典的方式 | 代表 | 特点 |
+|---|---|---|---|
+| 限制法 | 事先固定类（低维/加性） | (5.2) 可加、稀疏多项式 | 可解释，防过拟合；但漏掉交互 |
+| 选择法 | 扫描字典，只留贡献大的 | CART、MARS、boosting、前向逐步 | 稀疏、自动；但 stepwise 搜索不稳定 |
+| 正则化法 | 全部用，靠惩罚压系数 | ridge (5.53)、lasso (3.51)、小波 (5.68) | 连续、稳健；lasso 兼有选择 |
+
+lasso 的特殊地位：它既正则化（软阈值压缩全部系数）又选择（$|\cdot|$ 的尖角把小的压成 0）。坐标下降、LARS、随机梯度都只是求解它的算法。ridge 在 $p\gg N$ 时必选（无选择但稳定）；lasso 在 $p$ 中等、变量相关时注意「成组只选一个」；elastic net 在变量相关且希望成组进入时用。
+
+> **结果** · 选择正则化参数的两条主线：**偏差–方差（调 $df$ 或 $\lambda$，用 EPE/CV）**与**解释（$L_0$ 型惩罚、直接搜索）**。本节所有方法的自由度都可以用 $\mathrm{tr}(S_\lambda)$ 统一记账，这是它们能互相比较的原因。
+
+## 5.3 PCR/PLS 与监督降维 {#s-5-3}
+
+第 3 章 (3.7) 已经推过 PCA 与 PCR 的线性代数，这里把**回归版本**完整重推一遍，并推导 PLS（偏最小二乘）：它的交替最小化不动点与一阶最优条件为何等价。
+
+<a class="src" href="../esl/ch05-basis-expansions-and-regularization.html#s-5-3">原文 §5.3</a>
+
+### 5.3.1 中心化数据与 PCA 回顾 {#s-5-3-1}
+
+问题：把 $N\times p$ 的中心化数据 $X$（每列减均值）做主成分分解，投影系数怎么和最小二乘联系起来。
+
+设 $\mathbf 1$ 为 $N$ 维全 1 向量，中心化 $\tilde X=X-\mathbf 1\bar x^\top$，$\bar x=\frac1NX^\top\mathbf 1$（对每列）。中心化数据的 SVD（预备知识 L3）：
+
+$$
+\tilde X=U D V^\top,\qquad D=\mathrm{diag}(d_1,\dots,d_r),\quad d_1\ge\cdots\ge d_r>0
+$$
+
+- **得分（score）** $t=U^\top\tilde X$，第 $j$ 列 $t_j=d_jv_j$；
+- **载荷（loading）** $v_j\in\mathbb{R}^p$，$\lVert v_j\rVert=1$，$v_j^\top v_k=\delta_{jk}$；
+- $V^\top\tilde X^\top\tilde X V=D^2$，即 $\lVert\tilde Xv_j\rVert^2=d_j^2$。
+
+对任意 $M<r$，取前 $M$ 个得分 $Z_M=t_{1:M}=U_{1:M}^\top\tilde X$，线性回归 $Z_M$ on $y$：
+
+$$
+\hat y_{\mathrm{PCR}}=\tilde X V_{1:M}\big(V_{1:M}^\top\tilde X^\top\tilde X V_{1:M}\big)^{-1}V_{1:M}^\top\tilde X^\top y
+$$
+
+用 $V^\top\tilde X^\top\tilde X V=D^2$ 化简中间矩阵：$V_{1:M}^\top\tilde X^\top\tilde X V_{1:M}=D_{1:M}^2$，故
+
+$$
+\hat y_{\mathrm{PCR}}=\tilde XV_{1:M}D_{1:M}^{-2}V_{1:M}^\top\tilde X^\top y=\tilde X\,P_M\,\tilde X^\top y
+$$
+
+其中 $P_M=V_{1:M}V_{1:M}^\top$ 是到前 $M$ 个主成分张成空间的正交投影，$P_M^2=P_M$、$\mathrm{tr}(P_M)=M$。**关键观察**：$\hat y_{\mathrm{PCR}}=H_M\tilde X^\top y$，其中 $\tilde X^\top$ 是「平滑器式」的对偶表示——这正是与 (5.14)(5.57) 的联系：任何降维回归都是线性平滑器，LOOCV 公式 (5.27) 适用，$H_M$ 的对角元就是杠杆。
+
+### 5.3.2 PLS：交替最小化与一阶最优条件 {#s-5-3-2}
+
+问题：PLS 不挑「方差大」的方向，而挑「与 $y$ 相关」的方向。它的第一分量方向 $v_1$ 是什么，整条路径的不动点怎么来。
+
+**第一步：PLS 的定义与第一分量。** PLS 对中心化数据求权重 $w_j\in\mathbb{R}^p$（单位长度），最大化它与 $y$ 的协方差（等价最小化残差）：
+
+$$
+v_1=\arg\max_{\lVert w\rVert=1}\ w^\top \tilde X^\top y
+$$
+
+一阶条件（Lagrange，$\mathcal L=-w^\top\tilde X^\top y+\frac{\mu}{2}(w^\top w-1)$）：$-\tilde X^\top y+\mu w=0$，故 $w\parallel\tilde X^\top y$，再由 $\lVert w\rVert=1$ 定出
+
+$$
+v_1=\frac{\tilde X^\top y}{\lVert\tilde X^\top y\rVert}\cdot\mathrm{sign}(\text{任一非零分量})
+$$
+
+（约定正负号使 $\langle v_1,y\rangle>0$）。得分 $t_1=\tilde Xv_1$，载荷 $q_1=y^\top t_1/\lVert t_1\rVert^2$，拟合 $\hat y_1=t_1y^\top t_1/\lVert t_1\rVert^2$。注意上式的 $v_1\parallel\tilde X^\top y$ 与 PCA 的 $v_1=u_1$ 完全不同：PCA 挑方差最大的方向，PLS 挑与响应最相关的方向。
+
+**第二步：交替最小化的不动点。** 第 $m$ 个 PLS 分量在**去残差、去载荷**后的数据上重复第一步。具体地记 $\tilde X^{(m-1)}$、$y^{(m-1)}$ 为前 $m-1$ 步去相关后的量。PLS 可等价写成如下双边问题：
+
+$$
+\min_{w\ (p\times1)}\ \lVert y^{(m-1)}-\tilde X^{(m-1)}w\rVert^2\quad\mathrm{s.t.}\quad\lVert w\rVert=1
+$$
+
+这是「回归方向 $w$」问题。对 $\tilde X^{(m-1)}$ 做 SVD $=U^{(m)}D^{(m)}(V^{(m)})^\top$，最优 $w$ 是**与 $y^{(m-1)}$ 内积最大的右奇异向量**：
+
+$$
+w=\sum_{i}\frac{\langle u^{(m)}_i,\, y^{(m-1)}\rangle}{d^{(m)}_i}v^{(m)}_i
+$$
+
+这与上式的形式一致（用 $y$ 替换）。**核心不动点性质**：PLS 权重 $w_m$ 满足
+
+$$
+\tilde X^{(\le m)\top}\, y^{(\le m)}\ \parallel\ \text{（当前权重与得分的组合）}
+$$
+
+更精确地，PLS 满足一个「不动点」条件：若 $w$ 是最优权重，则 $\tilde X^{(\le m)\top}\tilde X^{(\le m)}w$ 与 $w$ 在张成的得分子空间内共线，即 $w$ 是「降了维的」$X^\top X$ 在相关方向上的特征向量。这可以用 Lagrange 一阶条件的另一种写法看清。
+
+**第三步：交替最小化不动点 = 一阶最优条件。** 关键在把 PLS 的核心步骤写成二元优化并证明两者等价。设已完成 $m$ 步，第 $m$ 步要联合优化得分系数 $\alpha\in\mathbb{R}^N$ 与权重 $\beta\in\mathbb{R}^p$：
+
+$$
+\min_{\alpha,\beta}\ \big\lVert y-\alpha\beta^\top\big\rVert^2\quad\mathrm{s.t.}\quad \tilde X_{[\cdot]}\text{ 的 }m\text{ 维子空间}
+$$
+
+即：找 $\alpha\in\mathbb{R}^N,\beta\in\mathbb{R}^p$，最小化 $\lVert y-\alpha\beta^\top\rVert^2$，且 $\beta$ 取自 $\tilde X^{(\le m)}$ 的第 $m$ 个新方向。对 $\alpha,\beta$ 交替极小：
+
+- 固定 $\beta$，对 $\alpha$：$\alpha=\frac{y^\top\beta}{\lVert\beta\rVert^2}\beta$；
+- 固定 $\alpha$，对 $\beta$：$\beta=\frac{y^\top\alpha}{\lVert\alpha\rVert^2}\alpha$。
+
+不动点（两者同时成立）：
+
+$$
+\alpha=\frac{y^\top\beta}{\lVert\beta\rVert^2}\beta,\qquad \beta=\frac{\tilde X^\top\alpha}{\lVert\tilde X^\top\alpha\rVert}\cdot\frac{1}{\text{符号}}
+$$
+
+把第二个等式两边对 $y$ 做内积：$\langle\beta,\tilde X^\top\alpha\rangle=\langle\alpha,\tilde X\beta\rangle$（对称内积）。不动点方程说明 $\alpha$ 与 $\tilde X\beta$ 平行（去掉缩放）：
+
+$$
+\tilde X^{(\le m)}\beta \parallel \alpha \parallel y^{\mathrm{fitted}}
+$$
+
+即得分 $\alpha$ 既在 $y$ 的方向上，又在 $X$ 的第 $m$ 个新方向上——**这就是 PLS 权重的「不动点」几何意义：方向既与响应相关，又落在数据张成的子空间内**。
+
+**第四步：不动点与一阶最优条件等价（严格证明）。** 我们证明不动点方程等价于该步骤的 KKT / 一阶最优条件。等价地，PLS 第 $m$ 步等价于
+
+$$
+\min_{\lVert w\rVert=1}\ \lVert y^{(m-1)}-\tilde X^{(m-1)}w\rVert^2
+$$
+
+（把 $\alpha\beta^\top$ 的秩 1 拟合写成「用 $w$ 投影 $X$、再缩放回归」的等价形式）。展开 「单步 PLS」条件 的目标：
+
+$$
+\lVert y^{(m-1)}\rVert^2-2w^\top\tilde X^{(m-1)\top}y^{(m-1)}+w^\top\tilde X^{(m-1)\top}\tilde X^{(m-1)}w
+$$
+
+一阶条件（$\nabla_w$）：
+
+$$
+\tilde X^{(m-1)\top}\tilde X^{(m-1)}w=\mu\,w \tag{A}
+$$
+
+且 Lagrangian $\mathcal L=\lVert y^{(m-1)}\rVert^2-2w^\top c+w^\top Gw-\frac{\mu}{2}(w^\top w-1)$（$c=\tilde X^{(m-1)\top}y^{(m-1)}$，$G=\tilde X^{(m-1)\top}\tilde X^{(m-1)}$）的一阶条件 $-2c+Gw=0$，即
+
+$$
+\tilde X^{(m-1)\top}y^{(m-1)}=\tfrac12\tilde X^{(m-1)\top}\tilde X^{(m-1)}w=\tfrac{\mu}{2}w \tag{B}
+$$
+
+即 $w$ 是 $G$ 的特征向量，且**与 $c=\tilde X^{\top}y^{(m-1)}$ 平行**（由 (B)，$c=\frac{\mu}{2}w$）。所以一阶最优条件 条件 (A)(B) 说的是：$w$ 既是 $G$ 的特征向量、方向又由 $c=X^\top y^{(m-1)}$ 决定。这与第一步「$v_1\parallel\tilde X^\top y$」的「$w\parallel X^\top y^{(m-1)}$」结合后，进一步告诉我们 $w$ 必是那个使 $\langle w,c\rangle$ 最大的 $G$ 的特征向量——正是 「单步 PLS」条件 的解。
+
+现在回到不动点方程。由它的第一个等式 $\alpha=\frac{y^\top\beta}{\lVert\beta\rVert^2}\beta$，代入 $y=\tilde X\beta+\text{残差}$ 中 $y$ 与 $\beta$ 的关系可见 $\alpha\parallel y$（在当前子空间内）。而第二个等式给出 $\tilde X^\top\alpha\parallel\beta$。于是 $\beta\parallel\tilde X^\top\alpha$ 且 $\alpha\parallel\text{当前拟合}$。用 $y^{(m-1)}=\alpha+\text{残差}$（残差与当前得分空间正交，这正是 PLS 正交化的定义），把第二个等式展开到 $\tilde X^{\top}$：
+
+$$
+\tilde X^\top\alpha=\tilde X^\top y^{(m-1)}-\tilde X^\top(\text{正交残差投影})
+$$
+
+由于得分 $\alpha$ 与前 $m-1$ 步得分正交、残差也在其正交补，$\tilde X^\top\alpha$ 恰等于 $\tilde X^{(m-1)\top}y^{(m-1)}$ 中落在新方向的部分。结合 $\beta\parallel\tilde X^\top\alpha$ 与 $\alpha$ 是 $y$ 投影，得到 $w=\beta/\lVert\beta\rVert$ 满足 (B)：$c\parallel w$。故不动点 $\Rightarrow$ 条件 (A)(B)（一阶最优条件）。反向：条件 (A)(B) 唯一确定 $w$ 的方向（若特征值非简并），代入构造得分即得不动点。故**不动点与一阶最优条件等价**。
+
+> **结果** · PLS 第 $m$ 步的权重方向 $w_m$ 满足：它是「已去相关的」$X^\top X$ 中，与「已去相关的 $X^\top y$」内积最大的那个特征向量。PCA 是「与自身最相关」（方差最大），PLS 是「与 $y$ 最相关」——这是两者唯一的区别，也是 PLS 在多共线、小 $p$ 场景常胜过 PCA 的原因。
+
+**第五步：PLS 的降维性质与 LOOCV。** 用 $M$ 个 PLS 分量的拟合 $\hat y=t_{1:M}c_{1:M}$（$c_j$ 为载荷）是线性平滑器 $\hat y=Hy$，$H$ 为 $N\times N$ 矩阵，其对角元可算，于是 LOOCV 精确公式 (5.27) 适用（这是第 7 章 PLS 交叉验证的基础）。相比 PCA，PLS 的得分方向依赖 $y$，所以「$p\gg N$」时用**潜变量得分法**（对训练集的 $M$ 个潜变量回归，再对新点投影）以免过拟合。
+
+> **坑** · PLS 在 $N$ 很小、$p$ 很大时若直接对原始变量交替最小化，会得到 $N$ 个潜变量（因 $\min(N,p)$ 限制），但得分方向依赖训练 $y$，对新样本的预测需先用训练得分回归。PLS 的「选择」性质（自动选几个分量）需配合 CV；强行截断到 $M$ 分量等价于一个手挑的正则化。
+
+### 5.3.3 与第 14 章 PCA 的衔接 {#s-5-3-3}
+
+PCR 与第 14 章的 PCA 是同一件事的两个用法：PCA 提供「按方差排序的 $M$ 维正交子空间 $\{\hat v_j\}$」，PCR 在其中做最小二乘。区别在于：第 14 章用 PCA 做**可视化/聚类/去噪**（不涉及 $y$），第 5 章的 PCR 用它做**监督预测**（$y$ 只在最后的最小二乘里出现一次）。PLS 把 $y$ 提进方向选择本身，是「折中」的降维：既像 PCA（正交化得分）又像多元回归（方向对 $y$ 敏感）。
+
+<a class="src" href="../esl/ch03-linear-methods-for-regression.html#s-3-7">原文 §3.7</a>
+
+## 5.4 多维样条、张量积与 ANOVA 分解 {#s-5-4}
+
+到 §5.2 为止 $X$ 都是一维的。多维的每种方法都有对应版本，但**基函数个数随维数指数增长**这一点是所有困难的根源。
+
+<a class="src" href="../esl/ch05-basis-expansions-and-regularization.html#s-5-7">原文 §5.7</a>
+
+### 5.4.1 张量积基 {#s-5-4-1}
+
+问题：把一维的基扩展到 $X\in\mathbb{R}^2$，基函数怎么定义、能张成多大的空间（书中 (5.35)(5.36)）。
+
+设坐标 $X_1$ 有基 $h_j^1(X_1)$，$j=1,\dots,M_1$；坐标 $X_2$ 有基 $h_k^2(X_2)$，$k=1,\dots,M_2$。**张量积基**定义
+
+$$
+g_{jk}(X)=h_j^1(X_1)h_k^2(X_2),\qquad j=1,\dots,M_1,\quad k=1,\dots,M_2 \eqno{5.35}
+$$
+
+张成二维修正函数
+
+$$
+g(X)=\sum_{j=1}^{M_1}\sum_{k=1}^{M_2}\theta_{jk}g_{jk}(X) \eqno{5.36}
+$$
+
+**验证张成性。** $\{g_{jk}\}$ 是 $\{h_j^1\}\otimes\{h_k^2\}$，即两个子空间的张量积。要证明它张成全部二阶可分展开：任一 $g(X)=f_1(X_1)+f_2(X_2)+h_{12}(X_1,X_2)$ 的可分部分在基下展开；一般情形可证 $\{g_{jk}\}$ 的线性组合恰是「两个一维基的张量积空间」，维数 $M_1M_2$，而它包含所有可分函数与常数，系数用最小二乘拟合（同 (5.15) 的 $H$ 形式，基矩阵现在是 $M_1M_2$ 列）。图 5.10 展示了 B 样条张量积基，图 5.11 对比了**可加**（$df=1+(4-1)+(4-1)=7$）与**张量积自然样条**（$df=4\times4=16$）的判决边界。
+
+> **坑** · $M_1M_2$ 的增长是**指数型**的：$d$ 维、每坐标 $M$ 个基 → $M^d$ 个基。这就是维度灾难在基展开上的表现。MARS（第 9 章）用贪心前向算法只挑必要的张量积项，是这个问题的实用解法。
+
+### 5.4.2 二维平滑与薄板样条 {#s-5-4-2}
+
+问题：把一维的粗糙度惩罚 (5.9) 推广到 $\mathbb{R}^2$，解长什么样（书中 (5.37)(5.38)(5.39)）。
+
+**问题设定。** 给定 $y_i,x_i\in\mathbb{R}^d$，求 $f:\mathbb{R}^d\to\mathbb{R}$ 使
+
+$$
+\min_f\ \Big\{\sum_{i=1}^{N}\big(y_i-f(x_i)\big)^2+\lambda J[f]\Big\} \eqno{5.37}
+$$
+
+$J$ 是稳定 $f$ 的惩罚泛函。$\mathbb{R}^2$ 上粗糙度惩罚的自然推广是「二阶偏导平方和」：
+
+$$
+J[f]=\iint_{\mathbb{R}^2}\Big[\Big(\frac{\partial^2f}{\partial x_1^2}\Big)^2+2\Big(\frac{\partial^2f}{\partial x_1\partial x_2}\Big)^2+\Big(\frac{\partial^2f}{\partial x_2^2}\Big)^2\Big]dx_1dx_2 \eqno{5.38}
+$$
+
+（中间的系数 2 保证在坐标轴旋转下不变，对应 $\int(\mathrm{Hess}\,f)^2$——一个旋转不变量。）
+
+优化 (5.37) 用 (5.38) 的解是一张光滑二维曲面，叫**薄板样条**（thin-plate spline）。它与一维平滑样条共享三条性质：
+- $\lambda\to0$：解趋向插值函数（即惩罚 (5.38) 最小的那个）；
+- $\lambda\to\infty$：解趋向最小二乘平面 $f=\beta_0+\beta^\top x$；
+- 中间的 $\lambda$：解是基函数的线性展开，系数由广义岭回归给出。
+
+**解的形式 (5.39)。** 显式解为
+
+$$
+f(x)=\beta_0+\beta^\top x+\sum_{j=1}^{N}\alpha_jh_j(x),\qquad h_j(x)=\lVert x-x_j\rVert^2\log\lVert x-x_j\rVert \eqno{5.39}
+$$
+
+其中 $h_j$ 是**径向基函数**（$\lVert x-x_j\rVert\to0$ 时 $t^2\log t\to0$，所以是光滑的）。把 (5.39) 代入 (5.37) 得到有限维惩罚最小二乘，系数 $\alpha_j$ 由广义岭回归解出。
+
+**为什么 $h_j(x)=t^2\log t$ 出现（推导提示）。** 这是 (5.38) 的核方法的直接结论：在 §5.8 会证明，对二阶导惩罚的核 $K(x,y)$ 满足「$f$ 满足二阶微分方程 $\Delta^2 f=0$ 当 $x\ne y$，且 $f$ 在 $y$ 处二阶可微」这一 Green 函数条件。分离变量解双调和方程 $\nabla^4\phi=0$ 在极坐标下是 $(\log t,\,t^2\log t,\,1,\log t$ 型$)$，唯一的、在 $t=0$ 处有限且二阶可微而非常数的是 $t^2\log t$。所以 (5.39) 是 (5.38) 的「核解」，等价于 (5.66) 的核 $K(x,y)=\lVert x-y\rVert^2\log\lVert x-y\rVert$（这就是薄板样条也是 RKHS 的原因，见 §5.6）。
+
+**约束的必要性（习题 5.14）。** 惩罚 (5.38) 要有限，需要 $\sum_j\alpha_jh_j$ 的二阶导平方可积。对 $h_j=t^2\log t$，其二阶导 $\sim\log t$（对数奇性），其平方在每个结点附近可积但**跨结点累积**需要约束。具体地，标准结果：$J[f]=\infty$ 除非
+
+$$
+\sum_{j=1}^{N}\alpha_j=0,\qquad \sum_{j=1}^{N}\alpha_jx_j=0,\qquad \sum_{j=1}^{N}\alpha_jx_jx_j^\top=0
+$$
+
+（$\sum\alpha_jx_jx_j^\top=0$ 是 $\mathbb{R}^2$ 情形；一般 $d$ 维是直到二阶矩为零）。**另一个确保 $J$ 有限的办法**：干脆不用 $\alpha_j$，只保留 $\beta_0+\beta^\top x$（退化成平面），或者用有限的格点结点（见下）。§5.9 的 B 样条正交基也自然避免了无穷惩罚。
+
+**计算与实践。** 一般二维薄板样条的复杂度是 $O(N^3)$（无可利用的稀疏结构）。实用做法：用 $K\ll N$ 个格点结点，复杂度降到 $O(NK^2+K^3)$。图 5.12 拟合心脏病数据的收缩压对年龄与肥胖，$\lambda$ 由 $df_\lambda=\mathrm{trace}(S_\lambda)=15$ 指定。要点：**结点只取落在数据凸包内的格点，凸包外的忽略**（那里没有数据，惩罚会爆炸）。
+
+### 5.4.3 加性与 ANOVA 分解 {#s-5-4-3}
+
+问题：完全加性模型与带交互的 ANOVA 样条怎么写、惩罚怎么加（书中 (5.40)(5.41)）。
+
+**加性模型的惩罚。** 加性样条（第 9 章）可以写成 (5.37) 的特例，但惩罚是「退化的」：更自然的做法是**先假设 $f$ 加性，再对各分量单独加惩罚**：
+
+$$
+J[f]=\sum_{j=1}^{d}\int\big(f_j''(t_j)\big)^2dt_j \eqno{5.40}
+$$
+
+即每个 $f_j$ 各自是一个（多维）平滑样条问题。这保证了 $f(X)=\alpha+f_1(X_1)+\cdots+f_d(X_d)$ 且每个 $f_j$ 是样条。
+
+**ANOVA 样条分解。** 允许交互时的自然推广：
+
+$$
+f(X)=\alpha+\sum_jf_j(X_j)+\sum_{j<k}f_{jk}(X_j,X_k)+\cdots \eqno{5.41}
+$$
+
+每个 $f_j$（$d$ 维）、$f_{jk}$（二阶张量积）都是对应维数的样条。「…」代表更高阶交互。实际要决定三件事：
+- **最大交互阶**：上面写到 2 阶；更高阶会爆炸。
+- **取哪些项**：不是所有主效应与交互都必要，要选。
+- **用什么表示**：或者「每坐标少数基 + 张量积」（回归样条路线），或者「完整基 + 每项独立正则化」（平滑样条路线）。
+
+> **坑** · (5.40) 的加性惩罚假定 $f$ 已经加性。若不假定而用 (5.38) 的混合偏导项，惩罚会把交互压没（因为交互的某些二阶导很大），但会让主效应变形。要同时容纳主效应与指定阶交互，需对不同项用**不同的惩罚算子**（ANOVA 样条，练习）。
+
+<a class="src" href="../esl/ch05-basis-expansions-and-regularization.html#s-5-8">原文 §5.8</a>
+
+## 5.5 正则化与再生核希尔伯特空间 {#s-5-5}
+
+本节把样条放进更一般的框架。技术性最强，但它是理解「为什么平滑样条、薄板样条、SVM 有共同的核」的钥匙。
+
+<a class="src" href="../esl/ch05-basis-expansions-and-regularization.html#s-5-8-1">原文 §5.8.1</a>
+
+### 5.5.1 一般惩罚框架与频域惩罚 {#s-5-5-1}
+
+问题：最一般的正则化问题 (5.42) 的解是什么样子，频域惩罚 (5.43) 给出什么解（书中 (5.42)–(5.44)）。
+
+**一般框架 (5.42)。** 一大类正则化问题形如
+
+$$
+\min\Big[\sum_{i=1}^{N}L\big(y_i,f(x_i)\big)+\lambda J(f)\Big] \eqno{5.42}
+$$
+
+$L$ 是损失，$J$ 是惩罚泛函，$\mathcal H$ 是 $J$ 定义其上的函数空间。Girosi 等 (1995) 描述了很一般的频域惩罚：
+
+$$
+J(f)=\int_{\mathbb{R}^d}\frac{|\tilde f(s)|^2}{\tilde G(s)}ds \eqno{5.43}
+$$
+
+$\tilde f$ 是 $f$ 的 Fourier 变换，$\tilde G$ 是某个衰减到零的正函数。思想：$1/\tilde G$ 越大，高频分量的惩罚越重（抑制高频、偏好光滑）。在附加假设下，这些问题的**解是有限维的**：
+
+$$
+f(X)=\sum_{k=1}^{K}\alpha_k\phi_k(X)+\sum_{i=1}^{N}\theta_iG(X-x_i) \eqno{5.44}
+$$
+
+其中 $\phi_k$ 张成 $J$ 的**零空间**（不被惩罚的函数，如低次多项式），$G$ 是 $\tilde G$ 的逆 Fourier 变换。平滑样条与薄板样条都属于此框架。**关键机制（表示定理）**：无穷维问题 (5.42) 的极小元落在有限维子空间里——这就是**核性质**。
+
+> **结果** · (5.44) 的两部分各司其职：第一项是零空间（线性/低次多项式，任意系数 $\alpha_k$ 都不受罚）；第二项是 $N$ 个核中心，每个数据点贡献一个基函数。$N$ 个数据点 → 最多 $N$ 个核基，加上 $K$ 个零空间基。
+
+### 5.5.2 RKHS：核、特征函数与范数 {#s-5-5-2}
+
+问题：什么是再生核希尔伯特空间，它的解为什么是核的线性组合（书中 (5.45)–(5.52)）。
+
+**第一步：核的谱展开 (5.45)。** 设 $x,y\in\mathbb{R}^p$，考虑由「核函数作为第一变量的函数」的线性组合张成的空间，即 $f(x)=\sum_m\alpha_mK(x,y_m)$。假设 $K$ 有谱展开
+
+$$
+K(x,y)=\sum_{i=1}^{\infty}\gamma_i\phi_i(x)\phi_i(y),\qquad \gamma_i\ge0,\quad \sum_i\gamma_i^2<\infty \eqno{5.45}
+$$
+
+$\{\phi_i\}$ 是 $\{\mathbb{R}^p\to\mathbb{R}\}$ 上的正交系。
+
+**第二步：RKHS 的元素与范数 (5.46)(5.47)。** $\mathcal H_K$ 的元素（$\sqrt{\sum\gamma_i^2}<\infty$ 时完备）有展开
+
+$$
+f(x)=\sum_{i=1}^{\infty}c_i\phi_i(x) \eqno{5.46}
+$$
+
+且必须满足**可和性约束**
+
+$$
+\lVert f\rVert^2_{\mathcal H_K}:=\sum_{i=1}^{\infty}\frac{c_i^2}{\gamma_i}<\infty \eqno{5.47}
+$$
+
+$\lVert f\rVert_{\mathcal H_K}$ 是核诱导的范数。注意 $J(f)=\lVert f\rVert^2_{\mathcal H_K}$：$c_i$ 大（$f$ 在大特征值方向上）的分量惩罚**小**，反之惩罚大——是「广义岭惩罚」，与 (5.43) 的 $1/\tilde G$ 同源。
+
+**第三步：$\mathcal H_K$ 上的正则化 (5.48)(5.49)。** 把 (5.42) 的惩罚换成 (5.47)：
+
+$$
+\min\Big[\sum_{i=1}^{N}L\big(y_i,f(x_i)\big)+\lambda\lVert f\rVert^2_{\mathcal H_K}\Big] \eqno{5.48}
+$$
+
+代入 (5.46)(5.47) 得等价的无穷维广义岭问题
+
+$$
+\min\sum_{i=1}^{N}L\Big(y_i,\sum_{j=1}^{\infty}c_j\phi_j(x_i)\Big)+\lambda\sum_{j=1}^{\infty}\frac{c_j^2}{\gamma_j} \eqno{5.49}
+$$
+
+**第四步：解是核的线性组合 (5.50) 与惩罚的二次型 (5.51)。** Wahba (1990) 与习题 5.15 证明：解 (5.48) 有限维，形如
+
+$$
+f(x)=\sum_{i=1}^{N}\alpha_iK(x,x_i) \eqno{5.50}
+$$
+
+$K(x,\cdot)$ 叫 $x$ 在 $\mathcal H_K$ 中的**表示元**（representer），因为对任意 $f\in\mathcal H_K$ 有「再生性质」$\langle K(\cdot,x_i),f\rangle_{\mathcal H_K}=f(x_i)$。由此得惩罚
+
+$$
+J(f)=\sum_{i=1}^{N}\sum_{j=1}^{N}K(x_i,x_j)\alpha_i\alpha_j \eqno{5.51}
+$$
+
+（验证：$\lVert f\rVert^2_{\mathcal H_K}=\sum_i\sum_j\alpha_i\alpha_j\langle K(\cdot,x_i),K(\cdot,x_j)\rangle=\sum_i\sum_j\alpha_i\alpha_jK(x_i,x_j)$，用到再生性质 $\langle K(\cdot,x_i),K(\cdot,x_j)\rangle=K(x_i,x_j)$。）
+
+**第五步：降到有限维 (5.52)。** 记 $K$ 为 $N\times N$ Gram 矩阵（$[K]_{ij}=K(x_i,x_j)$），代入 (5.48)(5.51) 得**有限维二次规划**：
+
+$$
+\min_\alpha\ (y-K\alpha)^\top(y-K\alpha)+\lambda\alpha^\top K\alpha \eqno{5.52}
+$$
+
+普通数值算法即可解。无穷维 (5.48) 降到有限维 (5.52) 这一现象就是 SVM 文献里的**核性质**（第 12 章）。
+
+**第六步：表示定理的严格证明（习题 5.15(d)，即 (5.74) 的证明）。** 关键的唯一性论证：设 $\tilde f=f+\rho$，其中 $\rho\in\mathcal H_K$ 且与每个 $K(\cdot,x_i)$ 正交（$i=1,\dots,N$）。证明「去掉 $\rho$ 不增加代价，且只有 $\rho=0$ 才取等」。对平方损失（$L(y,f)=(y-f)^2$）：$\tilde f$ 在 $x_i$ 处的损失 $(y_i-f(x_i)-\rho(x_i))^2$。因 $\rho(x_i)=\langle\rho,K(\cdot,x_i)\rangle$，且 $f$ 由 $K(\cdot,x_i)$ 的组合而成，故 $\langle\rho,f\rangle_{\mathcal H_K}=0$，$\rho$ 与整个拟合正交。展开并整理（习题 5.15 结论）：
+
+$$
+\sum_{i=1}^{N}L\big(y_i,\tilde f(x_i)\big)+\lambda J(\tilde f)\ \ge\ \sum_{i=1}^{N}L\big(y_i,f(x_i)\big)+\lambda J(f) \eqno{5.74}
+$$
+
+等号当且仅当 $\rho\equiv0$。证明思路：$\lVert\tilde f\rVert^2_{\mathcal H_K}=\lVert f\rVert^2+\lVert\rho\rVert^2$（正交），损失项因 $\rho$ 是「高阶小量」不减（$f$ 是极小元）。严格地说，用 KKT：极小元满足
+
+$$
+\sum_i \nabla_2L\big(y_i,f(x_i)\big)\,K(x_i,\cdot)=-\lambda f
+$$
+
+与 $\rho$ 内积得 $\sum_i\nabla_2L\,\langle\rho,K(x_i,\cdot)\rangle=-\lambda\langle\rho,f\rangle=0$，与 $\rho$ 的正交性一致，故 $\rho$ 方向是一阶平坦方向；而二阶项 $\lVert\rho\rVert^2\lambda>0$ 使之在 $\rho=0$ 取极小。**结论**：极小元必在 $\mathrm{span}\{K(x_i,\cdot)\}$ 这个 $N$ 维子空间里，即 (5.50)。
+
+**贝叶斯解释。** $f$ 是零均值平稳 Gaussian 过程的实现，先验协方差函数为 $K$。谱分解给出一系列正交特征函数与方差 $\gamma_j$；光滑的 $\phi_j$ 先验方差大，粗糙的先验方差小，惩罚 (5.48) 就是先验对联合似然的贡献（对比 (5.43)）。
+
+**未惩罚的分量。** 简单起见前面让 $\mathcal H$ 的所有成员都受罚 (5.48)。一般地有 $\mathcal H=\mathcal H_0\oplus\mathcal H_1$，$\mathcal H_0$ 是零空间（如低次多项式，不受罚），惩罚变为 $J(f)=\lVert P_1f\rVert^2$（$P_1$ 是到 $\mathcal H_1$ 的投影），解形如
+
+$$
+f(x)=\sum_{j=1}^{M}\beta_jh_j(x)+\sum_{i=1}^{N}\alpha_iK(x,x_i)
+$$
+
+（第一项是 $\mathcal H_0$ 展开）。贝叶斯角度：$\mathcal H_0$ 分量的系数有不恰当先验（无穷方差）。
+
+<a class="src" href="../esl/ch05-basis-expansions-and-regularization.html#s-5-8-2">原文 §5.8.2</a>
+
+### 5.5.3 平方误差损失与核岭回归 {#s-5-5-3}
+
+问题：平方损失下 (5.49)/(5.52) 的显式解与特征值（书中 (5.53)–(5.58)）。
+
+平方损失下，(5.48) 特化为惩罚最小二乘，有两种等价刻画：
+
+$$
+\min\sum_{i=1}^{N}\Big(y_i-\sum_{j=1}^{\infty}c_j\phi_j(x_i)\Big)^2+\lambda\sum_{j=1}^{\infty}\frac{c_j^2}{\gamma_j} \eqno{5.53}
+$$
+
+（无穷维广义岭）或
+
+$$
+\min_\alpha\ (y-K\alpha)^\top(y-K\alpha)+\lambda\alpha^\top K\alpha \eqno{5.54}
+$$
+
+（有限维，与 (5.52) 同形）。**解 $\alpha$**：由 (5.54) 的一阶条件 $\nabla_\alpha=-2K^\top(y-K\alpha)+2\lambda K\alpha=0$，$K$ 对称故 $K(y-K\alpha)=\lambda K\alpha$，即 $K y=(K+\lambda I)\alpha$：
+
+$$
+\hat\alpha=(K+\lambda I)^{-1}y \eqno{5.55}
+$$
+
+**解函数 (5.56)(5.57)(5.58)：**
+
+$$
+\hat f(x)=\sum_{j=1}^{N}\hat\alpha_jK(x,x_j) \eqno{5.56}
+$$
+
+$$
+\hat f=K\hat\alpha=K(K+\lambda I)^{-1}y \eqno{5.57}
+$$
+
+$$
+\hat f=(I+\lambda K^{-1})^{-1}y \eqno{5.58}
+$$
+
+（(5.58) 用 $K(K+\lambda I)^{-1}=[(K^{-1})+\lambda I](K^{-1})^{-1}\cdots$，即 $K(K+\lambda I)^{-1}=(K^{-1}+\lambda I)K$，两边乘 $K^{-1}$：$(K+\lambda I)^{-1}K^{-1}=K^{-1}(K^{-1}+\lambda I)^{-1}$，再左乘 $K$、右乘……标准结果。）
+
+**与平滑样条的对照。** (5.57) 就是**克里金（kriging）估计**（空间统计），(5.58) 与平滑样条 (5.17) 结构相同。
+
+**特征值视角（与 §5.2.2 呼应）。** 设 $K=U\Lambda U^\top$，$\Lambda=\mathrm{diag}(\gamma_1,\dots,\gamma_N)$。则 (5.57) 的平滑器矩阵 $H=K(K+\lambda I)^{-1}=U\Lambda(\Lambda+\lambda I)^{-1}U^\top$，特征值 $\frac{\gamma_j}{\gamma_j+\lambda}=\frac{1}{1+\lambda/\gamma_j}$。与 (5.20) 的 $\rho_k=\frac{1}{1+\lambda d_k}$ 比较：$d_k=\frac{1}{\gamma_k}$。所以**核岭的有效自由度 $df=\sum_j\frac{\gamma_j}{\gamma_j+\lambda}$**，与 §5.2.2 的 (5.21) 完全同构（把 $d_k$ 换成 $1/\gamma_k$）。这正是「所有线性平滑器共用一套记账」的体现。
+
+<a class="src" href="../esl/ch05-basis-expansions-and-regularization.html#s-5-8-2">原文 §5.8.2（续）</a>
+
+### 5.5.4 惩罚多项式回归 {#s-5-5-4}
+
+问题：用一个「多项式核」把高维多项式回归变成 $O(N^3)$（书中 (5.59)–(5.63)）。
+
+**第一步：多项式核。** 取 $K(x,y)=(\langle x,y\rangle+1)^d$，$x,y\in\mathbb{R}^p$。它有 $M=\binom{p+d}{d}$ 个特征函数，张成 $\mathbb{R}^p$ 中总次数 $\le d$ 的多项式空间。$p=2,d=2$ 时 $M=6$：
+
+$$
+K(x,y)=1+2x_1y_1+2x_2y_2+x_1^2y_1^2+x_2^2y_2^2+2x_1x_2y_1y_2 \eqno{5.59}
+$$
+
+$$
+=\sum_{m=1}^{M}h_m(x)h_m(y) \eqno{5.60}
+$$
+
+对应基函数向量
+
+$$
+h(x)^\top=(1,\,2x_1,\,2x_2,\,x_1^2,\,x_2^2,\,2x_1x_2) \eqno{5.61}
+$$
+
+（验证 (5.59)=(5.60)：展开 $\sum_mh_m(x)h_m(y)=1+(2x_1)(2y_1)+\cdots$，与 (5.59) 逐项相同。）「$+1$」保证常数项在内；系数 2、$2x_1x_2$ 等来自二项式展开。
+
+**第二步：$h$ 的谱表示 (5.62)。** 把 $h(x)$ 写成 $M$ 个正交特征函数与特征值的组合：
+
+$$
+h(x)=VD_\gamma^{1/2}\phi(x) \eqno{5.62}
+$$
+
+$D_\gamma=\mathrm{diag}(\gamma_1,\dots,\gamma_M)$，$V$ 是 $M\times M$ 正交阵，$\phi(x)$ 是特征函数向量。**验证**：$h(x)^\top h(y)=\phi(x)^\top D_\gamma^{1/2}V^\top V D_\gamma^{1/2}\phi(y)=\phi(x)^\top D_\gamma\phi(y)=\sum_i\gamma_i\phi_i(x)\phi_i(y)=K(x,y)$（用到 (5.59)(5.60) 与 $V^\top V=I$）。
+
+**第三步：惩罚多项式回归 (5.63)。** 要解
+
+$$
+\min\sum_{i=1}^{N}\Big(y_i-\sum_{m=1}^{M}\beta_mh_m(x_i)\Big)^2+\lambda\sum_{m}\beta_m^2 \eqno{5.63}
+$$
+
+把 (5.62) 代入 (5.63)：$\beta_m$ 通过 $V^\top\beta$ 与 $\gamma$ 重参数化，惩罚项 $\lambda\sum\beta_m^2=\lambda\beta^\top V V^\top\beta=\lambda\sum_m\beta_m^2$（$V$ 正交故 $\lVert V^\top\beta\rVert^2=\lVert\beta\rVert^2$），拟合项 $\sum_m\beta_mh_m(x_i)=\phi(x_i)^\top D_\gamma^{1/2}V^\top\beta$。令 $c=D_\gamma^{-1/2}V^\top\beta$（即 $\beta=VD_\gamma^{1/2}c$），则
+
+$$
+\sum_m\beta_mh_m(x_i)=\phi(x_i)^\top D_\gamma c
+$$
+
+（用了 $V^\top V=I$：$\phi(x_i)^\top D_\gamma^{1/2}V^\top\cdot VD_\gamma^{1/2}c=\phi(x_i)^\top D_\gamma c$），而惩罚 $=\lambda c^\top D_\gamma c=\lambda\sum_j\gamma_jc_j^2$。代入得**正是 (5.53)** 的形式——完成「(5.63) 等价于 (5.53)」的推导（习题 5.16(a)）。所以 $M=\binom{p+d}{d}$ 很大时，用核表示只需求 $N$ 次核值、$O(N^3)$。
+
+**第四步：V 与 $D_\gamma$ 怎么算。** 已知核 $K(x,y)=\sum_mh_m(x)h_m(y)$，取 $M$ 个点 $x_m$，令 $H_{im}=h_m(x_i)$（$N\times M$「设计」矩阵），则 $K=HH^\top$。要得 (5.62) 的 $V,D_\gamma$：对 $H$ 做 SVD $H=UDV^\top$（或对 Gram $H^\top H$ 做特征分解），把 $H^\top H$ 的特征值 $\gamma$ 与特征向量 $V$ 读出。具体地，$K=HH^\top=UDV^\top VD U^\top=UD^2U^\top$，故 $D_\gamma=D^2$、特征向量由 $U$ 给出；$V$ 可取 $V$（右奇异向量）。**与 (5.62) 的联系**：把 $H$ 的行看作特征函数在 $M$ 个点上的值，则 $V^\top h(x)$ 是 $h(x)$ 在这个子空间上的坐标，$\phi(x)=D^{-1}V^\top h(x)$ 是特征函数值。
+
+<a class="src" href="../esl/ch05-basis-expansions-and-regularization.html#s-5-8-2">原文 §5.8.2（续）</a>
+
+### 5.5.5 径向核、尺度参数与 SVM 形式的核 {#s-5-5-5}
+
+问题：径向核的隐式特征空间（书中 (5.64)–(5.67)）。
+
+**第一步：Gaussian 径向基 (5.64)。** 核 $K(x,y)=e^{-\nu\lVert x-y\rVert^2}$（平方损失）给出的回归模型是 Gaussian 径向基的展开：
+
+$$
+k_m(x)=e^{-\nu\lVert x-x_m\rVert^2},\qquad m=1,\dots,N \eqno{5.64}
+$$
+
+每个基以一个训练特征向量 $x_m$ 为中心，系数由 (5.54)/(5.55) 估计。图 5.13 画了尺度参数 $\nu=1$ 的若干核。
+
+**第二步：隐式特征空间与它的有效维数 (5.65)。** 在 $\mathbb{R}^1$ 上算 $N\times N$ 核矩阵 $K$ 的谱分解 $\Phi D_\gamma\Phi^\top$。把 $\Phi$ 的第 $\ell$ 列看作 $\hat\phi_\ell$（$\phi_\ell$ 在 $N$ 个观测处的估计）。**特征空间表示**：
+
+$$
+h_\ell(x)=\sqrt{\hat\gamma_\ell}\,\hat\phi_\ell(x),\qquad \ell=1,\dots,N \eqno{5.65}
+$$
+
+验证 $\langle h(x_i),h(x_i')\rangle=K(x_i,x_i')$：$\sum_\ell\hat\gamma_\ell\hat\phi_\ell(x_i)\hat\phi_\ell(x_i')=(\Phi D_\gamma\Phi^\top)_{ii'}=K(x_i,x_i')$，用了谱分解。图 5.14 右图就是这些 $h_\ell$。**注意**：$\sqrt{\hat\gamma_\ell}$ 的缩放**迅速把大多数函数压到近零**，留下约 12 维的有效维数（该例）。对应问题是 (5.63) 型的岭回归。**尺度参数 $\nu$ 的作用**：$\nu$ 越大，$k_m$ 越局部，有效维数越大（图 5.15）。
+
+**第三步：薄板样条也是径向基 (5.66)。** 核
+
+$$
+K(x,y)=\lVert x-y\rVert^2\log\big(\lVert x-y\rVert\big) \eqno{5.66}
+$$
+
+给出薄板样条的展开（§5.4.2 的 $h_j(x)=\lVert x-x_j\rVert^2\log\lVert x-x_j\rVert$）。径向基函数详见第 6 章 §6.7。
+
+**第四步：SVM 分类器也是 RKHS (5.67)。** 第 12 章两类 SVM 的形式
+
+$$
+\min\sum_{i=1}^{N}\big[1-y_if(x_i)\big]_++\lambda\alpha^\top K\alpha,\qquad \sum_{i=1}^{N}\alpha_i=0,\quad\alpha_i\ge0 \eqno{5.67}
+$$
+
+$y_i\in\{-1,1\}$，$[\cdot]_+$ 是正部函数，$f(x)=\sum_{i=1}^{N}\alpha_iK(x,x_i)$。这是带线性约束的二次规划，需 QP 算法。「支持向量」之名来自：损失的分段零结构使许多 $\hat\alpha_i=0$，故 $\hat f$ 只在 $K(\cdot,x_i)$ 的一个子集上展开（见 §12.3.3）。
+
+> **坑** · RKHS 里的 $\gamma_i$ 决定「哪些函数被重罚」。若核的正则性（有限个非零 $\gamma_i$）不满足，(5.47) 的范数可能不是真的范数（$\sum\gamma_i^2<\infty$ 的假设在 (5.45) 里已给出）。另外，所有 $\mathcal H$ 都受罚只是简化；实际有零空间（§5.5.2 末）。
+
+## 5.6 小波平滑与自适应阈值 {#s-5-6}
+
+平滑样条用「完整基 + $L_2$ 收缩」，只做纯收缩；小波用「完整正交基 + $L_1$ 收缩」，同时收缩与选择。对大部分平坦、少数孤立尖峰的信号（图像、NMR）尤其有效，因为它能做到**时间与频率双重局部化**（傅里叶基只有频率局部化）。
+
+<a class="src" href="../esl/ch05-basis-expansions-and-regularization.html#s-5-9">原文 §5.9</a>
+
+### 5.6.1 小波变换与 SURE 收缩 {#s-5-6-1}
+
+问题：小波收缩的目标函数和解是什么（书中 (5.68)(5.69)）。
+
+设 $W$ 是 $N\times N$ 正交小波基矩阵（在 $N$ 个格点上的取值），$y^\star=W^\top y$ 是小波变换（也是全最小二乘系数）。自适应小波拟合用 **SURE 收缩**（Donoho–Johnstone）准则：
+
+$$
+\min\ \lVert y-W\theta\rVert_2^2+2\lambda\lVert\theta\rVert_1 \eqno{5.68}
+$$
+
+（与第 3 章 lasso 准则同形；因子 2 只为与 (5.69) 的软阈值参数对齐。）**因为 $W$ 正交**，$W^\top W=I$，最小二乘部分可完全分解：
+
+$$
+\lVert y-W\theta\rVert^2=\lVert W^\top y-\theta\rVert^2=\sum_{j=1}^{N}\big(y_j^\star-\theta_j\big)^2
+$$
+
+推导：$\lVert y-W\theta\rVert^2=y^\top y-2y^\top W\theta+\theta^\top W^\top W\theta=y^\top W^\top W y-2(W^\top y)^\top\theta+\theta^\top\theta=\lVert W^\top y\rVert^2-2y^{\star\top}\theta+\lVert\theta\rVert^2$（用了 $W^\top W=I$，$\lVert y\rVert^2=\lVert W^\top y\rVert^2$）。于是目标**可分**：$\sum_j[(y_j^\star-\theta_j)^2+2\lambda|\theta_j|]$，逐坐标最小化，收敛到软阈值：
+
+$$
+\hat\theta_j=\mathrm{sign}(y_j^\star)\big[\lvert y_j^\star\rvert-\lambda\big]_+ \eqno{5.69}
+$$
+
+（等价于 §5.2.5 的软阈值 $S$；这正是 lasso 系数解与 lasso 同形的原因。）系数被「拉向零并在零处截断」，拟合函数由逆变换 $\hat f=W\hat\theta$ 给出。
+
+**$\lambda$ 的选择。** 简单取 $\lambda=\sigma\sqrt{2\log N}$。理由：$W$ 是正交变换，白噪声经它仍是白噪声（每个 $y_j^\star$ 独立、均值 0、方差 $\sigma^2$），而 $N$ 个 $\sigma$ 高斯的最大绝对值的期望约 $\sigma\sqrt{2\log N}$，故低于此阈值的系数「很可能是噪声」，被置零。实践中 $\lambda$ 依噪声方差估计（如最高层系数的方差）。
+
+**多分辨分析（简要）。** 令 $V_j$ 由伸缩平移的伸缩（father）函数 $\phi_{j,k}=2^{j/2}\phi(2^jx-k)$ 张成（$V_1\supset V_0$），$W_j$ 是 $V_j$ 在 $V_{j+1}$ 中的正交补（细节 mother wavelet 张成）。Haar：$\phi(x)=I(x\in[0,1])$，$\psi(x)=\phi(2x)-\phi(2x-1)$，两族各自正交，且 $V_{j+1}=V_j\oplus W_j$，最终 $V_J=V_0\oplus W_0\oplus\cdots\oplus W_{J-1}$（$N=2^J$ 时共 $2^J-1$ 个细节函数加 1 个粗糙函数）。symmlet-$p$ 有 $p$ 个消失矩 $\int\psi(x)x^jdx=0$（$j=0,\dots,p-1$），故任意 $p$ 阶多项式在 $V_0$ 中被精确再现——**$V_0$ 相当于平滑样条惩罚的零空间**。
+
+### 5.6.2 与平滑样条的对比 {#s-5-6-2}
+
+小波 (5.68) 与平滑样条 (5.21) 表面上都是「罚 $L_p$ 的最小二乘」，实质差别有四条：
+
+| | 平滑样条 (5.21) | 小波 SURE (5.68) |
+|---|---|---|
+| 基的正交性 | 不正交（结点的存在使 $S_\lambda$ 只是带状） | 正交（$W^\top W=I$，故 (5.69) 有闭式解） |
+| 惩罚 | $L_2$：纯**收缩** | $L_1$：**收缩兼选择**（系数被截断到 0） |
+| 分层的收缩常数 | 固定的 $d_k$，对所有 $k$ 一视同仁 | 按层（尺度）不同，细节层收得更狠 |
+| 局部性 | 局部（$S_\lambda$ 近似带状） | 时间与频率**双重局部**（每个基函数有自己的位置和带宽） |
+
+两条路线都在做「把原信号压缩到更少的非零表示」：平滑样条压缩的是**光滑性**（把高频压没，得到平滑曲线），小波压缩的是**稀疏性**（把不重要处的系数置零，得到局部 bump 定位）。图 5.19 用一个 NMR 信号和一个光滑真函数对比两者：前者小波能把孤立尖峰定位得很好（平滑样条为了拟合尖峰在**所有**地方都加了细节），后者真函数光滑、噪声大，小波会引入多余的 wiggle——这是自适应性的方差代价。
+
+**为什么 Haar 小波变换是 $O(N)$。** (5.68) 的代价瓶颈本来是矩阵乘法 $O(N^2)$，但 $W$ 有稀疏的金字塔结构：第 $j$ 层只有 $2^j$ 个基函数且每个非零区间长度为 $2^{-j}$，$\sum_j2^j\cdot2^{-j}=J$。把信号逐层做「两点平均 + 两点差」（即 Haar 变换的蝶形），每层 $O(N/2^j)$ 步、共 $J$ 层，总共 $O(N)$，比 FFT 的 $O(N\log N)$ 还快（习题 5.19）。逆变换 $W\hat\theta$ 同样 $O(N)$。symmlet 情形结构相同。
+
+> **结果** · 平滑样条与小波的两个本质区别：小波**按层做差分收缩**（每层常数不同，且在时间上局部），平滑样条用固定 $d_k$ 收缩；小波 $L_1$ 惩罚**收缩兼选择**，平滑样条 $L_2$ 惩罚只收缩。
+
+> **坑** · (5.69) 的闭式软阈值**依赖 $W$ 正交**。若换成非正交基（如样条基），$\min\lVert y-W\theta\rVert^2+2\lambda\lVert\theta\rVert_1$ 就退化成 §5.2.4 的 lasso，没有闭式解，只能用坐标下降或 LARS。这是「正交性买来闭式解」的典型例子。
+
+## 5.7 习题中的关键推导 {#s-5-7}
+
+习题 5.4、5.7、5.13、5.15 的解在本手册正文中已分头给出，这里把它们的编号公式集中列出，便于对照核对。
+
+### 5.7.1 习题 5.4：自然边界条件给出线性约束 {#s-5-7-1}
+
+设三次样条写成截断幂形式 (5.70)，自然边界条件（$f$ 在边界外线性）给出 (5.71) 的四个线性约束：
+
+$$
+\begin{cases}
+\beta_2=0,\quad \displaystyle\sum_{k=1}^{K}\theta_k=0\\[4pt]
+\beta_3=0,\quad \displaystyle\sum_{k=1}^{K}\xi_k\theta_k=0
+\end{cases}
+$$
+
+完整推导见 §5.1.4 第一步：由左右两端区间上 $X^2$、$X^3$ 的系数必须为 0 直接读出。**验证**：代入后 $f''(\xi_K)=6\sum_k\theta_k(\xi_K-\xi_k)=6(\xi_K\cdot0-0)=0$，自然条件成立；$4+K$ 个系数减 4 个约束得 $K$ 维，恰为 (5.4) 的基函数个数。
+
+### 5.7.2 习题 5.7：为什么平滑样条解是自然样条 {#s-5-7-2}
+
+设 $g$ 是插值自然样条、$\tilde g$ 是任意二阶可微插值，$h=\tilde g-g$。分部积分两次（$g$ 三次分段、$g''$ 在结点连续）：
+
+$$
+\int_a^b g''(x)h''(x)\,dx=-\sum_{j=1}^{N-1}g'''\big(x_j^+\big)\{h(x_{j+1})-h(x_j)\}=0
+$$
+
+（跨段求和时 $[g''h']$ 的内部项两两相消；$h(x_j)=0$ 使最后一项为 0。）因此
+
+$$
+\int_a^b\tilde g''^2\,dt=\int_a^b g''^2\,dt+\int_a^b h''^2\,dt\ \ge\ \int_a^b g''^2\,dt
+$$
+
+等号仅当 $h\equiv0$。**结论**：$g$ 是所有插值中曲率最小者。把它用到 (5.9) 的极小元 $\hat f$（$h=g-\hat f$ 同样在结点取零）即得 $\hat f=g$。见 §5.2.1 第一步。
+
+### 5.7.3 习题 5.13：LOOCV 公式的增广解释 {#s-5-7-3}
+
+**练习内容**：把样本增广一对 $(x_0,\hat f_\lambda(x_0))$ 再拟合，描述结果；用它导出 (5.26)。
+
+**答案**：把一个数据点加到样本里且它被精确拟合，等价于给该点**无穷权重**。对线性平滑器 $\hat f=S_\lambda y$，权重无穷大时拟合值的更新是一次**秩 1 修正**：增广点 $(x_i,y_i)$ 的残差从 $e_i$ 压到 0，其它点残差按 $S_\lambda(i,j)$ 的比例微调。删除点 $i$ 与「给点 $i$ 无穷权重」在「$x_i$ 处的留一预测」上给出**同一极限**，两者的差别只是记号。这个极限用 Sherman–Morrison 对 $S_\lambda$ 做一次更新即得
+
+$$
+\hat f_\lambda^{(-i)}(x_i)=\hat f_\lambda(x_i)-\frac{e_i}{1-S_\lambda(i,i)}
+$$
+
+代入 (5.26) 得 (5.27)。见 §5.2.6 第三、四步。
+
+### 5.7.4 习题 5.15：核的再生性质与唯一性 {#s-5-7-4}
+
+设核满足 (5.45)，$f(x)=\sum_kc_k\phi_k(x)\in\mathcal H_K$。
+
+**(a)** $\langle K(\cdot,x_i),f\rangle_{\mathcal H_K}=f(x_i)$：$\langle K(\cdot,x_i),\sum_kc_k\phi_k\rangle=\sum_kc_k\langle K(\cdot,x_i),\phi_k\rangle_{\mathcal H_K}$，而 $K(\cdot,x_i)=\sum_k\sqrt{\gamma_k}\phi_k(x_i)\phi_k(\cdot)$，故 $\langle K(\cdot,x_i),\phi_k\rangle=\sqrt{\gamma_k}\phi_k(x_i)\sqrt{\gamma_k}/\gamma_k=\phi_k(x_i)$（内积定义 $\langle\sum a_k\phi_k,\sum b_k\phi_k\rangle=\sum a_kb_k/\gamma_k$）。求和得 $f(x_i)$。
+
+**(b)** $\langle K(\cdot,x_i),K(\cdot,x_j)\rangle=\sum_k\sqrt{\gamma_k}\phi_k(x_i)\sqrt{\gamma_k}\phi_k(x_j)/\gamma_k=\sum_k\gamma_k\phi_k(x_i)\phi_k(x_j)=K(x_i,x_j)$，用 (5.45)。
+
+**(c)** 若 $g(x)=\sum_{i=1}^{N}\alpha_iK(x,x_i)$，则 $J(g)=\sum_i\sum_j\alpha_i\alpha_j\langle K(\cdot,x_i),K(\cdot,x_j)\rangle=\sum_i\sum_jK(x_i,x_j)\alpha_i\alpha_j$，用 (b)。这正是 (5.51)。
+
+**(d)** 若 $\tilde g=g+\rho$，$\rho$ 与每个 $K(x_i,\cdot)$ 正交，则 (5.74) 成立、等号仅当 $\rho=0$。证明见 §5.5.2 第六步（KKT + 正交性 + 二阶项 $\lambda\lVert\rho\rVert^2>0$）。这一步同时证明了 (5.50)——**极小元必落在 $N$ 维核张成空间内**。
+
+### 5.7.5 习题 5.16：PCR 与核表示的等价 {#s-5-7-5}
+
+设 $H$ 是 $N\times M$ 的 $h_m(x_i)$ 求值矩阵，$K=HH^\top$（$N\times N$ 内积矩阵），$M\ge N$。
+
+**(b)** 证明 $\hat f=H\hat\beta=K(K+\lambda I)^{-1}y$，即
+
+$$
+\hat f=H\hat\beta=K(K+\lambda I)^{-1}y \eqno{5.75}
+$$
+
+由 (5.63) 的一阶条件 $(H^\top H+\lambda I)\hat\beta=H^\top y$，故 $\hat f=H\hat\beta=H(H^\top H+\lambda I)^{-1}H^\top y$。对 $H$ 做 SVD $H=UDV^\top$（$U$ 为 $N\times M$ 列正交，$D$ 为 $M\times M$）：$K=HH^\top=UD^2U^\top$，于是
+
+$$
+K(K+\lambda I_N)^{-1}=UD^2U^\top\,U(D^2+\lambda I_M)^{-1}U^\top=UD^2(D^2+\lambda I)^{-1}U^\top
+$$
+
+另一方面 $H(H^\top H+\lambda I_M)^{-1}H^\top=UDV^\top\,V(D^2+\lambda I)^{-1}V^\top\,VDU^\top=UD^2(D^2+\lambda I)^{-1}U^\top$。两式相同，得 (5.75)。
+
+**(c)** 证明
+
+$$
+\hat f(x)=h(x)^\top\hat\beta=\sum_{i=1}^{N}K(x,x_i)\hat\alpha_i,\qquad \hat\alpha=(K+\lambda I)^{-1}y \eqno{5.76}
+$$
+
+由 (b) $\hat f=HH^\top(K+\lambda I)^{-1}y=K\hat\alpha$（用到 $\hat f_i=\sum_m\beta_mh_m(x_i)=(H\beta)_i$），即 $\hat\alpha=(K+\lambda I)^{-1}y$（$K$ 可逆当 $M\ge N$ 且满秩）；且 $K(x,x_i)=h(x)^\top h(x_i)=\langle h(x),h(x_i)\rangle$，故 $\sum_i\alpha_iK(x,x_i)=h(x)^\top\sum_i\alpha_ih(x_i)=h(x)^\top\hat\beta$。
+
+**(d)** 若 $M<N$，则 $K=HH^\top$ 奇异，但主解 $\hat\beta=(H^\top H+\lambda I_M)^{-1}H^\top y$ 仍可解（$H^\top H$ 半正定，$+\lambda I$ 后可逆）；$\hat\alpha=(K+\lambda I_N)^{-1}y$ 也仍成立（$+\lambda I$ 后 $K$ 可逆），只是 $\hat\alpha$ 不唯一（在 $\mathrm{col}(H)^\perp$ 上任意）——**只有 $\hat f$ 唯一**。
+
+> **坑** · (d) 的情形很重要：$p\gg N$（$M\gg N$）正是高维场景，此时核表示 $K$ 只有 $N\times N$，而原始基 $H$ 是 $N\times M$。两者给出**同一 $\hat f$**，但最小范数意义下 $\hat\alpha$ 与 $\hat\beta$ 不同。这与第 3 章 (3.6) 在秩亏时「$\hat\beta$ 不唯一、$\hat f$ 唯一」是同一个现象。
+
+<a class="src" href="../esl/ch05-basis-expansions-and-regularization.html#s-5">原文附录</a>
+
+## 5.8 附录：B 样条与平滑样条的计算 {#s-5-8}
+
+这一节给出 B 样条基的递推（书中 (5.77)(5.78)）与用它做平滑样条计算的 (5.79)，并解释为什么后者把复杂度从 $O(N^3)$ 降到 $O(N)$。
+
+<a class="src" href="../esl/ch05-basis-expansions-and-regularization.html#s-5">原文附录</a>
+
+### 5.8.1 B 样条基的递推 {#s-5-8-1}
+
+**问题：结点序列的增广。** 原始结点 $\xi_1,\dots,\xi_K$ 不足以支撑高阶 B 样条，需增广为 $\tau$ 序列：
+
+- $\tau_1\le\tau_2\le\dots\le\tau_M\le\xi_0$；
+- $\tau_{j+M}=\xi_j$，$j=1,\dots,K$；
+- $\xi_{K+1}\le\tau_{K+M+1}\le\dots\le\tau_{K+2M}$。
+
+边界外重复的结点的具体取值任意，通常都取 $\xi_0$（左）与 $\xi_{K+1}$（右）。
+
+**第 $m$ 阶 B 样条 $B_{i,m}$ 的递推。** 底（$m=1$）是 Haar 指示函数：
+
+$$
+B_{i,1}(x)=\begin{cases}1&\tau_i\le x<\tau_{i+1}\\ 0&\text{其他}\end{cases} \eqno{5.77}
+$$
+
+$i=1,\dots,K+2M-1$。高阶由低阶递推：
+
+$$
+B_{i,m}(x)=\frac{x-\tau_i}{\tau_{i+m-1}-\tau_i}\,B_{i,m-1}(x)+\frac{\tau_{i+m}-x}{\tau_{i+m}-\tau_{i+1}}\,B_{i+1,m-1}(x) \eqno{5.78}
+$$
+
+$i=1,\dots,K+2M-m$。$M=4$ 时 $B_{i,4}$（$i=1,\dots,K+4$）就是结点为 $\xi$ 的 $K+4$ 个三次 B 样条基。若有重复结点，按约定 $B_{i,1}=0$（当 $\tau_i=\tau_{i+1}$），归纳得 $B_{i,m}=0$（当 $\tau_i=\tau_{i+1}=\dots=\tau_{i+m}$），避免除零。
+
+**局部支撑与正性（习题 5.2(a)(b)，归纳证明）。** 递推 (5.78) 的第一项里 $B_{i,m-1}$ 的支撑在 $[\tau_i,\tau_{i+m-1}]$、系数 $\frac{x-\tau_i}{\tau_{i+m-1}-\tau_i}\in[0,1]$ 在该区间内；第二项里 $B_{i+1,m-1}$ 的支撑在 $[\tau_{i+1},\tau_{i+m}]$、系数 $\frac{\tau_{i+m}-x}{\tau_{i+m}-\tau_{i+1}}\in[0,1]$。故 $B_{i,m}$ 的支撑 $\subseteq[\tau_i,\tau_{i+m}]$，且在 $(\tau_i,\tau_{i+m})$ 内两项都正，故 $B_{i,m}>0$。三次 B 样条的支撑至多跨 5 个结点。
+
+**单位分解（习题 5.2(c)）。** 对任意 $x$ 在 $[\xi_0,\xi_{K+1}]$，把 (5.78) 对 $i$ 求和，利用相邻项的分裂（telescoping）：$\sum_{i=1}^{K+M+1}B_{i,M+1}(x)=1$。用归纳：$m=1$ 时 $B_{i,1}$ 是 $\tau$ 的相邻区间指示，和为 1（除端点恰为 0）；每步递推保持「和为 1」（因为系数是仿射分割：$\frac{x-\tau_i}{\tau_{i+m-1}-\tau_i}+\frac{\tau_{i+m}-x}{\tau_{i+m}-\tau_{i+1}}$ 在共享端点处衔接为 1）。这说明 B 样条基是**归一**的。
+
+**与截断幂基的关系。** $B_{i,M}$ 是 $M$ 个均匀分布随机变量的卷积密度（习题 5.2(e)）：$B_{i,1}$ 是 $\mathrm{Unif}[\tau_i,\tau_{i+1}]$ 的密度，递推 (5.78) 恰是「插值型条件卷积」，逐次卷积保持 $B_{i,m}$ 是 $m$ 个均匀卷积。这给 B 样条「局部、归一、非负」三个性质一个概率解释。
+
+### 5.8.2 用 B 样条算平滑样条 {#s-5-8-2}
+
+**问题：为什么可以在更大的 B 样条空间里解。** 自然样条（第 1 阶 4 阶 B 样条张成的 $N$ 维空间）数值上更省，但计算上更方便在**无约束的三次 B 样条空间**（$N+4$ 维）里解。写
+
+$$
+f(x)=\sum_{j=1}^{N+4}\gamma_j B_j(x)
+$$
+
+$B_j$ 是三次 B 样条基函数，$\gamma_j$ 是系数。惩罚最小二乘的解形如 (5.79)：
+
+$$
+\hat\gamma=(B^\top B+\lambda\Omega_B)^{-1}B^\top y \eqno{5.79}
+$$
+
+现在 $N\times N$ 的自然样条基矩阵 $N$ 被 $N\times(N+4)$ 的 $B$ 矩阵代替，$(N+4)\times(N+4)$ 的 $\Omega_B$ 代替 $N\times N$ 的 $\Omega_N$。
+
+**为什么惩罚项自动施加边界条件。** 虽然表面上没有边界导数约束，但惩罚项 $\int\{f''\}^2$ 对任何在边界外二阶导不为零的 $f$ 都是无穷大（$B$ 样条在边界外的外推是多项式，二阶导一般非零）。所以最优 $\hat\gamma$ 自动落在「惩罚有限」的线性子空间里，**等价于自然边界约束**。实践中只需把 $\hat\gamma$ 限制在惩罚恒有限的子空间。
+
+**复杂度 $O(N)$（关键计算结论）。** 把观测 $x_i$ 排序，则 $B$ 的列（从左到右的 B 样条求值）因三次 B 样条的**局部支撑**（非零只在跨 $M+1$ 个结点的区间上）而下 $4$ 带状（lower-banded）。于是 $M_0=(B^\top B+\lambda\Omega)$ 是 $4$ 带状矩阵，其 Cholesky 分解 $M_0=LL^\top$ 可在 $O(N)$ 算出（每步只涉及固定的几个近邻）。再回代 $LL^\top\gamma=B^\top y$ 解出 $\gamma$，同样 $O(N)$。
+
+> **数值** · 一般最小二乘（$N$ 观测、$K+M$ 变量）需 $O(N(K+M)^2+(K+M)^3)$ 次浮点运算；若 $K$ 是 $N$ 的可观比例，就是 $O(N^3)$，$N$ 大时不可接受。B 样条的**局部支撑**把回归矩阵变稀疏，把复杂度拉回 $O(N)$（排序后）。这就是平滑样条在大样本上可行的原因。
+
+> **数值** · 实践中的结点删减：$N$ 大时没必要用全部 $N$ 个内部结点，任何合理的抽稀策略都能省下大量计算且几乎不改变拟合。例如 S-PLUS 的 `smooth.spline` 用近似对数策略：$N<50$ 用全部结点，即使 $N=5000$ 也只用 204 个结点。
+
+> **坑** · (5.79) 的 $B^\top B+\lambda\Omega_B$ 里 $B^\top B$ 虽然带状，但**$\Omega_B$ 未必带状**——它由 $B_j''B_k''$ 累加而成，通常也是带状的（$B_j''$ 的支撑跨更少的结点），实践中通过 Cholesky 的带状实现整体做到 $O(N)$。不要用通用稠密线性代数库，否则会退化成 $O(N^3)$。
+
+<a class="src" href="../esl/ch05-basis-expansions-and-regularization.html#s-5">原文第 5 章</a>

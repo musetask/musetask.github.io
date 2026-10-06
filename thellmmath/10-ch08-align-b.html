@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>第 8 章 · 人类对齐（2/3） · 《Large Language Models》公式推导手册</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23a11f27'/%3E%3Ctext x='16' y='23' font-size='20' font-family='Georgia,serif' fill='%23fff' text-anchor='middle'%3E%E2%88%91%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="style.css">
+<script>(function(){try{var t=localStorage.getItem('thellmmath-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn idxbtn" href="index.html" aria-label="目录"><span aria-hidden="true">&#9776;</span> <span class="lbl">目录</span></a>
+  <a class="brand" href="index.html">《Large Language Models》公式推导手册</a>
+  <button class="btn" id="themeToggle" aria-label="切换深色模式">&#9788;</button>
+</header>
+<main id="main">
+<article>
+<h1><span class="chno">Chapter 8 · 2/3</span>第 8 章 · 人类对齐（2/3）</h1>
+<p class="lead">这一页是 RLHF 的"数学心脏"：前 5 条公式（8.17–8.21）把 PPO 的目标函数从最基本的<strong>策略梯度恒等式</strong>一步步搭出来——先用<strong>重要性采样</strong>（importance sampling）把目标从"当前策略的期望"改写成"旧策略样本的加权平均"，再用<strong>裁剪</strong>（clipping）限制单步更新幅度，或用 <strong>KL 散度</strong>作惩罚项软性约束；8.22 是 LLaMA-2 的排序损失；最后 8.23–8.32 是 DPO（Direct Preference Optimization）的核心推导链——把"带 KL 约束的奖励最大化"逐行化简成一个"把策略拉向指数化奖励分布"的闭式解。</p>
+<p class="where"><b>原书位置</b>第 8 章 8.2.4 节 <a href="../thellm/15-8-human-alignment.html#8-2-4-reinforcement-learning-for-alignment">Reinforcement Learning for Alignment</a>、8.2.5 节 <a href="../thellm/15-8-human-alignment.html#8-2-5-representative-work-on-rlhf">Representative Work on RLHF</a>、8.3.1 节 <a href="../thellm/15-8-human-alignment.html#8-3-1-representative-supervised-alignment-meth">Representative Supervised Alignment Method: DPO</a></p>
+
+<h2 id="toc-b">本页公式一览</h2>
+<table class="sym">
+<tr><th>编号</th><th>一句话</th><th>核心数学工具</th></tr>
+<tr><td><a href="#eq-8-17">8.17</a></td><td>重要性采样：把 \(q\) 下的期望写成 \(p\) 下的期望</td><td>积分改写 + 期望定义</td></tr>
+<tr><td><a href="#eq-8-18">8.18</a></td><td>优势函数的换分布估计（乘上概率比）</td><td>重要性采样 + 无偏估计</td></tr>
+<tr><td><a href="#eq-8-19">8.19</a></td><td>PPO 目标：\(\mathbb{E}[\rho_t\hat A_t]\) 与概率比 \(\rho_t(\theta)\)</td><td>策略梯度定理（score function）</td></tr>
+<tr><td><a href="#eq-8-20">8.20</a></td><td>PPO-Clip 目标：\(\min(\rho_t\hat A_t,\ \mathrm{clip}\cdot\hat A_t)\)</td><td>分段函数 + 不可导点处理</td></tr>
+<tr><td><a href="#eq-8-21">8.21</a></td><td>KL 惩罚目标：\(-\beta\,\mathrm{KL}[\pi_{\theta_{old}},\pi_\theta]\)</td><td>相对熵 = 交叉熵 − 熵</td></tr>
+<tr><td><a href="#eq-8-22">8.22</a></td><td>LLaMA-2 排序损失：带 margin 的成对偏好似然</td><td>逻辑回归 / Bradley–Terry + 极大似然</td></tr>
+<tr><td><a href="#eq-8-23">8.23</a></td><td>RLHF 目标：奖励期望 − β·KL 惩罚</td><td>条件风险 + 正则化</td></tr>
+<tr><td><a href="#eq-8-24">8.24</a></td><td>把 KL 展开成对数概率比</td><td>\(\mathrm{KL}(p\|q)=H(p,q)-H(p)\)</td></tr>
+<tr><td><a href="#eq-8-25">8.25</a></td><td>目标反号：\(\max\to\min\)，奖励前出现 \(1/\beta\)</td><td>乘负数翻转极值类型</td></tr>
+<tr><td><a href="#eq-8-26">8.26</a></td><td>把 \(\log\) 拆成"分子/分母 + 常数"</td><td>对数运算法则 + 人为引入配分函数</td></tr>
+<tr><td><a href="#eq-8-27">8.27</a></td><td>配分函数 \(Z(x)\)</td><td>归一化常数 / 玻尔兹曼分布</td></tr>
+<tr><td><a href="#eq-8-28">8.28</a></td><td>最优策略闭式解 \(\pi^*(y\mid x)\)</td><td>拉格朗日乘子法（一阶条件）</td></tr>
+<tr><td><a href="#eq-8-29">8.29</a></td><td>把 \(\pi^*\) 代回目标</td><td>代入化简</td></tr>
+<tr><td><a href="#eq-8-30">8.30</a></td><td>分母换成 \(\pi^*\)，常数项分离</td><td>代数整理</td></tr>
+<tr><td><a href="#eq-8-31">8.31</a></td><td>把 \(y\) 的期望提到括号外</td><td>期望的线性性</td></tr>
+<tr><td><a href="#eq-8-32">8.32</a></td><td>期望变成 \(\mathrm{KL}[\pi_\theta,\pi^*]\)</td><td>期望形式的 KL 恒等式</td></tr>
+</table>
+
+<h2 id="sym-b">本页符号约定</h2>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>说明</th></tr>
+<tr><td>\(s_t,\;a_t,\;r_t\)</td><td>第 \(t\) 步的状态、动作、即时奖励</td><td>RLHF 里：\(s_t\)=已生成的前缀，\(a_t\)=下一个 token，\(r_t\)=奖励模型的打分</td></tr>
+<tr><td>\(\pi_\theta(a\mid s)\)</td><td>策略模型（policy model）</td><td>\(\mathbb{R}\to[0,1]\)，归一化概率分布</td></tr>
+<tr><td>\(\pi_{\theta_{old}}\)</td><td>参考模型 / 冻结的旧策略</td><td>与 \(\pi_\theta\) 同结构，参数在采样期间不动</td></tr>
+<tr><td>\(\rho_t(\theta)\)</td><td>概率比（importance ratio）</td><td>\(\dfrac{\pi_\theta(a_t\mid s_t)}{\pi_{\theta_{old}}(a_t\mid s_t)}&gt;0\)，\(\rho_t=1\) 表示两模型此刻相同</td></tr>
+<tr><td>\(Q(s_t,a_t)\)</td><td>动作价值</td><td>选这个动作的期望累计奖励，实践中由奖励模型给出</td></tr>
+<tr><td>\(V(s_t)\)</td><td>状态价值</td><td>\(\mathbb{E}[G\mid s_t]\)，由 critic 模型预测</td></tr>
+<tr><td>\(\hat A_t\)</td><td>优势估计（advantage estimate）</td><td>\(\hat A_t=Q(s_t,a_t)-V(s_t)\)，标量，可正可负</td></tr>
+<tr><td>\(\epsilon\)</td><td>裁剪半径</td><td>典型 0.2（PGO/PPO 论文里也是经验值）</td></tr>
+<tr><td>\(\beta\)</td><td>KL 惩罚权重 / 逆温度</td><td>典型 0.1；\(\beta\) 越小越"自由"</td></tr>
+<tr><td>\(x,\;y\)</td><td>提示（prompt）与完整回复（response）</td><td>\(y=y_1,\dots,y_T\) 为 token 序列</td></tr>
+<tr><td>\(\mathcal{D}\)</td><td>偏好数据集</td><td>元素为 \((x,y^+,y^-)\)</td></tr>
+<tr><td>\(Z(x)\)</td><td>配分函数</td><td>只依赖 \(x\) 与参考模型，与待训的 \(\pi_\theta\) 无关</td></tr>
+<tr><td>\(m(y^+,y^-)\)</td><td>排序 margin</td><td>LLaMA-2 引入的"对齐差距"离散函数</td></tr>
+</table>
+<div class="note">
+<b>记号提醒</b>
+本节中 <span>\(\hat{\ }\)</span> 一律表示<strong>估计量</strong>（由采样数据或另一个网络算出），不带 hat 的 \(V,Q,\pi\) 表示理论上的真实量。另外原书 (8.21) 的 KL 写作 \(\mathrm{KL}[\pi_{\theta_{old}},\pi_\theta]\)（第一个参数是"采样分布"），而 (8.23) 之后写作 \(\mathrm{KL}[\pi_\theta,\pi_{\theta_{old}}]\)。KL <strong>不对称</strong>，两种方向都能用、都能起约束作用，但含义不同，读书时不要以为是笔误。
+</div>
+
+<!-- ============================== 8.17 ============================== -->
+<section class="fml" id="eq-8-17">
+<h2><span class="num">(8.17)</span>重要性采样：把目标分布的期望搬到采样分布下<a class="anchor" href="#eq-8-17">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.2.4 节 Reinforcement Learning for Alignment　<a href="../thellm/15-8-human-alignment.html#8-2-4-reinforcement-learning-for-alignment">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0188.png" alt="原书公式 8.17"><span class="cap">原书公式 8.17</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[
+\mathbb{E}_{x\sim q}\big[f(x)\big]
+=\int p(x)\cdot\Big[\frac{q(x)}{p(x)}\cdot f(x)\Big]\,\mathrm{d}x
+=\mathbb{E}_{x\sim p}\Big[\frac{q(x)}{p(x)}\cdot f(x)\Big],
+\]
+</div>
+<p>连同前面两步，完整链条是</p>
+<div class="eq">
+\[
+\mathbb{E}_{x\sim q}[f(x)]=\int q(x)f(x)\,\mathrm{d}x
+=\int p(x)\cdot\frac{q(x)}{p(x)}f(x)\,\mathrm{d}x
+=\mathbb{E}_{x\sim p}\Big[\tfrac{q(x)}{p(x)}f(x)\Big].
+\]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(p(x)\)</td><td>采样分布（proposal distribution），实际能采样的那个</td><td>\(\ge 0\)，\(\int p=1\)</td></tr>
+<tr><td>\(q(x)\)</td><td>目标分布（target distribution），我们真正想算期望的那个</td><td>\(\ge 0\)，\(\int q=1\)</td></tr>
+<tr><td>\(f(x)\)</td><td>被取期望的函数</td><td>任意可积函数，标量值</td></tr>
+<tr><td>\(\frac{q(x)}{p(x)}\)</td><td>重要性权重（importance weight）</td><td>无量纲，\(\ge 0\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>第一步：把期望写成积分。</strong>离散型变量的期望定义是 \(\mathbb{E}_{x\sim q}[f(x)]=\sum_x q(x)f(x)\)，连续型就是把求和换成积分：\(\mathbb{E}_{x\sim q}[f(x)]=\int q(x)f(x)\,\mathrm{d}x\)。这一步不需要任何假设。</li>
+<li><strong>第二步：乘一除一。</strong>引入一个"哑变量" \(p(x)\)：把 \(q(x)\) 写成 \(p(x)\cdot\frac{q(x)}{p(x)}\)。当 \(p(x)&gt;0\) 时这是合法代数运算；当 \(p(x)=0\) 时该点对 \(q\) 的贡献也必须为 0，否则权重发散——这就是<strong>支撑集条件</strong>：\(q(x)&gt;0\Rightarrow p(x)&gt;0\)。</li>
+<li><strong>第三步：识别期望。</strong>\(\int p(x)\big[\frac{q(x)}{p(x)}f(x)\big]\mathrm{d}x\) 的形式恰是"以 \(p\) 为分布、以 \(\frac{q}{p}f\) 为被积函数"的期望定义，于是得到右边。整个过程<strong>没有任何近似</strong>，只是换了一个积分的"包装"。</li>
+<li><strong>第四步：变成估计量。</strong>现在从 \(p\) 采 \(N\) 个样本 \(x_1,\dots,x_N\)，用样本均值估计右侧期望：
+\[\widehat{\mathbb{E}}_{x\sim q}[f(x)]=\frac{1}{N}\sum_{n=1}^{N}\frac{q(x_n)}{p(x_n)}f(x_n).\]
+大数定律保证 \(N\to\infty\) 时它收敛到 \(\mathbb{E}_{x\sim q}[f]\)——<strong>无偏，但方差可能爆炸</strong>。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+把"在 \(q\) 下抽到好结果的概率"翻译成"在随便什么分布 \(p\) 下抽到好结果，再乘一个折扣系数 \(\frac{q}{p}\)"。如果 \(p\) 在 \(q\) 忽略的地方浪费了大量样本（比如 \(q\) 认为某区域概率 0.001，\(p\) 却给了 0.5），这些样本的权重只有 0.002，等于白采——这就是所谓 importance weight 的"效率损失"。</div>
+<div class="warn"><b>易错点：期望一致 ≠ 方差一致</b>
+恒等式保证 \(\mathbb{E}_{p}[\frac{q}{p}f]=\mathbb{E}_{q}[f]\)（一阶矩相同），但完全不保证 \(\mathrm{Var}_{p}[\frac{q}{p}f]\approx\mathrm{Var}_{q}[f]\)。当 \(p\) 与 \(q\) 相差较远时，重要性权重的二阶矩可以任意大，估计量方差随之爆炸。这就是下一小节 PPO 要做裁剪的根本动机。</div>
+<div class="relnav">相关：<a href="#eq-8-18">(8.18) 把它用在优势函数上</a></div>
+</section>
+
+<!-- ============================== 8.18 ============================== -->
+<section class="fml" id="eq-8-18">
+<h2><span class="num">(8.18)</span>优势函数的重要性采样形式<a class="anchor" href="#eq-8-18">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.2.4 节 Reinforcement Learning for Alignment　<a href="../thellm/15-8-human-alignment.html#8-2-4-reinforcement-learning-for-alignment">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0190.png" alt="原书公式 8.18"><span class="cap">原书公式 8.18</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[
+\mathbb{E}_{a_t\sim\pi_\theta}\big[\hat A_t\big]
+=\mathbb{E}_{a_t\sim\pi_{\theta_{old}}}
+\Big[\frac{\pi_\theta(a_t\mid s_t)}{\pi_{\theta_{old}}(a_t\mid s_t)}\cdot\hat A_t\Big].
+\]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(a_t,s_t\)</td><td>第 \(t\) 步的动作与状态</td><td>动作空间元素，LLM 里就是一个 token</td></tr>
+<tr><td>\(\pi_\theta(a_t\mid s_t)\)</td><td>当前策略在该状态给出该动作的概率</td><td>标量，\((0,1]\)</td></tr>
+<tr><td>\(\pi_{\theta_{old}}(a_t\mid s_t)\)</td><td>采样所用的旧策略的同一概率</td><td>标量，\((0,1]\)</td></tr>
+<tr><td>\(\hat A_t\)</td><td>第 \(t\) 步的优势估计</td><td>标量，与奖励同量纲</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>套用 (8.17)。</strong>令 (8.17) 中的 \(x\to a_t\)、\(q\to\pi_\theta\)、\(p\to\pi_{\theta_{old}}\)、\(f\to\hat A_t\)，得
+\[\mathbb{E}_{a_t\sim\pi_\theta}[\hat A_t]=\mathbb{E}_{a_t\sim\pi_{\theta_{old}}}\Big[\tfrac{\pi_\theta(a_t\mid s_t)}{\pi_{\theta_{old}}(a_t\mid s_t)}\hat A_t\Big].\]
+这一步之所以成立，是因为 \(\pi_\theta\) 虽作为"目标分布"出现在期望里，但它<strong>只是 \(\theta\) 的函数，\(a_t\) 上仍然是一个合法的概率分布</strong>（非负、归一化），而 \(\pi_{\theta_{old}}\) 的参数是冻结的，其支撑集覆盖了 \(\pi_\theta\) 的支撑集。</li>
+<li><strong>为什么需要这一步。</strong>RLHF 的瓶颈是：奖励模型（以及 critic）给出 \(\hat A_t\) 的代价很高，但<strong>采样</strong>轨迹更贵。在 PPO 里，采样用的参考模型 \(\pi_{\theta_{old}}\) 一旦采完一批就冻结不动；我们却想用这批数据反复更新 \(\pi_\theta\) 好几个 epoch（这叫 off-policy / 数据复用）。</li>
+<li><strong>关键的不等式说明：</strong>等号成立需要"期望下标"与"采样下标"一致。不一致时，唯一正确的做法就是乘上概率比做<strong>无偏</strong>修正——而不是把下标偷偷换掉。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+新策略更偏爱某个动作时（比如从 0.10 涨到 0.30），旧策略的样本本来就少覆盖它；乘上概率比 3.0 就把这类"稀有但变 probable"的样本在统计上补回应有的权重。这正是 (8.19) 里 \(\rho_t\hat A_t\) 的来历。</div>
+<div class="relnav">相关：<a href="#eq-8-17">(8.17) 重要性采样恒等式</a> · <a href="#eq-8-19">(8.19) PPO 目标</a></div>
+</section>
+
+<!-- ============================== 8.19 ============================== -->
+<section class="fml" id="eq-8-19">
+<h2><span class="num">(8.19)</span>PPO 目标函数与概率比 \(\rho_t(\theta)\)<a class="anchor" href="#eq-8-19">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.2.4 节 Reinforcement Learning for Alignment　<a href="../thellm/15-8-human-alignment.html#8-2-4-reinforcement-learning-for-alignment">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0191.png" alt="原书公式 8.19"><span class="cap">原书公式 8.19</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[
+J(\theta)=\hat{\mathbb{E}}_{a_t\sim\pi_{\theta_{old}}}\big[r_t(\theta)\hat A_t\big],
+\qquad
+r_t(\theta)=\frac{\pi_\theta(a_t\mid s_t)}{\pi_{\theta_{old}}(a_t\mid s_t)}.
+\]
+</div>
+<p>它背后的出发点是最基本的策略梯度恒等式（本节详细推）：</p>
+<div class="eq">
+\[
+\max_\theta\ \mathbb{E}_{a\sim\pi_\theta}\big[r(x,a)\big]
+\;\Longrightarrow\;
+\nabla_\theta\mathbb{E}_{a\sim\pi_\theta}[r]=\mathbb{E}_{a\sim\pi_\theta}\big[\nabla_\theta\log\pi_\theta(a\mid x)\cdot r\big].
+\]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(J(\theta)\)</td><td>PPO 的（截断/代理）目标，要被<strong>最大化</strong></td><td>标量，期望回报量级</td></tr>
+<tr><td>\(r_t(\theta)\)</td><td>概率比；原书用 \(r_t\) 记，注意<strong>不要和即时奖励 \(r_t\) 混淆</strong></td><td>标量，\(&gt;0\)</td></tr>
+<tr><td>\(\hat A_t\)</td><td>优势估计，训练时当<strong>常数</strong>（不参与求导）</td><td>标量</td></tr>
+<tr><td>\(\hat{\mathbb{E}}\)</td><td>用采样数据的样本均值近似期望</td><td>—</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>策略梯度恒等式的证明（先补工具）。</strong>从离散动作空间出发，动作空间有限时可写成有限和：
+\[\mathbb{E}_{a\sim\pi_\theta}[r]=\sum_a \pi_\theta(a\mid x)\,r(x,a).\]
+\(r(x,a)\) 由环境/奖励模型给出，<strong>与 \(\theta\) 无关</strong>，所以是常数，求导时直接穿过（乘法法则）。</li>
+<li><strong>对 \(\pi_\theta\) 求导：</strong>
+\[\nabla_\theta\mathbb{E}_{a\sim\pi_\theta}[r]=\sum_a \big(\nabla_\theta\pi_\theta(a\mid x)\big)r(x,a).\]
+这一步只用了"常数求导为 0"和分配律。</li>
+<li><strong>换成 score function 形式。</strong>关键恒等式：\(\nabla_\theta\pi_\theta=\pi_\theta\nabla_\theta\log\pi_\theta\)。它的证明只有一行——对 \(\log\pi_\theta\) 用链式法则（复合函数 \(\log\circ\pi_\theta\)）：
+\[\nabla_\theta\log\pi_\theta(a\mid x)=\frac{1}{\pi_\theta(a\mid x)}\nabla_\theta\pi_\theta(a\mid x)\;\Longrightarrow\;\nabla_\theta\pi_\theta=\pi_\theta\,\nabla_\theta\log\pi_\theta.\]
+（要求 \(\pi_\theta&gt;0\)；等于 0 的动作概率没有梯度影响。）代回上一步：</li>
+<li><strong>重新识别为期望：</strong>
+\[\nabla_\theta\mathbb{E}_{a\sim\pi_\theta}[r]=\sum_a\pi_\theta(a\mid x)\big(\nabla_\theta\log\pi_\theta(a\mid x)\big)r(x,a)=\mathbb{E}_{a\sim\pi_\theta}\big[\nabla_\theta\log\pi_\theta(a\mid x)\cdot r\big].\]
+<b>注</b>：连续动作空间时把求和换成积分，并用"对数导数技巧"（\(\nabla_\theta f=f\nabla_\theta\log f\)）把环境项分离出来——即 DAgger / 确定性策略梯度那一套。</li>
+<li><strong>代入估计量，得到 PPO 形式。</strong>在状态-动作序列上，优势函数扮演"回报" \(r\) 的角色：\(\mathbb{E}_{a_t\sim\pi_\theta}[\hat A_t]\) 正是 8.2.4 开头那个 \(\mathbb{E}_{a\sim\pi_\theta}[r]\) 的"折扣回报版"。用第 4 步的恒等式求梯度，再按 (8.18) 做无偏换分布：
+\[\nabla_\theta J(\theta)\ \hat{=}\ \hat{\mathbb{E}}_{a_t\sim\pi_{\theta_{old}}}\big[r_t(\theta)\cdot\nabla_\theta\log\pi_\theta(a_t\mid s_t)\cdot\hat A_t\big].\]
+其前向（loss）形式就是本式的 \(J(\theta)\)。</li>
+<li><strong>为什么必须乘 \(\rho_t\)（偏差分析）。</strong>假设我们图省事，直接用 \(\pi_{\theta_{old}}\) 的样本算"无修正"的梯度 \(\hat{\mathbb{E}}[\nabla_\theta\log\pi_{\theta_{old}}\cdot\hat A_t]\)。它的期望是
+\[\mathbb{E}_{a\sim\pi_\theta}\big[\hat A\,\nabla_\theta\log\pi_{\theta_{old}}(a\mid s)\big]=\sum_a\pi_\theta(a\mid s)\hat A(a)\,\frac{\nabla_\theta\pi_{\theta_{old}}(a\mid s)}{\pi_{\theta_{old}}(a\mid s)},\]
+而真正的策略梯度里出现的是 \(\nabla_\theta\pi_\theta/\pi_\theta\)。<strong>两者的分母不同，分子也不同，除非 \(\theta=\theta_{old}\)，否则取期望后不相等</strong>——这就是梯度偏差。乘上 \(\rho_t=\frac{\pi_\theta}{\pi_{\theta_{old}}}\) 之后乘积化简为 \(\frac{\pi_\theta}{\pi_{\theta_{old}}}\cdot\frac{\nabla\pi_{\theta_{old}}}{\pi_{\theta_{old}}}\cdot\pi_{\theta_{old}}=\pi_\theta\nabla_\theta\log\pi_{\theta_{old}}\)……更简单的验证方式是直接对 \(\rho_t\) 求导：
+\[\nabla_\theta\rho_t(\theta)=\frac{\nabla_\theta\pi_\theta}{\pi_{\theta_{old}}}=\rho_t\,\nabla_\theta\log\pi_\theta,\]
+于是 \(\nabla_\theta[\rho_t\hat A_t]=\hat A_t\,\rho_t\,\nabla_\theta\log\pi_\theta\)，与第 5 步完全一致——<strong>目标函数与梯度都被修正了</strong>。</li>
+<li><strong>偏差为零的"额外红利"。</strong>注意 \(\sum_a\pi_{\theta_{old}}(a)\nabla_\theta\log\pi_{\theta_{old}}(a)=\sum_a\nabla_\theta\pi_{\theta_{old}}(a)=\nabla_\theta 1=0\)。也就是说"常数项"在期望下自动消失，这正是 (8.19) 里不需要额外减去基线（baseline）也能工作的原因；而引入 \(V(s_t)\) 作基线（见 <a href="#s-gae">GAE 小节</a>）是为了进一步<strong>降方差</strong>。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+\(\rho_t\hat A_t\) 读作"这个动作在<strong>新</strong>策略下相对<strong>旧</strong>策略的概率，被它的好坏打了多少折扣"。\(\hat A_t&gt;0\) 时我们想让它变大，\(\hat A_t&lt;0\) 时我们想让它变小。整条策略梯度就是一句大白话：<em>按动作的好坏，成比例地调整它们的概率</em>。</div>
+<div class="warn"><b>易错点</b>
+(1) \(\hat A_t\) 在更新时是<strong>常数</strong>（由 critic 和奖励模型算好后 detach），如果不小心让梯度穿过它，PPO 就变成一个完全不同（也不稳定）的目标。(2) \(\rho_t\) 与即时奖励 \(r_t\) 撞名，实际代码里前者常写成 ratio 或 importance_ratio。</div>
+<div class="relnav">相关：<a href="#eq-8-18">(8.18) 换分布的前提</a> · <a href="#eq-8-20">(8.20) 给它加裁剪</a> · <a href="#s-gae">补充：价值函数与 GAE</a></div>
+</section>
+
+<!-- ============================== 8.20 ============================== -->
+<section class="fml" id="eq-8-20">
+<h2><span class="num">(8.20)</span>PPO-Clip：带裁剪的目标函数<a class="anchor" href="#eq-8-20">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.2.4 节 Reinforcement Learning for Alignment　<a href="../thellm/15-8-human-alignment.html#8-2-4-reinforcement-learning-for-alignment">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0193.png" alt="原书公式 8.20"><span class="cap">原书公式 8.20</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[
+J_{\mathrm{CLIP}}(\theta)=\hat{\mathbb{E}}_t\Big[\min\big(r_t(\theta)\hat A_t,\ \mathrm{clip}\,(r_t(\theta),\,1-\epsilon,\,1+\epsilon)\,\hat A_t\big)\Big].
+\]
+</div>
+<p>其中裁剪函数是"把数夹进区间"的投影：</p>
+<div class="eq">
+\[
+\mathrm{clip}(u,1-\epsilon,1+\epsilon)=
+\begin{cases}
+u, &amp; 1-\epsilon\le u\le 1+\epsilon,\\
+1+\epsilon, &amp; u&gt;1+\epsilon,\\
+1-\epsilon, &amp; u&lt;1-\epsilon.
+\end{cases}
+\]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>说明</th></tr>
+<tr><td>\(r_t(\theta)\)</td><td>概率比</td><td>\(&gt;0\)，\(\theta=\theta_{old}\) 时 \(=1\)</td></tr>
+<tr><td>\(\epsilon\)</td><td>裁剪半径</td><td>典型 0.2，即概率最多涨/降到原来的 1.2 / 0.8 倍</td></tr>
+<tr><td>\(\mathrm{clip}(\cdot,1-\epsilon,1+\epsilon)\)</td><td>把 \(\rho\) 投影回 \([1-\epsilon,1+\epsilon]\)</td><td>分段常数函数，在边界处不可导</td></tr>
+<tr><td>\(\min(\cdot,\cdot)\)</td><td>逐样本取小者</td><td>让目标成为<strong>悲观下界</strong></td></tr>
+</table>
+
+<h3>③ 推导：为什么必须是 \(\min\)，以及它如何产生"梯度截断"</h3>
+<ol class="steps">
+<li><strong>把 min 的两个分支分别拿出来。</strong>记 \(u=r_t\hat A_t\)，\(v=\mathrm{clip}(r_t,1-\epsilon,1+\epsilon)\hat A_t\)。逐样本目标就是 \(\min(u,v)\)。下面按 \(\hat A_t\) 的符号分类。</li>
+<li><strong>情形 A：\(\hat A_t&gt;0\)（好动作，我们要增大概率）。</strong>此时 \(\hat A_t&gt;0\) 是个正数，比较 \(u,v\) 等价于比较 \(r_t\) 与 \(\mathrm{clip}(r_t,\dots)\)。而 \(\mathrm{clip}\le r_t\) 恒成立（clip 只往下压或不动），所以
+\[u-v=\hat A_t\big[r_t-\mathrm{clip}(r_t,\dots)\big]\ \ge 0\ \Rightarrow\ \min(u,v)=v.\]
+更细地：\(r_t\le1+\epsilon\) 时 clip 不起作用，\(u=v=r_t\hat A_t\)；一旦 \(r_t&gt;1+\epsilon\)，clip 把它压到 \(1+\epsilon\)，\(v=(1+\epsilon)\hat A_t\) 就成了较小者。合起来
+\[\min(u,v)=\hat A_t\cdot\min\big(r_t,\,1+\epsilon\big).\]
+<b>后果：</b>\(\rho_t\) 超过 \(1+\epsilon\) 之后目标变成常数，<strong>梯度为 0</strong>——概率可以继续被"奖励"，但不再被"推着"增大。</li>
+<li><strong>情形 B：\(\hat A_t&lt;0\)（坏动作，我们要减概率）。</strong>此时乘上负数会翻转不等号：\(u-v=\hat A_t[\cdot]\le 0\)，所以 \(\min(u,v)=u=r_t\hat A_t\)，也就是 <strong>不裁剪</strong>。再细分：
+\[r_t\ge1-\epsilon\Rightarrow \min(u,v)=r_t\hat A_t;\qquad r_t&lt;1-\epsilon\Rightarrow \min(u,v)=(1-\epsilon)\hat A_t.\]
+即 \(\min(u,v)=\hat A_t\cdot\max(r_t,1-\epsilon)\)。<b>后果：</b>坏动作的概率可以被一直压到很小，<strong>梯度始终存在</strong>；只有当它已经压到 \(0.8\times\) 旧概率以下时，梯度才被切断。</li>
+<li><strong>写成统一分段形式：</strong>
+\[J_{t}^{\mathrm{CLIP}}(\theta)=
+\begin{cases}
+r_t\hat A_t, &amp; \big(\hat A_t&gt;0\ \text{且}\ r_t\le1+\epsilon\big)\ \text{或}\ \big(\hat A_t&lt;0\ \text{且}\ r_t\ge1-\epsilon\big),\\[2pt]
+(1+\epsilon)\hat A_t, &amp; \hat A_t&gt;0\ \text{且}\ r_t&gt;1+\epsilon,\\[2pt]
+(1-\epsilon)\hat A_t, &amp; \hat A_t&lt;0\ \text{且}\ r_t&lt;1-\epsilon.
+\end{cases}\]
+\(\hat A_t=0\) 时两项都为 0，梯度自然为 0，无需单列。</li>
+<li><strong>梯度的三种情形。</strong>用第 6 步的 \(\nabla_\theta\rho_t=\rho_t\nabla_\theta\log\pi_\theta\)：
+\[\nabla_\theta J_t^{\mathrm{CLIP}}=
+\begin{cases}
+\rho_t\hat A_t\,\nabla_\theta\log\pi_\theta(a_t\mid s_t), &amp; \text{在未截断的线性区（梯度正常）},\\[2pt]
+0, &amp; \text{被 clip 截断（常数分支，导数为 0）}.
+\end{cases}\]
+具体到"增大/减小"：<ul>
+<li><strong>好动作增大概率：</strong>只要 \(\rho_t\le1+\epsilon\) 梯度正常；越过 \(1+\epsilon\) 后梯度变 0（保守，不再继续加大）。</li>
+<li><strong>好动作减小概率：</strong>\(\rho_t\ge1-\epsilon\) 时 \(\hat A_t\rho_t&gt;0\)，梯度照常（减小本来就是我们想要的），<strong>不截断</strong>。</li>
+<li><strong>坏动作减小概率：</strong>\(\rho_t\ge1-\epsilon\) 梯度正常；跌破 \(1-\epsilon\) 后梯度变 0，防止这个 token 的概率被压成 0 而无法恢复。</li>
+<li><strong>坏动作增大概率：</strong>梯度照常（方向错误地"增大"，但这正是训练要纠正的漂移，不该被裁剪机制掩盖）。</li>
+</ul></li>
+<li><strong>为什么"只惩罚偏离"而不是"限制偏离"。</strong>把 (8.19) 与 (8.20) 逐样本比较：\(J_t^{\mathrm{CLIP}}\le r_t\hat A_t\) 恒成立（因为 min 只会取更小的那一支），所以 <strong>\(J_{\mathrm{CLIP}}\) 是原目标的悲观下界</strong>。这正是"信任域"（trust region）思想的廉价近似：不必真的加 \(\|\theta-\theta_{old}\|&lt;\delta\) 这种硬约束，只要让代理目标永远不高于真目标，就不会因为"贪心"而高估收益。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+拿"好动作"当例子。PPO 允许你把它的概率从 0.10 提到 0.12（有用），但一旦想提到 0.30 就<strong>不再给任何梯度</strong>——你可以保持 0.30，只要别是因为这一步的梯度把它推上去的（那 0.30 一定来自更早的、被信任域允许的小步累积）。反过来对"坏动作"，PPO 允许你一路把它压到 0.01 甚至更小，因为"把坏动作压没"永远是好事。</div>
+<div class="warn"><b>易错点</b>
+(1) 被截断的样本<strong>不是"梯度变小"，而是梯度恰好为 0</strong>，并且这个样本对 batch 梯度的贡献完全消失——如果一批里绝大多数样本都被截断，PPO 会退化成"什么也不学"（实践中靠 KL 惩罚项 (8.21) 来补充信号）。(2) 实现时 \(\epsilon\) 与"每步 KL 阈值"是两个不同的旋钮，原论文用 early stopping 按近似 KL 提前停，本式只是其中的 surrogate 约束。(3) \(\epsilon\) 是经验超参（0.1/0.2），不是推导出来的。</div>
+<div class="relnav">相关：<a href="#eq-8-19">(8.19) 被裁剪的原始目标</a> · <a href="#eq-8-21">(8.21) 另一种稳定化手段</a></div>
+</section>
+
+<!-- ============================== 8.21 ============================== -->
+<section class="fml" id="eq-8-21">
+<h2><span class="num">(8.21)</span>基于 KL 散度的目标函数（KL 惩罚）<a class="anchor" href="#eq-8-21">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.2.4 节 Reinforcement Learning for Alignment　<a href="../thellm/15-8-human-alignment.html#8-2-4-reinforcement-learning-for-alignment">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0197.png" alt="原书公式 8.21"><span class="cap">原书公式 8.21</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[
+J_{\mathrm{KLPEN}}(\theta)=\hat{\mathbb{E}}_t\Big[r_t(\theta)\hat A_t-\beta\,\mathrm{KL}\big[\pi_{\theta_{old}}(\cdot\mid s_t),\ \pi_\theta(\cdot\mid s_t)\big]\Big].
+\]
+</div>
+<p>KL 的定义式与两种等价写法：</p>
+<div class="eq">
+\[
+\mathrm{KL}[p\,\|\,q]=\sum_y p(y)\log\frac{p(y)}{q(y)}
+=\mathbb{E}_{y\sim p}\Big[\log\frac{p(y)}{q(y)}\Big]
+=H(p,q)-H(p)\ \ge 0.
+\]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>说明</th></tr>
+<tr><td>\(\beta\)</td><td>KL 惩罚权重（逆温度）</td><td>典型 0.1；<strong>经验超参</strong></td></tr>
+<tr><td>\(\mathrm{KL}[\pi_{\theta_{old}},\pi_\theta]\)</td><td>旧策略到新策略的相对熵（按 token 求和）</td><td>nats，\(\ge0\)，当两策略相同时为 0</td></tr>
+<tr><td>\(\pi_\theta(\cdot\mid s_t)\)</td><td>在新状态上的整张词表分布</td><td>\(\mathbb{R}^{|\mathcal{V}|}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>把 KL 拆成"熟悉的"两部分。</strong>用 \(\log\frac{p}{q}=\log p-\log q\) 展开：
+\[\mathrm{KL}[p\|q]=\underbrace{\sum_y p(y)\log p(y)}_{=-H(p)}+\underbrace{-\sum_y p(y)\log q(y)}_{=H(p,q)}.\]
+\(H(p,q)\) 是交叉熵，\(H(p)\) 是熵。所以 \(\mathrm{KL}\ge0\) 来自 Gibbs 不等式，且仅在 \(p=q\) 时取等。</li>
+<li><strong>在策略上代入。</strong>取 \(p=\pi_{\theta_{old}}\)、\(q=\pi_\theta\)，\(y\) 跑遍词表：
+\[\mathrm{KL}[\pi_{\theta_{old}}\|\pi_\theta]=\mathbb{E}_{y\sim\pi_{\theta_{old}}}\Big[\log\pi_{\theta_{old}}(y\mid s)-\log\pi_\theta(y\mid s)\Big]=-\,\mathbb{E}_{y\sim\pi_{\theta_{old}}}\big[\log\rho_t\big].\]
+最后一步用了 \(\rho_t=\pi_\theta/\pi_{\theta_{old}}\)，即 \(\log\rho_t=\log\pi_\theta-\log\pi_{\theta_{old}}\)。</li>
+<li><strong>代回 (8.21)，得到一个非常好用的等价形式：</strong>
+\[J_{\mathrm{KLPEN}}(\theta)=\hat{\mathbb{E}}_t\big[\rho_t\hat A_t+\beta\log\rho_t\big].\]
+这形式很说明问题：KL 项等价于 <strong>\(+\beta\log\rho_t\)</strong>，即对"概率比偏离 1"（无论往哪边）<strong>都惩罚</strong>（\(\log\rho_t\le\rho_t-1\)，在 \(\rho_t=1\) 取最大 0）。</li>
+<li><strong>梯度：KL 项怎么影响更新。</strong>对 \(\theta\) 求导，\(\nabla_\theta\log\rho_t=\nabla_\theta\log\pi_\theta\)，所以 KL 项的梯度是 \(-\beta\,\hat{\mathbb{E}}[\nabla_\theta\log\pi_\theta]\)。而策略梯度主体是 \(+\hat{\mathbb{E}}[\rho_t\hat A_t\nabla_\theta\log\pi_\theta]\)。<strong>KL 惩罚等价于往"概率加权平均为零"的方向拉</strong>——它把新策略的更新方向往参考策略身上拽。注意它对"好动作"和"坏动作"一视同仁，这正是"正则化"而非"奖励"的意思。</li>
+<li><strong>为什么用 KL 而不是参数距离。</strong>三个理由：<ul>
+<li><strong>行为空间的约束才有意义。</strong>\(\|\theta-\theta_{old}\|_2\) 依赖参数化方式：重参数化（把权重矩阵做可逆变换）可以不改任何输出而任意改变参数距离；反过来参数几乎不动也可能因为 softmax 的放大而让输出剧变。KL 度量的是<strong>分布本身</strong>的变化，与参数化无关。</li>
+<li><strong>可解释的量纲。</strong>KL 的值直接是"用旧策略当参照，新策略平均偏离了多少 nats"，可以和 loss 曲线放在一起看；参数距离没有这种语义。</li>
+<li><strong>梯度有正确方向。</strong>如第 4 步所示，KL 的梯度是显式的"拉回"方向，而参数 L2 惩罚只是笼统地缩小更新步长。</li>
+</ul></li>
+<li><strong>\(\beta\) 怎么选（经验规则）。</strong>原书说：KL 小时 \(\beta\) 调小以鼓励更新，KL 大时 \(\beta\) 调大以抑制更新。更严格的说法是：KL 项与奖励项的量纲要对齐，\(\beta\approx\text{(典型奖励尺度)}/\text{(允许的平均 KL)}\)，而"允许的平均 KL"是数据集级别的经验设定（如 InstructGPT 用 \(\beta\in[0.01,0.2]\)）。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+奖励模型是个"会被人为利用的评分器"：模型一旦发现某个能刷高分的套路，就会疯狂往那个方向走，输出人类根本不想要的东西。KL 惩罚相当于"不许离参考模型太远"的安全绳——它不禁止你变好，但禁止你用一种"参数变化不大、行为变化很大"的方式偷跑。</div>
+<div class="warn"><b>易错点</b>
+(1) KL <strong>不对称</strong>：\(\mathrm{KL}[p\|q]\ne\mathrm{KL}[q\|p]\)，PPO 里通常用"对采样分布（旧策略）求期望"的那一版，DPO 里用的是反过来的一版（见 <a href="#eq-8-23">8.23</a>–<a href="#eq-8-32">8.32</a>）。(2) 单 token 的 KL 之和并不等于整条回复的 KL，严格做法是对整条序列算 \(\mathrm{KL}[\pi_{\theta_{old}}(\cdot\mid x)\|\pi_\theta(\cdot\mid x)]\)（对全部 token 求和）。(3) \(\beta\) 与 \(\epsilon\) 常被同时使用，二者功能重叠（都防激进更新），一起用时容易过度保守。</div>
+<div class="relnav">相关：<a href="#eq-8-20">(8.20) 裁剪是硬约束，KL 是软约束</a> · <a href="#eq-8-24">(8.24) KL 的展开形式</a></div>
+</section>
+
+<!-- ============================== 8.22 ============================== -->
+<section class="fml" id="eq-8-22">
+<h2><span class="num">(8.22)</span>LLaMA-2 的排序损失（带 margin 的成对偏好）<a class="anchor" href="#eq-8-22">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.2.5 节 Representative Work on RLHF　<a href="../thellm/15-8-human-alignment.html#8-2-5-representative-work-on-rlhf">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0199.png" alt="原书公式 8.22"><span class="cap">原书公式 8.22</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[
+\mathcal{L}_{\mathrm{ranking}}=-\log\Big(\sigma\big(r_\theta(x,y^+)-r_\theta(x,y^-)-m(y^+,y^-)\big)\Big).
+\]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>说明</th></tr>
+<tr><td>\(r_\theta(x,y)\)</td><td>奖励模型对 (提示, 回复) 的打分</td><td>标量，训练中被求导</td></tr>
+<tr><td>\(y^+,y^-\)</td><td>被偏好的 / 被拒绝的回复</td><td>token 序列</td></tr>
+<tr><td>\(m(y^+,y^-)\)</td><td>margin，衡量正负样本的"对齐差距"</td><td>离散函数，<strong>人工设定的经验量</strong></td></tr>
+<tr><td>\(\sigma(\cdot)\)</td><td>sigmoid：\(\sigma(u)=\dfrac{1}{1+e^{-u}}\)</td><td>\((0,1)\) 严格单调</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>建模：成对偏好 = 二分类。</strong>假设标注者更偏好 \(y^+\)。用逻辑函数把这个偏好<strong>建模成一个概率</strong>：\(P_\theta(y^+\succ y^-\mid x)=\sigma(\Delta)\)，其中 \(\Delta=r_\theta(x,y^+)-r_\theta(x,y^-)\)。这是 Bradley–Terry 模型：任意两个选项的胜率只由一个实数分差经 sigmoid 变换决定。</li>
+<li><strong>极大似然。</strong>对数据集里所有 pair 做极大似然估计（MLE），对数似然是
+\[\log P=\log\sigma(\Delta)=\log\frac{1}{1+e^{-\Delta}}.\]
+MLE 的做法是<strong>最大化对数似然</strong>；深度学习里为了做梯度下降，把目标取负号变成损失（这只是把"往上优化"改写成"往下优化"）。</li>
+<li><strong>加 margin。</strong>若两个回复其实差不多好，标注噪声就大；硬要模型把它们拉开只会引入噪声梯度。做法是要求"分差至少超过一个 margin"：把判别式的输入改成 \(\Delta-m\)。等价于把判别面从 0 平移到 \(m\)。注意 margin 出现在 <strong>logit 内部</strong>（不是乘在外面），所以它作用在"奖励差的尺度"上。</li>
+<li><strong>梯度的形状（为什么加 margin 有用）。</strong>求导：
+\[\nabla_{\theta}\mathcal{L}=-\big(1-\sigma(\Delta-m)\big)\cdot\nabla_\theta(\Delta-m).\]
+因为 \(0&lt;\sigma&lt;1\)，系数 \(1-\sigma\in(0,1)\)。当 \(\Delta-m\gg0\)（已远超 margin）时 \(\sigma\to1\)，梯度系数 \(\to0\)——<strong>模型"已经学会了就不再学"</strong>，这正是加 margin 想保留的性质：只在"还没拉开"的时候施力。</li>
+<li><strong>为什么需要两个奖励模型（安全 / 有用）。</strong>LLaMA-2 分别训练"安全"和"有用"两个 RM，把两者的分差合并。不同的 RM 有各自的数据与梯度方向，分开训练可以避免"有用"样本的高分掩盖"不安全"样本的低分（多任务互相干扰）。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+这一式是"带安全垫的答题比赛"：你不仅要答对（\(\Delta&gt;0\)），还得比对手高出 <code>m</code> 分才算满分，否则扣分有限、可慢慢补。好处是当两个回复质量接近时，梯度自然衰减，不会被标注噪声牵着跑。</div>
+<div class="warn"><b>易错点：\(m\) 是设计而非推导</b>
+\(m(y^+,y^-)\) 里的离散取值（如"排名相邻取 0、其余取一个固定值"）完全是<strong>启发式设定</strong>，没有数学推导；它能改善效果是实验观察。其余部分（sigmoid 成对似然）才是标准的 MLE。</div>
+<div class="relnav">相关：<a href="#eq-8-23">(8.23) 之后进入不需要 RM 的 DPO 路线</a></div>
+</section>
+
+<!-- ============================== 8.23 ============================== -->
+<section class="fml" id="eq-8-23">
+<h2><span class="num">(8.23)</span>RLHF 的正则化目标：奖励期望 − KL 惩罚<a class="anchor" href="#eq-8-23">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.3.1 节 DPO　<a href="../thellm/15-8-human-alignment.html#8-3-1-representative-supervised-alignment-meth">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0201.png" alt="原书公式 8.23"><span class="cap">原书公式 8.23</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[
+L(\theta)=\max_{\pi_\theta}\ \mathbb{E}_{x\sim\mathcal{D},\ y\sim\pi_\theta}\big[r(x,y)\big]-\beta\,\mathrm{KL}\big[\pi_\theta(y\mid x),\ \pi_{\theta_{old}}(y\mid x)\big].
+\]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>说明</th></tr>
+<tr><td>\(L(\theta)\)</td><td>要<strong>最大化</strong>的目标</td><td>标量</td></tr>
+<tr><td>\(x\sim\mathcal{D}\)</td><td>从偏好数据集取提示</td><td>与 \(\theta\) 无关</td></tr>
+<tr><td>\(y\sim\pi_\theta\)</td><td>从<strong>当前策略</strong>采回复</td><td>需要 RL 采样（DPO 的动机就是去掉这一步）</td></tr>
+<tr><td>\(r(x,y)\)</td><td>奖励模型打分</td><td>标量</td></tr>
+<tr><td>\(\mathrm{KL}[\pi_\theta,\pi_{\theta_{old}}]\)</td><td>新策略对参考策略的相对熵</td><td>\(\ge0\)，即 (8.21) 的同一软约束、写成"对新策略求期望"的形式</td></tr>
+<tr><td>\(\beta&gt;0\)</td><td>权衡系数</td><td>与 (8.21) 同一个 \(\beta\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>为什么 (8.23) 是"标准形式"。</strong>把每条提示 \(x\) 固定，目标变成在所有"概率分布"的集合上优化
+\[\max_{\pi(\cdot\mid x)}\ \mathbb{E}_{y\sim\pi}\big[r(x,y)\big]-\beta\,\mathrm{KL}\big[\pi\,\|\,\pi_{\mathrm{ref}}(\cdot\mid x)\big].\]
+这是<strong>带相对熵正则的期望最大化</strong>：第一项是"效用"，第二项是相对参考分布的复杂度惩罚。整体是条件风险的形式。</li>
+<li><strong>为什么这里写 \(\mathrm{KL}[\pi_\theta\|\pi_{\theta_{old}}]\) 而 (8.21) 写反了。</strong>两者约束的对象相同（都让新策略别离参考太远），但方向不同：这一版是"新策略对参考的偏离"，前向 KL 惩罚的是<strong>新策略采到参考认为罕见的输出</strong>；反向 KL 惩罚的是"新策略把某点质量压到 0"。实践中两个方向都能稳定训练，只是生效的"禁区"位置不同。</li>
+<li><strong>逐 \(x\) 看：这是一个严格凹问题。</strong>固定 \(x\)，把目标写成 \(\sum_y \pi(y)\,r(y)-\beta\sum_y \pi(y)\log\frac{\pi(y)}{\pi_{\mathrm{ref}}(y)}\)。它的 Hessian 是 \(-(\beta/\pi(y))\) 对角阵，<strong>负定</strong>，因此在概率单纯形上有唯一的极大点（见 <a href="#eq-8-28">8.28</a> 的闭式解）。这也是为什么 DPO 能写出解析解而不用 RL。</li>
+<li><strong>DPO 的切入点。</strong>(8.23) 有两处"贵"：必须采样 \(y\sim\pi_\theta\)，且必须显式持有奖励模型。接下来的推导会显示：因为第二项是 KL，可以在<strong>不动采样、不做 RL</strong>的情况下把它化简成对比损失。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+"拿高分的回答，但别跑太远"。前半句是任务目标（对齐人类偏好），后半句是保险丝（保持语言能力、避免 reward hacking）。整个 8.23–8.32 就是在证明：<strong>这个"带保险丝的目标"的最优解有一个闭式形式</strong>，而这个闭式形式恰好能用监督学习的方式优化。</div>
+<div class="relnav">相关：<a href="#eq-8-21">(8.21) PPO 的 KL 惩罚项</a> · <a href="#eq-8-27">(8.27) 配分函数出场</a></div>
+</section>
+
+<!-- ============================== 8.24 ============================== -->
+<section class="fml" id="eq-8-24">
+<h2><span class="num">(8.24)</span>把 KL 展开成对数概率比<a class="anchor" href="#eq-8-24">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.3.1 节 DPO　<a href="../thellm/15-8-human-alignment.html#8-3-1-representative-supervised-alignment-meth">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0202.png" alt="原书公式 8.24"><span class="cap">原书公式 8.24</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[
+L(\theta)=\max_{\pi_\theta}\ \mathbb{E}_{x\sim\mathcal{D}}\ \mathbb{E}_{y\sim\pi_\theta(\cdot\mid x)}
+\Big[\,r(x,y)-\beta\log\tfrac{\pi_\theta(y\mid x)}{\pi_{\theta_{old}}(y\mid x)}\,\Big].
+\]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>说明</th></tr>
+<tr><td>\(\log\frac{\pi_\theta}{\pi_{\theta_{old}}}\)</td><td>对数似然比（log-likelihood ratio）</td><td>标量；\(&gt;0\) 表示新策略更偏爱这个 \(y\)</td></tr>
+<tr><td>\(\mathbb{E}_{y\sim\pi_\theta(\cdot\mid x)}\)</td><td>在<strong>新策略</strong>下对回复取期望</td><td>此处是"逐样本采出来"的那个 \(y\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>展开 KL。</strong>用 \(\mathrm{KL}[p\|q]=\sum p\log\frac pq\)，把 (8.23) 的第二项写成期望：
+\[\mathrm{KL}\big[\pi_\theta(\cdot\mid x),\pi_{\theta_{old}}(\cdot\mid x)\big]=\mathbb{E}_{y\sim\pi_\theta(\cdot\mid x)}\Big[\log\frac{\pi_\theta(y\mid x)}{\pi_{\theta_{old}}(y\mid x)}\Big].\]
+这只是在"求和"外面套一个期望记号，<strong>没有近似</strong>。</li>
+<li><strong>合并成同一个期望。</strong>两项都是对同一个变量 \(y\) 在同一分布 \(\pi_\theta(\cdot\mid x)\) 下取期望，利用<strong>期望的线性性</strong> \(\mathbb{E}[A]+\mathbb{E}[B]=\mathbb{E}[A+B]\)（期望是线性泛函，不需要任何独立性假设）：
+\[\mathbb{E}_{x\sim\mathcal{D}}\mathbb{E}_{y\sim\pi_\theta}\big[r(x,y)\big]-\beta\,\mathrm{E}_{x\sim\mathcal{D}}\mathbb{E}_{y\sim\pi_\theta}\Big[\log\tfrac{\pi_\theta}{\pi_{\theta_{old}}}\Big]=\mathbb{E}_{x\sim\mathcal{D}}\mathbb{E}_{y\sim\pi_\theta}\Big[r(x,y)-\beta\log\tfrac{\pi_\theta}{\pi_{\theta_{old}}}\Big].\]</li>
+<li><strong>另一条理解路径。</strong>由 \(\mathrm{KL}[p\|q]=H(p,q)-H(p)\)：这里的 \(\mathrm{KL}\) 就是"用参考模型当老师给新模型打分的交叉熵"减去"新模型自身的熵"。前一项鼓励新模型<strong>覆盖</strong>参考模型认可的所有输出（防坍缩到少数 token），后一项奖励新模型自身的确定性。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+这一步只是把"惩罚项"从"一个数"改写成"每个样本上的一个数"，从而可以和奖励合并到同一个方括号里。形式上的好处是：接下来整个推导都只需要操作 \(\log\) 和一个分式。</div>
+<div class="relnav">相关：<a href="#eq-8-23">(8.23) 展开前</a> · <a href="#eq-8-25">(8.25) 反号成 min</a></div>
+</section>
+
+<!-- ============================== 8.25 ============================== -->
+<section class="fml" id="eq-8-25">
+<h2><span class="num">(8.25)</span>反号：目标从 \(\max\) 变成 \(\min\)<a class="anchor" href="#eq-8-25">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.3.1 节 DPO　<a href="../thellm/15-8-human-alignment.html#8-3-1-representative-supervised-alignment-meth">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0203.png" alt="原书公式 8.25"><span class="cap">原书公式 8.25</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[
+L(\theta)=\min_{\pi_\theta}\ \mathbb{E}_{x\sim\mathcal{D}}\ \mathbb{E}_{y\sim\pi_\theta(\cdot\mid x)}
+\Big[\log\tfrac{\pi_\theta(y\mid x)}{\pi_{\theta_{old}}(y\mid x)}-\tfrac{1}{\beta}r(x,y)\Big].
+\]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>说明</th></tr>
+<tr><td>\(\tfrac{1}{\beta}\)</td><td>奖励的倒数权重</td><td>\(\beta&gt;0\)；\(\beta\to0\) 相当于奖励被无限放大</td></tr>
+<tr><td>\(\min_{\pi_\theta}\)</td><td>对策略分布取极小</td><td>与 \(\max\) 等价，符号不同而已</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>为什么可以反号。</strong>对任意目标 \(J(\theta)\)，有 \(\arg\min_\theta(-J)=\arg\max_\theta J\)，且 \(\min(-J)=-\max(J)\)。因此我们把 (8.24) 整体取负：极值类型由 \(\max\) 变 \(\min\)，极值点不变。这一步<strong>不引入任何近似</strong>。</li>
+<li><strong>为什么还要除以 \(\beta\)。</strong>只乘 \(-1\) 会得到 \(\max\to\min\) 后式子里是 \(-\beta\log\frac{\pi_\theta}{\pi_{\theta_{old}}}-r\)。为了后续能提出公因式、并让"奖励"这一项的系数恰好是 \(1/\beta\)，我们乘的是 \(-\frac1\beta\)（\(\beta&gt;0\)，仍是负数，极值类型照样翻转）：
+\[-\frac1\beta\Big[r-\beta\log\tfrac{\pi_\theta}{\pi_{\theta_{old}}}\Big]=\log\tfrac{\pi_\theta}{\pi_{\theta_{old}}}-\tfrac1\beta r.\]
+这一步唯一的实质是<strong>公因式提取</strong>：把 \(\beta\) 从对数项里消掉。</li>
+<li><strong>系数 \(1/\beta\) 的意义：</strong>它正是玻尔兹曼（softmax）温度。<br>\(\beta\) 大 → 惩罚重、\(1/\beta\) 小 → 分布接近参考模型；\(\beta\) 小 → 分布更尖锐地追逐高奖励。<strong>\(\beta\) 是"对齐强度"旋钮</strong>，和 (8.21)/(8.23) 里的 \(\beta\) 是同一个量。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+把"求 reward 最大化"翻译成"求 <em>对数似然比 − 温度⁻¹·reward</em> 的最小值"。形式上有点像在做"加权极大似然"，只是权重是 \(1/\beta\) 而非概率。</div>
+<div class="warn"><b>易错点</b>
+反号时<strong>乘的是 \(-1/\beta\) 而不是 \(-1\)</strong>，很多人随手写成 \(-1\)，那样系数就错位了，后面 \(\pi^*\) 里的 \(\exp(\frac1\beta r)\) 也推不出来。</div>
+<div class="relnav">相关：<a href="#eq-8-24">(8.24) 上一步</a> · <a href="#eq-8-26">(8.26) 引入配分函数</a></div>
+</section>
+
+<!-- ============================== 8.26 ============================== -->
+<section class="fml" id="eq-8-26">
+<h2><span class="num">(8.26)</span>把对数拆成"分子 / 分母 + 常数"<a class="anchor" href="#eq-8-26">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.3.1 节 DPO　<a href="../thellm/15-8-human-alignment.html#8-3-1-representative-supervised-alignment-meth">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0204.png" alt="原书公式 8.26"><span class="cap">原书公式 8.26</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[
+L(\theta)=\min_{\pi_\theta}\ \mathbb{E}_{x\sim\mathcal{D}}\ \mathbb{E}_{y\sim\pi_\theta(\cdot\mid x)}
+\Big[\log\frac{\pi_\theta(y\mid x)}{\tfrac{1}{Z(x)}\pi_{\theta_{old}}(y\mid x)\exp\big(\tfrac1\beta r(x,y)\big)}-\log Z(x)\Big].
+\]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>说明</th></tr>
+<tr><td>\(Z(x)\)</td><td>配分函数（partition function）</td><td>标量，<strong>待定义</strong>，下一式给出</td></tr>
+<tr><td>\(\exp(\tfrac1\beta r)\)</td><td>奖励的指数化（玻尔兹曼因子）</td><td>&gt;0</td></tr>
+<tr><td>\(\tfrac{1}{Z}\pi_{\theta_{old}}\exp(\tfrac1\beta r)\)</td><td>把"参考模型 + 奖励"归一化后的候选分布</td><td>归一化后总和才是 1</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>把指数项"藏进分母"。</strong>用对数运算法则 \(\log a-\log b=\log\frac ab\) 与 \(\log(e^u)=u\)，把 (8.25) 括号里的两项合并成<strong>一个对数</strong>：
+\[\log\tfrac{\pi_\theta(y\mid x)}{\pi_{\theta_{old}}(y\mid x)}-\tfrac1\beta r(x,y)=\log\pi_\theta(y\mid x)-\log\pi_{\theta_{old}}(y\mid x)-\log e^{r(x,y)/\beta}=\log\frac{\pi_\theta(y\mid x)}{\pi_{\theta_{old}}(y\mid x)e^{r(x,y)/\beta}}.\]
+（等价地，用 \(\rho\) 记号：\(\log\rho-\frac1\beta r=\log(\rho e^{-r/\beta})\)。）</li>
+<li><strong>乘一个 \(Z\) 再除一个 \(Z\)。</strong>取任意正常数 \(Z&gt;0\)，\(\frac{A}{B}=\frac{ZA}{ZB}\)，于是上式 \(=\log\frac{Z\,\pi_\theta(y\mid x)}{Z\,\pi_{\theta_{old}}(y\mid x)e^{r/\beta}}\)。把 \(Z\) 拆成"分母里放一个 \(\frac1Z\)、外面挂一个 \(-\log Z\)"：
+\[\log\frac{Z\pi_\theta}{Z\pi_{\theta_{old}}e^{r/\beta}}=\log\frac{\pi_\theta}{\frac1Z\pi_{\theta_{old}}e^{r/\beta}}+\log Z=\log\frac{\pi_\theta}{\frac1Z\pi_{\theta_{old}}e^{r/\beta}}-\log Z.\]
+第三步的 \(\log Z=\log(1/Z)\) 是同一个恒等式（\(\log a=-\log\frac1a\)）。</li>
+<li><strong>验证它真的没改变目标（数值检查）。</strong>右边展开：
+\[\log\pi_\theta-\log\Big(\tfrac1Z\pi_{\theta_{old}}e^{r/\beta}\Big)-\log Z=\log\pi_\theta+\log Z-\log\pi_{\theta_{old}}-\tfrac1\beta r-\log Z=\log\pi_\theta-\log\pi_{\theta_{old}}-\tfrac1\beta r.\]
+与第 1 步完全一致。所以这一步是<strong>恒等变形，引入 \(Z\) 是主动的设计</strong>，目的是让分母长得像一个"概率分布"，从而下一步可以把它定义成归一化常数。</li>
+<li><strong>为什么非要归一化？</strong>因为 <a href="#eq-8-28">8.28</a> 要把分母整体取对数当 KL 用，而 KL <strong>只对概率分布有定义</strong>（\(\sum_y q(y)=1\) 才有 \(\mathrm{KL}[p\|q]\ge0\)）。同时 \(-\log Z(x)\) 这一项<strong>不含 \(\pi_\theta\)</strong>，所以在 \(\min_{\pi_\theta}\) 里它是一个常数，可以被直接丢弃——这是"引入 \(Z\)"的全部好处：它把一个不能丢的归一化因子变成一个可以丢的常数。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+这是纯代数，但动机很实在：目标里"奖励"那一项必须待在分子里外（否则没法求导），而"概率比"里必须有个归一化项才能凑成分布。\(Z(x)\) 就是那个"用来把两件事凑成合法分布"的自由参数，下一步就把它定义成真正的配分函数。</div>
+<div class="relnav">相关：<a href="#eq-8-27">(8.27) 定义 \(Z(x)\)</a></div>
+</section>
+
+<!-- ============================== 8.27 ============================== -->
+<section class="fml" id="eq-8-27">
+<h2><span class="num">(8.27)</span>配分函数 \(Z(x)\)<a class="anchor" href="#eq-8-27">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.3.1 节 DPO　<a href="../thellm/15-8-human-alignment.html#8-3-1-representative-supervised-alignment-meth">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0205.png" alt="原书公式 8.27"><span class="cap">原书公式 8.27</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[
+Z(x)=\sum_y \pi_{\theta_{old}}(y\mid x)\,\exp\Big(\frac{1}{\beta}r(x,y)\Big).
+\]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>说明</th></tr>
+<tr><td>\(\sum_y\)</td><td>对所有可能的回复（所有 token 序列）求和</td><td>LLM 里是指数级大，实际用采样/近似估计</td></tr>
+<tr><td>\(Z(x)\)</td><td>归一化常数</td><td>\(&gt;0\)，量纲同概率</td></tr>
+<tr><td>\(\pi_{\theta_{old}}(y\mid x)\)</td><td>参考模型生成 \(y\) 的概率</td><td>非负、总和 1</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>为什么这样定义：让分母归一化。</strong>令 \(q_x(y)\equiv\pi_{\theta_{old}}(y\mid x)\exp\frac{r(x,y)}{\beta}\)，则
+\[\sum_y q_x(y)=\sum_y\pi_{\theta_{old}}(y\mid x)e^{r/\beta}=Z(x),\]
+恰好就是 (8.27)。于是 <a href="#eq-8-28">8.28</a> 的 \(\pi^*=\frac{q_x}{Z}\) 满足 \(\sum_y\pi^*=1\)。</li>
+<li><strong>为什么它与 \(\pi_\theta\) 无关（这是全部推导的关键）。</strong>\(Z(x)\) 里只出现 \(x\)、参考策略 \(\pi_{\theta_{old}}\) 与奖励 \(r\)——<strong>没有待训的 \(\pi_\theta\)</strong>。参考模型是冻结的 SFT 模型，所以 \(Z(x)\) 在优化过程中是常数，可以从 \(\min\) 里提出去。</li>
+<li><strong>数值上的性质。</strong>若奖励有界 \(r\in[r_{\min},r_{\max}]\)，则
+\[e^{r_{\max}/\beta}\le\frac{Z(x)}{\text{（全部概率和)}}\le e^{r_{\max}/\beta},\]
+更准确地：\(Z(x)=\mathbb{E}_{y\sim\pi_{\theta_{old}}}[e^{r/\beta}]\in\big[e^{r_{\min}/\beta},e^{r_{\max}/\beta}\big]\)。所以 \(\log Z(x)\in[r_{\min}/\beta,r_{\max}/\beta]\)，<strong>\(\beta\) 越小，\(Z\) 的取值范围越指数级放大</strong>——这是 DPO 实践中 \(\beta\) 不能太小的数值原因。</li>
+<li><strong>这是玻尔兹曼分布的配分函数。</strong>物理里 \(Z=\sum_{\text{状态}}e^{-E/kT}\)，此处 \(\frac1\beta\) 是温度、\(-r\) 类比能量。名字的来源就在这里。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+"把参考模型的每个输出，按它有多受欢迎（\(e^{r/\beta}\)）重新加权，再把权重的总和归一化。"\(Z\) 就是这个总和——它回答"如果完全听奖励模型的，参考模型的总权重会是多少"。</div>
+<div class="warn"><b>易错点：\(Z\) 不可计算</b>\(\sum_y\) 要遍历整个回复空间，LLM 上是 \(|\mathcal{V}|^T\) 量级。DPO 之所以好落地，正是因为<strong>最终公式里 \(Z\) 作为常数被丢掉了</strong>，训练时完全不用算它（推理/分析时才算）。</div>
+<div class="relnav">相关：<a href="#eq-8-28">(8.28) 用它定义 \(\pi^*\)</a></div>
+</section>
+
+<!-- ============================== 8.28 ============================== -->
+<section class="fml" id="eq-8-28">
+<h2><span class="num">(8.28)</span>最优策略的闭式解 \(\pi^*(y\mid x)\)<a class="anchor" href="#eq-8-28">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.3.1 节 DPO　<a href="../thellm/15-8-human-alignment.html#8-3-1-representative-supervised-alignment-meth">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0206.png" alt="原书公式 8.28"><span class="cap">原书公式 8.28</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[
+\pi^*(y\mid x)=\frac{1}{Z(x)}\,\pi_{\theta_{old}}(y\mid x)\,\exp\Big(\frac{1}{\beta}r(x,y)\Big).
+\]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>说明</th></tr>
+<tr><td>\(\pi^*(\cdot\mid x)\)</td><td>给定提示 \(x\) 时，(8.23) 的<strong>最优策略分布</strong></td><td>非负、总和 1；<strong>不含 \(\pi_\theta\)</strong></td></tr>
+<tr><td>\(\pi_{\theta_{old}}\)</td><td>参考模型（SFT 模型）</td><td>冻结</td></tr>
+<tr><td>\(Z(x)\)</td><td>(8.27) 的配分函数</td><td>归一化常数</td></tr>
+</table>
+
+<h3>③ 推导：它就是 (8.23) 的极值点（拉格朗日乘子法）</h3>
+<ol class="steps">
+<li><strong>固定 \(x\)，写出带约束的优化问题。</strong>\(y\) 跑遍词表空间，\(\pi=(\pi(y))_y\) 落在概率单纯形上：\(\pi(y)\ge0\)、\(\sum_y\pi(y)=1\)。目标（省掉与 \(\theta\) 无关的 \(\mathbb{E}_{x\sim\mathcal{D}}\)）：
+\[\max_{\pi}\ J_x(\pi)=\sum_y \pi(y)r(x,y)-\beta\sum_y \pi(y)\log\frac{\pi(y)}{\pi_{\mathrm{ref}}(y)}\quad \text{s.t.}\ \ \sum_y\pi(y)=1.\]</li>
+<li><strong>KKT / 一阶条件。</strong>把约束写成 \(\sum_y\pi(y)-1=0\)，拉格朗日函数
+\[\mathcal{L}(\pi,\lambda)=\sum_y \pi(y)r(x,y)-\beta\sum_y \pi(y)\log\frac{\pi(y)}{\pi_{\mathrm{ref}}(y)}-\lambda\Big(\sum_y\pi(y)-1\Big).\]
+\(\pi\) 落在内部（非负约束不起作用）时，KKT 条件就是"对每个 \(y\) 求偏导为零"：
+\[\frac{\partial\mathcal{L}}{\partial\pi(y)}=r(x,y)-\beta\Big(\log\frac{\pi(y)}{\pi_{\mathrm{ref}}(y)}+1\Big)-\lambda=0,\]
+用到 \(\frac{\partial}{\partial\pi}\big(\pi\log\frac{\pi}{\pi_{\mathrm{ref}}}\big)=\log\frac{\pi}{\pi_{\mathrm{ref}}}+1\)（对数项的求导）。</li>
+<li><strong>解出 \(\pi\) 与 \(\lambda\) 的关系。</strong>移项：
+\[\log\frac{\pi(y)}{\pi_{\mathrm{ref}}(y)}=\frac{r(x,y)-\lambda-\beta}{\beta}\ \Longrightarrow\ \pi(y)=\pi_{\mathrm{ref}}(y)\,\exp\Big(\frac{r(x,y)}{\beta}\Big)\exp\Big(-\frac{\lambda}{\beta}-1\Big).\]
+后面那个因子<strong>与 \(y\) 无关</strong>，只能由归一化条件确定。</li>
+<li><strong>用归一化定 \(\lambda\)：</strong>\(1=\sum_y\pi(y)=e^{-\lambda/\beta-1}\sum_y\pi_{\mathrm{ref}}(y)e^{r/\beta}=e^{-\lambda/\beta-1}Z(x)\)。取对数：\(0=-\frac{\lambda}{\beta}-1+\log Z(x)\)，即 \(\lambda=\beta\big(\log Z(x)-1\big)\)。代回第 3 步：
+\[\pi^*(y\mid x)=\pi_{\mathrm{ref}}(y)\,e^{r(x,y)/\beta}\,e^{-(\log Z(x)-1)}\cdot e^{-1}=\frac{\pi_{\mathrm{ref}}(y)e^{r(x,y)/\beta}}{Z(x)}.\]
+即 (8.28)。</li>
+<li><strong>验证它确实是最大值。</strong>\(J_x\) 的 Hessian 为对角阵 \(\mathrm{diag}\big(-\frac{\beta}{\pi(y)}\big)\)，<strong>负定</strong>，故 (8.28) 是<strong>唯一全局最优</strong>。这也回答了"一阶条件会不会给出鞍点"的疑虑。</li>
+<li><strong>两条性质（原书明确指出）。</strong>(1) \(\pi^*(y\mid x)&gt;0\)：因为 \(\pi_{\theta_{old}}&gt;0\)（softmax 输出严格为正）且 \(e^{r/\beta}&gt;0\)、\(Z&gt;0\)。(2) \(\sum_y\pi^*(y\mid x)=\frac1{Z(x)}\sum_y\pi_{\theta_{old}}e^{r/\beta}=1\)。所以 \(\pi^*(\cdot\mid x)\) <strong>是一个合法概率分布，且与待训的 \(\pi_\theta\) 无关</strong>——这正是它能当"常数"参与后续代数的原因。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+最优策略 = 参考模型 × 奖励的指数化 × 归一化。也就是"以 SFT 模型为出发点，按奖励做一次 softmax 式的重加权"。这一步就是整个 DPO 的理论核心：<strong>带 KL 正则的 RLHF 有闭式最优解</strong>。</div>
+<div class="warn"><b>易错点</b>
+\(\pi^*\) 依赖奖励模型 \(r(x,y)\)。如果 \(r\) 随 \(\pi_\theta\) 一起训练，\(\pi^*\) 就变成"移动靶"，(8.32) 之后把 \(\pi^*\) 当常数的推导就不成立了。DPO 假设 \(r\)（或"偏好标签"）是给定的。</div>
+<div class="relnav">相关：<a href="#eq-8-27">(8.27) \(Z(x)\) 的定义</a> · <a href="#eq-8-30">(8.30) 代回目标</a></div>
+</section>
+
+<!-- ============================== 8.29 ============================== -->
+<section class="fml" id="eq-8-29">
+<h2><span class="num">(8.29)</span>把 \(\pi^*\) 代回目标（第一步）<a class="anchor" href="#eq-8-29">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.3.1 节 DPO　<a href="../thellm/15-8-human-alignment.html#8-3-1-representative-supervised-alignment-meth">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0207.png" alt="原书公式 8.29"><span class="cap">原书公式 8.29</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[
+L(\theta)=\min_{\pi_\theta}\ \mathbb{E}_{x\sim\mathcal{D}}\ \mathbb{E}_{y\sim\pi_\theta(\cdot\mid x)}
+\Big[\log\frac{\pi_\theta(y\mid x)}{\tfrac{1}{Z(x)}\pi_{\theta_{old}}(y\mid x)\exp\big(\tfrac1\beta r(x,y)\big)}-\log Z(x)\Big].
+\]
+</div>
+<p>代入 \(\pi^*=\frac1Z\pi_{\theta_{old}}e^{r/\beta}\)，分母正好就是 \(\pi^*(y\mid x)\)：</p>
+<div class="eq">
+\[
+L(\theta)=\min_{\pi_\theta}\ \mathbb{E}_{x\sim\mathcal{D}}\ \mathbb{E}_{y\sim\pi_\theta(\cdot\mid x)}
+\Big[\log\frac{\pi_\theta(y\mid x)}{\pi^*(y\mid x)}-\log Z(x)\Big].
+\]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>说明</th></tr>
+<tr><td>\(\pi^*(y\mid x)\)</td><td>(8.28) 定义的最优分布</td><td>与 \(\theta\) 无关</td></tr>
+<tr><td>\(\log\frac{\pi_\theta}{\pi^*}\)</td><td>当前策略对最优策略的对数似然比</td><td>形状类似 (8.25) 里的对数比</td></tr>
+<tr><td>\(-\log Z(x)\)</td><td>与 \(\pi_\theta\) 无关的常数项</td><td>下一步丢弃</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>代入是纯粹的符号替换。</strong>(8.26) 的分母 \(\tfrac1{Z(x)}\pi_{\theta_{old}}(y\mid x)\exp(\frac1\beta r(x,y))\) 与 (8.28) 的右端<strong>逐项相同</strong>，所以可以直接把整个分母换成一个符号 \(\pi^*(y\mid x)\)，得到上一式的第二个框。这一步不改变目标值，只改变记号。</li>
+<li><strong>现在可以做一次严格的化简。</strong>因为 \(Z(x)\) 与 \(\pi_\theta\) 无关，取 \(\min\) 时它只是被加上一个常数：
+\[\min_{\pi_\theta}\Big\{-\log Z(x)+F(\pi_\theta)\Big\}=-\log Z(x)+\min_{\pi_\theta}F(\pi_\theta).\]
+（因为 \(\arg\min\) 只由 \(F\) 决定。）所以只需优化
+\[F(\pi_\theta)=\mathbb{E}_{x\sim\mathcal{D}}\mathbb{E}_{y\sim\pi_\theta(\cdot\mid x)}\Big[\log\frac{\pi_\theta(y\mid x)}{\pi^*(y\mid x)}\Big].\]</li>
+<li><strong>识别这个量。</strong>由期望形式的 KL 定义（取 \(p=\pi_\theta\) 作为求期望的分布、\(q=\pi^*\) 作为被比较的分布）：
+\[F(\pi_\theta)=\mathbb{E}_{x\sim\mathcal{D}}\mathbb{E}_{y\sim\pi_\theta}\Big[\log\frac{\pi_\theta(y\mid x)}{\pi^*(y\mid x)}\Big]=\mathbb{E}_{x\sim\mathcal{D}}\mathrm{KL}\big[\pi_\theta(\cdot\mid x)\,\|\,\pi^*(\cdot\mid x)\big].\]
+即 <strong>\(\pi_\theta\) 与"理想分布" \(\pi^*\) 的 KL 距离</strong>。这在 DPO 语境里是核心洞察：<em>对齐 = 让策略的分布逼近"指数化奖励分布" \(\pi^*\)</em>。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+推导到这一步，"最大化奖励 − KL 惩罚"已经变成了"最小化到 \(\pi^*\) 的 KL 距离"。而 \(\pi^*\) 是可以用偏好数据算出来的经验分布（soft label），于是训练就是一个普通的、带 KL 意义的监督学习过程。</div>
+<div class="relnav">相关：<a href="#eq-8-30">(8.30) 正式写出这一步</a></div>
+</section>
+
+<!-- ============================== 8.30 ============================== -->
+<section class="fml" id="eq-8-30">
+<h2><span class="num">(8.30)</span>化简：分离常数项<a class="anchor" href="#eq-8-30">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.3.1 节 DPO　<a href="../thellm/15-8-human-alignment.html#8-3-1-representative-supervised-alignment-meth">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0208.png" alt="原书公式 8.30"><span class="cap">原书公式 8.30</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[
+L(\theta)=\min_{\pi_\theta}\ \mathbb{E}_{x\sim\mathcal{D}}\ \mathbb{E}_{y\sim\pi_\theta(\cdot\mid x)}
+\Big[\log\frac{\pi_\theta(y\mid x)}{\pi^*(y\mid x)}-\log Z(x)\Big].
+\]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>说明</th></tr>
+<tr><td>\(\mathbb{E}_{x\sim\mathcal{D}}\)</td><td>对偏好数据集求平均（外层）</td><td>有限样本均值</td></tr>
+<tr><td>\(\mathbb{E}_{y\sim\pi_\theta(\cdot\mid x)}\)</td><td>对<strong>当前策略采出的回复</strong>求平均（内层）</td><td>DPO 里最终被替换成"给定样本对"的形式</td></tr>
+<tr><td>\(-\log Z(x)\)</td><td>常数项</td><td>不影响 argmin</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>把 \(-\log Z(x)\) 从期望里提出来。</strong>关键观察：<strong>它不是 \(y\) 的函数</strong>，因此可以用期望的线性性把它移出内层期望。写成
+\[\mathbb{E}_{y\sim\pi_\theta(\cdot\mid x)}\big[f(x,y)-\log Z(x)\big]=\mathbb{E}_{y\sim\pi_\theta(\cdot\mid x)}f(x,y)-\log Z(x)\cdot\underbrace{\mathbb{E}_{y\sim\pi_\theta(\cdot\mid x)}[1]}_{=1}.\]
+这一步是<strong>严格恒等</strong>，不依赖 \(f\) 的任何性质。</li>
+<li><strong>然后提到 \(\min\) 外面。</strong>用第 1 步的结论 \(\min_\theta\{c+G(\theta)\}=c+\min_\theta G(\theta)\)（\(c\) 与 \(\theta\) 无关），把整个 \(-\log Z(x)\) 放到极小号外面：<strong>\(\arg\min_\theta\) 完全由不含 \(Z\) 的部分决定</strong>。</li>
+<li><strong>结论。</strong>训练时<strong>不需要计算 \(Z(x)\)</strong>。这解释了一个常见困惑：DPO 损失里根本看不到配分函数，因为它被当作"与参数无关的常数"丢掉了；而它的信息已经通过 \(\pi^*\)（或后续公式里的 \(\beta^{-1}\log\frac{\pi_\theta}{\pi_{\mathrm{ref}}}\) 形式）被吸收掉了。</li>
+<li><strong>此时剩下要优化的量的解释。</strong>由第 (8.29) 条第 3 步，\(\mathbb{E}_{y\sim\pi_\theta}\log\frac{\pi_\theta}{\pi^*}=\mathrm{KL}[\pi_\theta\|\pi^*]\)，它在 \(\pi_\theta=\pi^*\) 时取最小值 0。所以 (8.30) 说的是：<strong>找到那个"既在数据上、又尽可能接近指数化奖励分布"的策略</strong>。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+归一化常数被扔在门外——训练时看不到它，但它的作用（把软标签变成合法分布）已经通过 \(\pi^*\) 完成了。</div>
+<div class="relnav">相关：<a href="#eq-8-29">(8.29) 代入</a> · <a href="#eq-8-31">(8.31) 交换期望</a></div>
+</section>
+
+<!-- ============================== 8.31 ============================== -->
+<section class="fml" id="eq-8-31">
+<h2><span class="num">(8.31)</span>把内层期望提到括号外<a class="anchor" href="#eq-8-31">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.3.1 节 DPO　<a href="../thellm/15-8-human-alignment.html#8-3-1-representative-supervised-alignment-meth">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0209.png" alt="原书公式 8.31"><span class="cap">原书公式 8.31</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[
+L(\theta)=\min_{\pi_\theta}\ \mathbb{E}_{x\sim\mathcal{D}}
+\Big[\ \mathbb{E}_{y\sim\pi_\theta(\cdot\mid x)}\Big[\log\frac{\pi_\theta(y\mid x)}{\pi^*(y\mid x)}\Big]-\log Z(x)\ \Big].
+\]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>说明</th></tr>
+<tr><td>\(\mathbb{E}_{x\sim\mathcal{D}}[\;\cdot\;]\)</td><td>外层：对数据集里的每条提示求平均</td><td>最外层只对 \(x\) 求期望</td></tr>
+<tr><td>\(\mathbb{E}_{y\sim\pi_\theta(\cdot\mid x)}[\;\cdot\;]\)</td><td>内层：给定 \(x\)，从当前策略采 \(y\) 并求平均</td><td>只对 \(y\) 求期望</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>这是一次"变量分离"。</strong>\(\log\frac{\pi_\theta(y\mid x)}{\pi^*(y\mid x)}-\log Z(x)=:g(x,y)\) 只依赖两个变量 \(x,y\)；外层期望的分布只作用于 \(x\)，内层只作用于 \(y\)。二者可以独立求平均：
+\[\mathbb{E}_{x\sim\mathcal{D}}\mathbb{E}_{y\sim\pi_\theta(\cdot\mid x)}[g]=\frac{1}{|\mathcal{D}|}\sum_{n=1}^{|\mathcal{D}|}\,\mathbb{E}_{y\sim\pi_\theta(\cdot\mid x_n)}[g(x_n,y)].\]</li>
+<li><strong>为什么这里可以"提"而不需要任何条件。</strong>严格地说，外层 \(x\) 与内层 \(y\) 的分布是<strong>有条件依赖</strong>的（\(y\) 的分布依赖 \(x\)）。但我们<strong>并没有假设它们独立</strong>：内层期望就是以 \(x\) 为条件的 \(\mathbb{E}_{y\mid x}\)，提出来的恰好是"条件期望"本身，只是把它挪到了求和内部。这与"把独立变量乘积的期望拆开"是两回事——<strong>这里没有用独立性</strong>。</li>
+<li><strong>这一步的实用价值：</strong>它让目标变成"对每条数据独立求解、再平均"的形式。于是可以对每条提示写清楚：内层是关于 \(\pi_\theta\) 的泛函，外层只是数据集平均。<strong>没有任何优化耦合</strong>。</li>
+<li><strong>与 DPO 实际损失的联系（提前透露）。</strong>内层期望看起来还要求"从 \(\pi_\theta\) 采样"，但下一条式子会把它变成 KL，再下一步利用"KL 在 \(p=q\) 时为 0"这一性质，直接对<strong>数据里给定的 \(y^+\)、\(y^-\)</strong> 写出闭式的对数比差——那就是 DPO 的著名损失（\(-\log\sigma(\beta^{-1}\log\frac{\pi_\theta(y^+)}{\pi_{\mathrm{ref}}(y^+)}-\beta^{-1}\log\frac{\pi_\theta(y^-)}{\pi_{\mathrm{ref}}(y^-)})\)，本节公式编号之后的部分）。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+把"对 (提示, 回复) 二元组求平均"改写成"对提示求平均，每次内部再对回复求平均"——纯粹的书写顺序调整，但让下一步把内层认成一个 KL 成为可能。</div>
+<div class="relnav">相关：<a href="#eq-8-32">(8.32) 识别为 KL</a></div>
+</section>
+
+<!-- ============================== 8.32 ============================== -->
+<section class="fml" id="eq-8-32">
+<h2><span class="num">(8.32)</span>最终形式：目标变成 KL 距离的最小化<a class="anchor" href="#eq-8-32">#</a></h2>
+<p class="where"><b>出处</b>第 8 章 8.3.1 节 DPO　<a href="../thellm/15-8-human-alignment.html#8-3-1-representative-supervised-alignment-meth">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0210.png" alt="原书公式 8.32"><span class="cap">原书公式 8.32</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[
+L(\theta)=\min_{\pi_\theta}\ \mathbb{E}_{x\sim\mathcal{D}}
+\Big[\mathrm{KL}\big[\pi_\theta(y\mid x),\,\pi^*(y\mid x)\big]-\log Z(x)\Big].
+\]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>说明</th></tr>
+<tr><td>\(\mathrm{KL}[\pi_\theta,\pi^*]\)</td><td>当前策略与最优策略的相对熵</td><td>\(\ge0\)，\(\pi_\theta=\pi^*\) 时为 0</td></tr>
+<tr><td>\(\log Z(x)\)</td><td>(8.27) 配分函数的对数</td><td>常数，不影响 argmin</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><strong>要证的等式：</strong>
+\[\mathbb{E}_{y\sim p}\Big[\log\frac{p(y)}{q(y)}\Big]=\mathrm{KL}[p\|q]=\mathbb{E}_{y\sim p}\big[\log\tfrac pq\big]+H(p)-H(p,q).\]
+直接从定义出发最好：\(\mathbb{E}_{y\sim p}[\log\frac{p}{q}]=\sum_y p(y)\log p(y)-\sum_y p(y)\log q(y)=-H(p)+H(p,q)\)；再用 \(H(p,q)=H(p)+\mathrm{KL}[p\|q]\)（第 2 章的"交叉熵 = 熵 + KL"）代回 \(H(p,q)\)：\(-H(p)+H(p)+\mathrm{KL}[p\|q]=\mathrm{KL}[p\|q]\)。</li>
+<li><strong>代入。</strong>取 \(p=\pi_\theta(\cdot\mid x)\)、\(q=\pi^*(\cdot\mid x)\)，(8.31) 的内层期望正好等于 \(\mathrm{KL}[\pi_\theta(\cdot\mid x)\|\pi^*(\cdot\mid x)]\)，即 (8.32)。<strong>注意方向：</strong>对 \(\pi_\theta\) 求期望、比较 \(\pi^*\)。</li>
+<li><strong>读懂结论。</strong>(8.32) 说：最优策略 = 参考模型按奖励指数化重加权。而 (8.28) 已经算出
+\[\pi^*(y\mid x)=\frac{\pi_{\theta_{old}}(y\mid x)e^{r/\beta}}{Z(x)}\ \Longrightarrow\ r(x,y)=\beta\log\frac{\pi^*(y\mid x)}{\pi_{\theta_{old}}(y\mid x)}+\beta\log Z(x).\]
+——这就是"奖励可以由策略与参考策略的比值表示"的关系，也是 DPO 能把奖励模型消掉的直接原因。</li>
+<li><strong>最优性与一致性。</strong>\(\mathrm{KL}\ge0\) 且仅在两分布相同时取 0，所以 \(\arg\min_{\pi_\theta}\mathrm{KL}[\pi_\theta\|\pi^*]=\pi^*\)。这与第 (8.28) 条用 KKT 求出的极值点<strong>完全一致</strong>——两条路互相验证，说明整条代数链没有丢掉任何东西。</li>
+</ol>
+
+<div class="note"><b>直觉</b>
+整条链的落点：<strong>RLHF 的最优解是一个显式的分布，所以对齐问题可以像监督学习一样解。</strong>不需要与环境交互采样、不需要显式的奖励模型数值，只需要比较两个策略的对数概率。</div>
+<div class="warn"><b>易错点</b>
+(1) \(\mathrm{KL}[\pi_\theta\|\pi^*]\) 里 \(-\log Z(x)\) 在极小化中<strong>必须写出来才算完整</strong>（虽然不影响 argmin）；有些讲义会写"忽略常数项"，要清楚它是常数而不是遗漏。(2) 前向 KL 与反向 KL 的最优解不同：<strong>对 \(\pi_\theta\) 求期望的是前向 KL</strong>，它的最优解是"对 \(\pi^*\) 做重要性加权"（mode-seeking），这与 (8.28) 的形式一致；若换成 \(\mathrm{KL}[\pi^*\|\pi_\theta]\)，最优解会变成"硬截断在 \(\pi^*&gt;0\) 的支撑集上"，形式完全不同。</div>
+<div class="relnav">相关：<a href="#eq-8-23">(8.23) 起点</a> · <a href="#eq-8-28">(8.28) 闭式解</a></div>
+</section>
+
+<!-- ============================== 补充小节 ============================== -->
+<h2 id="s-gae">补充：价值函数、贝尔曼方程与 GAE（\(\hat A_t\) 是怎么来的）</h2>
+<p>前面所有公式都把 \(\hat A_t\) 当作给定的标量。它当然不是凭空的——下面把它的定义、它的低方差估计（GAE）补齐，这是 PPO 三件套（策略 / 价值 / 参考）里"价值"那一件。</p>
+
+<h3>价值函数的定义与贝尔曼方程</h3>
+<div class="eq">
+\[V(s)=\mathbb{E}_\pi\big[G_t\,\big|\,s_t=s\big],\qquad
+G_t=r_t+\gamma r_{t+1}+\gamma^2 r_{t+2}+\cdots+\gamma^{T-t-1}r_{T-1}.
+\]
+</div>
+<p><strong>贝尔曼方程的推导</strong>（用一步分解 + 期望的线性性 + 马尔可夫性）：</p>
+<ol class="steps">
+<li><strong>一步分解回报。</strong>把 \(G_t\) 拆成"第一步奖励 + 折扣后的未来"：\(G_t=r_t+\gamma G_{t+1}\)。</li>
+<li><strong>对 \(a_t\) 求条件期望。</strong>按全期望公式 \(\mathbb{E}[X]=\mathbb{E}_a[\mathbb{E}[X\mid a]]\)：
+\[V(s)=\mathbb{E}_{a_t\sim\pi(\cdot\mid s)}\big[\mathbb{E}\big[r_t+\gamma G_{t+1}\,\big|\,s,a_t\big]\big]=\mathbb{E}_{a_t}\big[r(s,a_t)\big]+\gamma\,\mathbb{E}_{a_t}\big[\mathbb{E}\big[G_{t+1}\,\big|\,s_{t+1}\big]\big].\]
+这里用了<strong>期望的线性性</strong>把 \(r_t\) 和 \(G_{t+1}\) 拆开求期望。</li>
+<li><strong>用马尔可夫性收尾。</strong>\(\mathbb{E}[G_{t+1}\mid s_{t+1}]=V(s_{t+1})\)（未来只依赖状态，不依赖如何到达）；\(\mathbb{E}_{a_t}[r(s,a_t)]=r(s)\)（即时奖励是状态-动作的确定函数）。再对 \(s'=s_{t+1}\) 求期望（环境转移的分布就是策略面对的"外生"过程）：
+\[\boxed{\ \mathbb{E}_{s'}\big[V(s')\big]=V(s)+r(s)\ }\]
+更常见写成 \(V^\pi(s)=\sum_{a}\pi(a\mid s)\big[R(s,a)+\gamma\sum_{s'}P(s'\mid s,a)V^\pi(s')\big]\)。<strong>"自洽性"就是"当前价值 = 一步奖励 + 折扣后的下一状态价值"</strong>。</li>
+<li><strong>TD 残差（时间差分误差）。</strong>把上式右端用真实的 \(r_t\) 和采样到的 \(s_{t+1}\) 估计出来、减去当前估计：
+\[\delta_t=r_t+\gamma V(s_{t+1})-V(s_t).\]
+它的期望恰好为 0（这就是 TD 的"不动点"性质），所以是优势的一个低方差代理。</li>
+</ol>
+<div class="note"><b>直觉</b>
+\(\delta_t&gt;0\) 意味着"实际结果比我原本期待的更好"——这正是把 \(Q\) 与 \(V\) 相减得到的量。优势 = 意外。</div>
+
+<h3>GAE：把 \(\delta\) 按 \((\gamma\lambda)\) 指数加权求和</h3>
+<div class="eq">
+\[A_t^{\mathrm{GAE}(\gamma,\lambda)}=\sum_{l=0}^{T-t-1}(\gamma\lambda)^l\,\delta_{t+l}.\]
+</div>
+<ol class="steps">
+<li><strong>目标：找一个 \(\mathbb{E}[A_t]\) 无偏、且 \(\mathrm{Var}\) 尽量小的估计量。</strong>优势的真值是 \(A_t=\mathbb{E}\big[\sum_{l\ge0}\gamma^l r_{t+l}\,\big|\,s_t\big]-V(s_t)\)。两个极端：<ul>
+<li>\(\lambda=1\)：\(A_t=\sum_{l\ge0}\gamma^l\delta_{t+l}\)，展开后 <strong>偏差为 0</strong>（蒙特卡洛回报，方差大）；</li>
+<li>\(\lambda=0\)：\(A_t=\delta_t\)，只信一步 TD，<strong>方差最小但有偏</strong>（因为 \(V\) 不准）。</li>
+</ul>GAE 是在这两个极端之间连续插值。</li>
+<li><strong>关键恒等式（"GAE 的半衰期"）。</strong>把 \(\delta\) 的定义逐项代入 \(A_t\)，并把 \(\delta_{t+l}\) 写成 \(r_{t+l}+\gamma V(s_{t+l+1})-V(s_{t+l})\)：
+\[\begin{aligned}
+\sum_{l\ge0}\gamma^l\delta_{t+l}&amp;=\sum_{l\ge0}\gamma^l r_{t+l}+\gamma\sum_{l\ge0}\gamma^l V(s_{t+l+1})-\sum_{l\ge0}\gamma^lV(s_{t+l})\\[2pt]
+&amp;=\sum_{l\ge0}\gamma^l r_{t+l}+\gamma^2\sum_{l\ge0}\gamma^l V(s_{t+l+1})-\sum_{l\ge0}\gamma^lV(s_{t+l})\quad(\text{指数前移})\\[2pt]
+&amp;=\sum_{l\ge0}\gamma^l r_{t+l}-\sum_{l=0}^{\infty}\gamma^{l+1}V(s_{t+l})\quad(\text{两段相消：}\ \gamma^2\text{ 起的项与后一项的 }l\ge1\text{ 项逐项抵消})\\[2pt]
+&amp;=\mathbb{E}\Big[\sum_{l\ge0}\gamma^l r_{t+l}\,\Big|\,s_t\Big]-V(s_t)=A_t.\end{aligned}\]
+用到的工具：<strong>几何级数</strong> \(\sum_{l\ge0}\gamma^l=\frac{1}{1-\gamma}\)（\(&lt;1\) 收敛）与 \(\sum_{l\ge0}\gamma^{2l}=\frac{1}{1-\gamma^2}\)，它们保证了"尾项消失"，使有限和可延拓为无穷和。</li>
+<li><strong>把 \(\lambda\) 插进去（逐项展开）。</strong>设 \(A_{t+1}^{\mathrm{GAE}}=\sum_{l\ge0}(\gamma\lambda)^l\delta_{t+1+l}\)，则
+\[\begin{aligned}
+\sum_{l\ge0}\gamma^l\delta_{t+l}&amp;=\delta_t+\sum_{l=1}^{\infty}\gamma^l\delta_{t+l}\\[2pt]
+&amp;=\delta_t+\gamma\sum_{l=0}^{\infty}\gamma^l\delta_{t+1+l}\\[2pt]
+&amp;=\delta_t+\gamma\Big[\sum_{l\ge0}(\gamma\lambda)^l\delta_{t+1+l}+\sum_{l\ge0}\big(\gamma^l-(\gamma\lambda)^l\big)\delta_{t+1+l}\Big]\\[2pt]
+&amp;=\delta_t+\gamma\,A_{t+1}^{\mathrm{GAE}}+\gamma\sum_{l\ge0}\gamma^l\big(1-\lambda^l\big)\delta_{t+1+l}.
+\end{aligned}\]
+于是得到<strong>递推关系</strong>：
+\[A_t^{\mathrm{GAE}}=\delta_t+\gamma\big(1-\lambda\big)A_{t+1}^{\mathrm{GAE}},\qquad
+\text{展开为}\quad A_t^{\mathrm{GAE}}=\sum_{l=0}^{T-t-1}(\gamma\lambda)^l\delta_{t+l}.\]
+（最后一步：把递推式代入自身 \(A_{t+1}=\delta_{t+1}+\gamma(1-\lambda)A_{t+2}\)，逐层展开，系数为 \(\gamma\cdot\gamma(1-\lambda)=\gamma^2-\gamma^2\lambda\)…，一般第 \(l\) 层系数为 \((\gamma\lambda)^l\)。）</li>
+<li><strong>误差的"平均寿命"。</strong>\(\delta_{t+l}\) 的权重是 \((\gamma\lambda)^l\)，减半发生在 \(l\approx\frac{\ln2}{-\ln(\gamma\lambda)}\) 步。\(\lambda\to0\) 寿命 \(0\) 步（纯 TD）；\(\lambda\to1\) 寿命 \(\to\infty\)（纯蒙特卡洛）。<strong>这是偏差-方差权衡的唯一旋钮</strong>，实践中 \(\lambda=0.95\) 配 \(\gamma=0.99\)。</li>
+<li><strong>无偏性与 \(\lambda\) 的方向。</strong>因为 \(\mathbb{E}[\delta_{t+l}]\) 只依赖 \(\lambda\) 之外的量，而权重是固定的正数，
+\[\mathbb{E}\big[A_t^{\mathrm{GAE}}\big]=\sum_{l=0}^{T-t-1}(\gamma\lambda)^l\,\mathbb{E}\big[\delta_{t+l}\big].\]
+\(\lambda\) 越大，用越远的、偏差越小的残差，方差越大（把更多随机项加了进来）；\(\lambda\) 越小越依赖当前的 \(V(s_t)\)，方差小但当 \(V\) 偏了整体就偏。<strong>注意：严格说"无偏"是对 \(\lambda=1\) 的蒙特卡洛优势而言</strong>；有限截断与 \(V\) 的估计误差都会引入偏差。</li>
+</ol>
+<div class="note"><b>直觉</b>
+GAE 是"最近的事权重高、久远的事权重低"的一串后悔值的指数加权和——像"信用分配"里的贴现，但多了一个 \(\lambda\) 来决定"我到底信不信我脑子里的预期值"。critic 学得越准，\(\lambda\) 越可以大。</div>
+
+<h2 id="s-misc">补充：价值函数损失、优势标准化与 KL 的蒙特卡洛估计</h2>
+<h3>价值函数（critic）的损失</h3>
+<p>有了 \(V^\pi\) 的定义，最自然的回归目标就是采样得到的回报 \(G_t\)（或 TD 目标 \(r_t+\gamma V(s_{t+1})\)）。<strong>均方误差</strong>：</p>
+<div class="eq">
+\[
+\mathcal{L}_V(\phi)=\mathbb{E}_t\Big[\big(V_\phi(s_t)-G_t\big)^2\Big]
+\quad\text{或}\quad
+\mathcal{L}_V(\phi)=\mathbb{E}_t\Big[\big(V_\phi(s_t)-\big[r_t+\gamma V_\phi(s_{t+1})\big]\big)^2\Big].
+\]
+</div>
+<ol class="steps">
+<li><strong>为什么是回归。</strong>给定采样到的 \(s_t,G_t\)，\(V^\pi(s_t)=\mathbb{E}[G_t\mid s_t]\) 就是<strong>条件期望</strong>，而"用平方损失拟合条件均值"是最小化方差的标准结果（条件期望是 \(L^2\) 意义下的唯一最优预测）。</li>
+<li><strong>一步 TD 目标的技巧性：</strong>右端含 \(\phi\)，但把它当常数（stop-gradient）后就变成普通回归，梯度是 \(\nabla_\phi \mathcal{L}_V=2\mathbb{E}[(V_\phi(s_t)-\text{target})\nabla_\phi V_\phi(s_t)]\)。<strong>不要试图直接对"右端也求导"</strong>——那会解出一个"自己跟自己做不动点迭代"的方程，工程上不可行。</li>
+<li><strong>与 PPO 的耦合。</strong>critic 若不收敛，\(\hat A_t=Q-V\) 就有偏，PPO 的目标也就跟着偏。实践中 LLaMA-2 / InstructGPT 都单独预训练一个 value head（常从奖励模型初始化），并用 \(\text{value\_loss\_coef}\) 调节它在总损失里的权重。</li>
+</ol>
+
+<h3>优势标准化</h3>
+<div class="eq">
+\[
+\hat A_t\leftarrow\frac{\hat A_t-\mu}{\sigma+\varepsilon_{\mathrm{num}}},
+\qquad \mu=\frac1N\sum_{i=1}^{N}\hat A_i,\quad \sigma=\sqrt{\frac1N\sum_{i=1}^{N}(\hat A_i-\mu)^2}.
+\]
+</div>
+<p>即在一个 batch 内<strong>减均值、除标准差</strong>。为什么有效：\(\hat A\) 的绝对尺度在不同 prompt、不同训练阶段差别很大；标准化让每个 batch 的"好/坏"信号强度一致，<strong>等价于给学习率做了一次自适应</strong>，并且去掉均值保证正负样本数量大致平衡（\(\mathbb{E}[\hat A]=0\) 正意味着"概率加权平均的推力为 0"）。</p>
+<div class="warn"><b>易错点</b>
+(1) \(\mu,\sigma\) 在一个 batch 内估计，且<strong>只在当前 batch 有效</strong>，不能跨 batch 累积（那会引入数据依赖的偏差）。(2) 必须加 \(\varepsilon_{\mathrm{num}}\approx10^{-8}\) 防除零（用数值稳定的 \(\mathrm{std}\) 实现）。(3) 标准化改变了目标函数的量纲，等价于给这一批的梯度乘了 \(1/\sigma\)——<strong>这是一个工程技巧，不是数学定理</strong>，理论上会引入轻微偏差。</div>
+
+<h3>KL 散度的蒙特卡洛估计</h3>
+<div class="eq">
+\[
+\hat{\mathrm{KL}}[p\|q]=\frac1N\sum_{n=1}^{N}\log\frac{p(x_n)}{q(x_n)}
+\ \xrightarrow[N\to\infty]{}\ \mathbb{E}_{x\sim p}\Big[\log\frac{p(x)}{q(x)}\Big]=\mathrm{KL}[p\|q].
+\]
+</div>
+<ol class="steps">
+<li><strong>为什么可以直接用样本均值。</strong>样本均值是期望的<strong>无偏</strong>估计（因为期望是线性泛函：\(\mathbb{E}[\frac1N\sum f(x_n)]=\frac1N\sum\mathbb{E}[f(x_n)]=\mathbb{E}[f(X)]\)），前提是各样本独立同分布。</li>
+<li><strong>有限样本 KL 可能为负。</strong>\(\mathbb{E}[\hat{\mathrm{KL}}]=0\) 时它有 \(\frac12\) 的概率为负（因为 \(\log\frac pq\) 可以是负的）。需要非负输出时用 Jensen 不等式（\(\log\) 是凹函数，故 \(\log\mathbb{E}\frac pq\ge\mathbb{E}\log\frac pq\)，即 \(\mathrm{KL}\ge-\log\mathbb{E}\frac pq\)）构造的 MLE 估计量 \(\hat k=\frac1N\sum\frac{p}{q}-1\ge0\)。</li>
+<li><strong>两种方向对应不同"禁区"。</strong>从 \(p\) 采样估计 \(\mathrm{KL}[p\|q]\)，会把权重集中在 \(p\) 大而 \(q\) 小的地方（"我敢说的对方不爱听"）；从 \(q\) 采样估计 \(\mathrm{KL}[q\|p]\) 会把权重集中在 <strong>\(q\) 有质量而 \(p\) 几乎没有</strong>的地方（"对方会说但我完全不会说"）。RLHF 里限制后者更安全，所以常用 <span>\(\mathrm{KL}[\pi_\theta\|\pi_{\mathrm{ref}}]\)</span>（对 <strong>新策略</strong> 求期望的那一版）——它是 mode-seeking，会主动避开参考模型认可的输出。</li>
+</ol>
+<div class="note"><b>直觉</b>
+一句话串起本页：<strong>PPO 用重要性采样 + 裁剪 + KL 惩罚，在不重新采样的前提下稳定地更新策略；GAE 与价值函数损失负责把"意外"算准；DPO 则证明这一切存在闭式最优解，于是可以退化成监督学习。</strong></div>
+<div class="relnav">相关：<a href="#eq-8-19">(8.19) 策略梯度</a> · <a href="#eq-8-20">(8.20) 裁剪</a> · <a href="#eq-8-21">(8.21) KL 惩罚</a> · <a href="#eq-8-32">(8.32) DPO 终点</a></div>
+</article>
+</main>
+<nav class="chapnav" aria-label="上下页导航"><div class="chapnav-inner">
+<a class="" href="09-ch08-align-a.html"><span class="lbl">上一章</span><span class="nm">Chapter 8 · 1/3　第 8 章 · 人类对齐（1/3）</span></a><a class="next" href="11-ch08-align-c.html"><span class="lbl">下一章</span><span class="nm">Chapter 8 · 3/3　第 8 章 · 人类对齐（3/3）</span></a>
+</div></nav>
+<script src="../assets/katex/katex.min.js"></script>
+<script src="../assets/katex/auto-render.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,394 @@
+{
+ "chapter": "9",
+ "cn": "支持向量机",
+ "en": "Support Vector Machines",
+ "book": "10-support-vector-machines.html",
+ "count": 38,
+ "equations": [
+  {
+   "id": "eq-9-1",
+   "num": "(9.1)",
+   "page": 375,
+   "img": "eq-p375-176y199-198x385.png",
+   "section": "9.1 Maximal Margin Classifier › 9.1.1 What Is a Hyperplane?",
+   "link": "../isl/10-support-vector-machines.html#eq-9-1",
+   "before": "In this section, we define a hyperplane and introduce the concept of an optimal separating hyperplane. 9.1.1What Is a Hyperplane?# In a p-dimensional space, a hyperplane is a flat affine subspace of dimension p −1.1 For instance, in two dimensions, a hyperplane is a flat one-dimensional subspace—in other words, a line. In three dimensions, a hyperplane is a flat two-dimensional subspace—that is, a plane. In p > 3 dimensions, it can be hard to visualize a hyperplane, but the notion of a (p −1)-di…",
+   "after": "for parameters β0, β1, and β2. When we say that (9.1) “defines” the hyperplane, we mean that any X = (X1, X2)T for which (9.1) holds is a point on the hyperplane. Note that (9.1) is simply the equation of a line, since indeed in two dimensions a hyperplane is a line. Equation 9.1 can be easily extended to the p-dimensional setting: (9.2) defines a p-dimensional hyperplane, again in the sense that if a point X = (X1, X2,⋯, Xp)T in p-dimensional space (i.e. a vector of length p) satisfies (9.2), then X lies on the hyperplane."
+  },
+  {
+   "id": "eq-9-2",
+   "num": "(9.2)",
+   "page": 375,
+   "img": "eq-p375-267y292-169x385.png",
+   "section": "9.1 Maximal Margin Classifier › 9.1.1 What Is a Hyperplane?",
+   "link": "../isl/10-support-vector-machines.html#eq-9-2",
+   "before": "The mathematical definition of a hyperplane is quite simple. In two dimensions, a hyperplane is defined by the equation (9.1) for parameters β0, β1, and β2. When we say that (9.1) “defines” the hyperplane, we mean that any X = (X1, X2)T for which (9.1) holds is a point on the hyperplane. Note that (9.1) is simply the equation of a line, since indeed in two dimensions a hyperplane is a line. Equation 9.1 can be easily extended to the p-dimensional setting:",
+   "after": "defines a p-dimensional hyperplane, again in the sense that if a point X = (X1, X2,⋯, Xp)T in p-dimensional space (i.e. a vector of length p) satisfies (9.2), then X lies on the hyperplane. Now, suppose that X does not satisfy (9.2); rather, (9.3) Then this tells us that X lies to one side of the hyperplane. On the other hand, if"
+  },
+  {
+   "id": "eq-9-3",
+   "num": "(9.3)",
+   "page": 375,
+   "img": "eq-p375-347y371-167x385.png",
+   "section": "9.1 Maximal Margin Classifier › 9.1.1 What Is a Hyperplane?",
+   "link": "../isl/10-support-vector-machines.html#eq-9-3",
+   "before": "Equation 9.1 can be easily extended to the p-dimensional setting: (9.2) defines a p-dimensional hyperplane, again in the sense that if a point X = (X1, X2,⋯, Xp)T in p-dimensional space (i.e. a vector of length p) satisfies (9.2), then X lies on the hyperplane. Now, suppose that X does not satisfy (9.2); rather,",
+   "after": "Then this tells us that X lies to one side of the hyperplane. On the other hand, if (9.4) then X lies on the other side of the hyperplane. So we can think of the hyperplane as dividing p-dimensional space into two halves. One can easily determine on which side of the hyperplane a point lies by simply calculating the sign of the left-hand side of (9.2). A hyperplane in two-dimensional space is shown in Figure 9.1. 9.1.2Classification Using a Separating Hyperplane#"
+  },
+  {
+   "id": "eq-9-4",
+   "num": "(9.4)",
+   "page": 375,
+   "img": "eq-p375-400y413-167x385.png",
+   "section": "9.1 Maximal Margin Classifier › 9.1.1 What Is a Hyperplane?",
+   "link": "../isl/10-support-vector-machines.html#eq-9-4",
+   "before": "defines a p-dimensional hyperplane, again in the sense that if a point X = (X1, X2,⋯, Xp)T in p-dimensional space (i.e. a vector of length p) satisfies (9.2), then X lies on the hyperplane. Now, suppose that X does not satisfy (9.2); rather, (9.3) Then this tells us that X lies to one side of the hyperplane. On the other hand, if",
+   "after": "then X lies on the other side of the hyperplane. So we can think of the hyperplane as dividing p-dimensional space into two halves. One can easily determine on which side of the hyperplane a point lies by simply calculating the sign of the left-hand side of (9.2). A hyperplane in two-dimensional space is shown in Figure 9.1. 9.1.2Classification Using a Separating Hyperplane# Now suppose that we have an n × p data matrix X that consists of n training observations in p-dimensional space,"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 375,
+   "img": "eq-p375-539y554-201x323.png",
+   "section": "9.1 Maximal Margin Classifier › 9.1.1 What Is a Hyperplane? › 9.1.2 Classification Using a Separating Hyperplane",
+   "link": "../isl/10-support-vector-machines.html",
+   "before": "(9.4) then X lies on the other side of the hyperplane. So we can think of the hyperplane as dividing p-dimensional space into two halves. One can easily determine on which side of the hyperplane a point lies by simply calculating the sign of the left-hand side of (9.2). A hyperplane in two-dimensional space is shown in Figure 9.1. 9.1.2Classification Using a Separating Hyperplane# Now suppose that we have an n × p data matrix X that consists of n training observations in p-dimensional space,",
+   "after": "⋯⋯ and that these observations fall into two classes—that is, y1,⋯, yn ∈ {−1, 1} where −1 represents one class and 1 the other class. We also have a (9.5) 注1 The word affine indicates that the subspace need not pass through the origin. FIGURE 9.1 The hyperplane 1 + 2X1 + 3X2 = 0 is shown. The blue region is the set of points for which 1 + 2X1 + 3X2 > 0, and the purple region is the set of points for which 1 + 2X1 + 3X2 < 0."
+  },
+  {
+   "id": "eq-9-5",
+   "num": "(9.5)",
+   "page": 375,
+   "img": "eq-p375-597y605-177x385.png",
+   "section": "9.1 Maximal Margin Classifier › 9.1.1 What Is a Hyperplane? › 9.1.2 Classification Using a Separating Hyperplane",
+   "link": "../isl/10-support-vector-machines.html#eq-9-5",
+   "before": "9.1.2Classification Using a Separating Hyperplane# Now suppose that we have an n × p data matrix X that consists of n training observations in p-dimensional space, ⋯⋯ and that these observations fall into two classes—that is, y1,⋯, yn ∈ {−1, 1} where −1 represents one class and 1 the other class. We also have a",
+   "after": "注1 The word affine indicates that the subspace need not pass through the origin. FIGURE 9.1 The hyperplane 1 + 2X1 + 3X2 = 0 is shown. The blue region is the set of points for which 1 + 2X1 + 3X2 > 0, and the purple region is the set of points for which 1 + 2X1 + 3X2 < 0. (T. Our test observation, a p-vector of observed features x∗='x∗⋯x∗ goal is to develop a classifier based on the training data that will correctly classify the test observation using its feature measurements. We have seen a number of approaches for this task, such as linear discriminant analysis and logistic regression in Chapter 4, and classification trees, bagging, and boosting in Chapter 8. We will now see a new approach…"
+  },
+  {
+   "id": "eq-9-6",
+   "num": "(9.6)",
+   "page": 376,
+   "img": "eq-p376-455y479-148x385.png",
+   "section": "9.1 Maximal Margin Classifier › 9.1.1 What Is a Hyperplane? › 9.1.2 Classification Using a Separating Hyperplane",
+   "link": "../isl/10-support-vector-machines.html#eq-9-6",
+   "before": "FIGURE 9.1 The hyperplane 1 + 2X1 + 3X2 = 0 is shown. The blue region is the set of points for which 1 + 2X1 + 3X2 > 0, and the purple region is the set of points for which 1 + 2X1 + 3X2 < 0. (T. Our test observation, a p-vector of observed features x∗='x∗⋯x∗ goal is to develop a classifier based on the training data that will correctly classify the test observation using its feature measurements. We have seen a number of approaches for this task, such as linear discriminant analysis and logisti…",
+   "after": "and (9.7) Equivalently, a separating hyperplane has the property that (9.8)"
+  },
+  {
+   "id": "eq-9-7",
+   "num": "(9.7)",
+   "page": 376,
+   "img": "eq-p376-496y508-144x385.png",
+   "section": "9.1 Maximal Margin Classifier › 9.1.1 What Is a Hyperplane? › 9.1.2 Classification Using a Separating Hyperplane",
+   "link": "../isl/10-support-vector-machines.html#eq-9-7",
+   "before": "If a separating hyperplane exists, we can use it to construct a very natural classifier: a test observation is assigned a class depending on which side of the hyperplane it is located. The right-hand panel of Figure 9.2 shows an example of such a classifier. That is, we classify the test observation x∗ based on the sign of f(x∗) = β0+β1x∗1+β2x∗2+⋯+βpx∗p. If f(x∗) is positive, then we assign the test observation to class 1, and if f(x∗) is negative, then we assign it to class −1. We can also make…",
+   "after": "Equivalently, a separating hyperplane has the property that (9.8) for all i = 1,⋯, n. FIGURE 9.2 Left: There are two classes of observations, shown in blue and in purple, each of which has measurements on two variables. Three separating hyperplanes, out of many possible, are shown in black. Right: A separating hy- perplane is shown in black. The blue and purple grid indicates the decision rule made by a classifier based on this separating hyperplane: a test observation that falls in the blue portion of the grid will be assigned to the blue class, and a test observation that falls into the purple portion of the grid will be assigned to the purple class."
+  },
+  {
+   "id": "eq-9-8",
+   "num": "(9.8)",
+   "page": 376,
+   "img": "eq-p376-527y551-160x385.png",
+   "section": "9.1 Maximal Margin Classifier › 9.1.1 What Is a Hyperplane? › 9.1.2 Classification Using a Separating Hyperplane",
+   "link": "../isl/10-support-vector-machines.html#eq-9-8",
+   "before": "(9.6) and (9.7) Equivalently, a separating hyperplane has the property that",
+   "after": "for all i = 1,⋯, n. FIGURE 9.2 Left: There are two classes of observations, shown in blue and in purple, each of which has measurements on two variables. Three separating hyperplanes, out of many possible, are shown in black. Right: A separating hy- perplane is shown in black. The blue and purple grid indicates the decision rule made by a classifier based on this separating hyperplane: a test observation that falls in the blue portion of the grid will be assigned to the blue class, and a test observation that falls into the purple portion of the grid will be assigned to the purple class. A natural choice is the maximal margin hyperplane (also known as the optimal separating hyperplane), whic…"
+  },
+  {
+   "id": "eq-9-11",
+   "num": "(9.11)",
+   "page": 379,
+   "img": "eq-p379-195y274-134x377.png",
+   "section": "9.1 Maximal Margin Classifier › 9.1.1 What Is a Hyperplane? › 9.1.2 Classification Using a Separating Hyperplane › 9.1.3 The Maximal Margin Classifier › 9.1.4 Construction of the Maximal Margin Classifier",
+   "link": "../isl/10-support-vector-machines.html#eq-9-11",
+   "before": "If β0, β1,⋯, βp are the coefficients of the maximal margin hyperplane, then the maximal margin classifier classifies the test observation x∗based on the sign of f(x∗) = β0 + β1x∗1 + β2x∗2 +⋯ + βpx∗p. Figure 9.3 shows the maximal margin hyperplane on the data set of Figure 9.2. Comparing the right-hand panel of Figure 9.2 to Figure 9.3, we see that the maximal margin hyperplane shown in Figure 9.3 does indeed result in a greater minimal distance between the observations and the separating hyperpl…",
+   "after": "This optimization problem (9.9)–(9.11) is actually simpler than it looks. First of all, the constraint in (9.11) that The maximal margin classifier is a very natural way to perform classification, if a separating hyperplane exists. However, as we have hinted, in many cases no separating hyperplane exists, and so there is no maximal margin classifier. In this case, the optimization problem (9.9)–(9.11) has no solution with M > 0. An example is shown in Figure 9.4. In this case, we cannot exactly separate the two classes. However, as we will see in the next section, we can extend the concept of a separating hyperplane in order to develop a hyperplane that almost separates the classes, using a …"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 379,
+   "img": "eq-p379-308y328-126x379.png",
+   "section": "9.1 Maximal Margin Classifier › 9.1.1 What Is a Hyperplane? › 9.1.2 Classification Using a Separating Hyperplane › 9.1.3 The Maximal Margin Classifier › 9.1.4 Construction of the Maximal Margin Classifier",
+   "link": "../isl/10-support-vector-machines.html",
+   "before": "We now consider the task of constructing the maximal margin hyperplane based on a set of n training observations x1,⋯, xn ∈Rp and associated class labels y1,⋯, yn ∈{−1, 1}. Briefly, the maximal margin hyperplane is the solution to the optimization problem (9.11) This optimization problem (9.9)–(9.11) is actually simpler than it looks. First of all, the constraint in (9.11) that The maximal margin classifier is a very natural way to perform classification, if a separating hyperplane exists. Howev…",
+   "after": "guarantees that each observation will be on the correct side of the hyperplane, provided that M is positive. (Actually, for each observation to be on the correct side of the hyperplane we would simply need yi(β0 +β1xi1 + β2xi2+⋯+βpxip) > 0, so the constraint in (9.11) in fact requires that each observation be on the correct side of the hyperplane, with some cushion, provided that M is positive.) Second, note that (9.10) is not really a constraint on the hyperplane, since if β0 + β1xi1 + β2xi2 +⋯ + βpxip = 0 defines a hyperplane, then so does k(β0 + β1xi1 + β2xi2 +⋯ + βpxip) = 0 for any k̸ = 0. However, (9.10) adds meaning to (9.11); one can show that with this constraint the perpendicular di…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 379,
+   "img": "eq-p379-470y490-168x337.png",
+   "section": "9.1 Maximal Margin Classifier › 9.1.1 What Is a Hyperplane? › 9.1.2 Classification Using a Separating Hyperplane › 9.1.3 The Maximal Margin Classifier › 9.1.4 Construction of the Maximal Margin Classifier",
+   "link": "../isl/10-support-vector-machines.html",
+   "before": "The maximal margin classifier is a very natural way to perform classification, if a separating hyperplane exists. However, as we have hinted, in many cases no separating hyperplane exists, and so there is no maximal margin classifier. In this case, the optimization problem (9.9)–(9.11) has no solution with M > 0. An example is shown in Figure 9.4. In this case, we cannot exactly separate the two classes. However, as we will see in the next section, we can extend the concept of a separating hyper…",
+   "after": "Therefore, the constraints (9.10) and (9.11) ensure that each observation is on the correct side of the hyperplane and at least a distance M from the hyperplane. Hence, M represents the margin of our hyperplane, and the optimization problem chooses β0, β1,⋯, βp to maximize M. This is exactly the definition of the maximal margin hyperplane! The problem (9.9)–(9.11) can be solved efficiently, but details of this optimization are outside of the scope of this book. 9.1.5The Non-separable Case# FIGURE 9.4 There are two classes of observations, shown in blue and in purple. In this case, the two classes are not separable by a hyperplane, and so the maximal margin classifier cannot be used. 9.2Suppo…"
+  },
+  {
+   "id": "eq-9-15",
+   "num": "(9.15)",
+   "page": 382,
+   "img": "eq-p382-341y456-149x380.png",
+   "section": "9.2 Support Vector Classifiers › 9.2.1 Overview of the Support Vector Classifier › 9.2.2 Details of the Support Vector Classifier",
+   "link": "../isl/10-support-vector-machines.html#eq-9-15",
+   "before": "The support vector classifier, sometimes called a soft margin classifier, does exactly this. Rather than seeking the largest possible margin so that every observation is not only on the correct side of the hyperplane but also on the correct side of the margin, we instead allow some observations to be on the incorrect side of the margin, or even the incorrect side of the hyperplane. (The margin is soft because it can be violated by some of the training observations.) An example is shown in the le…",
+   "after": "where C is a nonnegative tuning parameter. As in (9.11), M is the width of the margin; we seek to make this quantity as large as possible. In (9.14), ϵ1,⋯, ϵn are slack variables that allow individual observations to be on the wrong side of the margin or the hyperplane; we will explain them in greater detail momentarily. Once we have solved (9.12)–(9.15), we classify a test observation x∗as before, by simply determining on which side of the hyperplane it lies. That is, we classify the test observation based on the sign of f(x∗) = β0 + β1x∗1 +⋯ + βpx∗p. The problem (9.12)–(9.15) seems complex, but insight into its behavior can be made through a series of simple observations presented below. F…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 385,
+   "img": "eq-p385-539y561-187x318.png",
+   "section": "9.3 Support Vector Machines › 9.3.1 Classification with Non-Linear Decision Boundaries",
+   "link": "../isl/10-support-vector-machines.html",
+   "before": "The support vector classifier is a natural approach for classification in the two-class setting, if the boundary between the two classes is linear. However, in practice we are sometimes faced with non-linear class boundaries. For instance, consider the data in the left-hand panel of Figure 9.8. It is clear that a support vector classifier or any linear classifier will perform poorly here. Indeed, the support vector classifier shown in the right-hand panel of Figure 9.8 is useless here. In Chapte…",
+   "after": "Then (9.12)–(9.15) would become (9.16) subject to yiβ0 +βj1xij +βj2x2ij≥M(1 −ϵi),"
+  },
+  {
+   "id": "eq-9-16",
+   "num": "(9.16)",
+   "page": 386,
+   "img": "eq-p386-72y109-130x380.png",
+   "section": "9.3 Support Vector Machines › 9.3.1 Classification with Non-Linear Decision Boundaries",
+   "link": "../isl/10-support-vector-machines.html#eq-9-16",
+   "before": "X1, X2,⋯, Xp, we could instead fit a support vector classifier using 2p features Then (9.12)–(9.15) would become",
+   "after": "subject to yiβ0 +βj1xij +βj2x2ij≥M(1 −ϵi), Why does this lead to a non-linear decision boundary? In the enlarged feature space, the decision boundary that results from (9.16) is in fact linear. But in the original feature space, the decision boundary is of the form q(x) = 0, where q is a quadratic polynomial, and its solutions are generally non-linear. One might additionally want to enlarge the feature space with higher-order polynomial terms, or with interaction terms of the form XjXj′ for j̸ = j′. Alternatively, other functions of the predictors could be considered rather than polynomials. It is not hard to see that there are many possible ways to enlarge the feature space, and that unle…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 386,
+   "img": "eq-p386-150y176-130x297.png",
+   "section": "9.3 Support Vector Machines › 9.3.1 Classification with Non-Linear Decision Boundaries",
+   "link": "../isl/10-support-vector-machines.html",
+   "before": "Then (9.12)–(9.15) would become (9.16) subject to yiβ0 +βj1xij +βj2x2ij≥M(1 −ϵi),",
+   "after": "Why does this lead to a non-linear decision boundary? In the enlarged feature space, the decision boundary that results from (9.16) is in fact linear. But in the original feature space, the decision boundary is of the form q(x) = 0, where q is a quadratic polynomial, and its solutions are generally non-linear. One might additionally want to enlarge the feature space with higher-order polynomial terms, or with interaction terms of the form XjXj′ for j̸ = j′. Alternatively, other functions of the predictors could be considered rather than polynomials. It is not hard to see that there are many possible ways to enlarge the feature space, and that unless we are careful, we could end up with a hug…"
+  },
+  {
+   "id": "eq-9-17",
+   "num": "(9.17)",
+   "page": 386,
+   "img": "eq-p386-554y582-201x380.png",
+   "section": "9.3 Support Vector Machines › 9.3.1 Classification with Non-Linear Decision Boundaries › 9.3.2 The Support Vector Machine",
+   "link": "../isl/10-support-vector-machines.html#eq-9-17",
+   "before": "9.3.2The Support Vector Machine# The support vector machine (SVM) is an extension of the support vector classifier that results from enlarging the feature space in a specific way, using kernels. We will now discuss this extension, the details of which are somewhat complex and beyond the scope of this book. However, the main idea is described in Section 9.3.1: we may want to enlarge our feature space in order to accommodate a non-linear boundary between the classes. The kernel approach that we de…",
+   "after": "It can be shown that The linear support vector classifier can be represented as (9.18) where there are n parameters αi, i = 1,⋯, n, one per training observation."
+  },
+  {
+   "id": "eq-9-18",
+   "num": "(9.18)",
+   "page": 386,
+   "img": "eq-p386-618y657-205x380.png",
+   "section": "9.3 Support Vector Machines › 9.3.1 Classification with Non-Linear Decision Boundaries › 9.3.2 The Support Vector Machine",
+   "link": "../isl/10-support-vector-machines.html#eq-9-18",
+   "before": "i=1 aibi. Thus the inner product of two observations xi, xi′ is given by (9.17) It can be shown that The linear support vector classifier can be represented as",
+   "after": "where there are n parameters αi, i = 1,⋯, n, one per training observation. To estimate the parameters α1,⋯, αn and β0, all we need are the ( 'n 2inner products( ⟨xi, xi′⟩between all pairs of training observations. 'n (The notationmeans n(n −1)/2, and gives the number of pairs among a set of n items.) Notice that in (9.18), in order to evaluate the function f(x), we need to compute the inner product between the new point x and each of the training points xi. However, it turns out that αi is nonzero only for the support vectors in the solution—that is, if a training observation is not a support vector, then its αi equals zero. So if S is the collection of indices of these support points, we ca…"
+  },
+  {
+   "id": "eq-9-19",
+   "num": "(9.19)",
+   "page": 387,
+   "img": "eq-p387-220y257-192x380.png",
+   "section": "9.3 Support Vector Machines › 9.3.1 Classification with Non-Linear Decision Boundaries › 9.3.2 The Support Vector Machine",
+   "link": "../isl/10-support-vector-machines.html#eq-9-19",
+   "before": "The linear support vector classifier can be represented as (9.18) where there are n parameters αi, i = 1,⋯, n, one per training observation. To estimate the parameters α1,⋯, αn and β0, all we need are the ( 'n 2inner products( ⟨xi, xi′⟩between all pairs of training observations. 'n (The notationmeans n(n −1)/2, and gives the number of pairs among a set of n items.) Notice that in (9.18), in order to evaluate the function f(x), we need to compute the inner product between the new point x and each…",
+   "after": "which typically involves far fewer terms than in (9.18).2 To summarize, in representing the linear classifier f(x), and in computing its coefficients, all we need are inner products. This is known as a polynomial kernel of degree d, where d is a positive integer. Using such a kernel with d > 1, instead of the standard linear kernel (9.21), in the support vector classifier algorithm leads to a much more flexible decision boundary. It essentially amounts to fitting a support vector classifier in a higher-dimensional space involving polynomials of degree d, rather than in the original feature space. When the support vector classifier is combined with a non-linear kernel such as (9.22), the resu…"
+  },
+  {
+   "id": "eq-9-20",
+   "num": "(9.20)",
+   "page": 387,
+   "img": "eq-p387-346y358-225x380.png",
+   "section": "9.3 Support Vector Machines › 9.3.1 Classification with Non-Linear Decision Boundaries › 9.3.2 The Support Vector Machine",
+   "link": "../isl/10-support-vector-machines.html#eq-9-20",
+   "before": "which typically involves far fewer terms than in (9.18).2 To summarize, in representing the linear classifier f(x), and in computing its coefficients, all we need are inner products. This is known as a polynomial kernel of degree d, where d is a positive integer. Using such a kernel with d > 1, instead of the standard linear kernel (9.21), in the support vector classifier algorithm leads to a much more flexible decision boundary. It essentially amounts to fitting a support vector classifier in a…",
+   "after": "where K is some function that we will refer to as a kernel. A kernel is a function that quantifies the similarity of two observations. For instance, we could simply take (9.21) which would just give us back the support vector classifier. Equation 9.21 is known as a linear kernel because the support vector classifier is linear in the features; the linear kernel essentially quantifies the similarity of a pair of observations using Pearson (standard) correlation. But one could instead choose another form for (9.20). For instance, one could replace every instance of )p j=1 xijxi′j with the quantity"
+  },
+  {
+   "id": "eq-9-21",
+   "num": "(9.21)",
+   "page": 387,
+   "img": "eq-p387-399y430-196x380.png",
+   "section": "9.3 Support Vector Machines › 9.3.1 Classification with Non-Linear Decision Boundaries › 9.3.2 The Support Vector Machine",
+   "link": "../isl/10-support-vector-machines.html#eq-9-21",
+   "before": "This is known as a polynomial kernel of degree d, where d is a positive integer. Using such a kernel with d > 1, instead of the standard linear kernel (9.21), in the support vector classifier algorithm leads to a much more flexible decision boundary. It essentially amounts to fitting a support vector classifier in a higher-dimensional space involving polynomials of degree d, rather than in the original feature space. When the support vector classifier is combined with a non-linear kernel such as…",
+   "after": "which would just give us back the support vector classifier. Equation 9.21 is known as a linear kernel because the support vector classifier is linear in the features; the linear kernel essentially quantifies the similarity of a pair of observations using Pearson (standard) correlation. But one could instead choose another form for (9.20). For instance, one could replace every instance of )p j=1 xijxi′j with the quantity (9.22) 注2 By expanding each of the inner products in (9.19), it is easy to see that f(x) is a linear function of the coordinates of x. Doing so also establishes the correspondence between the αi and the original parameters βj."
+  },
+  {
+   "id": "eq-9-22",
+   "num": "(9.22)",
+   "page": 387,
+   "img": "eq-p387-511y552-181x380.png",
+   "section": "9.3 Support Vector Machines › 9.3.1 Classification with Non-Linear Decision Boundaries › 9.3.2 The Support Vector Machine",
+   "link": "../isl/10-support-vector-machines.html#eq-9-22",
+   "before": "where K is some function that we will refer to as a kernel. A kernel is a function that quantifies the similarity of two observations. For instance, we could simply take (9.21) which would just give us back the support vector classifier. Equation 9.21 is known as a linear kernel because the support vector classifier is linear in the features; the linear kernel essentially quantifies the similarity of a pair of observations using Pearson (standard) correlation. But one could instead choose anothe…",
+   "after": "注2 By expanding each of the inner products in (9.19), it is easy to see that f(x) is a linear function of the coordinates of x. Doing so also establishes the correspondence between the αi and the original parameters βj. FIGURE 9.9 Left: An SVM with a polynomial kernel of degree 3 is applied to the non-linear data from Figure 9.8, resulting in a far more appropriate decision rule. Right: An SVM with a radial kernel is applied. In this example, either kernel is capable of capturing the decision boundary. j=1(x∗j −xij)2) will be tiny. This means that in (9.23), xi will play virtually no role in f(x∗). Recall that the predicted class label for the test observation x∗is based on the sign of f(x∗)…"
+  },
+  {
+   "id": "eq-9-23",
+   "num": "(9.23)",
+   "page": 388,
+   "img": "eq-p388-341y373-188x380.png",
+   "section": "9.3 Support Vector Machines › 9.3.1 Classification with Non-Linear Decision Boundaries › 9.3.2 The Support Vector Machine",
+   "link": "../isl/10-support-vector-machines.html#eq-9-23",
+   "before": "(9.22) 注2 By expanding each of the inner products in (9.19), it is easy to see that f(x) is a linear function of the coordinates of x. Doing so also establishes the correspondence between the αi and the original parameters βj. FIGURE 9.9 Left: An SVM with a polynomial kernel of degree 3 is applied to the non-linear data from Figure 9.8, resulting in a far more appropriate decision rule. Right: An SVM with a radial kernel is applied. In this example, either kernel is capable of capturing the deci…",
+   "after": "The left-hand panel of Figure 9.9 shows an example of an SVM with a polynomial kernel applied to the non-linear data from Figure 9.8. The fit is a substantial improvement over the linear support vector classifier. When d = 1, then the SVM reduces to the support vector classifier seen earlier in this chapter. The polynomial kernel shown in (9.22) is one example of a possible non-linear kernel, but alternatives abound. Another popular choice is the radial kernel, which takes the form (9.24) In (9.24), γ is a positive constant. The right-hand panel of Figure 9.9 shows an example of an SVM with a radial kernel on this non-linear data; it also does a good job in separating the two classes."
+  },
+  {
+   "id": "eq-9-24",
+   "num": "(9.24)",
+   "page": 388,
+   "img": "eq-p388-478y514-166x380.png",
+   "section": "9.3 Support Vector Machines › 9.3.1 Classification with Non-Linear Decision Boundaries › 9.3.2 The Support Vector Machine",
+   "link": "../isl/10-support-vector-machines.html#eq-9-24",
+   "before": "j=1(x∗j −xij)2) will be tiny. This means that in (9.23), xi will play virtually no role in f(x∗). Recall that the predicted class label for the test observation x∗is based on the sign of f(x∗). In other words, training observations that are far from x∗will play essentially no role in the predicted class label for x∗. This means that the radial kernel has very local behavior, in the sense that only nearby training observations have an effect on the class label of a test observation. (9.23) The le…",
+   "after": "In (9.24), γ is a positive constant. The right-hand panel of Figure 9.9 shows an example of an SVM with a radial kernel on this non-linear data; it also does a good job in separating the two classes. How does the radial kernel (9.24) actually work? If a given test observation x∗= (x∗ 1,⋯, x∗p)T is far from a training observation xi in terms of Euclidean distance, then )p j=1(x∗j −xij)2 will be large, and so K(x∗, xi) = exp(−γ )p"
+  },
+  {
+   "id": "eq-9-25",
+   "num": "(9.25)",
+   "page": 391,
+   "img": "eq-p391-538y599-86x380.png",
+   "section": "9.5 Relationship to Logistic Regression",
+   "link": "../isl/10-support-vector-machines.html#eq-9-25",
+   "before": "The one-versus-all approach (also referred to as one-versus-rest) is an alternative procedure for applying SVMs in the case of K > 2 classes. We fit K SVMs, each time comparing one of the K classes to the remaining K −1 classes. Let β0k, β1k,⋯, βpk denote the parameters that result from fitting an SVM comparing the kth class (coded as +1) to the others (coded as −1). Let x∗denote a test observation. We assign the observation to the class for which β0k +β1kx∗1 +β2kx∗2 +⋯+βpkx∗p is largest, as thi…",
+   "after": "j=1 βj2 term in (9.25) is the ridge penalty term from Section 6.2.1, and plays a similar role in controlling the bias-variance trade-off for the support vector classifier. Now (9.25) takes the “Loss + Penalty” form that we have seen repeatedly throughout this book: (9.26) In (9.26), L(X, y, β) is some loss function quantifying the extent to which the model, parametrized by β, fits the data (X, y), and P(β) is a penalty function on the parameter vector β whose effect is controlled by a nonnegative tuning parameter λ. For instance, ridge regression and the lasso both take this form with"
+  },
+  {
+   "id": "eq-9-26",
+   "num": "(9.26)",
+   "page": 392,
+   "img": "eq-p392-133y163-178x380.png",
+   "section": "9.5 Relationship to Logistic Regression",
+   "link": "../isl/10-support-vector-machines.html#eq-9-26",
+   "before": "However, since that time, deep connections between SVMs and other more classical statistical methods have emerged. It turns out that one can rewrite the criterion (9.12)–(9.15) for fitting the support vector classifier (9.25) j=1 βj2 term in (9.25) is the ridge penalty term from Section 6.2.1, and plays a similar role in controlling the bias-variance trade-off for the support vector classifier. Now (9.25) takes the “Loss + Penalty” form that we have seen repeatedly throughout this book:",
+   "after": "In (9.26), L(X, y, β) is some loss function quantifying the extent to which the model, parametrized by β, fits the data (X, y), and P(β) is a penalty function on the parameter vector β whose effect is controlled by a nonnegative tuning parameter λ. For instance, ridge regression and the lasso both take this form with and with P(β) = )p j=1 βj2 for ridge regression and P(β) = )pj=1 |βj| for the lasso. In the case of (9.25) the loss function instead takes the form"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 392,
+   "img": "eq-p392-228y272-159x345.png",
+   "section": "9.5 Relationship to Logistic Regression",
+   "link": "../isl/10-support-vector-machines.html",
+   "before": "j=1 βj2 term in (9.25) is the ridge penalty term from Section 6.2.1, and plays a similar role in controlling the bias-variance trade-off for the support vector classifier. Now (9.25) takes the “Loss + Penalty” form that we have seen repeatedly throughout this book: (9.26) In (9.26), L(X, y, β) is some loss function quantifying the extent to which the model, parametrized by β, fits the data (X, y), and P(β) is a penalty function on the parameter vector β whose effect is controlled by a nonnegativ…",
+   "after": "and with P(β) = )p j=1 βj2 for ridge regression and P(β) = )pj=1 |βj| for the lasso. In the case of (9.25) the loss function instead takes the form This is known as hinge loss, and is depicted in Figure 9.12. However, it turns out that the hinge loss function is closely related to the loss function used in logistic regression, also shown in Figure 9.12."
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 392,
+   "img": "eq-p392-308y347-122x383.png",
+   "section": "9.5 Relationship to Logistic Regression",
+   "link": "../isl/10-support-vector-machines.html",
+   "before": "In (9.26), L(X, y, β) is some loss function quantifying the extent to which the model, parametrized by β, fits the data (X, y), and P(β) is a penalty function on the parameter vector β whose effect is controlled by a nonnegative tuning parameter λ. For instance, ridge regression and the lasso both take this form with and with P(β) = )p j=1 βj2 for ridge regression and P(β) = )pj=1 |βj| for the lasso. In the case of (9.25) the loss function instead takes the form",
+   "after": "This is known as hinge loss, and is depicted in Figure 9.12. However, it turns out that the hinge loss function is closely related to the loss function used in logistic regression, also shown in Figure 9.12. An interesting characteristic of the support vector classifier is that only support vectors play a role in the classifier obtained; observations on the correct side of the margin do not affect it. This is due to the fact that the loss function shown in Figure 9.12 is exactly zero for observations for which yi(β0 + β1xi1 +⋯ + βpxip) ≥1; these correspond to observations that are on the correct side of the margin.3 In contrast, the loss function for logistic regression shown in Figure 9.12 …"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 393,
+   "img": "eq-p393-216y234-224x329.png",
+   "section": "9.5 Relationship to Logistic Regression",
+   "link": "../isl/10-support-vector-machines.html",
+   "before": "An interesting characteristic of the support vector classifier is that only support vectors play a role in the classifier obtained; observations on the correct side of the margin do not affect it. This is due to the fact that the loss function shown in Figure 9.12 is exactly zero for observations for which yi(β0 + β1xi1 +⋯ + βpxip) ≥1; these correspond to observations that are on the correct side of the margin.3 In contrast, the loss function for logistic regression shown in Figure 9.12 is not e…",
+   "after": "We have established that the support vector classifier is closely related to logistic regression and other preexisting statistical methods. Is the SVM unique in its use of kernels to enlarge the feature space to accommodate non-linear class boundaries? The answer to this question is “no”. We could just as well perform logistic regression or many of the other classification methods seen in this book using non-linear kernels; this is closely related to some of the non-linear approaches seen in Chapter 7. However, for historical reasons, the use of non-linear kernels is much more widespread in the context of SVMs than in the context of logistic regression or other methods. Though we have not ad…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 402,
+   "img": "eq-p402-434y459-212x339.png",
+   "section": "9.7 Exercises › Conceptual",
+   "link": "../isl/10-support-vector-machines.html",
+   "before": "We see that using C=10 yields two test set errors on these data. 9.7Exercises# Conceptual# This problem involves hyperplanes in two dimensions.Sketch the hyperplane 1 + 3X1 −X2 = 0. Indicate the set of points for which 1 + 3X1 −X2 > 0, as well as the set of points for which 1 + 3X1 −X2 < 0.On the same plot, sketch the hyperplane −2 + X1 + 2X2 = 0. Indicate the set of points for which −2 + X1 + 2X2 > 0, as well as the set of points for which −2 + X1 + 2X2 < 0.We have seen that in p = 2 dimensions…",
+   "after": "On your sketch, indicate the set of points for which as well as the set of points for which"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 402,
+   "img": "eq-p402-476y500-212x339.png",
+   "section": "9.7 Exercises › Conceptual",
+   "link": "../isl/10-support-vector-machines.html",
+   "before": "Conceptual# This problem involves hyperplanes in two dimensions.Sketch the hyperplane 1 + 3X1 −X2 = 0. Indicate the set of points for which 1 + 3X1 −X2 > 0, as well as the set of points for which 1 + 3X1 −X2 < 0.On the same plot, sketch the hyperplane −2 + X1 + 2X2 = 0. Indicate the set of points for which −2 + X1 + 2X2 > 0, as well as the set of points for which −2 + X1 + 2X2 < 0.We have seen that in p = 2 dimensions, a linear decision boundary takes the form β0+β1X1+β2X2 = 0. We now investigat…",
+   "after": "as well as the set of points for which Suppose that a classifier assigns an observation to the blue class if"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 402,
+   "img": "eq-p402-517y543-212x339.png",
+   "section": "9.7 Exercises › Conceptual",
+   "link": "../isl/10-support-vector-machines.html",
+   "before": "On your sketch, indicate the set of points for which as well as the set of points for which",
+   "after": "Suppose that a classifier assigns an observation to the blue class if and to the red class otherwise. To what class is the observation (0, 0) classified? (−1, 1)? (2, 2)? (3, 8)? Argue that while the decision boundary in (c) is not linear in terms of X1 and X2, it is linear in terms of X1, X12, X2, and X2 2.Here we explore the maximal margin classifier on a toy data set.We are given n = 7 observations in p = 2 dimensions. For each observation, there is an associated class label."
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 402,
+   "img": "eq-p402-572y584-212x339.png",
+   "section": "9.7 Exercises › Conceptual",
+   "link": "../isl/10-support-vector-machines.html",
+   "before": "as well as the set of points for which Suppose that a classifier assigns an observation to the blue class if",
+   "after": "and to the red class otherwise. To what class is the observation (0, 0) classified? (−1, 1)? (2, 2)? (3, 8)? Argue that while the decision boundary in (c) is not linear in terms of X1 and X2, it is linear in terms of X1, X12, X2, and X2 2.Here we explore the maximal margin classifier on a toy data set.We are given n = 7 observations in p = 2 dimensions. For each observation, there is an associated class label. Sketch the optimal separating hyperplane, and provide the equation for this hyperplane (of the form (9.1)).Describe the classification rule for the maximal margin classifier. It should be something along the lines of “Classify to Red if β0 + β1X1 + β2X2 > 0, and classify to Blue otherw…"
+  },
+  {
+   "id": "eq-9-9",
+   "num": "(9.9)",
+   "page": 378,
+   "img": null,
+   "section": "（原书有编号，网页版解析器未切图）",
+   "link": "../isl/10-support-vector-machines.html#eq-9-9",
+   "before": "",
+   "after": "",
+   "fromPdf": true
+  },
+  {
+   "id": "eq-9-10",
+   "num": "(9.10)",
+   "page": 378,
+   "img": null,
+   "section": "（原书有编号，网页版解析器未切图）",
+   "link": "../isl/10-support-vector-machines.html#eq-9-10",
+   "before": "",
+   "after": "",
+   "fromPdf": true
+  },
+  {
+   "id": "eq-9-12",
+   "num": "(9.12)",
+   "page": 381,
+   "img": null,
+   "section": "（原书有编号，网页版解析器未切图）",
+   "link": "../isl/10-support-vector-machines.html#eq-9-12",
+   "before": "",
+   "after": "",
+   "fromPdf": true
+  },
+  {
+   "id": "eq-9-13",
+   "num": "(9.13)",
+   "page": 383,
+   "img": null,
+   "section": "（原书有编号，网页版解析器未切图）",
+   "link": "../isl/10-support-vector-machines.html#eq-9-13",
+   "before": "",
+   "after": "",
+   "fromPdf": true
+  },
+  {
+   "id": "eq-9-14",
+   "num": "(9.14)",
+   "page": 384,
+   "img": null,
+   "section": "（原书有编号，网页版解析器未切图）",
+   "link": "../isl/10-support-vector-machines.html#eq-9-14",
+   "before": "",
+   "after": "",
+   "fromPdf": true
+  }
+ ]
+}

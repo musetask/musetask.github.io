@@ -1,0 +1,348 @@
+<section class="fml" id="eq-5-25">
+<h2><span class="num">(5.25)</span>绝对位置编码的注入：词向量加位置向量<a class="anchor" href="#eq-5-25">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.2.4 节 Position Encoding　<a href="../thellm/11-5-model-architecture.html#5-2-4-position-encoding">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0075.png" alt="原书公式 5.25"><span class="cap">原书公式 5.25</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ x_t = v_t + p_t \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(t\)</td><td>token 在序列中的绝对位置（从 0 或 1 起编号）</td><td>标量</td></tr>
+<tr><td>\(v_t\)</td><td>位置 \(t\) 处 token 的<b>词向量</b>（token embedding），由可学习查表得到</td><td>\(\mathbb{R}^{H}\)</td></tr>
+<tr><td>\(p_t\)</td><td>位置 \(t\) 的<b>位置向量</b>（position embedding）</td><td>\(\mathbb{R}^{H}\)</td></tr>
+<tr><td>\(x_t\)</td><td>送进第一层 Transformer 的输入表示</td><td>\(\mathbb{R}^{H}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<p>注意力分数 \(A_{ij}=\bigl(\mathbf{x}_i\mathbf{W}^Q\bigr)\bigl(\mathbf{x}_j\mathbf{W}^K\bigr)^\top\) 对 \(i,j\) 是<b>对称</b>的：把输入序列整体重排一下，注意力输出的集合不变。这就是"置换不变性（permutation invariance）"。但语言里 "dog bites man" 与 "man bites dog" 意思完全不同，所以必须人为注入顺序信息。</p>
+<ol class="steps">
+<li><b>为什么用加法而不是拼接。</b>加法后维度仍是 \(H\)，参数量、显存都不涨；更关键的是，加法把语义与位置在同一个欧氏空间里"线性混合"，后续任意一层都能通过 \(W^Q,W^K\) 把两者拆开重新加权——而拼接只是把两块独立的信息块拼起来，可学习交互还要靠后面几层自己学。</li>
+<li><b>绝对 vs 相对。</b>\(p_t\) 只依赖绝对下标 \(t\)，所以这是<b>绝对位置编码</b>。它在<b>输入层加一次</b>，之后所有层继承这份信息（除非网络自己学着改）。相对位置编码则在<b>每一层</b>用 key/query 的下标差重算，可以注入到不同层。</li>
+<li><b>可学习版本（BERT 的做法）。</b>令 \(\mathbf{W}_{pos}\in\mathbb{R}^{T_{max}\times H}\)，则 \(p_t=\mathbf{W}_{pos}[t,:]\)，一整段序列的位置向量就是 \(\mathbf{W}_{pos[0:pos+T,:]}\in\mathbb{R}^{T\times H}\)。参数量 \(T_{max}H\)。它能<b>任意表达</b>每个位置的表示，是它唯一的优点；致命缺陷是<b>不外推</b>：序列超过 \(T_{max}\) 后就没有对应的行可查，只能截断。</li>
+<li><b>与正弦版本的对比。</b>(5.26) 的正弦编码没有可学习参数，且因为它有"波长分层"结构，超出训练长度时高频子空间仍能继续取 \(\sin/\cos\) 的延拓值，所以能线性外推一部分长度。这是"无参数"换来的泛化能力。</li>
+</ol>
+
+<div class="note"><b>直觉</b>\(v_t\) 回答"这是什么词"，\(p_t\) 回答"它在第几个"，相加就是"第几个的这个词"。加法等价于让网络在一个 \(H\) 维空间里给每个位置一个坐标偏移。</div>
+<div class="warn"><b>易错点</b>可学习绝对位置编码的长度 \(T_{max}\) 一旦定死就是硬上限，而且它是<b>绝对</b>下标（第 5000 号位置在每段文本里都一样），与序列内容无关——这使得它对"同一句话在不同偏移处出现"的泛化很差，这正是相对位置编码想解决的问题。</div>
+<div class="relnav">相关：<a href="#eq-5-26">(5.26) 正弦位置编码</a>　<a href="#eq-5-27">(5.27) 注意力分数的四项展开</a></div>
+</section>
+
+<section class="fml" id="eq-5-26">
+<h2><span class="num">(5.26)</span>正弦（绝对）位置编码<a class="anchor" href="#eq-5-26">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.2.4 节 Position Encoding　<a href="../thellm/11-5-model-architecture.html#5-2-4-position-encoding">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0076.png" alt="原书公式 5.26"><span class="cap">原书公式 5.26</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ p_{t,i}=\begin{cases}\sin\!\Big(\dfrac{t}{10000^{\,(i-2)/H}}\Big), &amp; i\bmod 2=0,\\[6pt] \cos\!\Big(\dfrac{t}{10000^{\,(i-1)/H}}\Big), &amp; i\bmod 2=1, \end{cases}\qquad i\in\{1,\dots,H\} \]
+</div>
+<p>把相邻的奇维 \(i=2r-1\) 与偶维 \(i=2r\) 配成一组，令 \(\omega_r=1/b^{\,2(r-1)/H}\)（\(b=10000\)），就等价于常见的成对写法：</p>
+<div class="eq">
+\[ \mathrm{PE}_{(pos,\,2r-1)}=\sin\big(\omega_r\,pos\big),\qquad \mathrm{PE}_{(pos,\,2r)}=\cos\big(\omega_r\,pos\big) \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(t\)</td><td>绝对位置</td><td>标量，\(\mathbb{Z}_{\ge 0}\)</td></tr>
+<tr><td>\(i\)</td><td>维度编号，\(i\in\{1,\dots,H\}\)</td><td>标量</td></tr>
+<tr><td>\(b=10000\)</td><td>频率基数（base）</td><td>标量，无量纲</td></tr>
+<tr><td>\(\omega_r=b^{-2(r-1)/H}\)</td><td>第 \(r\) 个子空间的角频率，单位 rad/token</td><td>标量</td></tr>
+<tr><td>\(\lambda_r=2\pi/\omega_r\)</td><td>第 \(r\) 个子空间的<b>波长</b>（转完一整圈的 token 数）</td><td>标量</td></tr>
+<tr><td>\(\mathrm{PE}_{pos}\)</td><td>位置编码向量</td><td>\(\mathbb{R}^{H}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>核心性质：位移由一个只依赖 \(k\) 的线性变换实现。</b>取一组子空间 \(r\)，记 \(a=t\omega_r\)、\(b'=k\omega_r\)。用和角公式展开：</li>
+<li>\(\mathrm{PE}_{(t+k,2r-1)}=\sin(a+b')=\sin a\cos b'+\cos a\sin b'\)；\(\mathrm{PE}_{(t+k,2r)}=\cos(a+b')=\cos a\cos b'-\sin a\sin b'\)。</li>
+<li>写成矩阵形式。令 \(\mathbf{s}_r(t)=\bigl[\cos(t\omega_r),\;\sin(t\omega_r)\bigr]^\top\)，则上式等价于
+\[\mathbf{s}_r(t+k)=\begin{pmatrix}\cos b'&amp;-\sin b'\\ \sin b'&amp;\cos b'\end{pmatrix}\mathbf{s}_r(t)=\mathbf{M}_r(k)\,\mathbf{s}_r(t)\]</li>
+<li>把 \(H/2\) 组子空间各自用 \(\mathbf{M}_r(k)\) 作用，再块对角拼起来，就得到 \(\mathrm{PE}_{t+k}=\mathbf{M}_k\,\mathrm{PE}_t\)，其中 \(\mathbf{M}_k=\mathrm{blkdiag}\big(\mathbf{M}_1(k),\dots,\mathbf{M}_{H/2}(k)\big)\)。<b>\(\mathbf{M}_k\) 只依赖相对位移 \(k\)，与绝对位置 \(t\) 完全无关。</b></li>
+<li><b>推论：注意力分数天然只依赖相对位置。</b>由于加法把 \(p_t\) 混进 \(\mathbf{x}_t\)，而 \(\mathbf{M}_k\) 是<b>线性</b>的，\((\mathbf{x}_i+\mathbf{M}_k\mathbf{x}_j)\mathbf{W}\) 中位置项对 \(i,j\) 的相对偏移 \(i-j\) 的响应形式与 \(i,j\) 的绝对值无关（详见 (5.27) 的第三、四项）。这就是正弦编码"免费获得相对位置能力"的机制——不是它显式做了相对位置，而是它的<b>加法 + 线性可迁移</b>让绝对位置里的相对信息在点积中自动浮现。</li>
+<li><b>波长阶梯。</b>\(\omega_r=b^{-2(r-1)/H}\) 随 \(r\) 指数下降，所以 \(\lambda_r=2\pi/\omega_r=2\pi b^{2(r-1)/H}\) 从几个 token（高频）一路铺到几万 token（低频）。低维管局部相邻， 高维管长程——这正是 (5.32) 里 RoPE 借用的同一套波长结构。</li>
+</ol>
+
+<div class="note"><b>直觉</b>把 \(H\) 维想象成一把有 \(H/2\) 个刻度的"频率梳"：短刻度变化快，编码"紧挨着"；长刻度变化慢，编码"隔得很远"。不同尺度同时震荡，任意两个位置都能在至少一个尺度上被区分开。</div>
+<div class="warn"><b>易错点</b>式子里指数是 <b>\(H\)</b> 而子空间数是 <b>\(H/2\)</b>——配对后子空间序号跨度是 2。若误把分母写成 \(H/2\)，最大波长会短一半，长程建模能力下降。</div>
+<div class="relnav">相关：<a href="#eq-5-25">(5.25) 位置编码的注入</a>　<a href="#eq-5-32">(5.32) RoPE 旋转基</a></div>
+</section>
+
+<section class="fml" id="eq-5-27">
+<h2><span class="num">(5.27)</span>绝对位置编码下注意力分数的四项展开<a class="anchor" href="#eq-5-27">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.2.4 节 Position Encoding　<a href="../thellm/11-5-model-architecture.html#5-2-4-position-encoding">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0077.png" alt="原书公式 5.27"><span class="cap">原书公式 5.27</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[
+\begin{aligned}
+A_{ij} &amp;= \mathbf{x}_i\mathbf{W}^Q\mathbf{W}^{K\top}\mathbf{x}_j^\top\\
+&amp;= (\mathbf{v}_i+\mathbf{p}_i)\,\mathbf{W}^Q\mathbf{W}^{K\top}\,(\mathbf{v}_j+\mathbf{p}_j)^\top\\
+&amp;= \underbrace{\mathbf{v}_i\mathbf{W}^Q\mathbf{W}^{K\top}\mathbf{v}_j^\top}_{\text{内容-内容}}
++\underbrace{\mathbf{v}_i\mathbf{W}^Q\mathbf{W}^{K\top}\mathbf{p}_j^\top}_{\text{内容-位置}}
++\underbrace{\mathbf{p}_i\mathbf{W}^Q\mathbf{W}^{K\top}\mathbf{v}_j^\top}_{\text{位置-内容}}
++\underbrace{\mathbf{p}_i\mathbf{W}^Q\mathbf{W}^{K\top}\mathbf{p}_j^\top}_{\text{位置-位置}}
+\end{aligned}
+\]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(A_{ij}\)</td><td>未缩放的注意力分数（\(i\) 为 query 位置，\(j\) 为 key 位置）</td><td>标量</td></tr>
+<tr><td>\(\mathbf{W}^Q,\mathbf{W}^K\)</td><td>query / key 投影矩阵</td><td>\(\mathbb{R}^{H\times H_k}\)</td></tr>
+<tr><td>\(\mathbf{x}_i^\top\)</td><td>行向量写法：\(\mathbf{x}_i\) 的转置，\(\in\mathbb{R}^{1\times H}\)</td><td>行向量</td></tr>
+<tr><td>\(\mathbf{v}_i,\mathbf{p}_i\)</td><td>词向量与位置向量，见 (5.25)</td><td>\(\mathbb{R}^{1\times H}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>用的是什么运算法则。</b>只有一条：<b>双线性型的分配律</b>。\((a+b)(c+d)^\top=ac^\top+ad^\top+bc^\top+bd^\top\)，逐项成立是因为 \(\mathbf{M}^\top(\mathbf{u}+\mathbf{v})=\mathbf{M}^\top\mathbf{u}+\mathbf{M}^\top\mathbf{v}\)（转置是线性的），以及 \((\mathbf{A}+\mathbf{B})^\top=\mathbf{A}^\top+\mathbf{B}^\top\)。中间还合并了 \(\mathbf{W}^Q\mathbf{W}^{K\top}\)，这是矩阵乘法的结合律，没有近似。</li>
+<li><b>这一展开的价值在于"诊断"。</b>四项里只有第一项是纯语义匹配，其余三项都混进了位置。第三、四项恰恰说明：即便用绝对位置编码，<b>相对位置的信息也已经被 \(\mathbf{W}^K\) 投影进了 key</b>——位置不是可选的补丁，它是不可避免的。</li>
+<li><b>关键观察：位置项依赖绝对下标。</b>\(\mathbf{p}_j\mathbf{W}^K\) 只跟 \(j\) 有关，\(\mathbf{p}_i\mathbf{W}^Q\) 只跟 \(i\) 有关。它们在 \(A_{ij}\) 里被"相乘"，形式上像相对位置，但 \(\mathbf{p}\) 本身是<b>查表/三角函数按绝对下标算出来的</b>，训练时从没见过 \(j&gt;T_{max}\)。所以绝对位置编码的模型仍然是硬长度上限的。</li>
+<li><b>接下来两条路。</b>要外推，就得让位置项<b>显式只由 \(i-j\) 决定</b>。Transformer-XL（(5.28)）保留双线性结构但把绝对向量换成 \(i-j\) 查表；T5（(5.29)）则把整个位置项压缩成一个标量偏置，最省。</li>
+</ol>
+
+<div class="note"><b>直觉</b>像"谁和谁像"（语义匹配）被拆成四笔账：语义-语义、语义-位置、位置-语义、位置-位置。后三笔是"排版"带来的额外信号。</div>
+<div class="warn"><b>易错点</b>原书写成 \(\mathbf{W}^Q\mathbf{W}^{K\top}\) 再接 \(\mathbf{x}_j^\top\)，等价于 \((\mathbf{x}_i\mathbf{W}^Q)(\mathbf{x}_j\mathbf{W}^K)^\top\)——后者才是通常的写法，<b>转置位置很关键</b>，弄错就变成 \(\mathbf{W}^Q\) 与 \(\mathbf{W}^K\) 的同向内积而非 query-key 配对。</div>
+<div class="relnav">相关：<a href="#eq-5-26">(5.26) 正弦位置编码</a>　<a href="#eq-5-28">(5.28) Transformer-XL 相对位置</a>　<a href="#eq-5-31">(5.31) RoPE 作用在 Q、K 上</a></div>
+</section>
+
+<section class="fml" id="eq-5-28">
+<h2><span class="num">(5.28)</span>Transformer-XL：把绝对位置向量换成相对位置向量<a class="anchor" href="#eq-5-28">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.2.4 节 Position Encoding　<a href="../thellm/11-5-model-architecture.html#5-2-4-position-encoding">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0078.png" alt="原书公式 5.28"><span class="cap">原书公式 5.28</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ A_{ij}=\mathbf{v}_i\mathbf{W}^Q\mathbf{W}^{K\top}\mathbf{v}_j^\top+\mathbf{v}_i\mathbf{W}^Q\mathbf{W}^{R\top}\mathbf{r}_{i-j}^\top+f\mathbf{W}^{K\top}\mathbf{v}_j^\top+g\mathbf{W}^{R\top}\mathbf{r}_{i-j}^\top \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\mathbf{r}_{i-j}\)</td><td>相对位置向量：按<b>偏移量</b>\(i-j\) 查表得到的可学习向量</td><td>\(\mathbb{R}^{H}\)</td></tr>
+<tr><td>\(\mathbf{W}^R\)</td><td>相对位置向量的投影矩阵</td><td>\(\mathbb{R}^{H\times H}\)</td></tr>
+<tr><td>\(f\)</td><td>全局可学习向量，度量 key 的<b>内容</b>重要性</td><td>\(\mathbb{R}^{1\times H}\)</td></tr>
+<tr><td>\(g\)</td><td>全局可学习向量，度量相对位置信息本身的重要性</td><td>\(\mathbb{R}^{1\times H}\)</td></tr>
+<tr><td>\(\mathbf{W}^Q,\mathbf{W}^K,\mathbf{v}\)</td><td>同 (5.27)</td><td>\(\mathbb{R}^{H\times H_k}\)、\(\mathbb{R}^{H}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>和 (5.27) 逐项对照。</b>第 1 项不变（内容-内容）。第 2、4 项里 key 侧的 \(\mathbf{p}_j\) 换成 \(\mathbf{r}_{i-j}\)；第 3、4 项里 query 侧的 \(\mathbf{p}_i\) 换成两个<b>与 \(i\) 无关的全局参数</b>\(f,g\)。注意 \(\mathbf{r}_{i-j}\) 在第 2 项和第 4 项里同时出现（一次经 \(\mathbf{W}^R\) 配 query，一次经 \(\mathbf{W}^R\) 配 \(g\)），这与原论文的分段式打分一致。</li>
+<li><b>为什么相对位置"偏置"比相对位置"向量"更省。</b>把参数数目数清楚。若用相对位置<b>向量</b>且要覆盖全部有向距离 \(d=i-j\in\{-(T-1),\dots,T-1\}\)，每层需要 \((2T-1)H\) 个参数，随 \(T\) <b>线性</b>增长——这已经是"相对位置向量"方案的理论下界，且必须限制最大距离 \(T\)（否则无限增长）。而如果只用<b>偏置标量</b>\(b_{i-j}\)，每层只需 \(2T-1\) 个参数，同样线性但常数小 \(H\) 倍；再进一步，如果偏置只依赖<b>距离的符号与大致量级</b>（T5 的对数分桶，见 (5.29)），桶数可以取成常数，参数就变成 \(O(1)\) 而非 \(O(T)\)。</li>
+<li><b>另一方面，为什么不能一律用标量偏置。</b>标量偏置只能表达"第 d 档该加多少分"，不能表达"对不同通道（维度）该加多少分"，表达力被砍掉一大截。Transformer-XL 保留了 \(H\) 维向量，正是因为它发现不同的头需要不同的相对位置敏感方向。T5 用标量是<b>工程折中</b>：参数少、能加进每层每头、且相对位置本身低维即可。</li>
+<li><b>外推性从哪来。</b>\(A_{ij}\) 的每一项现在都只依赖 \(i-j\)，而训练时见过的距离集合（\(&lt;T_{max}\)）是一个<b>连续区间</b>，区间外的距离的"函数值"由同一张表插值给出——而不是像绝对编码那样<b>根本没有行可查</b>。相对位置编码的外推能力来自这个结构差异，而不是训练时多见了数据。</li>
+<li><b>必须逐层应用。</b>原文明说：相对位置编码要在<b>每一层</b>重新计算（式中的 \(\mathbf{v}\) 其实是第 \(\ell\) 层的输入 \(\mathbf{x}_i^\ell\)），而绝对位置编码只在输入层加一次。</li>
+</ol>
+
+<div class="note"><b>直觉</b>只看"你比我早几个身位"来判断该给多少注意力，而不是"你是第 7 个 token 我是第 9 个"。前者的参数随序列长度线性增长且可以外推。</div>
+<div class="warn"><b>易错点</b>原书印的是 \(\mathbf{W}^{R\top}\mathbf{r}_{i-j}^\top\)，这是把 \(\mathbf{r}\) 写成行向量后的转置写法；实现时通常写成 \(\mathbf{r}_{i-j}\mathbf{W}^R\) 再与 query 点积。若照抄成 \((\mathbf{W}^R)^\top\mathbf{r}\) 并接 \(\mathbf{r}^\top\) 会对同一向量自乘，得不到想要的配对。</div>
+<div class="relnav">相关：<a href="#eq-5-27">(5.27) 四项展开</a>　<a href="#eq-5-29">(5.29) T5 相对位置偏置</a></div>
+</section>
+
+<section class="fml" id="eq-5-29">
+<h2><span class="num">(5.29)</span>T5 相对位置偏置：一个可学习标量加到分数上<a class="anchor" href="#eq-5-29">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.2.4 节 Position Encoding　<a href="../thellm/11-5-model-architecture.html#5-2-4-position-encoding">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0079.png" alt="原书公式 5.29"><span class="cap">原书公式 5.29</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ A_{ij}=\mathbf{x}_i\mathbf{W}^Q\mathbf{W}^{K\top}\mathbf{x}_j^\top+r_{i-j} \]
+</div>
+<p>其中相对距离 \(j\to i\) 被对数分桶映射到桶号再查一个可学习标量：</p>
+<div class="eq">
+\[ b_{\alpha,\beta}(j)=\mathrm{sign}(j)\!\left\lfloor\frac{\log\big(|j|/\alpha\big)}{\log \beta}\right\rfloor+\mathrm{clip}\big(|j|,\,\alpha,\alpha+\beta-1\big),\qquad r_{i-j}=\mathbf{r}\big[b_{\alpha,\beta}(i-j)\big] \]
+</div>
+<p style="margin:.2em 0 0">（原书用 \(\alpha\) 记第一个参数（下文小节中的 \(q\)）、\(\beta\) 记底数（下文的 \(b_{\mathrm{cap}}\) 区间上界）；实现中常见的写法是 \(\mathrm{clip}(|j|,\mathrm{clip},\mathrm{clip}+\mathrm{num\_buckets})\)，即"取对数分桶 + 截断到有限桶数"两段拼接。）</p>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(r_{i-j}\)</td><td>加在 \(A_{ij}\) 上的相对位置偏置（每个头独立）</td><td>标量</td></tr>
+<tr><td>\(\mathbf{r}\)</td><td>偏置查表，长度为 \(2\times\)桶数</td><td>\(\mathbb{R}^{2\,\text{num\_buckets}}\)，每头一份</td></tr>
+<tr><td>\(j=i-j\)（原文记号）</td><td>有向相对距离，正表示 key 在前</td><td>整数</td></tr>
+<tr><td>\(\alpha\)（\(=q\)）</td><td>分桶精度：小于 \(\alpha\) 的距离各自单独成桶</td><td>正整数</td></tr>
+<tr><td>\(\beta\)（\(=b\)）</td><td>分桶底数，控制每"倍距离"分一桶</td><td>\(&gt;1\)，如 32</td></tr>
+<tr><td>\(\mathrm{clip}\)</td><td>桶数上界，超过后所有远距离挤进同一个桶</td><td>正整数</td></tr>
+<tr><td>\(\lfloor\cdot\rfloor\)、\(\mathrm{sign}\)</td><td>取下整、取符号（\(0\mapsto 0\)）</td><td>标量函数</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>逐项拆桶函数。</b>桶号 = "对数项 + 截断项"。对数项 \(\mathrm{sign}(j)\lfloor \log(|j|/\alpha)/\log\beta\rfloor\) 只在 \(|j|\ge\alpha\) 时启动：它把距离按<b>几何级数</b>分档，\(j\in[\alpha\beta^m,\alpha\beta^{m+1})\) 落到第 \(m\) 桶。截断项 \(\mathrm{clip}(|j|,\alpha,\mathrm{clip})\) 保证 \(|j|\le\alpha\) 时桶号 \(=\alpha\)（每个近距离独立），且任何距离的桶号不超过上界 \(\mathrm{clip}\)（所有更远的挤进最后一桶）。两项相加时整数位与小数位各占一段，等价于"低位记精细距离、高位记对数档位"，且下标始终为正可以直接当数组下标。</li>
+<li><b>为什么取对数。</b>语言里位置距离的重要性<b>不均匀</b>：差 1 个 token 和差 2 个 token 的区别远大于差 1000 和差 1001。若均匀分桶，参数预算会被"远处的一堆几乎无差别的距离"吃掉，近处反而分辨率不足。对数分桶把参数均匀花在<b>每个倍增区间</b>上——"近处分辨率高、远处分辨率低"正是这个设计的准确说法。</li>
+<li><b>\(\alpha\) 的作用。</b>它是"线性区"的长度：\(|j|&lt;\alpha\) 走截断项，一一对应，保证最近若干个位置的相对顺序被<b>精确保留</b>（句法关系主要发生在这个范围）。\(\alpha\) 越大近处越精细，但总桶数也要相应变大。</li>
+<li><b>\(\mathrm{clip}\) 的作用。</b>限制最大桶数，从而<b>控制参数量与外推范围</b>。桶数一旦固定，超出 \(\mathrm{clip}\) 的所有距离共用同一个偏置值——模型在训练时从未见过更远的距离，因此也从未为它们调整过偏置，强行外推就必须接受"所有极远距离同分"这个近似。</li>
+<li><b>与 (5.27)(5.28) 的差别。</b>前两者是把位置向量投影后<b>参与双线性点积</b>（表达力强、参数多）；T5 是把整个位置信息压缩成<b>一个标量直接相加</b>。因为 \(\mathbf{x}_i\mathbf{W}^Q\) 与 \(\mathbf{x}_j\mathbf{W}^K\) 的点积仍按 \(\sqrt{H_k}\) 归一化，而 \(r_{i-j}\) 可以学成"随距离衰减"，两者是叠加关系而非替换关系。</li>
+<li><b>ALiBi 作为对照组。</b>ALiBi（Attention with Linear Biases）走的是极端版本：偏置<b>完全无参数</b>、硬编码为线性斜坡 \(\mathrm{softmax}\big(\mathbf{q}\mathbf{k}^\top/\sqrt{H_k}+m\cdot[-Nh,\dots,-2h,-h,0,h,\dots]\big)\)，其中第 \(h\) 个 head 的斜率 \(m_h\in\{1/2,1/4,\dots,1/2^{n-1}\}\)。softmax 前的线性偏置让权重随距离<b>单调衰减</b>；不同 head 衰减速率不同，正好对应"局部 head / 全局 head"的分工。它外推性好，是因为任何距离的偏置都有<b>闭式定义</b>（\(-m\cdot|d|\)），而不是查表查不到。</li>
+</ol>
+
+<div class="note"><b>直觉</b>给每个相对距离备一张"分数小费表"。远处的小费表被压缩成很粗的几档，近处则一档一个数——就像里程表在近距离刻度密、远距离只标 100/200/500。</div>
+<div class="warn"><b>易错点</b>这是<b>经验性超参选择</b>：\(\alpha,\beta,\mathrm{clip}\) 的取值（如 32/32/128）来自论文的实验，不是数学定理推出的。桶数直接等于参数量级的倍数（每头一份 \(\mathbf{r}\)），桶设太多在长上下文下反而拉长训练且过拟合。</div>
+<div class="relnav">相关：<a href="#eq-5-28">(5.28) Transformer-XL 相对位置</a>　<a href="#pos-why">补充：为什么 RoPE 能外推</a></div>
+</section>
+
+<section class="fml" id="eq-5-30">
+<h2><span class="num">(5.30)</span>RoPE：位置 \(t\) 的块对角旋转矩阵<a class="anchor" href="#eq-5-30">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.2.4 节 Position Encoding　<a href="../thellm/11-5-model-architecture.html#5-2-4-position-encoding">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0083.png" alt="原书公式 5.30"><span class="cap">原书公式 5.30</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \mathbf{R}_{\theta,t}=\operatorname{blkdiag}\Big(\mathbf{R}(t\theta_1),\mathbf{R}(t\theta_2),\dots,\mathbf{R}(t\theta_{H/2})\Big),\qquad \mathbf{R}(a)=\begin{pmatrix}\cos a&amp;-\sin a\\ \sin a&amp;\cos a\end{pmatrix} \]
+</div>
+<p>展开后是 \(H\times H\) 的三对角块结构（块外全 0）：</p>
+<div class="eq">
+\[
+\mathbf{R}_{\theta,t}=
+\begin{bmatrix}
+\cos t\theta_1 &amp; -\sin t\theta_1 &amp; 0 &amp; 0 &amp; \cdots &amp; 0\\
+\sin t\theta_1 &amp; \cos t\theta_1 &amp; 0 &amp; 0 &amp; \cdots &amp; 0\\
+0 &amp; 0 &amp; \cos t\theta_2 &amp; -\sin t\theta_2 &amp; \cdots &amp; 0\\
+0 &amp; 0 &amp; \sin t\theta_2 &amp; \cos t\theta_2 &amp; \cdots &amp; 0\\
+\vdots &amp; &amp; &amp; &amp; \ddots &amp; \vdots\\
+0 &amp; 0 &amp; 0 &amp; 0 &amp; \cdots &amp; \cos t\theta_{H/2} &amp; -\sin t\theta_{H/2}\\
+0 &amp; 0 &amp; 0 &amp; 0 &amp; \cdots &amp; \sin t\theta_{H/2} &amp; \cos t\theta_{H/2}
+\end{bmatrix}
+\]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\mathbf{R}(a)\)</td><td>二维旋转矩阵，逆时针转 \(a\) 弧度</td><td>\(\mathbb{R}^{2\times 2}\)</td></tr>
+<tr><td>\(\mathbf{R}_{\theta,t}\)</td><td>位置 \(t\) 的整体旋转（块对角）</td><td>\(\mathbb{R}^{H\times H}\)</td></tr>
+<tr><td>\(\theta_i\)</td><td>第 \(i\) 个子空间的旋转基，见 (5.32)</td><td>标量，rad/token</td></tr>
+<tr><td>\(\operatorname{blkdiag}\)</td><td>块对角拼装：\(\mathbf{R}\in\mathbb{R}^{k_1k_1}\) 等块放到对角，其余填 0</td><td>—</td></tr>
+<tr><td>\(i\)</td><td>子空间序号，\(i\in\{1,\dots,H/2\}\)</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>先验证 \(\mathbf{R}(a)\) 正交（不改变向量长度）。</b>逐项相乘：
+\[\mathbf{R}(a)^\top\mathbf{R}(a)=\begin{pmatrix}\cos a&amp;\sin a\\-\sin a&amp;\cos a\end{pmatrix}\begin{pmatrix}\cos a&amp;-\sin a\\ \sin a&amp;\cos a\end{pmatrix}=\begin{pmatrix}\cos^2a+\sin^2a&amp;-\cos a\sin a+\sin a\cos a\\ -\sin a\cos a+\cos a\sin a&amp;\sin^2a+\cos^2a\end{pmatrix}=\begin{pmatrix}1&amp;0\\0&amp;1\end{pmatrix}\]
+用的是 \(\cos^2a+\sin^2a=1\) 和交换律。对角元是 1，非对角元因交换律相消为 0，故 \(\mathbf{R}(a)^\top\mathbf{R}(a)=\mathbf{I}\)。所以 \(\mathbf{R}(a)\) 是<b>正交矩阵</b>，\(\|\mathbf{R}(a)\mathbf{v}\|=\|\mathbf{v}\|\) 对任意 \(\mathbf{v}\) 成立——这保证了 RoPE <b>不改变 query/key 的模长</b>，不破坏注意力的数值尺度。</li>
+<li><b>为什么是二维两两配对。</b>原书说明：RoPE 把 query、key 向量中<b>每两个相邻元素</b>当作一个子空间。长度 \(H\) 的向量共形成 \(H/2\) 个子空间；子空间 \(i\in\{1,\dots,H/2\}\) 内的两个元素被旋转 \(t\theta_i\) 弧度。</li>
+<li><b>为什么必须块对角。</b>只有块对角，\((\mathbf{R}_{\theta,i}^\top\mathbf{R}_{\theta,j})_{ab}=\delta_{ab}R(i-j,\cdot)\) 才对（不同子空间之间不交叉混合），相对位置性质才成立。稠密混合会破坏这个结构。</li>
+<li><b>正交性与"参数零"的联系。</b>块对角 + 正交 ⇒ \(\det\mathbf{R}_{\theta,t}=\pm1\)，且矩阵本身完全由位置 \(t\) 决定，<b>不含任何可学习参数</b>。这是 RoPE 相对 T5 偏置的最大优势：位置信息不占参数预算。</li>
+</ol>
+
+<div class="note"><b>直觉</b>给每个位置一个"手势"：\(H/2\) 个平面上各自转 \(t\theta_i\)。位置越靠后转得越多，但每个平面的转速不同，于是不同平面对"距离"的敏感尺度不同——和 (5.26) 的波长阶梯是同一件事的两种实现。</div>
+<div class="warn"><b>易错点</b>原书 (5.30) 的图在 PDF 里被拆成多张分片图片，抓取时容易只拿到矩阵中间几行。完整形式是<b>从左上角到右下角的 \(H/2\) 个 \(2\times2\) 块</b>，块外元素<b>全为零</b>，最后一块用 \(\theta_{H/2}\)。</div>
+<div class="relnav">相关：<a href="#eq-5-31">(5.31) RoPE 作用在 Q、K 上</a>　<a href="#eq-5-32">(5.32) 旋转基</a>　<a href="#eq-5-26">(5.26) 正弦位置编码</a></div>
+</section>
+
+<section class="fml" id="eq-5-31">
+<h2><span class="num">(5.31)</span>RoPE 作用在 Q、K 上：相对位置性质的证明<a class="anchor" href="#eq-5-31">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.2.4 节 Position Encoding　<a href="../thellm/11-5-model-architecture.html#5-2-4-position-encoding">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0086.png" alt="原书公式 5.31"><span class="cap">原书公式 5.31</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[
+\begin{aligned}
+\mathbf{q}_i &amp;= \mathbf{x}_i\mathbf{W}^Q\mathbf{R}_{\theta,i},\qquad \mathbf{k}_j=\mathbf{x}_j\mathbf{W}^K\mathbf{R}_{\theta,j},\\
+A_{ij} &amp;= \bigl(\mathbf{x}_i\mathbf{W}^Q\mathbf{R}_{\theta,i}\bigr)\bigl(\mathbf{x}_j\mathbf{W}^K\mathbf{R}_{\theta,j}\bigr)^\top
+=\mathbf{x}_i\mathbf{W}^Q\mathbf{R}_{\theta,i-j}\mathbf{W}^{K\top}\mathbf{x}_j^\top
+\end{aligned}
+\]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\mathbf{q}_i,\mathbf{k}_j\)</td><td>加了位置旋转的 query / key</td><td>\(\mathbb{R}^{1\times H_k}\)</td></tr>
+<tr><td>\(\mathbf{R}_{\theta,i-j}\)</td><td>由相对位置 \(i-j\) 决定的旋转矩阵</td><td>\(\mathbb{R}^{H_k\times H_k}\)</td></tr>
+<tr><td>\(\mathbf{W}^{K\top}\)</td><td>key 投影的转置，出现在 \(\bigl(\mathbf{W}^K\mathbf{R}_{\theta,j}\bigr)^\top=\mathbf{R}_{\theta,j}^\top\mathbf{W}^{K\top}\) 中</td><td>\(\mathbb{R}^{H_k\times H}\)</td></tr>
+<tr><td>\(A_{ij}\)</td><td>注意力分数（未除 \(\sqrt{H_k}\)）</td><td>标量</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>第一步：证明 \(\mathbf{R}(a)\mathbf{R}(b)=\mathbf{R}(a+b)\)。</b>逐项相乘，用和角公式 \(\cos(a+b)=\cos a\cos b-\sin a\sin b\)、\(\sin(a+b)=\sin a\cos b+\cos a\sin b\)：</li>
+<li>
+\[\mathbf{R}(a)\mathbf{R}(b)=\begin{pmatrix}\cos a&amp;-\sin a\\ \sin a&amp;\cos a\end{pmatrix}\begin{pmatrix}\cos b&amp;-\sin b\\ \sin b&amp;\cos b\end{pmatrix}=\begin{pmatrix}\cos a\cos b-\sin a\sin b &amp; -\cos a\sin b-\sin a\cos b\\ \sin a\cos b+\cos a\sin b &amp; -\sin a\sin b+\cos a\cos b\end{pmatrix}=\begin{pmatrix}\cos(a+b)&amp;-\sin(a+b)\\ \sin(a+b)&amp;\cos(a+b)\end{pmatrix}=\mathbf{R}(a+b)\]
+（第 1 行第 1 列正是 \(\cos(a+b)\)，第 2 行第 1 列正是 \(\sin(a+b)\)，第 1 行第 2 列是 \(-\sin(a+b)\)，第 2 行第 2 列是 \(\cos(a+b)\)——四列全部对上。）这就是旋转的<b>可加性</b>：先转 \(a\) 再转 \(b\) 等于转 \(a+b\)。</li>
+<li><b>第二步：得到群性质。</b>块对角结构与上式相容（每一块独立成立），因此 \(\mathbf{R}_{\theta,i}\mathbf{R}_{\theta,j}=\mathbf{R}_{\theta,i-j}\)。同理 \(\mathbf{R}(a)^\top=\mathbf{R}(-a)\)，于是 \(\mathbf{R}_{\theta,i}^\top\mathbf{R}_{\theta,j}=\mathbf{R}_{\theta,j-i}\)。</li>
+<li><b>第三步：代入注意力分数。</b>把 \(\mathbf{R}_{\theta,i}\mathbf{R}_{\theta,j}\) 夹在中间"配对"：
+\[(\mathbf{R}_{\theta,i}\mathbf{q}_i)^\top(\mathbf{R}_{\theta,j}\mathbf{k}_j)=\mathbf{q}_i^\top\mathbf{R}_{\theta,i}^\top\mathbf{R}_{\theta,j}\mathbf{k}_j=\mathbf{q}_i^\top\mathbf{R}_{\theta,j-i}\mathbf{k}_j.\]
+用到的只是内积的转置 \((\mathbf{A}\mathbf{B})^\top=\mathbf{B}^\top\mathbf{A}^\top\) 与矩阵乘法的结合律，没有任何近似。</li>
+<li><b>右端只依赖相对位置 \(i-j\)。</b>注意这里出现的不是查表，而是 <b>\(i-j\) 的一个解析式旋转</b>，任何整数距离都有定义——这是 RoPE 外推性好的直接来源。</li>
+<li><b>与 (5.27)(5.28) 的本质区别。</b>相对位置<b>偏置</b>是往分数上<b>加一项</b>，不改 \(\mathbf{q},\mathbf{k}\) 本身；RoPE 是<b>旋转 q 和 k</b>，因此它<b>同时改动了点积的数值范围</b>：不同距离对应的旋转会把 \(\mathbf{q}\) 指向 \(\mathbf{k}\) 的不同分量组合上，天然地把"距离远的 key 该被压低"这件事编码进了数值本身。这正是后续模型（Llama、Qwen、GPT-NeoX 之后的一整批）选 RoPE 而不是加偏置的原因。</li>
+<li><b>关于原书写法的 note。</b>原书把 \(\mathbf{W}^K\) 的转置省略、把 \((\mathbf{x}_j\mathbf{W}^K\mathbf{R}_{\theta,j})^\top\) 简写成 \((\mathbf{x}_j\mathbf{W}^K\mathbf{R}_{\theta,j})^\top\)，所以最后一步写成 \(\mathbf{R}_{\theta,i-j}\mathbf{W}^{K\top}\)（此时 \(\mathbf{W}^K\) 实际是 \(\mathbf{W}^{K\top}\)）。严格的行向量推导应为 \(\mathbf{x}_i\mathbf{W}^Q\mathbf{R}_{\theta,i}\mathbf{R}_{\theta,j}^\top\mathbf{W}^{K\top}\mathbf{x}_j^\top\)，再用 \(\mathbf{R}_{\theta,i}\mathbf{R}_{\theta,j}^\top=\mathbf{R}_{\theta,i-j}\)。</li>
+</ol>
+
+<div class="note"><b>直觉</b>两个位置各自带着"转到自己角度"的箭头，它们的相似度只取决于两把箭头之间的<b>夹角差</b>——和转动多少度无关。所以整段序列平移任意距离，注意力结构保持不变。</div>
+<div class="warn"><b>易错点</b>常见错误是<b>只旋转 q 或只旋转 k</b>。必须成对旋转，否则相对性质不成立。另外 \(\mathbf{R}_{\theta,i}\mathbf{R}_{\theta,j}=\mathbf{R}_{\theta,i-j}\) 里 <b>\(i\) 在前 \(j\) 在后</b>，而内积展开里出现的是 \(\mathbf{R}_{\theta,i}^\top\mathbf{R}_{\theta,j}=\mathbf{R}_{\theta,j-i}\)，两者差一个符号——因为 \(\mathbf{R}(a)\) 不是对称矩阵，符号不能想当然。</div>
+<div class="relnav">相关：<a href="#eq-5-30">(5.30) 旋转矩阵</a>　<a href="#eq-5-32">(5.32) 旋转基</a>　<a href="#pos-why">补充：RoPE 的外推与失效</a></div>
+</section>
+
+<section class="fml" id="eq-5-32">
+<h2><span class="num">(5.32)</span>RoPE 的旋转基：几何级数频率与波长<span class="num"></span><a class="anchor" href="#eq-5-32">#</a></h2>
+<p class="where"><b>出处</b>第 5 章 5.2.4 节 Position Encoding　<a href="../thellm/11-5-model-architecture.html#5-2-4-position-encoding">对照原文</a></p>
+<div class="origin"><img src="../thellm/assets/fig-0087.png" alt="原书公式 5.32"><span class="cap">原书公式 5.32</span></div>
+
+<h3>① 公式</h3>
+<div class="eq">
+\[ \boldsymbol{\Theta}=\Bigl\{\theta_i=b^{-2(i-1)/H}\ \Big|\ i\in\{1,2,\dots,H/2\}\Bigr\},\qquad \lambda_i=\frac{2\pi}{\theta_i}=2\pi\,b^{\,2(i-1)/H} \]
+</div>
+
+<h3>② 符号</h3>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(b\)</td><td>旋转基（base），默认 10000</td><td>标量</td></tr>
+<tr><td>\(\theta_i\)</td><td>第 \(i\) 个子空间的角频率，每 token 转 \(\theta_i\) 弧度</td><td>rad/token</td></tr>
+<tr><td>\(\lambda_i\)</td><td>波长：该子空间转完 \(2\pi\) 所需的 token 数</td><td>token</td></tr>
+<tr><td>\(i\)</td><td>子空间序号，\(i\in\{1,\dots,H/2\}\)，共 \(H/2\) 个</td><td>标量</td></tr>
+<tr><td>\(\boldsymbol{\Theta}\)</td><td>全部旋转基组成的集合</td><td>\(\mathbb{R}^{H/2}\)</td></tr>
+</table>
+
+<h3>③ 推导</h3>
+<ol class="steps">
+<li><b>为什么分母是 \(H\) 而不是 \(H/2\)。</b>子空间由维度 \((2i-1,2i)\) 配成，<b>配对后序号跨度是 2</b>，所以频率衰减的步长是 \(b^{-2/H}\)，写成 \(\theta_i=(b^{-2/H})^{i-1}\) 就得到指数 \(-2(i-1)/H\)。若误写成分母 \(H/2\)，衰减步长翻倍，最大波长短一半，长程分辨率直接下降一半。</li>
+<li><b>几何级数意味着什么。</b>\(\theta_i\) 随 \(i\) <b>指数</b>衰减、\(\lambda_i\) 随 \(i\) <b>指数</b>增长，所以 \(H/2\) 个子空间覆盖了从"每几个 token 一圈"到"每几万个 token 一圈"的完整尺度谱——与 (5.26) 正弦编码的波长阶梯完全一致。这不是巧合：<b>RoPE 就是把正弦编码写成了矩阵形式</b>，两者的尺度结构一样，区别只在"加到输入"还是"乘到 q、k 上"。</li>
+<li><b>"转完一整圈需要多少 token"就是 \(\lambda_i\)。</b>位置 \(t\) 处的旋转角是 \(t\theta_i\)，回到单位矩阵需要 \(t\theta_i=2\pi\)，即 \(t=\lambda_i\)。\(i\) 小 ⇒ \(\theta_i\) 大 ⇒ 波长短 ⇒ 相邻几个 token 内相位就明显变化，这个子空间负责<b>局部/近距离</b>结构；\(i\) 大 ⇒ 波长长 ⇒ 几十上千 token 内几乎不变，负责<b>全局/长程</b>结构。</li>
+<li><b>数值例子（\(H=4096,\;b=10000\)）。</b>取对数：\(\log_{10}\lambda_i=\log_{10}(2\pi)+\frac{2(i-1)}{4096}\log_{10}10000=0.798+0.000977\,\cdot(i-1)\times4=0.798+\frac{2(i-1)}{4096}\cdot4\)。于是：</li>
+<li>\(i=1\)：\(\theta_1=1\)，\(\lambda_1=2\pi\approx6.28\) token——最快的一档，每 6 个 token 转一圈，只能分辨极局部的顺序。</li>
+<li>\(i=2048\)：\(\theta_{2048}=10000^{-2047/2048}=10^{-3.996}\approx1.01\times10^{-4}\)，\(\log_{10}\lambda_{2048}=0.798+\frac{2\cdot2047}{4096}\cdot4=0.798+3.996=4.794\)，即 \(\lambda_{2048}\approx6.2\times10^{4}\) token——约 6 万 token 转一圈，是全局那一档。整档 \(H/2\) 个子空间的波长从 \(\approx6\) 一直铺到 \(\approx6\times10^4\)，正好跨 4 个数量级。</li>
+<li><b>为什么不把 \(b\) 调小或调大。</b>提高 \(b\)（原书后文提到可用 \(b=10^8\)）会整体拉长波长，让全局子空间更平缓，利于长上下文；减小 \(b\) 则相反。\(b\) 是超参而非定理产物。</li>
+</ol>
+
+<div class="note"><b>直觉</b>\(H/2\) 个平面是一组"从快到慢"的时钟。快钟分辨相邻动作，慢钟分辨整段结构。位置编码的全部信息量，都来自这组快慢搭配。</div>
+<div class="warn"><b>易错点</b>\(b=10000\) 是<b>经验默认值</b>，不是数学推导结果；\(\log_{10}10000=4\)、\(\log_{10}(2\pi)\approx0.798\) 这两个常数只用于估算，不要当成精确推导。</div>
+<div class="relnav">相关：<a href="#eq-5-31">(5.31) RoPE 作用在 Q、K 上</a>　<a href="#pos-why">补充：为什么 RoPE 能外推</a></div>
+</section>
+
+<section class="fml supp" id="pos-why">
+<h2>补充：为什么 RoPE 能外推，又在哪些情况下失效<a class="anchor" href="#pos-why">#</a></h2>
+<p class="where"><b>补充推导</b>不属于原书编号公式，是 (5.30)–(5.32) 的直接推论，用于解释长度外推的边界。</p>
+
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\lambda_i\)</td><td>第 \(i\) 个子空间的波长（token 数）</td><td>token</td></tr>
+<tr><td>\(T_{\text{train}}\)</td><td>训练时的上下文长度</td><td>token</td></tr>
+<tr><td>\(s\)</td><td>位置插值系数，\(s&gt;1\) 表示把上下文扩到 \(s\,T_{\text{train}}\)</td><td>标量</td></tr>
+<tr><td>\(\theta_i'\)、\(\lambda_i'\)</td><td>调整后的旋转基与波长</td><td>rad/token、token</td></tr>
+</table>
+
+<h3>推导</h3>
+<ol class="steps">
+<li><b>好的一面：没转过圈的子空间不会重复。</b>旋转只记录相位 \(t\theta_i\bmod 2\pi\)。若某子空间满足 \(\lambda_i \gg T\)，则在整个训练区间内它最多转过 \(T/\lambda_i \ll 1\) 圈，相位从不出现在"绕回"的危险区间。此时把 \(t\) 延长到 \(sT\) 只相当于把同一段单调递增的相位曲线<b>继续拉长</b>，没有"角度已经转过好几圈、同一角度对应无数个位置"的混叠问题。这是外推能work的根本原因。</li>
+<li><b>坏的一面：高 \(i\) 子空间在大长度上会混叠。</b>当 \(t\) 超过 \(\lambda_i\) 后，\(\mathbf{R}(t\theta_i)\) 开始重复：\(t\) 与 \(t+\lambda_i\) 处 query/key 完全相同，模型无法区分。而<b>低 \(i\)（短波长）子空间恰恰最先开始混叠</b>，它们贡献的正是局部结构。所以直接外推到 \(10\times T_{\text{train}}\) 时，短波长一档已经完全失效，注意力分布退化。</li>
+<li><b>位置插值 PI：把所有波长按比例拉长。</b>最简单的修正是把旋转基整体除以 \(s\)：\(\theta_i'=\theta_i/s\)，于是 \(\lambda_i'=s\lambda_i\)。含义是"让同样数量的 token 覆盖同样的相位"——原本 \(T\) 个 token 扫过的相位，现在被摊到 \(sT\) 个 token 上，波长被拉长 \(s\) 倍，短波长子空间推迟到 \(s\lambda_i\) 才开始混叠。副作用是<b>相位分辨率被拉粗</b>：同样 \(sT\) 个位置只用原来那么多个相位，近处精度下降，所以常常只做一部分（\(s\) 取 2–8）并微调。</li>
+<li><b>NTK-aware 与 YaRN。</b>更聪明的做法是<b>只压缩高频、不动低频</b>：NTK-aware 缩放改动基 \(b\)（\(b\to bs^{H/(H-2)}\) 一类），使低频子空间波长几乎不变、高频显著拉长；YaRN 进一步对中高频做分段插值、并对注意力熵做温度补偿。这样在保住局部精度的同时把长程相位混叠推远，是目前长上下文微调的主流做法。</li>
+<li><b>失效的第二个来源：注意力熵。</b>RoPE 只旋转不改模长，所以外推后分数的<b>方差</b>可能漂移（旋转把分量在不同维度间搬运，某些距离下 \(\mathbf{q}^\top\mathbf{R}\mathbf{k}\) 系统的变大），softmax 变尖或变平，都会让困惑度突然上升。YaRN 的温度项 \(1/t\) 就是为此引入的。</li>
+<li><b>一句话总结。</b>RoPE 的外推能力<b>不是免费的</b>：它把"绝对位置可外推"换成了"每个子空间的相位在一圈内单调、无混叠"，代价是超过一圈之后必然开始混叠，且混叠从短波长子空间开始。所以纯外推只在"超出幅度不大"时有效，再往上必须靠 PI / NTK-aware / YaRN 去主动重排波长。</li>
+</ol>
+
+<div class="note"><b>直觉</b>每个子空间像一只没有时针的钟：只要指针没绕满一圈，读者就知道"现在比刚才晚了一些"；一旦绕回去，"晚了一圈"和"没晚"看起来一模一样，长度就说不清了。</div>
+<div class="warn"><b>易错点</b>不要以为"RoPE 相对位置性质成立"就等于"可以随便外推"。相对性质 \(\mathbf{R}_{\theta,i-j}\) 对任意整数距离都有<b>定义</b>，但模型是否<b>见过</b>这个距离的相位组合是另一回事——定义存在 ≠ 泛化良好。</div>
+<div class="relnav">相关：<a href="#eq-5-32">(5.32) 旋转基与波长</a>　<a href="#eq-5-31">(5.31) 相对位置性质</a>　<a href="#eq-5-29">(5.29) T5 偏置的分桶截断</a></div>
+</section>

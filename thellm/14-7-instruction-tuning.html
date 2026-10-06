@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>7 Instruction Tuning · Large Language Models</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23a11f27'/%3E%3Cpath d='M9 8h9a4.5 4.5 0 0 1 0 9H9zm0 9h9a4.5 4.5 0 0 1 0 9H9z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<script>(function(){try{var t=localStorage.getItem('pdf2html-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn" href="index.html" aria-label="Contents">&#9776;</a>
+  <a class="brand" href="index.html">Large Language Models</a>
+  <button class="btn" id="themeToggle" aria-label="Toggle dark mode">&#9788;</button>
+</header>
+<main id="main">
+<article>
+<h1 id="instruction-tuning"><span class="chno">Chapter 7</span>Instruction Tuning</h1>
+<p><strong>Abstract</strong> Pre-training forms the foundational stage of large language models (LLMs), primarily built on the objective of predicting the next token. While pre-training is highly effective, models immediately after this stage often struggle to adapt effectively to task-solving scenarios. To enhance their task-solving capabilities, instruction tuning or supervised fine-tuning is employed, teaching LLMs to solve tasks described in natural language instructions. This approach has proven effective in eliciting and unlocking the task-solving abilities of LLMs.</p>
+<p>This chapter provides a comprehensive introduction to instruction fine-tuning methods, covering various aspects from dataset construction to training strategies. We begin by exploring methods for constructing instruction datasets, including the adaptation of existing datasets and the synthesis of high-quality data. We also discuss key factors in instruction data construction and their impact on model performance. Next, we examine typical training strategies for improving instruction tuning, such as optimization settings and data organization.</p>
+<p>Additionally, we provide an overview of parameter-efficient fine-tuning methods, particularly in low-resource scenarios, with a focus on the widely used lightweight fine-tuning technique, LoRA (Low-Rank Adaptation). We also briefly introduce several variants of parameter-efficient fine-tuning. Finally, we present code implementations and conduct an <em>empirical</em> study to analyze the effects of different instruction datasets.</p>
+<p>Instruction tuning refers to fine-tuning pre-trained language models using labeled data in the question-answering format of natural language. This concept was introduced by researchers from Google in a 2022 ICLR paper [30]. In other references, instruction tuning is also commonly referred to as <em>supervised fine-tuning</em> [17] or multi-task prompted training [31]. The process of instruction tuning begins with the collection or construction of instruction-formatted instance data, followed by tuning the language model’s parameters in a supervised manner. After being instruction-tuned, large language models (LLMs)</p>
+<p>demonstrate a strong ability to follow natural language instructions and can solve various downstream tasks using zero-shot prompting. This chapter will introduce methods for constructing instruction datasets (Sect. 7.1) and designing effective training strategies (Sect. 7.2). This will be followed by an overview of parameter-efficient fine-tuning methods in low-resource scenarios (Sect. 7.3). Finally, we will present code implementations and experimental results (Sect. 7.4).</p>
+<h2 id="7-1-construction-of-instruction-datasets"><span class="num">7.1</span>Construction of Instruction Datasets<a class="anchor" href="#7-1-construction-of-instruction-datasets">#</a></h2>
+<p>Generally speaking, an instance formatted for instruction tuning includes a task description (also referred to as the <em>instruction</em>), task input–output pairs, and optional examples. The following sections will introduce three methods for constructing formatted instruction data and further discuss important factors to consider during the construction process.</p>
+<h3 id="7-1-1-construction-by-leveraging-nlp-task-data"><span class="num">7.1.1</span>Construction by Leveraging NLP Task Data<a class="anchor" href="#7-1-1-construction-by-leveraging-nlp-task-data">#</a></h3>
+<p>The NLP community has published numerous open-source datasets centered on traditional NLP tasks, such as machine translation, text summarization, and text classification, which can be utilized to construct instruction datasets. Typically, the instances in these datasets consist of two parts: input and output. For example, in a Chinese-English translation task, the input text “大语言模型已经成为机器学习的一个重要研究方 向” corresponds to the English translation “<em>Large</em> <em>language</em> <em>models</em> <em>have</em> <em>become</em> <em>one</em> <em>impor</em><em>tant research direction for machine learning</em>”. A key step in generating instruction tuning data is to add task description text to this input–output pair, detailing the task objectives and related information. In this example, an instruction like “<em>Please translate</em> <em>this</em> <em>Chinese</em> <em>sentence</em> <em>into</em> <em>English</em>” can be added to the Chinese-to-English translation dataset. Through this process, instances from an NLP task can be adapted for instruction tuning of LLMs (Fig. 7.1).</p>
+<figure><img src="assets/fig-0154.png" alt="" loading="lazy"><figcaption>Figure 7.1 Construction of instruction-formatted instances using existing NLP datasets (Image source: [8])</figcaption></figure>
+<p>After instruction tuning, LLMs can exhibit improved instruction-following capabilities, enabling them to effectively address various downstream tasks [30–32]. It has been shown [30] that adding appropriate task descriptions to existing NLP datasets can significantly enhance the instruction-following abilities of LLMs; conversely, if task descriptions are removed and the model is fine-tuned solely with input–output pairs, its generalized performance is significantly diminished. To better annotate NLP instruction data, researchers have developed the crowdsourcing platform PromptSource,<span class="m">1</span> which assists annotators in creating and sharing task descriptions for existing NLP datasets. To further diversify training instances, researchers can design specific task descriptions by reversing the input–output structure of existing instances. For example, given a question–answer pair, the <em>traditional</em> task aims to predict the answer based on the question. Simultaneously, special task descriptions (e.g., “<em>Generate a question</em> <em>based on the following answer</em>”) can be employed to guide the model in generating questions based on answers.</p>
+<p>In the existing instruction datasets derived from NLP tasks, FLAN, P3, and Super- Natural Instructions are commonly used for instruction tuning of LLMs. Furthermore, researchers have combined these three datasets in specific proportions and introduced specially collected chain-of-thought data, resulting in the instruction dataset FLAN v2 [32]. <span class="m">1</span>https://github.com/bigscience-workshop/promptsource.</p>
+<p>This dataset includes approximately 20M instruction instances and is currently the preferred instruction dataset for NLP tasks.</p>
+<h3 id="7-1-2-construction-with-daily-conversation-dat"><span class="num">7.1.2</span>Construction with Daily Conversation Data<a class="anchor" href="#7-1-2-construction-with-daily-conversation-dat">#</a></h3>
+<p>Although converting existing NLP datasets into an instruction format can yield a substantial number of instruction instances, the diversity of such data remains relatively limited, and it may not align well with the real needs of human users. To address this, researchers have used actual questions from daily conversation scenarios to construct instruction data. For example, InstructGPT [17] uses queries submitted by users to the OpenAI API as instruction data. These user queries originate from real-life scenarios and are expressed in natural language, making them particularly suitable for improving the instruction-following abilities of LLMs. To further enhance task diversity, OpenAI has also hired annotators to create additional real-world problems, including open-ended generation, question answering, brainstorming, and more. Subsequently, another group of annotators provides corresponding outputs for these tasks. Ultimately, OpenAI pairs these instructions (whether user-submitted queries or manually crafted ones) with the expected outputs (human-annotated responses) to form training instances.</p>
+<p>To promote the open sharing of instruction datasets, researchers have created and open-sourced instruction datasets tailored to daily conversation tasks, such as Dolly [96] and OpenAssistant [95]. These datasets have been meticulously annotated by human experts to ensure high quality. Additionally, researchers have attempted to collect user’s conversational requests as input data through self-developed open platforms and used ChatGPT or GPT-4 to generate responses as output data. A representative example of such datasets is the multi-turn conversational data from ShareGPT [94].</p>
+<p><strong>User’s first round input</strong>: <em>What</em> <em>is</em> <em>the</em> <em>function</em> <em>of</em> <em>accumulator</em> <em>in</em> <em>CPU?</em></p>
+<p><strong>Model’s</strong> <strong>first</strong> <strong>round</strong> <strong>output</strong>: <em>In</em> <em>a</em> <em>computer’s</em> <em>central</em> <em>processing</em> <em>unit</em> <em>(CPU),</em> <em>an</em> <em>ac-</em></p>
+<p><em>cumulator</em> <em>is</em> <em>a</em> <em>register</em> <em>that</em> <em>is</em> <em>used</em> <em>to</em> <em>store</em> <em>the</em> <em>intermediate</em> <em>results</em> <em>of</em> <em>arithmetic</em> <em>and</em></p>
+<p><em>logical operations performed by the CPU. The accumulator is a fundamental part of the</em></p>
+<p><em>CPU’s</em> <em>architecture</em> <em>and</em> <em>is</em> <em>typically</em> <em>used</em> <em>in</em> <em>the</em> <em>execution</em> <em>of</em> <em>instructions</em> <em>that</em> <em>involve</em> <em>the</em></p>
+<p><em>manipulation</em> <em>of</em> <em>data.</em></p>
+<p><strong>User’s second round input</strong>: <em>What</em> <em>are</em> <em>the</em> <em>steps</em> <em>for</em> <em>instruction</em> <em>execution?</em></p>
+<p><strong>Model’s</strong> <strong>second</strong> <strong>round</strong> <strong>output</strong>: <em>The</em> <em>steps</em> <em>for</em> <em>instruction</em> <em>execution</em> <em>in</em> <em>a</em> <em>CPU</em> <em>typically</em></p>
+<p><em>include</em> <em>the</em> <em>following:</em> <em>1.</em> <em>Fetch</em> <em>the</em> <em>instruction</em> <em>from</em> <em>memory:</em> <em>The</em> <em>CPU</em> <em>retrieves</em> <em>the</em></p>
+<p><em>instruction</em> <em>that</em> <em>is</em> <em>stored</em> <em>at</em> <em>a</em> <em>specific</em> <em>memory</em> <em>location.</em> <em>2.Decode</em> <em>the</em> <em>instruction:</em> <em>The</em></p>
+<p><em>CPU</em> <em>decodes</em> <em>the</em> <em>instruction</em> <em>to</em> <em>determine</em> <em>what</em> <em>operation</em> <em>it</em> <em>specifies.</em> <em>3.</em> <em>Perform</em></p>
+<p><em>the</em> <em>operation:</em> <em>The</em> <em>CPU</em> <em>performs</em> <em>the</em> <em>operation</em> <em>specified</em> <em>by</em> <em>the</em> <em>instruction,</em> <em>using</em> <em>the</em></p>
+<p><em>appropriate data and operands.</em> <em>4.</em> <em>Store the result:</em> <em>The result of the operation is st</em><em>ored</em></p>
+<p><em>in a register or memory location.</em> <em>5.</em> <em>Repeat the process:</em> <em>The CPU continues to fetch,</em></p>
+<p><em>decode, and execute instructions until the program is complete.</em></p>
+<p>... (Subsequent rounds of dialog omitted)</p>
+<p><strong>Example 7.1</strong> A multi-turn conversation instance in ShareGPT</p>
+<h3 id="7-1-3-construction-with-synthetic-data"><span class="num">7.1.3</span>Construction with Synthetic Data<a class="anchor" href="#7-1-3-construction-with-synthetic-data">#</a></h3>
+<p>To reduce the cost of manually collecting and annotating data, researchers have proposed a semi-automatic data synthesis method. By leveraging existing high-quality instruction data as demonstration examples, LLMs are utilized to generate diverse task descriptions and input-output data via in-context learning [64, 189]. As illustrated in Fig. 7.2, Self-Instruct [64] employs over 100 manually crafted examples as the initial task pool. It then randomly selects samples from this pool as exemplars to further prompt LLMs to generate new instruction data. This semi-automatic synthesis method enables efficient generation of large-scale instruction data, significantly reducing the economic cost of manual annotation and has been widely adopted in practice.</p>
+<p>Considering that the instances generated by Self-Instruct may be overly simplistic or lack diversity, WizardLM [189] proposes an improved synthesis method called Evol- Instruct. This approach enhances the complexity and diversity of instances through an</p>
+<p>Initial human-</p>
+<p>Instance pool</p>
+<p>written instances</p>
+<p>Instruction</p>
+<p>Instance</p>
+<p>generation</p>
+<p>filtering LLM Output</p>
+<p>Input</p>
+<p>Instruction</p>
+<p>Input-output</p>
+<p>generation</p>
+<figure><img src="assets/fig-0155.png" alt="" loading="lazy"><figcaption>Figure 7.2 Workflow of synthesizing instruction-formatted data (Image source: [8])</figcaption></figure>
+<p>evolutionary strategy based on depth and breadth. Furthermore, LLMs can be trained to generate high-quality instruction data. For instance, Self-Align [190] employs multiple filtering techniques for synthetic data based on human alignment principles. This method uses in-context learning to guide ChatGPT in selecting high-quality instances, which are subsequently used to train new models, and then leverages these models to generate instruction data aligned with human preferences. Additionally, some research adopts the technique of instruction backtranslation [191] to optimize the quality of the output text. Specifically, instruction backtranslation uses existing text (such as Wikipedia) as output and then learns to synthesize the corresponding input instructions using in-context learning.</p>
+<p>To help readers better understand these discussed methods, we introduce two typical instruction data synthesis techniques below.</p>
+<p><strong>Self-Instruct</strong></p>
+<p>Self-Instruct [64] leverages the data synthesis capability of LLMs, such as ChatGPT, to efficiently generate a large amount of data iteratively. Initially, this method constructs a pool of 175 high-quality and diverse samples manually, then generates instruction data through the following two main steps.</p>
+<p>(1) <em>Instruction</em> <em>data</em> <em>generation.</em> A small subset of instruction data is randomly selected from the task pool as examples, and specific instructions are designed to prompt LLMs to generate new instruction data. Specifically, the model uses the instructions and</p>
+<p>in-context examples shown in Example 7.2 as prompts to generate new task descriptions and corresponding outputs.</p>
+<p><em>You are asked to come up with a set of 20 diverse task instructions.</em> <em>These task instructions</em></p>
+<p><em>will</em> <em>be</em> <em>given</em> <em>to</em> <em>a</em> <em>GPT</em> <em>model,</em> <em>and</em> <em>we</em> <em>will</em> <em>evaluate</em> <em>the</em> <em>GPT</em> <em>model</em> <em>for</em> <em>completing</em> <em>the</em></p>
+<p><em>instructions.</em></p>
+<p><em>Here</em> <em>are</em> <em>the</em> <em>requirements:</em></p>
+<p><em>1.</em> <em>Try</em> <em>not</em> <em>to</em> <em>repeat</em> <em>the</em> <em>verb</em> <em>for</em> <em>each</em> <em>instruction</em> <em>to</em> <em>maximize</em> <em>diversity.</em></p>
+<p><em>2.</em> <em>The</em> <em>language</em> <em>used</em> <em>for</em> <em>the</em> <em>instruction</em> <em>also</em> <em>should</em> <em>be</em> <em>diverse.</em> <em>For</em> <em>example,</em> <em>you</em></p>
+<p><em>should</em> <em>combine</em> <em>questions</em> <em>with</em> <em>imperative</em> <em>instructions.</em></p>
+<p>... (subsequent requirements omitted)</p>
+<p><em>List</em> <em>of</em> <em>20</em> <em>tasks:</em></p>
+<p><em>###</em> <em>Instruction:</em> <em>Converting</em> <em>85</em> <em>F</em> <em>to</em> <em>Celsius.</em></p>
+<p><em>###</em> <em>Output:</em> <em>85</em> <em>degr</em><em>ees Fahrenheit is equal to 29.44 degrees Celsius.</em></p>
+<p><em>### Instruction:</em> <em>Is there anything science can’t explain?</em></p>
+<p><em>###</em> <em>Output:</em> <em>There</em> <em>are</em> <em>many</em> <em>things</em> <em>that</em> <em>science</em> <em>cannot</em> <em>explain,</em> <em>such</em> <em>as</em> <em>the</em> <em>origin</em> <em>of</em></p>
+<p><em>life, the existence of consciousness, and the nature of the universe.</em></p>
+<p>... (subsequent examples omitted)</p>
+<p><strong>Example 7.2</strong> Instruction used for Self-Instruct</p>
+<p>(2) <em>Filtering</em> <em>and</em> <em>post-processing.</em> The main purpose of this step is to remove low-quality or duplicate generated instances to ensure the diversity and effectiveness of the instruction data. Common filtering methods include removing instructions that are highly similar to those already in the task pool, instructions for which the model has difficulty generating responses, instructions that are too long or too short, as well as instances where the input or output contains duplicate content.</p>
+<p>Self-Instruct has now become a fundamental method for synthesizing instruction data. In the original paper, GPT-3 is used to synthesize the Self-Instruct-52K dataset, while Alpaca further utilizes the more capable text-davinci-003 to synthesize the Alpaca-</p>
+<p>52K dataset. Subsequent research has employed even more powerful models (such as GPT-4) to synthesize instruction data tailored for various languages and domains.</p>
+<p><strong>Evol-Instruct</strong></p>
+<p>The Evol-Instruct method proposed by WizardLM [189] is a technique for increasing the complexity of instruction data using LLMs. This method builds upon an initial instruction dataset, such as the Alpaca dataset, and primarily consists of two steps:</p>
+<p><em>I</em> <em>want</em> <em>you</em> <em>act</em> <em>as</em> <em>a</em> <em>Prompt</em> <em>Rewriter.</em></p>
+<p><em>Your</em> <em>objective</em> <em>is</em> <em>to</em> <em>rewrite</em> <em>a</em> <em>given</em> <em>prompt</em> <em>into</em> <em>a</em> <em>more</em> <em>complex</em> <em>version</em> <em>to</em> <em>make</em> <em>those</em></p>
+<p><em>famous</em> <em>AI</em> <em>systems</em> <em>(e.g.,</em> <em>ChatGPT</em> <em>and</em> <em>GPT4)</em> <em>a</em> <em>bit</em> <em>harder</em> <em>to</em> <em>handle.</em></p>
+<p><em>But</em> <em>the</em> <em>rewritten</em> <em>prompt</em> <em>must</em> <em>be</em> <em>reasonable</em> <em>and</em> <em>must</em> <em>be</em> <em>understood</em> <em>and</em> <em>responded</em> <em>by</em></p>
+<p><em>humans.</em></p>
+<p><em>Your</em> <em>rewriting</em> <em>cannot</em> <em>omit</em> <em>the</em> <em>non-text</em> <em>parts</em> <em>such</em> <em>as</em> <em>the</em> <em>table</em> <em>and</em> <em>code</em> <em>in</em> <em>#Given</em></p>
+<p><em>Prompt#.</em> <em>Also,</em> <em>please</em> <em>do</em> <em>not</em> <em>omit</em> <em>the</em> <em>input</em> <em>in</em> <em>#Given</em> <em>Prompt#.</em></p>
+<p><em>You</em> <em>SHOULD</em> <em>complicate</em> <em>the</em> <em>given</em> <em>prompt</em> <em>using</em> <em>the</em> <em>following</em> <em>method:</em></p>
+<p><em>If</em> <em>#Given</em> <em>Prompt#</em> <em>contains</em> <em>inquiries</em> <em>about</em> <em>certain</em> <em>issues,</em> <em>the</em> <em>depth</em> <em>and</em> <em>breadth</em> <em>of</em> <em>the</em></p>
+<p><em>inquiry can be increased.</em> <em>or</em></p>
+<p><em>You should try your best not to make the #Rewritten Prompt# become verbose, #Rewritten</em></p>
+<p><em>Prompt# can only add 10 to 20 words into #Given Prompt#.</em></p>
+<p><em>‘#Given Prompt#’, ‘#Rewritten Prompt#’, ‘given prompt’ and ‘rewritten prompt’ are not</em></p>
+<p><em>allowed to appear in #Rewritten Prompt#</em></p>
+<p><em>#Given Prompt#:</em></p>
+<p><em>&lt;Here is instruction.&gt;</em></p>
+<p><em>#Rewritten Prompt#:</em></p>
+<p><strong>Example 7.3</strong> A sample instruction for in-depth evolution used for Evol-Instruct</p>
+<p>(1) <em>Instruction</em> <em>evolution.</em> In this step, the LLM serves as the instruction evolver, expanding instructions in two directions: in-depth evolution and in-breadth evolution. In-depth evolution complicates the instructions through five specific types of prompts: adding constraints, deepening the question, concretizing the problem, increasing reasoning steps,</p>
+<p>and complicating inputs. On the other hand, in-breadth evolution aims to expand the range of instruction topics, broaden the scope of capabilities involved, and enhance the overall diversity of the dataset.</p>
+<p>Examples 7.3 and 7.4 illustrate specific instructions obtained through in-depth and in-breadth evolution. By taking the original instructions along with these specific prompts as input, the LLM generates new, evolved instructions. These newly generated instructions are then processed by the LLM to produce corresponding answers, forming new instruction-output data instances.</p>
+<p><em>I</em> <em>want</em> <em>you</em> <em>act</em> <em>as</em> <em>a</em> <em>Prompt</em> <em>Creator.</em></p>
+<p><em>Your goal is to draw inspiration from the #Given Prompt# to create a brand new prompt.</em></p>
+<p><em>This</em> <em>new</em> <em>prompt</em> <em>should</em> <em>belong</em> <em>to</em> <em>the</em> <em>same</em> <em>domain</em> <em>as</em> <em>the</em> <em>#Given</em> <em>Prompt#</em> <em>but</em> <em>be</em> <em>even</em></p>
+<p><em>more</em> <em>rare.</em></p>
+<p><em>The</em> <em>LENGTH</em> <em>and</em> <em>difficulty</em> <em>level</em> <em>of</em> <em>the</em> <em>#Created</em> <em>Prompt#</em> <em>should</em> <em>be</em> <em>similar</em> <em>to</em> <em>that</em> <em>of</em></p>
+<p><em>the</em> <em>#Given</em> <em>Prompt#.</em></p>
+<p><em>The</em> <em>#Created</em> <em>Prompt#</em> <em>mus</em><em>t</em> <em>be</em> <em>reasonable</em> <em>and</em> <em>must</em> <em>be</em> <em>understood</em> <em>and</em> <em>responded</em> <em>by</em></p>
+<p><em>humans.</em></p>
+<p><em>‘#Given</em> <em>Prompt#’,</em> <em>‘#Created</em> <em>Prompt#’,</em> <em>‘given</em> <em>prompt’</em> <em>and</em> <em>‘created</em> <em>prompt’</em> <em>are</em> <em>not</em></p>
+<p><em>allowed to appear in #Created Prompt#.</em></p>
+<p><em>Given Prompt#:</em></p>
+<p><em>&lt;Here is instruction.&gt;</em></p>
+<p><em>#Created Prompt#:</em></p>
+<p><strong>Example</strong> <strong>7.4</strong></p>
+<p>A sample instruction for in-breadth evolution used for Evol-</p>
+<p>Instruct</p>
+<p>(2) <em>Post-processing.</em> In this stage, low-quality instances are removed from the dataset to ensure overall quality and diversity. The following rules are primarily applied: using ChatGPT to compare pre-evolved and post-evolved instructions and removing instructions that ChatGPT deems to have minimal differences; eliminating instructions that are difficult for the LLM to respond to, such as those resulting in responses with “sorry” or overly</p>
+<p>short replies; and removing instructions or responses that contain excessive punctuation or conjunctions.</p>
+<p>Evol-Instruct primarily utilizes gpt-3.5-turbo for instruction evolution. This method has also been applied to fields such as mathematics (WizardMath) and coding (WizardCoder) for data synthesis, enhancing the depth and breadth of instruction data in these specific domains.</p>
+<h3 id="7-1-4-key-factors-for-instruction-data-constru"><span class="num">7.1.4</span>Key Factors for Instruction Data Construction<a class="anchor" href="#7-1-4-key-factors-for-instruction-data-constru">#</a></h3>
+<p>In instruction tuning, factors such as the format and quantity of instruction data significantly impact the performance of the fine-tuned model. We will discuss how to construct a high-quality instruction dataset from three perspectives: instruction format design, instruction data scaling, and instruction data refinement.</p>
+<p><strong>Instruction Format Design</strong></p>
+<p>The instruction format is a critical factor influencing the performance of LLMs [192]. Generally, adding a task description directly to existing NLP task data can effectively enhance the model’s understanding and generalization capabilities for various tasks. Additionally, including a moderate number of examples as context can improve the model’s performance and reduce its sensitivity to the instruction format. During the training of FLAN-T5, both instruction data with examples (few-shot) and without examples (zeroshot) are used. Experiments have shown that this mixed prompting training approach helps improve the evaluation performance of downstream tasks in both few-shot and zero-shot scenarios.</p>
+<p>To elicit the step-by-step reasoning ability of LLMs, researchers have also attempted to incorporate chain-of-thought data into instruction datasets [32]. For instance, FLAN-T5 and FLAN-PaLM utilize data containing chain-of-thought annotations during instruction tuning, achieving notable performance improvements across various downstream tasks. These tasks include complex reasoning tasks (such as commonsense reasoning and arithmetic reasoning) and common question answering tasks (such as sentiment analysis and extractive question answering) [32, 193].</p>
+<p>However, instruction data does not always benefit from being overloaded with context information. Adding seemingly useful content, such as items to avoid, reasons, or</p>
+<p>suggestions, to the instructions may not lead to performance improvements and may even have adverse effects on model capacity [192].</p>
+<p><strong>Instruction Data Scaling</strong></p>
+<p>As an initial study, FLAN-T5 [32] investigates the impact of the amount of instruction data on model performance in unknown NLP tasks. By gradually increasing the number of instructions to 0.18M, 5.55M, 7.2M, and 17.26M, the researchers find that model performance consistently improves. However, when the number of instructions reaches 7.2M, the rate of performance improvement significantly slows. The instructions used in FLAN-T5 are primarily targeted at traditional NLP tasks, which might not yield significant enhancements for daily conversation tasks [17].</p>
+<p>For a pre-trained base model, a certain amount of high-quality instruction data can effectively activate the model’s conversational abilities. Alpaca [33] utilizes 52K synthetic data instances for instruction tuning of LLaMA (7B), achieving performance close to that of text-davinci-003 in evaluations conducted on conversational tasks. Furthermore, LIMA [194] leverages only a thousand high-quality manually labeled instruction data instances to fine-tune LLaMA (65B), achieving satisfactory performance in conversation-oriented tests.</p>
+<p>However, relying solely on a few instruction instances cannot lead to robust comprehensive capabilities. It is crucial to scale up with more complex instruction data. Orca [195] addresses this by expanding the large-scale instruction set of FLAN-T5. It employs GPT-4 and ChatGPT to answer each question with step-by-step reasoning, resulting in five million synthetic examples designed to enhance the complex reasoning abilities of downstream models. The LLaMA (13B) model fine-tuned with this dataset shows strong performance in both NLP task evaluations (AGIEval) and conversational task evaluations (VicunaBench).</p>
+<p><strong>Instruction Data Refinement</strong></p>
+<p>Based on existing instruction datasets, researchers have attempted to use rewriting mechanisms to enhance the quality or diversity of instruction data. Evol-Instruct employs both in-depth and in-breadth evolution strategies to generate improved instructions, making them either more challenging or diverse. The YuLan model introduces a topic diversity enhancement method, which involves collecting 293 commonly used topic labels from</p>
+<p>Zhihu (e.g., “education” and “sports”). Then, a random topic is selected, and ChatGPT is used to rewrite the instruction data to align it with the chosen topic, using a prompt like “<em>Please</em> <em>help</em> <em>me</em> <em>rewrite</em> <em>the</em> <em>following</em> <em>instruction</em> <em>to</em> <em>fit</em> <em>the</em> <em>t</em><em>opic of education</em>.” Finally, a quality filtering process is conducted to obtain high-quality and diverse instruction data.</p>
+<p>Researchers have investigated various instruction selection strategies within large datasets for fine-tuning purposes. Alpagasus leverages GPT-4 to extract high-quality data from the original Alpaca dataset, selecting 9000 top-scoring instructions. These carefully chosen instructions are then employed to fine-tune the model, yielding performance on downstream tasks that is comparable to that achieved using the original 52K dataset. The YuLan model introduces an instruction selection method by estimating the difficulty level of instruction data through LLMs’ perplexity scores. Instructions that are too simple or too difficult are discarded to address issues such as model training instability and overfitting.</p>
+<p><strong>Summary</strong></p>
+<p>For instruction tuning, it is preferable to use ample and diverse instruction data, whether manually annotated or synthesized by LLMs. As the quantity of high-quality instruction data increases, the performance of the fine-tuned model tends to improve. Incorporating complex reasoning instructions is also recommended, as they can significantly enhance model capabilities. However, there is still a lack of standardized guidelines for the large-scale generation of instruction data that aligns with human needs.</p>
+<h3 id="7-1-5-the-effect-of-instruction-tuning"><span class="num">7.1.5</span>The Effect of Instruction Tuning<a class="anchor" href="#7-1-5-the-effect-of-instruction-tuning">#</a></h3>
+<p>This subsection will discuss the impact of instruction tuning on model capacity from three aspects.</p>
+<p><strong>Performance Improvement</strong></p>
+<p>Instruction tuning, which involves training LLMs using instruction-formatted datasets, primarily enhances or unlocks the task-solving capabilities of these models [32]. It has been shown that language models of different scales (ranging from 77M to 540B parameters) benefit from instruction tuning [32, 93], with improvements becoming more pronounced as model size increases. Notably, some small models that undergo instruction</p>
+<p>tuning may even outperform larger models without such tuning. Furthermore, instruction tuning achieves relatively stable gains across different model architectures (e.g., encoderdecoder and causal decoder), pre-training objectives (e.g., language modeling and denoising autoencoding), and fine-tuning methods (e.g., sequence-to-sequence loss and hybrid denoisers) [32]. This demonstrates that instruction tuning is a highly generalizable method for enhancing language model capabilities [32]. Additionally, instruction tuning incurs significantly lower costs compared to pre-training, making it more economical to implement.</p>
+<p><strong>Task Generalization</strong></p>
+<p>Instruction tuning guides models to understand natural language instructions and complete corresponding tasks. Instruction tuning improves LLMs’ ability to follow instructions and solve tasks, allowing them to tackle unseen tasks without requiring task-specific training data. Instruction tuning also alleviates some common issues observed in LLMs during the pre-training stage, such as generating repetitive content or merely completing the input without addressing the relevant task [17, 32]. Moreover, LLMs trained with English instruction data can transfer these capabilities to tasks in other languages. For instance, researchers leverage the English task collection P3 to conduct instruction tuning on the multilingual model BLOOM, yielding the BLOOMZ-P3 model [196]. In multilingual sentence completion tasks, BLOOMZ-P3 demonstrates over a 50% performance improvement compared to the base model BLOOM. These experimental results indicate that instruction tuning enables LLMs to acquire relatively generalized task-solving capabilities from English data and transfer these capabilities to other languages [196]. <strong>Domain Specialization</strong></p>
+<p>General LLMs perform well on traditional NLP tasks and daily conversation tasks. However, their performance in specific domains, such as medicine, law, and finance, may still lag behind that of domain-specific models. In practical applications, instruction tuning can be applied to LLMs to adapt them to downstream tasks in specific domains. For instance, in the medical domain, researchers have proposed instruction tuning of FLAN-PaLM [32] using medical datasets, leading to the development of the Med-PaLM model [197], which demonstrates strong performance across various medical tasks. Similarly, Chinese researchers have released open-source medical models, such as</p>
+<p>BenTsao [198], which are developed by instruction tuning LLaMA. In the e-commerce domain, researchers have fine-tuned LLMs to adapt them for recommendation tasks [199], achieving significant performance improvements. Furthermore, instruction tuning has also shown promising adaptation results in other fields, such as law and finance [200, 201]. These works suggest that instruction tuning provides an effective approach for domain adaptation of LLMs, enhancing their performance in real-world applications.</p>
+<h2 id="7-2-instruction-tuning-strategies"><span class="num">7.2</span>Instruction Tuning Strategies<a class="anchor" href="#7-2-instruction-tuning-strategies">#</a></h2>
+<p>This section primarily introduces training strategies specific to instruction tuning, building on the pre-trained base model.</p>
+<h3 id="7-2-1-optimization-settings"><span class="num">7.2.1</span>Optimization Settings<a class="anchor" href="#7-2-1-optimization-settings">#</a></h3>
+<p>The optimizer settings (AdamW, Adafactor), stability training methods (weight decay, gradient clipping), and training techniques (3D parallelism, ZeRO, and mixed-precision training) used in instruction tuning generally remain consistent with those in the pre-training stage and can be directly adopted. Below, we introduce the unique optimization settings specific to instruction tuning.</p>
+<ul><li><em>Objective</em> <em>function.</em> During the pre-training stage, a language modeling loss (as discussed in Sect. 6.1.1) is typically used to optimize the model’s prediction loss for each token. In contrast, instruction tuning is a supervised training process that usually employs a sequence-to-sequence loss as the objective function, calculating the loss only based on the output part while ignoring the input part.</li><li><em>Batch</em> <em>size</em> <em>and</em> <em>learning</em> <em>rate.</em> After pre-training, the instruction tuning stage typically requires the use of smaller batch sizes and learning rates to update the model parameters. For instance, InstructGPT (175B) employs a batch size of 8 and a constant learning rate of 5<span class="m">.</span>03 <span class="m">×</span> 10<span class="m">-</span>6. during fine-tuning. Similarly, Alpaca (7B) uses a batch size of 128, with the learning rate first warmed up to 2 <span class="m">×</span> 10<span class="m">-</span>5. with a cosine decay schedule.</li><li><em>Efficient</em> <em>training</em> <em>of</em> <em>multi-turn</em> <em>dialogue</em> <em>data.</em> For multi-turn dialogue data, a typical training approach splits long utterances into multiple separate instances and then trains them independently, which results in a significant amount of redundant computation over the same dialogue histories. To improve training efficiency, specialized masking mechanisms can be employed for multi-turn dialogue data. Since there is no clear boundary between input and output in a causal decoder, the entire multi-turn dialogue can be processed in a single forward pass. Then, the loss is computed solely for the output portion of each turn using an appropriate masking mechanism, thereby reducing redundant computations.</li></ul>
+<h3 id="7-2-2-data-organization-strategies"><span class="num">7.2.2</span>Data Organization Strategies<a class="anchor" href="#7-2-2-data-organization-strategies">#</a></h3>
+<p>In addition to the optimization settings mentioned above, instruction tuning also requires designing an appropriate data organization strategy to enable LLMs to achieve better fine-tuning results. This subsection introduces three commonly used strategies for organizing data.</p>
+<p><strong>Balancing Data Distribution</strong></p>
+<p>To enhance the comprehensive capabilities of LLMs, researchers often recommend mixing instruction datasets from diverse sources [202]. A common method is to merge the datasets and then sample each instance with equal probability from the combined dataset. Typically, a mixture of NLP task datasets (such as FLAN v2), daily conversation datasets (such as ShareGPT), and synthetic datasets (such as GPT4-Alpaca) is used for instruction tuning of LLMs.</p>
+<p>Furthermore, existing research work [32, 193] has shown that increasing the sampling ratio of high-quality datasets (such as FLAN and P3) helps improve model performance. In the FLAN v2 dataset collection, the final mixing ratios are: FLAN (46%), T0 (27.9%), NIV2 (24.2%), and CoT data (1.8%). To prevent larger datasets from dominating the sampling process, instruction tuning typically sets a maximum capacity to limit the maximum number of instances that can be sampled from each dataset [67]. For example, in FLAN v2, the maximum capacities for the FLAN, T0, NIV2, and CoT datasets are set to 30,000, 20,000, 5000, and 100,000, respectively.</p>
+<p><strong>Multi-Stage Instruction Tuning</strong></p>
+<p>In Sect. 7.1, three commonly used types of instruction data are introduced: NLP task data, daily conversation data, and synthetic data. Due to the differences in scale and semantic characteristics among these three types of data, it is necessary to effectively schedule the use of different data resources during training to achieve better results. YuLan adopts a multi-stage instruction tuning strategy: it first fine-tunes the model using large-scale NLP task data, then further fine-tunes it using relatively diverse daily conversation and synthetic instruction data. To avoid the problem of catastrophic forgetting, a moderate amount of NLP instruction data can be incorporated during the second stage. This multi-stage instruction tuning strategy can also be applied in a more generalized way. For example, during training, the difficulty and complexity of instructions can be gradually increased, allowing for stage-by-stage training to enhance LLMs’ ability to follow complex instructions.</p>
+<p><strong>Combining Instruction Tuning and Pre-training</strong></p>
+<p>Incorporating instruction data into the pre-training stage has become a common training technique. By utilizing instruction data in advance, models can better perceive downstream tasks during pre-training, enabling them to more effectively learn knowledge and information from the pre-training data in a task-oriented manner. For example, GLM- 130B [150] incorporates instruction datasets during the pre-training process, accounting for approximately 5% of the pre-training data. Additionally, MiniCPM [63] proposes adding an additional “annealing stage” between the pre-training stage and the instruction tuning stage. This stage employs a mix of high-quality pre-training data and instruction data. Experimental results show that this strategy outperforms the traditional two-stage</p>
+<p>Similarly, YuLan-Mini [53] approach of pre-training followed by instruction tuning.</p>
+<p>has also incorporated high-quality instruction data during pre-training, demonstrating significant performance improvements across various benchmarks.</p>
+<p>Additionally, a small amount of pre-training data can be included during the instruction tuning process to improve training stability.</p>
+<p>For example, OPT-IML [193] incorporates 5% of pre-training data during the instruction tuning stage, resulting in enhancements in both classification and generation tasks. However, this strategy appears to be rarely used in most existing LLMs according to public literature.</p>
+<h2 id="7-3-parameter-efficient-fine-tuning"><span class="num">7.3</span>Parameter-Efficient Fine-Tuning<a class="anchor" href="#7-3-parameter-efficient-fine-tuning">#</a></h2>
+<p>Instruction tuning enables LLMs to better follow and execute human instructions. However, due to the huge number of parameters in LLMs, full-parameter fine-tuning can lead to significant computational overhead. In this section, we will discuss how to conduct <em>parameter-efficient fine-tuning</em> (PEFT) for LLMs, also known as <em>lightweight fine-</em><em>tuning</em>. In the existing literature, parameter-efficient fine-tuning [203–205] is a critical research area aiming to reduce the number of trainable model parameters while achieving performance levels close to those of full-parameter fine-tuning. This section will introduce parameter-efficient fine-tuning methods for Transformer-based architectures.</p>
+<h3 id="7-3-1-low-rank-adaptation-lora"><span class="num">7.3.1</span>Low-Rank Adaptation (LoRA)<a class="anchor" href="#7-3-1-low-rank-adaptation-lora">#</a></h3>
+<figure><img src="assets/fig-0156.png" alt="" loading="lazy"><figcaption>Figure 7.3 Illustration of LoRA tuning</figcaption></figure>
+<p>We first introduce a mainstream lightweight fine-tuning technique for LLMs called low-rank adaptation (LoRA). The illustration of LoRA fine-tuning is shown in Fig. 7.3. <strong>Background of LoRA</strong></p>
+<p>LLMs contain numerous linear transformation layers (see details in Sect. 6.4.2), where the parameter matrices typically have very high dimensions. Researchers [205] have found that when adapting the model to a specific task, the parameter matrix is often <em>over-parameterized</em>, meaning that it has a lower intrinsic rank. To address this issue, LoRA [205] introduces low-rank decomposition matrices added to the parameter matrix of each layer to approximate the parameter updates. This approach reduces the number of tunable parameters required for adapting to downstream tasks. Given a model parameter</p>
+<p>matrix <span class="m">W</span> ., the updating process can be generally expressed as follows:</p>
+<figure class="eq"><img src="assets/fig-0157.png" alt="equation 7.1" loading="lazy"></figure>
+<p>where <span class="m">W</span> 0. is the original parameter matrix, and Δ<span class="m">W</span> . is the gradient matrix for updates. The key idea of LoRA is to freeze the original matrix <span class="m">W</span> 0 <span class="m">∈</span> R<span class="m">H</span><span class="m">×</span><span class="m">H</span> . and approximate the</p>
+<figure class="eq"><img src="assets/fig-0158.png" alt="equation " loading="lazy"></figure>
+<p>and <span class="m">B</span> <span class="m">∈</span> R<span class="m">H</span><span class="m">×</span><span class="m">R</span>., where <em>R</em></p>
+<p><em>H</em>. represents the reduced rank. During fine-tuning, the original parameter matrix <span class="m">W</span> 0. remains unchanged, while the low-rank matrices <span class="m">A</span>. and <span class="m">B</span>. are trainable parameters for adapting to downstream tasks. In the forward propagation process, the equation for computing the intermediate state <span class="m">h</span> <span class="m">=</span> <span class="m">W</span> 0 <span class="m">·</span> <span class="m">x</span>. in the original computation is modified as follows:</p>
+<figure class="eq"><img src="assets/fig-0159.png" alt="equation 7.2" loading="lazy"></figure>
+<p>After training, the original parameter matrix <span class="m">W</span> 0. and the learned weights <span class="m">A</span>. and <span class="m">B</span>. are further merged as <span class="m">W</span> <span class="m">=</span> <span class="m">W</span> 0 <span class="m">+</span> <span class="m">A</span> <span class="m">·</span> <span class="m">B</span></p>
+<p>., resulting in the updated parameter matrix. Consequently, the LoRA fine-tuned model does not introduce additional computational overhead during inference.</p>
+<p><strong>Memory Estimation of LoRA</strong></p>
+<p>In Sect. 6.4.4, we have analyzed the memory consumption required for the full-parameter training. Here, we continue to use the similar analysis method to estimate the memory resources saved by LoRA tuning.</p>
+<p>Assuming the number of parameters that LoRA needs to train is <em>P</em>LoRA., and the original number of the model is <em>P</em>, we focus on the memory usage of model parameters and optimizer states, as they are the primary sources of memory consumption. Other components are ignored because they occupy a small proportion of the entire cost. In LoRA tuning, the number of model parameters that need to be preserved is 2<em>P</em> <span class="m">+</span> 2<em>P</em>LoRA. The memory required by gradient and optimizer states is 2<em>P</em>LoRA <span class="m">+</span> 4<em>P</em>LoRA <span class="m">+</span> 4<em>P</em>LoRA <span class="m">+</span> 4<em>P</em>LoRA <span class="m">=</span> 14<em>P</em>LoRA. Therefore, the memory required for LoRA tuning is significantly reduced from 16<em>P</em> for full-parameter fine-tuning to 2<em>P</em> <span class="m">+</span> 16<em>P</em>LoRA.</p>
+<p>Generally speaking, LoRA is primarily applied to the linear transformation matrices of the multi-head attention layer (i.e., <span class="m">W</span> <span class="m">Q</span><span class="m">,</span> <span class="m">W</span> <span class="m">K</span><span class="m">,</span> <span class="m">W</span><span class="m">V</span><span class="m">,</span> <span class="m">W</span> <span class="m">O</span> <span class="m">∈</span> R<span class="m">H</span><span class="m">×</span><span class="m">H</span> .). Therefore, <em>P</em>LoRA <span class="m">=</span> 8<em>LHR</em>., where <em>L</em><span class="m">,</span> <em>H</em><span class="m">,</span> <em>R</em>. are the number of model layers, the hidden size, and the rank,</p>
+<p>respectively. Taking LLaMA (7B) (<em>L</em> <span class="m">=</span> 32<span class="m">,</span> <em>H</em> <span class="m">=</span> 4096.) as an example, the common rank <em>R</em> is set to 8, then <em>P</em>LoRA <span class="m">=</span> 8<span class="m">,</span> 388<span class="m">,</span>608., 2<em>P</em> <span class="m">+</span> 16<em>P</em>LoRA <span class="m">=</span> 13<span class="m">,</span>611<span class="m">,</span>048<span class="m">,</span>960 <span class="m">=</span> 14.GB, and 16<em>P</em> <span class="m">=</span> 107<span class="m">,</span>814<span class="m">,</span>649<span class="m">,</span>856 <span class="m">=</span> 108.GB. As we can see, the GPU memory required for model tuning drops significantly from 108 to 14 GB, demonstrating that LoRA effectively <em>P</em>., reduces the GPU memory resources required for fine-tuning the model. Since <em>P</em>LoRA it can be approximately considered that lightweight fine-tuning reduces the GPU memory demand from 16<em>P</em> to 2<em>P</em>.</p>
+<p><strong>Variants of LoRA</strong></p>
+<p>In the original implementation of LoRA, the rank <em>R</em> of each low-rank matrix is set to the same value, which cannot be flexibly adjusted for specific tasks or modules. To address this limitation, AdaLoRA [206] introduces a dynamic low-rank adaptation method. This method adjusts the rank allocated to each parameter matrix during fine-tuning while maintaining a fixed total number of trainable parameters. Specifically, the model evaluates each parameter matrix’s importance to training performance by using the fine-tuning loss during the training process: matrices deemed more important are assigned higher ranks to better adapt to the target task, while those considered less important receive lower ranks to prevent overfitting and reduce computational overhead.</p>
+<p>Although LoRA effectively reduces memory consumption, the cost of fine-tuning remains substantial for models with tens or hundreds of billions of parameters. QLoRA [207] further reduces memory usage by quantizing the original parameter matrices to 4-bit representation while training the low-rank parameters at 16-bit precision. This approach preserves fine-tuning effectiveness while significantly reducing memory consumption. Following previous analysis, for a model with <em>P</em> parameters, the memory requirement for QLoRA fine-tuning decreases from 2<em>P</em> in LoRA to 0<span class="m">.</span>5<em>P</em>. Consequently, the QLoRA method enables the fine-tuning of a 65B model on a single A6000 GPU (48 GB) while achieving fine-tuning performance comparable to that of a 16-bit model.</p>
+<p><strong>Applications of LoRA in LLMs</strong></p>
+<p>With the rise of LLMs, parameter-efficient fine-tuning methods such as LoRA have garnered increasing attention. Compared to full-parameter fine-tuning, LoRA significantly reduces training costs while maintaining model performance. It is widely used in the instruction tuning of open-source LLMs, such as LLaMA and BLOOM. For instance,</p>
+<p>Alpaca-LoRA is a lightweight fine-tuned version of the Alpaca model, based on the LLaMA (7B) model and fine-tuned on 52,000 synthesized instances using LoRA. Additionally, the open-source community actively explores LoRA’s application in fine-tuning LLaMA-series models, spanning different languages (e.g., Chinese, Thai, Spanish) and various domains (e.g., dialog, mathematics, code). Overall, among the various parameter-efficient fine-tuning methods, LoRA is notable for its ease of implementation and its capacity to achieve respectable performance with a significantly reduced number of trainable parameters.</p>
+<h3 id="7-3-2-other-parameter-efficient-fine-tuning-me"><span class="num">7.3.2</span>Other Parameter-Efficient Fine-Tuning Methods<a class="anchor" href="#7-3-2-other-parameter-efficient-fine-tuning-me">#</a></h3>
+<figure><img src="assets/fig-0160.png" alt="" loading="lazy"><figcaption>Figure 7.4 Illustration of adapter tuning</figcaption></figure>
+<p>In this subsection, we will introduce other parameter-efficient fine-tuning methods, including adapter tuning, prefix tuning, and prompt tuning. While these methods are widely used with pre-trained language models, their application in LLMs is relatively less common. For the sake of completeness, we include a brief introduction of the three methods.</p>
+<p><strong>Adapter Tuning</strong></p>
+<p>Adapter tuning integrates small neural network modules, called <em>adapters</em>, into Transformer models [208]. To implement the adapter module, researchers propose using a</p>
+<p>bottleneck network architecture: it first compresses the original feature vector <span class="m">h</span>. to a lower dimension, then applies a nonlinear transformation using an activation function, and finally restores it to the original dimension. Formally, this process can be expressed by the following equation:</p>
+<figure class="eq"><img src="assets/fig-0161.png" alt="equation 7.3" loading="lazy"></figure>
+<p>where <span class="m">W</span> <span class="m">d</span> <span class="m">∈</span> R<span class="m">H</span><span class="m">×</span><span class="m">R</span>., <span class="m">W</span> <span class="m">u</span> <span class="m">∈</span> R<span class="m">R</span><span class="m">×</span><span class="m">H</span> ., and <em>R</em></p>
+<p><em>H</em>. Typically, the adapter module is incorporated into each layer of the Transformer architecture and is inserted serially after the multi-head attention layer and the feed-forward network layer, but before the layer normalization. During fine-tuning, the adapter module is optimized based on the specific task objectives, while the parameters of the original language model remain unchanged. This approach effectively reduces the number of parameters that need to be optimized in the fine-tuning process. Figure 7.4 illustrates the diagram of adapter tuning.</p>
+<figure><img src="assets/fig-0162.png" alt="" loading="lazy"><figcaption>Figure 7.5 Illustration of prefix tuning</figcaption></figure>
+<p><strong>Prefix Tuning</strong></p>
+<p>Prefix tuning [203] introduces a set of prefix parameters into the multi-head attention layers of language models. These prefix parameters form a trainable continuous matrix, which acts as the embedding vectors of several virtual tokens and is optimized according to specific tasks. In the implementation, the computation for each attention head can be represented by the following equation, which extends the original attention computation Eq. 5.7:</p>
+<figure class="eq"><img src="assets/fig-0163.png" alt="equation 7.4" loading="lazy"></figure>
+<p>where “<span class="m">⊕</span>.” denotes matrix concatenation (with prefix tokens being concatenated before the key and value matrices), and <span class="m">P</span><span class="m">K</span><span class="m">,</span> <span class="m">P</span><span class="m">V</span> <span class="m">∈</span> R<span class="m">L</span><span class="m">×</span><span class="m">H</span> . denote the prefix matrices, which are sequences of prefix tokens. Here, <em>L</em> represents the length of the prefix vectors, typically ranging between 10 and 100, which can be adjusted according to specific tasks. During prefix tuning, only the prefix parameters are optimized, enabling efficient parameter optimization. Figure 7.5 provides a schematic illustration of the prefix tuning strategy.</p>
+<p>Add &amp; Norm</p>
+<p>Feed Forward</p>
+<p>Add &amp; Norm</p>
+<p>Multi-Head</p>
+<p>Attention</p>
+<p>Prompt</p>
+<p>Input Embedding</p>
+<figure><img src="assets/fig-0164.png" alt="" loading="lazy"><figcaption>Figure 7.6 Illustration of prompt tuning</figcaption></figure>
+<p><strong>Prompt Tuning</strong></p>
+<p>Unlike prefix tuning, prompt tuning adds trainable prompt vectors solely in the input embedding layer. Building on discrete prompt methods (detailed in Sect. 10.1), prompt tuning introduces a set of continuous prompting vectors alongside the input text. These are either incorporated in a free form [209] or a prefix form [204] to tackle specific tasks. In practical implementation, only the learnable prompt vectors are combined with the input text vectors and fed into the language model. P-tuning [209] suggests using a free-form method (i.e., without constraints on the position of prompt vectors) to integrate input text and prompting vectors, employing a bidirectional LSTM to learn the embedding representations of the prompt vectors. This approach is applicable to both natural language understanding and generation tasks. Another notable method called prompt-tuning<span class="m">2</span> [204] involves prepending prompts in a prefix form by directly inserting continuous vectors before the input. In prompt tuning, only the prompt vectors are trained <span class="m">2</span>In this book, “prompt tuning” refers broadly to methods that introduce additional parameters in the prompt for</p>
+<p>for specific tasks. As it only includes a minimal number of trainable parameters, the performance of this method depends on the capability of the underlying language model and the difficulty of the downstream tasks [204]. Figure 7.6 presents the schematic diagram of the prompt tuning method.</p>
+<h2 id="7-4-code-practice-and-empirical-analysis"><span class="num">7.4</span>Code Practice and Empirical Analysis<a class="anchor" href="#7-4-code-practice-and-empirical-analysis">#</a></h2>
+<p>To help readers better understand the implementation of parameter-efficient fine-tuning methods, we provide the example code that demonstrates the algorithmic process. Additionally, we evaluate the tuning performance of models using different instruction datasets based on this code.</p>
+<h3 id="7-4-1-code-practice-of-instruction-tuning"><span class="num">7.4.1</span>Code Practice of Instruction Tuning<a class="anchor" href="#7-4-1-code-practice-of-instruction-tuning">#</a></h3>
+<div class="codeblock"><pre><code><span class="t-kw">import</span> <span class="t-kw">torch</span>
+<span class="t-kw">from</span> <span class="t-kw">dataclasses</span> <span class="t-kw">import</span> dataclass
+<span class="t-kw">from</span> <span class="t-kw">dataset.sft_dataset</span> <span class="t-kw">import</span> SFTDataset
+<span class="t-kw">from</span> <span class="t-kw">transformers</span> <span class="t-kw">import</span> (
+        AutoModelForCausalLM,
+        AutoTokenizer,
+        HfArgumentParser,
+        PreTrainedTokenizer,
+        TrainingArguments,
+        Trainer,</code></pre></div>
+<p>The example code for instruction tuning closely resembles the pre-training code (as detailed in Sect. 6.5). The main differences lie in the construction of the instruction dataset (SFTDataset) and the computation of sequence-to-sequence loss (DataCollat orForSupervisedDataset). The following code illustrates the overall training process for instruction tuning of the <em>YuLan</em> model using LLMBox.</p>
+<div class="codeblock"><pre><code><span class="t-kw">from</span> <span class="t-kw">transformers.hf_argparser</span> <span class="t-kw">import</span> HfArg
+IGNORE_INDEX = -100
+<span class="t-com">#</span> <span class="t-com">User-input</span> <span class="t-com">hyperparameters</span>
+    @dataclass
+    <span class="t-kw">class</span> <span class="t-kw">Arguments</span>(TrainingArguments):
+        <span class="t-com">#</span> <span class="t-com">Model</span> <span class="t-com">architecture</span>
+        model_name_or_path: <span class="t-kw">str</span> = HfArg(
+            default=<span class="t-kw">None</span>,
+            help=<span class="t-str">"The</span> <span class="t-str">model</span> <span class="t-str">name</span> <span class="t-str">or</span> <span class="t-str">path,</span> <span class="t-str">e.g.,</span> <span class="t-str">`meta-llama/Llama-2-7b-hf`"</span>,
+        )
+        <span class="t-com">#</span> <span class="t-com">Training</span> <span class="t-com">dataset</span></code></pre></div>
+<p><sup class="fnref">11</sup> )</p>
+<div class="codeblock"><pre><code>dataset: <span class="t-kw">str</span> = HfArg(
+    default=<span class="t-str">""</span>,
+    help=<span class="t-str">"Setting</span> <span class="t-str">the</span> <span class="t-str">names</span> <span class="t-str">of</span> <span class="t-str">data</span> <span class="t-str">file."</span>,
+)
+<span class="t-com">#</span> <span class="t-com">Context</span> <span class="t-com">window</span> <span class="t-com">size</span>
+model_max_length: <span class="t-kw">int</span> = HfArg(
+    default=2048,
+    help=<span class="t-str">"The</span> <span class="t-str">maximum</span> <span class="t-str">sequence</span> <span class="t-str">length"</span>,
+)
+<span class="t-com">#</span> <span class="t-com">Save</span> <span class="t-com">only</span> <span class="t-com">model</span> <span class="t-com">parameters</span> <span class="t-com">(do</span> <span class="t-com">not</span> <span class="t-com">save</span> <span class="t-com">optimizer</span> <span class="t-com">states)</span>
+save_only_model: <span class="t-kw">bool</span> = HfArg(
+    default=<span class="t-kw">True</span>,
+    help=<span class="t-str">"When</span> <span class="t-str">checkpointing,</span> <span class="t-str">whether</span> <span class="t-str">to</span> <span class="t-str">only</span> <span class="t-str">save</span> <span class="t-str">the</span> <span class="t-str">model,</span> <span class="t-str">or</span> <span class="t-str">also</span>
+        <span class="t-str">the</span> <span class="t-str">optimizer,</span> <span class="t-str">scheduler</span> <span class="t-str">\&amp;</span> <span class="t-str">rng</span> <span class="t-str">state."</span>,</code></pre></div>
+<div class="codeblock"><pre><code>        )
+        <span class="t-com">#</span> <span class="t-com">Use</span> <span class="t-com">BF16</span> <span class="t-com">mixed</span> <span class="t-com">precision</span> <span class="t-com">training</span>
+        bf16: <span class="t-kw">bool</span> = HfArg(
+            default=<span class="t-kw">True</span>,
+            help=<span class="t-str">"Whether</span> <span class="t-str">to</span> <span class="t-str">use</span> <span class="t-str">bf16</span> <span class="t-str">(mixed)</span> <span class="t-str">precision</span> <span class="t-str">instead</span> <span class="t-str">of</span> <span class="t-str">32-bit."</span>,
+        )
+<span class="t-com">#</span> <span class="t-com">Batch</span> <span class="t-com">data</span> <span class="t-com">and</span> <span class="t-com">construct</span> <span class="t-com">sequence-to-sequence</span> <span class="t-com">loss</span>
+@dataclass
+<span class="t-kw">class</span> <span class="t-kw">DataCollatorForSupervisedDataset</span>():
+        tokenizer: PreTrainedTokenizer
+        <span class="t-kw">def</span> __call__(<span class="t-kw">self</span>, instances):
+            input_ids, labels = <span class="t-kw">tuple</span>([instance[key] <span class="t-kw">for</span> instance <span class="t-kw">in</span> instances] <span class="t-kw">for</span> key <span class="t-kw">in</span> (<span class="t-str">"input_ids"</span>, <span class="t-str">"labels"</span>))</code></pre></div>
+<div class="codeblock"><pre><code>input_ids = torch.nn.utils.rnn.pad_sequence(
+    input_ids, batch_first=<span class="t-kw">True</span>,
+        padding_value=<span class="t-kw">self</span>.tokenizer.pad_token_id</code></pre></div>
+<div class="codeblock"><pre><code>)
+labels = torch.nn.utils.rnn.pad_sequence(labels, batch_first=<span class="t-kw">True</span>,
+    padding_value=IGNORE_INDEX)</code></pre></div>
+<div class="codeblock"><pre><code>        <span class="t-kw">return</span> <span class="t-kw">dict</span>(
+            input_ids=input_ids,
+            labels=labels,
+        )
+<span class="t-kw">def</span> train():
+    <span class="t-com">#</span> <span class="t-com">Parse</span> <span class="t-com">command</span> <span class="t-com">line</span> <span class="t-com">arguments</span>
+    parser = HfArgumentParser(Arguments)
+    args = parser.parse_args_into_dataclasses()[0]
+    <span class="t-com">#</span> <span class="t-com">Load</span> <span class="t-com">tokenizer</span>
+    tokenizer = AutoTokenizer.from_pretrained(
+        args.model_name_or_path,
+        model_max_length=args.model_max_length,
+        padding_side=<span class="t-str">"right"</span>,
+        add_eos_token=<span class="t-kw">False</span>,
+    )
+    <span class="t-com">#</span> <span class="t-com">Load</span> <span class="t-com">model</span> <span class="t-com">and</span> <span class="t-com">use</span> <span class="t-com">FlashAttention</span>
+    model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path,
+        attn_implementation=<span class="t-str">"flash_attention_2"</span>)</code></pre></div>
+<div class="codeblock"><pre><code><span class="t-com">#</span> <span class="t-com">Initialize</span> <span class="t-com">trainer,</span> <span class="t-com">prepare</span> <span class="t-com">training</span> <span class="t-com">data,</span> <span class="t-com">and</span> <span class="t-com">start</span> <span class="t-com">training</span>
+kwargs = <span class="t-kw">dict</span>(
+    model=model,</code></pre></div>
+<p><span class="m">→</span> <span class="m">→</span> <span class="m">→</span> <span class="m">→</span> <span class="m">→</span></p>
+<div class="codeblock"><pre><code>        args=args,
+        tokenizer=tokenizer,
+        train_dataset=SFTDataset(args, tokenizer),
+        data_collator=DataCollatorForSupervisedDataset(tokenizer),
+    )
+    trainer = Trainer(**kwargs)
+    trainer.train()
+    trainer.save_model(args.output_dir + <span class="t-str">"/checkpoint-final"</span>)
+    trainer.save_state()
+<span class="t-kw">if</span> __name__ == <span class="t-str">"__main__"</span>:
+    train()</code></pre></div>
+<p>The definition of the instruction dataset class SFTDataset is provided in the code below. The process() function encompasses the main processing steps of the instruction data, including data loading, tokenization, batching, and other key operations.</p>
+<div class="codeblock"><pre><code><span class="t-kw">import</span> <span class="t-kw">json</span>
+<span class="t-kw">class</span> <span class="t-kw">SFTDataset</span>:
+        IGNORE_INDEX = -100
+        <span class="t-com">#</span> <span class="t-com">Define</span> <span class="t-com">instruction</span> <span class="t-com">template</span> <span class="t-com">format</span>
+        instruction_template = <span class="t-str">"</span><span class="t-kw">\n</span><span class="t-str">###</span> <span class="t-str">Instruction:</span><span class="t-kw">\n</span><span class="t-str">"</span>
+        response_template = <span class="t-str">"</span><span class="t-kw">\n</span><span class="t-str">###</span> <span class="t-str">Output:</span><span class="t-kw">\n</span><span class="t-str">"</span>
+        format_template = {
+            <span class="t-str">"prompt_input"</span>: (
+                <span class="t-str">"Below</span> <span class="t-str">is</span> <span class="t-str">an</span> <span class="t-str">instruction</span> <span class="t-str">that</span> <span class="t-str">describes</span> <span class="t-str">a</span> <span class="t-str">task,</span> <span class="t-str">paired</span> <span class="t-str">with</span> <span class="t-str">an</span>
+                    <span class="t-str">input</span> <span class="t-str">that</span> <span class="t-str">provides</span> <span class="t-str">further</span> <span class="t-str">context.</span> <span class="t-str">"</span> +</code></pre></div>
+<div class="codeblock"><pre><code><span class="t-str">"Write</span> <span class="t-str">a</span> <span class="t-str">response</span> <span class="t-str">that</span> <span class="t-str">appropriately</span> <span class="t-str">completes</span> <span class="t-str">the</span> <span class="t-str">request."</span> +
+    instruction_template + <span class="t-str">"</span><span class="t-kw">{instruction}</span><span class="t-str">"</span> +</code></pre></div>
+<div class="codeblock"><pre><code>    <span class="t-str">"</span><span class="t-kw">{input}</span><span class="t-str">"</span> + response_template
+),
+<span class="t-str">"prompt_no_input"</span>: (
+    <span class="t-str">"Below</span> <span class="t-str">is</span> <span class="t-str">an</span> <span class="t-str">instruction</span> <span class="t-str">that</span> <span class="t-str">describes</span> <span class="t-str">a</span> <span class="t-str">task.</span> <span class="t-str">"</span> +
+    <span class="t-str">"Write</span> <span class="t-str">a</span> <span class="t-str">response</span> <span class="t-str">that</span> <span class="t-str">appropriately</span> <span class="t-str">completes</span> <span class="t-str">the</span> <span class="t-str">request."</span> +
+        instruction_template + <span class="t-str">"</span><span class="t-kw">{instruction}</span><span class="t-str">"</span> +</code></pre></div>
+<div class="codeblock"><pre><code>        response_template
+    ),
+}
+<span class="t-kw">def</span> __init__(<span class="t-kw">self</span>, args, tokenizer):
+    <span class="t-kw">self</span>.args = args
+    <span class="t-kw">self</span>.block_size = <span class="t-kw">self</span>.args.model_max_length
+    <span class="t-kw">self</span>.tokenizer = tokenizer
+    <span class="t-kw">self</span>.input_ids, <span class="t-kw">self</span>.labels = <span class="t-kw">self</span>.process(<span class="t-kw">self</span>.tokenizer)
+<span class="t-com">#</span> <span class="t-com">Dataset</span> <span class="t-com">length</span>
+<span class="t-kw">def</span> __len__(<span class="t-kw">self</span>):</code></pre></div>
+<p>This implementation is developed following the construction method of the Alpaca dataset. <span class="m">→</span> <span class="m">→</span> <span class="m">→</span></p>
+<div class="codeblock"><pre><code>    <span class="t-kw">return</span> <span class="t-kw">len</span>(<span class="t-kw">self</span>.input_ids)
+<span class="t-com">#</span> <span class="t-com">Get</span> <span class="t-com">the</span> <span class="t-com">i-th</span> <span class="t-com">instance</span>
+<span class="t-kw">def</span> __getitem__(<span class="t-kw">self</span>, i):
+    <span class="t-kw">return</span> <span class="t-kw">dict</span>(input_ids=<span class="t-kw">self</span>.input_ids[i], labels=<span class="t-kw">self</span>.labels[i])
+<span class="t-com">#</span> <span class="t-com">Tokenize</span> <span class="t-com">the</span> <span class="t-com">input</span> <span class="t-com">and</span> <span class="t-com">output</span> <span class="t-com">and</span> <span class="t-com">mark</span> <span class="t-com">the</span> <span class="t-com">output</span> <span class="t-com">position</span>
+<span class="t-kw">def</span> encode_src_tgt(<span class="t-kw">self</span>, s, t, tokenizer):
+    source_id = tokenizer.encode(s,
+        max_length=tokenizer.model_max_length, truncation=<span class="t-kw">True</span>)</code></pre></div>
+<div class="codeblock"><pre><code>tokenizer.add_eos_token = <span class="t-kw">True</span>
+input_id = tokenizer.encode(s + t,
+    max_length=tokenizer.model_max_length, truncation=<span class="t-kw">True</span>,</code></pre></div>
+<div class="codeblock"><pre><code>                                return_tensors=<span class="t-str">'pt'</span>)[0]
+    tokenizer.add_eos_token = <span class="t-kw">False</span>
+    label = input_id.clone()
+    label[:<span class="t-kw">len</span>(source_id)] = <span class="t-kw">self</span>.IGNORE_INDEX
+    <span class="t-kw">return</span> input_id, label
+<span class="t-com">#</span> <span class="t-com">Call</span> <span class="t-com">dataset</span> <span class="t-com">loading,</span> <span class="t-com">tokenization,</span> <span class="t-com">and</span> <span class="t-com">batching</span>
+<span class="t-kw">def</span> process(<span class="t-kw">self</span>, tokenizer):
+    input_ids = []
+    labels = []
+    list_data_dict = json.load(<span class="t-kw">open</span>(<span class="t-kw">self</span>.args.dataset))
+    <span class="t-kw">for</span> example <span class="t-kw">in</span> list_data_dict:
+        example[<span class="t-str">'response'</span>] = example.pop(<span class="t-str">'output'</span>)
+        s = <span class="t-kw">self</span>.format_template[<span class="t-str">"prompt_input"</span>].format_map(example)
+            <span class="t-str">'input'</span> <span class="t-kw">in</span> example.keys(</code></pre></div>
+<div class="codeblock"><pre><code>) <span class="t-kw">else</span>
+    <span class="t-kw">self</span>.format_template[<span class="t-str">"prompt_no_input"</span>].format_map(example)</code></pre></div>
+<div class="codeblock"><pre><code>    t = example[<span class="t-str">'response'</span>].strip()
+    input_id, label = <span class="t-kw">self</span>.encode_src_tgt(s, t, tokenizer)
+    input_ids.append(input_id)
+    labels.append(label)
+<span class="t-kw">return</span> input_ids, labels</code></pre></div>
+<p><span class="m">→</span> <span class="m">→</span> <span class="m">→</span> <span class="m">→</span> To quantitatively analyze the cost of instruction tuning for LLMs, we conduct full-parameter instruction tuning experiments using the Alpaca dataset, which contains 52,000 instruction instances, on LLaMA models of varying sizes. Table 7.1 provides statistics on GPU requirements, batch size, and time cost for full-parameter tuning across different LLaMA model sizes. These tuning experiments are conducted on two Linux servers, each equipped with eight A800-80 GB GPUs (featuring six NVSwitches). During the experiments, the compared LLaMA models are trained for three epochs, with the maximum context length set to 512. The techniques employed include data parallelism, ZeRO Stage 3, BF16, and activation recomputation.</p>
+<figure class="tbl"><div class="tablewrap"><img src="assets/fig-0165.png" alt="Table 7.1 Number of A800-80G GPUs, batch size, and fine-tuning time required for" loading="lazy"></div><figcaption>Table 7.1 Number of A800-80G GPUs, batch size, and fine-tuning time required for full-parameter fine-tuning on the Alpaca dataset</figcaption></figure>
+<p>Number of GPUs</p>
+<p>Batch size</p>
+<p>Time (hour)</p>
+<p><strong>Model</strong></p>
+<p>LLaMA (7B)</p>
+<p>3.0</p>
+<p>2</p>
+<p>8</p>
+<p>LLaMA (13B)</p>
+<p>3.1</p>
+<p>4</p>
+<p>8</p>
+<p>LLaMA (33B)</p>
+<p>6.1</p>
+<p>8</p>
+<p>4</p>
+<p>LLaMA (65B)</p>
+<p>11.2</p>
+<p>16</p>
+<p>2</p>
+<h3 id="7-4-2-empirical-analysis-of-instruction-tuning"><span class="num">7.4.2</span>Empirical Analysis of Instruction Tuning<a class="anchor" href="#7-4-2-empirical-analysis-of-instruction-tuning">#</a></h3>
+<p>We utilize the instruction tuning code presented in Sect. 7.4.1 to investigate the impact of different types of instruction datasets and potential improvement strategies on model performance.</p>
+<p><strong>Instruction Datasets</strong></p>
+<p>Based on the discussion in Sect. 7.1, our experiments mainly consider the following three common types of instruction data:</p>
+<ul><li><em>NLP</em> <em>task</em> <em>data.</em> We adopt the widely used multi-task instruction dataset FLAN v2 [32]. The complete FLAN v2 dataset contains 1836 tasks and approximately 20M instruction-formatted instances.</li><li><em>Daily</em> <em>conversation</em> <em>data.</em> We utilize the core instruction dataset ShareGPT [94] from the Vicuna model, which includes 63K real user-submitted instructions and corresponding ChatGPT responses.</li><li><em>Synthetic</em> <em>data.</em> We employ the synthetic instruction dataset Alpaca [64], which consists of 52K instructions along with corresponding inputs and outputs generated by GPT-3.5. The purpose of these experiments is to evaluate the performance of various instruction datasets and further explore their respective effects. Considering the extensive size of the complete FLAN v2 dataset, we randomly sample 50K instances from it to ensure a fair comparison with the other instruction datasets. <strong>Refinement Strategies</strong> Section 7.1.3 introduces the strategies for synthesizing instruction data, which effectively reduce the cost of data construction. However, instruction datasets like Alpaca, which are built using straightforward data synthesis methods, may be overly simplistic or lack topic diversity. We conduct experiments to enhance the Alpaca dataset using two improvement strategies commonly employed in existing research (detailed in Sect. 7.1.4). The specific implementation of these two strategies is introduced below.</li><li><em>Enhancing</em> <em>instruction</em> <em>complexity</em>. We adopt the WizardLM-70K instruction dataset released by WizardLM<span class="m">3</span> [189]. This dataset is synthesized based on the Alpaca dataset using the Evol-Instruct strategy to enhance the complexity of instruction data.</li><li><em>Increasing</em> <em>topic</em> <em>diversity</em>. We adopt the topic diversification method proposed by the YuLan model [52], which uses ChatGPT to rewrite the instructions. By utilizing specific prompts, the instructions in the Alpaca dataset are expanded into 293 topics. This process ultimately yields a diversified dataset containing 70,000 instruction instances. <strong>Experimental Setups</strong> In the experiment, we fine-tune the LLaMA-2 model using three open-source instruction datasets (FLAN v2, ShareGPT, and Alpaca) alongside two extended datasets (“<em>Alpaca</em> <em>+</em> <em>Complexity</em>” and “<em>Alpaca</em> <em>+</em> <em>Diversity</em>”) to compare and analyze the impact of different instruction datasets on the model’s performance. Specifically, the batch size is set to 128, the learning rate is fixed at 1 <span class="m">×</span> 10<span class="m">-</span>5., and the model is trained for a total of 3 epochs. A checkpoint is saved every 200 steps, and the one achieving the best downstream task performance is selected for evaluating the corresponding strategy. All instruction-tuning experiments are conducted on a server equipped with eight A800-80G GPUs. To better evaluate the capabilities of the model after instruction tuning, we consider two main evaluation scenarios: <em>daily</em> <em>conversation</em> <em>tasks</em> and <em>NLP</em> <em>tasks</em>. For the daily conversation evaluation, we use AlpacaFarm’s evaluation set, which contains over 800 daily life questions along with corresponding responses generated by the text-davinc i-003 model. We further use ChatGPT to automatically compare the output quality of the fine-tuned model and the text-davinci-003 model, calculating the win rate of the fine-tuned model as the evaluation metric. For the NLP tasks, we select two commonly used benchmarks: MMLU [210] and BBH [34] (detailed descriptions can be found in Sect. 12.4). Both benchmarks use accuracy to measure the model’s performance.</li></ul>
+<figure class="tbl"><div class="tablewrap"><img src="assets/fig-0166.png" alt="Table 7.2 Instruction tuning results based on LLaMA-2 (7B) and (13B)" loading="lazy"></div><figcaption>Table 7.2 Instruction tuning results based on LLaMA-2 (7B) and (13B)</figcaption></figure>
+<p><strong>NLP Tasks</strong></p>
+<p><strong>Daily Chat</strong></p>
+<p><strong>#Inst</strong></p>
+<p><strong>Model</strong></p>
+<p><strong>Dataset</strong></p>
+<p>AlpacaFarm</p>
+<p>MMLU</p>
+<p>BBH</p>
+<p>① FLAN v2</p>
+<p>50.25</p>
+<p>40.63</p>
+<p>50,000</p>
+<p>12.38</p>
+<p>② ShareGPT</p>
+<p>49.66</p>
+<p>35.91</p>
+<p>63,184</p>
+<p>55.53</p>
+<p>③ Alpaca</p>
+<p>46.48</p>
+<p>36.25</p>
+<p>52,002</p>
+<p>46.58</p>
+<p>LLaMA-2 (7B)</p>
+<p>Alpaca+Complexity</p>
+<p>46.87</p>
+<p>35.70</p>
+<p>70,000</p>
+<p>52.92</p>
+<p>Alpaca+Diversity</p>
+<p>47.52</p>
+<p>35.59</p>
+<p>70,000</p>
+<p>52.92</p>
+<p>① FLAN v2</p>
+<p>53.02</p>
+<p>45.47</p>
+<p>50,000</p>
+<p>11.58</p>
+<p>② ShareGPT</p>
+<p>56.81</p>
+<p>40.80</p>
+<p>63,184</p>
+<p>59.13</p>
+<p>③ Alpaca</p>
+<p>53.89</p>
+<p>39.75</p>
+<p>52,002</p>
+<p>48.51</p>
+<p>LLaMA-2 (13B)</p>
+<p>Alpaca+Complexity</p>
+<p>54.85</p>
+<p>40.54</p>
+<p>70,000</p>
+<p>55.78</p>
+<p>Alpaca+Diversity</p>
+<p>55.12</p>
+<p>40.26</p>
+<p>70,000</p>
+<p>58.20</p>
+<p><strong>Results and Analysis</strong></p>
+<p>Table 7.2 presents the fine-tuning results of the 7B and 13B LLaMA-2 models based on different instruction datasets. The following provides an analysis and discussion of the experimental results.</p>
+<ul><li><em>Instruction</em> <em>data</em> <em>that</em> <em>closely</em> <em>resembles</em> <em>downstream</em> <em>task</em> <em>formats</em> <em>yield</em> <em>greater</em> <em>performance improvements.</em> Experiments show that FLAN v2 outperforms ShareGPT and Alpaca on NLP tasks (i.e., MMLU and BBH); however, it performs worse than ShareGPT and Alpaca in evaluations of daily conversation tasks (i.e., AlpacaFarm). FLAN v2 is composed of instruction data derived from traditional NLP tasks, such as machine translation and reading comprehension, which directly enhances the model’s performance on these tasks. However, it exhibits weaker performance on open-ended chat tasks. In contrast, ShareGPT includes real-world human conversations, which can better guide the model to follow user instructions in conversation tasks. However, it may not be as effective in enhancing performance on traditional NLP tasks. Meanwhile, Alpaca, as a synthetic dataset designed for chat tasks, shows substantial improvements over FLAN v2 on conversation tasks but still lags behind ShareGPT to some extent.</li><li><em>Enhancing</em> <em>the</em> <em>complexity</em> <em>and</em> <em>diversity</em> <em>of</em> <em>instructions</em> <em>promotes</em> <em>performance</em> <em>improvement</em>.</em> Experiments reveal that increasing the complexity and diversity of the Alpaca dataset effectively boosts the performance of LLaMA-2 models in daily conversation tasks and offers some benefits for NLP tasks as well. This enhancement nearly matches the performance of datasets focusing on daily conversations, like ShareGPT. In the experiments, LLaMA-2 (13B) trained with diversified strategies demonstrates significant improvement in conversation tasks, with the score on AlpacaFarm rising from 48.51 to 58.20. Additionally, increasing instruction complexity benefits the model’s performance. Using the evolution strategies introduced in Sect. 7.1.3, both the depth and breadth of model responses are enhanced, which further boosts performance on conversational tasks.</li><li><em>A</em> <em>larger</em> <em>model</em> <em>scale</em> <em>leads</em> <em>to</em> <em>better</em> <em>instruction-following</em> <em>capabilities.</em> By comparing the fine-tuning results of LLaMA-2 (7B) and LLaMA-2 (13B) models on identical instruction data collections, we can clearly see that LLaMA-2 (13B) consistently achieves superior performance across all cases. This suggests that increasing the model scale enhances its ability to follow instructions. LLaMA-2 (13B) exhibits significant performance gains on NLP tasks compared to LLaMA-2 (7B). For instance, its performance on BBH using FLAN v2 data improves from 40.63 to 45.47. This improvement is primarily because larger models can better utilize knowledge and perform more accurate reasoning, enabling them to effectively address more complex problems.</li></ul>
+<h3 id="7-4-3-code-practice-and-analysis-for-lora"><span class="num">7.4.3</span>Code Practice and Analysis for LoRA<a class="anchor" href="#7-4-3-code-practice-and-analysis-for-lora">#</a></h3>
+<p>This subsection illustrates the implementation of LoRA through sample code, further demonstrating how to use the LoRA method to fine-tune a model end-to-end, along with corresponding resource utilization analysis.</p>
+<p><strong>Example Code</strong></p>
+<div class="codeblock"><pre><code><span class="t-com">#</span> <span class="t-com">Inherit</span> <span class="t-com">the</span> <span class="t-com">linear</span> <span class="t-com">transformation</span> <span class="t-com">class</span> <span class="t-com">of</span> <span class="t-com">PyTorch</span>
+<span class="t-kw">class</span> <span class="t-kw">LoRALinear</span>(nn.Linear):
+        <span class="t-kw">def</span> __init__(<span class="t-kw">self</span>, in_features, out_features, config, bias=<span class="t-kw">True</span>):
+            <span class="t-kw">super</span>().__init__(in_features, out_features, bias=bias)
+            <span class="t-com">#</span> <span class="t-com">Get</span> <span class="t-com">the</span> <span class="t-com">rank</span> <span class="t-com">of</span> <span class="t-com">LoRA</span> <span class="t-com">from</span> <span class="t-com">the</span> <span class="t-com">configuration</span>
+            <span class="t-kw">self</span>.r = config.lora_r
+            <span class="t-com">#</span> <span class="t-com">Initialize</span> <span class="t-com">A,</span> <span class="t-com">mapping</span> <span class="t-com">the</span> <span class="t-com">input</span> <span class="t-com">to</span> <span class="t-com">the</span> <span class="t-com">low-rank</span> <span class="t-com">space</span> <span class="t-com">r</span>
+            <span class="t-kw">self</span>.A = nn.Linear(in_features, <span class="t-kw">self</span>.r, bias=<span class="t-kw">False</span>)
+            <span class="t-com">#</span> <span class="t-com">Initialize</span> <span class="t-com">B,</span> <span class="t-com">mapping</span> <span class="t-com">the</span> <span class="t-com">low-rank</span> <span class="t-com">space</span> <span class="t-com">back</span> <span class="t-com">to</span> <span class="t-com">the</span> <span class="t-com">original</span>
+            <span class="t-kw">self</span>.B = nn.Linear(<span class="t-kw">self</span>.r, out_features, bias=<span class="t-kw">False</span>)</code></pre></div>
+<p>The following presents the code for LoRA fine-tuning, helping readers understand its specific implementation.</p>
+<div class="codeblock"><pre><code><span class="t-com">#</span> <span class="t-com">Initialize</span> <span class="t-com">a</span> <span class="t-com">Dropout</span> <span class="t-com">layer,</span> <span class="t-com">used</span> <span class="t-com">for</span> <span class="t-com">regularization</span>
+<span class="t-kw">self</span>.dropout = nn.Dropout(p=config.lora_dropout)
+<span class="t-com">#</span> <span class="t-com">Initialize</span> <span class="t-com">A's</span> <span class="t-com">weights</span> <span class="t-com">using</span> <span class="t-com">a</span> <span class="t-com">normal</span> <span class="t-com">distribution</span> <span class="t-com">with</span> <span class="t-com">a</span> <span class="t-com">standard</span> <span class="t-com">deviation</span> <span class="t-com">of</span> <span class="t-com">0.02</span></code></pre></div>
+<div class="codeblock"><pre><code>    <span class="t-kw">self</span>.A.weight.data.normal_(std=0.02)
+    <span class="t-com">#</span> <span class="t-com">Initialize</span> <span class="t-com">B's</span> <span class="t-com">weights</span> <span class="t-com">to</span> <span class="t-com">zero</span>
+    <span class="t-kw">self</span>.B.weight.data.zero_()
+<span class="t-kw">def</span> forward(<span class="t-kw">self</span>, <span class="t-kw">input</span>):
+    <span class="t-com">#</span> <span class="t-com">Output</span> <span class="t-com">of</span> <span class="t-com">original</span> <span class="t-com">weight</span>
+    linear_output = F.linear(<span class="t-kw">input</span>, <span class="t-kw">self</span>.weight, <span class="t-kw">self</span>.bias)
+    <span class="t-com">#</span> <span class="t-com">Output</span> <span class="t-com">of</span> <span class="t-com">LoRA</span> <span class="t-com">module</span>
+    lora_output = <span class="t-kw">self</span>.B(<span class="t-kw">self</span>.A(<span class="t-kw">self</span>.dropout(<span class="t-kw">input</span>)))
+    <span class="t-com">#</span> <span class="t-com">Add</span> <span class="t-com">the</span> <span class="t-com">original</span> <span class="t-com">output</span> <span class="t-com">to</span> <span class="t-com">the</span> <span class="t-com">LoRA</span> <span class="t-com">output</span>
+    <span class="t-kw">return</span> linear_output + lora_output</code></pre></div>
+<p><span class="m">→</span></p>
+<div class="codeblock"><pre><code>...
+<span class="t-com">#</span> <span class="t-com">Load</span> <span class="t-com">related</span> <span class="t-com">interfaces</span> <span class="t-com">of</span> <span class="t-com">the</span> <span class="t-com">PEFT</span> <span class="t-com">module</span>
+<span class="t-kw">from</span> <span class="t-kw">peft</span> <span class="t-kw">import</span> (
+        LoraConfig,
+        TaskType,
+        AutoPeftModelForCausalLM,
+        get_peft_model,</code></pre></div>
+<div class="codeblock"><pre><code><span class="t-kw">from</span> <span class="t-kw">transformers.integrations.deepspeed</span> <span class="t-kw">import</span> (
+        is_deepspeed_zero3_enabled,
+        unset_hf_deepspeed_config,</code></pre></div>
+<div class="codeblock"><pre><code>...
+@dataclass
+<span class="t-kw">class</span> <span class="t-kw">Arguments</span>(TrainingArguments):
+        ...
+        <span class="t-com">#</span> <span class="t-com">LoRA</span> <span class="t-com">related</span> <span class="t-com">hyperparameters</span>
+        lora: Optional[<span class="t-kw">bool</span>] = HfArg(default=<span class="t-kw">False</span>, help=<span class="t-str">"whether</span> <span class="t-str">to</span> <span class="t-str">train</span> <span class="t-str">with</span> <span class="t-str">LoRA."</span>)</code></pre></div>
+<div class="codeblock"><pre><code>lora_r: Optional[<span class="t-kw">int</span>] = HfArg(default=16, help=<span class="t-str">'Lora</span> <span class="t-str">attention</span> <span class="t-str">dimension</span> <span class="t-str">(the</span> <span class="t-str">"rank")'</span>)</code></pre></div>
+<div class="codeblock"><pre><code>lora_alpha: Optional[<span class="t-kw">int</span>] = HfArg(default=16, help=<span class="t-str">"The</span> <span class="t-str">alpha</span> <span class="t-str">parameter</span> <span class="t-str">for</span> <span class="t-str">Lora</span> <span class="t-str">scaling."</span>)</code></pre></div>
+<div class="codeblock"><pre><code>lora_dropout: Optional[<span class="t-kw">float</span>] = HfArg(default=0.05, help=<span class="t-str">"The</span> <span class="t-str">dropout</span>
+    <span class="t-str">probability</span> <span class="t-str">for</span> <span class="t-str">Lora</span> <span class="t-str">layers."</span>)</code></pre></div>
+<div class="codeblock"><pre><code>...
+<span class="t-kw">def</span> train():
+        ...
+        <span class="t-com">#</span> <span class="t-com">Load</span> <span class="t-com">LoRA</span> <span class="t-com">configuration</span> <span class="t-com">and</span> <span class="t-com">initialize</span> <span class="t-com">LoRA</span> <span class="t-com">model</span>
+        <span class="t-kw">if</span> args.lora:
+            peft_config = LoraConfig(
+                task_type=TaskType.CAUSAL_LM,
+                r=args.lora_r,
+                lora_alpha=args.lora_alpha,
+                lora_dropout=args.lora_dropout,
+            )
+            model = get_peft_model(model, peft_config)
+        ...
+        <span class="t-com">#</span> <span class="t-com">Merge</span> <span class="t-com">LoRA</span> <span class="t-com">parameters</span> <span class="t-com">into</span> <span class="t-com">the</span> <span class="t-com">original</span> <span class="t-com">model</span>
+        <span class="t-kw">if</span> args.lora:
+            <span class="t-kw">if</span> is_deepspeed_zero3_enabled():
+                unset_hf_deepspeed_config()
+            subdir_list = os.listdir(args.output_dir)
+            <span class="t-kw">for</span> subdir <span class="t-kw">in</span> subdir_list:
+                <span class="t-kw">if</span> subdir.startswith(<span class="t-str">"checkpoint"</span>):</code></pre></div>
+<ul><li><em>Implementation of LoRA fine-tuning code.</em> The code above defines the LoRALinear class, which extends PyTorch’s nn.Linear standard linear layer to implement the LoRA module. Within the __init__ function, it defines the low-rank decomposition matrices <span class="m">A</span>., <span class="m">B</span>., along with the rank <em>R</em>. Additionally, the LoRALinear class includes a Dropout layer for regularization to avoid overfitting. In the forward function, it outputs the sum of the original linear output and the LoRA output as the final result.</li><li><em>Overall pipeline of LoRA fine-tuning.</em> We then illustrate the overall pipeline using parameter-efficient fine-tuning code from LLMBox as an example. This example uses Hugging Face’s PEFT<span class="m">4</span> library, which supports various parameter-efficient fine-tuning methods, including LoRA, AdaLoRA, prefix tuning, P-tuning, and prompt-tuning. Next, we describe how to use LLMBox to perform LoRA fine-tuning for LLMs. Based on the full-parameter instruction tuning code shown in Sect. 7.4.1, LoRA fine-tuning only needs to add additional relevant parameter settings, with the same implementation part omitted below. Specifically, this process begins by instantiating the LoRAC onfig class from the PEFT library, setting parameters such as the model architecture task_type, the dimension of the low-rank matrices r, and the dropout rate lora_drop out. With these parameters, the model is then initialized for LoRA fine-tuning. Finally, <span class="m">4</span>https://github.com/huggingface/peft. the parameters trained via LoRA are merged with the model parameters and saved to the local path. <sup class="fnref">8</sup> ) <sup class="fnref">12</sup> ) <span class="m">→</span> <span class="m">→</span> <span class="m">→</span> <span class="m">→</span></li></ul>
+<div class="codeblock"><pre><code>                <span class="t-kw">print</span>(<span class="t-str">"Merging</span> <span class="t-str">model</span> <span class="t-str">in</span> <span class="t-str">"</span>, args.output_dir + <span class="t-str">"/"</span> + subdir)
+                peft_model =
+                    AutoPeftModelForCausalLM.from_pretrained(args.output_dir + <span class="t-str">"/"</span> + subdir)
+                merged_model = peft_model.merge_and_unload()
+                save_path = args.output_dir + <span class="t-str">"/"</span> + subdir + <span class="t-str">"-merged"</span>
+                merged_model.save_pretrained(save_path)
+                tokenizer.save_pretrained(save_path)
+<span class="t-kw">if</span> __name__ == <span class="t-str">"__main__"</span>:
+    train()</code></pre></div>
+<figure class="tbl"><div class="tablewrap"><img src="assets/fig-0167.png" alt="Table 7.3 Number of A800-80G GPUs, batch size, and training time required for Lo" loading="lazy"></div><figcaption>Table 7.3 Number of A800-80G GPUs, batch size, and training time required for LoRA fine-tuning on the Alpaca dataset</figcaption></figure>
+<p>Number of GPUs</p>
+<p>Batch size</p>
+<p>Time (hour)</p>
+<p><strong>Model</strong></p>
+<p>LLaMA (7B)</p>
+<p>2.3</p>
+<p>1</p>
+<p>16</p>
+<p>LLaMA (13B)</p>
+<p>3.8</p>
+<p>1</p>
+<p>8</p>
+<p>LLaMA (33B)</p>
+<p>10.2</p>
+<p>1</p>
+<p>1</p>
+<p>LLaMA (65B)</p>
+<p>26.0</p>
+<p>2</p>
+<p>1</p>
+<p><strong>Resource Usage Analysis</strong></p>
+<p>Under limited computational resources, readers can use LoRA for parameter-efficient fine-tuning. For ease of comparison, we still use the Alpaca dataset to conduct LoRA fine-tuning experiments on the LLaMA model and record the corresponding resource consumption.</p>
+<p>Table 7.3 presents the GPU resources consumed when fine-tuning the LLaMA model using LoRA. In the experiments, fine-tuning is performed for three epochs on various sizes of LLaMA models, with the rank <em>R</em> set to 16 and the maximum sequence length to 512. As discussed in Sect. 7.3.1, LoRA fine-tuning requires at least twice the model size in VRAM. Therefore, for the 7B, 13B, and 33B models, a single A800-80G GPU suffices, while the 65B model requires at least two GPUs.</p>
+<section class="footnotes"><h2>Notes</h2><ol class="fnlist"><li><span class='fnnum'>24</span> <sup class="fnref">24</sup></li><li><span class='fnnum'>78</span> <sup class="fnref">78</sup></li><li><span class='fnnum'>29</span> <sup class="fnref">29</sup></li><li><span class='fnnum'>3</span> <span class="m">3</span>https://huggingface.co/datasets/victor123/evol_instruct_70k.</li><li><span class='fnnum'>13</span> <sup class="fnref">13</sup></li><li><span class='fnnum'>50</span> <sup class="fnref">50</sup></li></ol></section>
+</article>
+</main>
+<nav class="chapnav" aria-label="Chapter navigation"><div class="chapnav-inner">
+<a class="prev" href="13-part-iii-post-training.html"><span class="lbl">上一页</span><span class="nm">III Post-training</span></a><a class="next" href="15-8-human-alignment.html"><span class="lbl">下一页</span><span class="nm">8 Human Alignment</span></a>
+</div></nav>
+<script src="app.js"></script>
+</body>
+</html>

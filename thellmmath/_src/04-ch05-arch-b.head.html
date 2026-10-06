@@ -1,0 +1,44 @@
+<h1><span class="chno">Chapter 5 · 2/3</span>第 5 章 · 模型架构（2/3）</h1>
+<p class="lead">这一页覆盖原书 5.2 节里"归一化家族"与"激活函数"（5.17–5.24），以及"位置编码"（5.25–5.32）。两件事的共同点是：<strong>它们都不改变模型的能力上限，只改变训练能不能稳定收敛、以及模型能不能区分 token 的先后顺序</strong>。RoPE（5.30–5.32）是今天几乎所有主流开源模型的位置编码方案，它的推导会一路用到二维旋转矩阵的乘法性质。</p>
+<p class="where"><b>原书位置</b>第 5 章 5.2 节 Detailed Configuration　<a href="../thellm/11-5-model-architecture.html#5-2-detailed-configuration">对照原文</a>　·　<a href="03-ch05-arch-a.html">上一部分（Transformer 主干）</a>　·　<a href="05-ch05-arch-c.html">下一部分（MoE 与状态空间模型）</a></p>
+
+<h2 id="conv">本页符号约定</h2>
+<p>沿用 <a href="03-ch05-arch-a.html#conv">第 5 章 1/3 页的约定</a>：\(H\) 表示隐藏向量维度（<code>d_model</code>），\(H_k\) 表示 key/query 的维度（<code>d_k</code>），\(N\) 是注意力头数，\(T\) 是序列长度，\(L\) 是层数。下面几个是本页新增的：</p>
+<table class="sym">
+<tr><th>符号</th><th>含义</th><th>形状 / 量纲</th></tr>
+<tr><td>\(\epsilon\)</td><td>归一化里的防止除零的小常数</td><td>标量，\(\sim10^{-5}\)</td></tr>
+<tr><td>\(\gamma,\beta\)</td><td>归一化的仿射参数（scale 与 shift）</td><td>与被归一化的向量同形</td></tr>
+<tr><td>\(\alpha,\beta\)</td><td>激活函数的可调参数（Swish 的 \(\beta\)）</td><td>标量</td></tr>
+<tr><td>\(\sigma(z)\)</td><td>sigmoid</td><td>\((0,1)\)</td></tr>
+<tr><td>\(b\)</td><td>RoPE 的旋转基（base），默认 10000</td><td>标量</td></tr>
+<tr><td>\(\lambda_i\)</td><td>RoPE 第 \(i\) 个子空间的波长</td><td>token 数</td></tr>
+<tr><td>\(\mathbf{R}_{\theta,t}\)</td><td>位置 \(t\) 的块对角旋转矩阵</td><td>\(\mathbb{R}^{H\times H}\)（正交）</td></tr>
+<tr><td>\(\mathrm{PE}_{pos}\)</td><td>位置编码向量</td><td>\(\mathbb{R}^{H}\)</td></tr>
+</table>
+<div class="note">
+<b>先统一一条贯穿全书的约定</b>
+本页所有矩阵求导都用 <strong>分母布局</strong>：\(\frac{\partial L}{\partial \mathbf{y}}\) 与 \(\mathbf{y}\) 同形，\(\frac{\partial L}{\partial W}=\frac{\partial L}{\partial \mathbf{y}}\mathbf{x}^{\top}\)。推导见 <a href="00-prereq.html#c-3">数学预备知识 §2.3</a>。
+</div>
+
+<h2 id="toc-b">本页公式一览</h2>
+<table class="sym">
+<tr><th>编号</th><th>一句话</th><th>核心数学工具</th></tr>
+<tr><td><a href="#eq-5-17">5.17</a></td><td>Post-LN：归一化放在残差之后</td><td>残差 + 雅可比连乘</td></tr>
+<tr><td><a href="#eq-5-18">5.18</a></td><td>Pre-LN：归一化放在子层之前</td><td>恒等映射 \(\frac{\partial}{\partial x}=I\)</td></tr>
+<tr><td><a href="#eq-5-19">5.19</a></td><td>Sandwich-Norm：残差前后各一次</td><td>梯度路径分析</td></tr>
+<tr><td><a href="#eq-5-20">5.20</a></td><td>ReLU 及其导数</td><td>分段函数、不可导点</td></tr>
+<tr><td><a href="#eq-5-21">5.21</a></td><td>Swish：\(x\cdot\sigma(\beta x)\)</td><td>链式法则、单调性</td></tr>
+<tr><td><a href="#eq-5-22">5.22</a></td><td>GELU：精确式与 tanh 近似</td><td>泰勒近似、\(\Phi\) 的分布解释</td></tr>
+<tr><td><a href="#eq-5-23">5.23</a></td><td>SwiGLU：门控线性单元</td><td>参数量重算</td></tr>
+<tr><td><a href="#eq-5-24">5.24</a></td><td>GeGLU：GELU 门控版</td><td>与 SwiGLU 的对比</td></tr>
+<tr><td><a href="#eq-5-25">5.25</a></td><td>正弦位置编码（绝对位置）</td><td>三角恒等式</td></tr>
+<tr><td><a href="#eq-5-26">5.26</a></td><td>可学习位置编码</td><td>查表、梯度</td></tr>
+<tr><td><a href="#eq-5-27">5.27</a></td><td>Transformer-XL 相对位置注意力偏置</td><td>分段函数、双线性</td></tr>
+<tr><td><a href="#eq-5-28">5.28</a></td><td>T5 相对位置偏置分桶</td><td>对数分桶、插值</td></tr>
+<tr><td><a href="#eq-5-29">5.29</a></td><td>ALiBi：线性衰减偏置</td><td>softmax 后的线性项</td></tr>
+<tr><td><a href="#eq-5-30">5.30</a></td><td>RoPE 旋转矩阵</td><td>二维旋转矩阵、正交性</td></tr>
+<tr><td><a href="#eq-5-31">5.31</a></td><td>RoPE 作用在 Q/K 上 → 只依赖相对位置</td><td>矩阵转置、\(R(a)R(b)=R(a+b)\)</td></tr>
+<tr><td><a href="#eq-5-32">5.32</a></td><td>RoPE 旋转基 \(\theta_i\)</td><td>几何级数、波长</td></tr>
+</table>
+
+<h2 id="part1">第一部分：归一化与激活函数（5.17–5.24）</h2>

@@ -1,0 +1,109 @@
+{
+ "chapter": "5",
+ "cn": "重采样方法",
+ "en": "Resampling Methods",
+ "book": "06-resampling-methods.html",
+ "count": 10,
+ "equations": [
+  {
+   "id": "eq-5-1",
+   "num": "(5.1)",
+   "page": 212,
+   "img": "eq-p212-626y657-201x385.png",
+   "section": "5.1 Cross-Validation › 5.1.1 The Validation Set Approach › 5.1.2 Leave-One-Out Cross-Validation",
+   "link": "../isl/06-resampling-methods.html#eq-5-1",
+   "before": "5.1.2Leave-One-Out Cross-Validation# Leave-one-out cross-validation (LOOCV) is closely related to the validation set approach of Section 5.1.1, but it attempts to address that method’s drawbacks. Like the validation set approach, LOOCV involves splitting the set of observations into two parts. However, instead of creating two subsets of comparable size, a single observation (x1, y1) is used for the validation set, and the remaining observations {(x2, y2),⋯, (xn, yn)} make up the training set. Th…",
+   "after": "FIGURE 5.3 A schematic display of LOOCV. A set of n data points is repeat- edly split into a training set (shown in blue) containing all but one observation, and a validation set that contains only that observation (shown in beige). The test error is then estimated by averaging the n resulting MSEs. The first training set contains all but observation 1, the second training set contains all but observation 2, and so forth. A schematic of the LOOCV approach is illustrated in Figure 5.3. LOOCV has a couple of major advantages over the validation set approach. First, it has far less bias. In LOOCV, we repeatedly fit the statistical learning method using training sets that contain n −1 observatio…"
+  },
+  {
+   "id": "eq-5-2",
+   "num": "(5.2)",
+   "page": 213,
+   "img": "eq-p213-614y657-187x385.png",
+   "section": "5.1 Cross-Validation › 5.1.1 The Validation Set Approach › 5.1.2 Leave-One-Out Cross-Validation",
+   "link": "../isl/06-resampling-methods.html#eq-5-2",
+   "before": "A schematic of the LOOCV approach is illustrated in Figure 5.3. LOOCV has a couple of major advantages over the validation set approach. First, it has far less bias. In LOOCV, we repeatedly fit the statistical learning method using training sets that contain n −1 observations, almost as many as are in the entire data set. This is in contrast to the validation set approach, in which the training set is typically around half the size of the original data set. Consequently, the LOOCV approach tends…",
+   "after": "FIGURE 5.4 Cross-validation was used on the Auto data set in order to estimate the test error that results from predicting mpg using polynomial functions of horsepower. Left: The LOOCV error curve. Right: 10-fold CV was run nine separate times, each with a different random split of the data into ten parts. The figure shows the nine slightly different CV error curves. where ŷi is the ith fitted value from the original least squares fit, and hi is the leverage defined in (3.37) on page 105.1 This is like the ordinary MSE, except the ith residual is divided by 1 −hi. The leverage lies between 1/n and 1, and reflects the amount that an observation influences its own fit. Hence the residuals for…"
+  },
+  {
+   "id": "eq-5-3",
+   "num": "(5.3)",
+   "page": 214,
+   "img": "eq-p214-564y598-201x385.png",
+   "section": "5.1 Cross-Validation › 5.1.1 The Validation Set Approach › 5.1.2 Leave-One-Out Cross-Validation › 5.1.3 k-Fold Cross-Validation",
+   "link": "../isl/06-resampling-methods.html#eq-5-3",
+   "before": "where ŷi is the ith fitted value from the original least squares fit, and hi is the leverage defined in (3.37) on page 105.1 This is like the ordinary MSE, except the ith residual is divided by 1 −hi. The leverage lies between 1/n and 1, and reflects the amount that an observation influences its own fit. Hence the residuals for high-leverage points are inflated in this formula by exactly the right amount for this equality to hold. LOOCV is a very general method, and can be used with any kind of…",
+   "after": "Figure 5.5 illustrates the k-fold CV approach. 注1 In the case of multiple linear regression, the leverage takes a slightly more compli- cated form than (3.37), but (5.2) still holds. FIGURE 5.5 A schematic display of 5-fold CV. A set of n observations is randomly split into five non-overlapping groups. Each of these fifths acts as a validation set (shown in beige), and the remainder as a training set (shown in blue). The test error is estimated by averaging the five resulting MSE estimates. When we examine real data, we do not know the true test MSE, and so it is difficult to determine the accuracy of the cross-validation estimate. However, if we examine simulated data, then we can compute t…"
+  },
+  {
+   "id": "eq-5-4",
+   "num": "(5.4)",
+   "page": 217,
+   "img": "eq-p217-515y551-204x385.png",
+   "section": "5.1 Cross-Validation › 5.1.1 The Validation Set Approach › 5.1.2 Leave-One-Out Cross-Validation › 5.1.3 k-Fold Cross-Validation › 5.1.4 Bias-Variance Trade-Off for k-Fold Cross-Validation › 5.1.5 Cross-Validation on Classification Problems",
+   "link": "../isl/06-resampling-methods.html#eq-5-4",
+   "before": "To summarize, there is a bias-variance trade-off associated with the choice of k in k-fold cross-validation. Typically, given these considerations, one performs k-fold cross-validation using k = 5 or k = 10, as these values have been shown empirically to yield test error rate estimates that suffer neither from excessively high bias nor from very high variance. 5.1.5Cross-Validation on Classification Problems# In this chapter so far, we have illustrated the use of cross-validation in the regressi…",
+   "after": "where Erri = I(yi̸ = ŷi). The k-fold CV error rate and validation set error rates are defined analogously. FIGURE 5.7 Logistic regression fits on the two-dimensional classification data displayed in Figure 2.13. The Bayes decision boundary is represented using a purple dashed line. Estimated decision boundaries from linear, quadratic, cubic and quartic (degrees 1–4) logistic regressions are displayed in black. The test error rates for the four logistic regression fits are respectively 0.201, 0.197, 0.160, and The top-right panel of Figure 5.7 displays the resulting decision boundary, which is now curved. However, the test error rate has improved only slightly, to 0.197. A much larger improv…"
+  },
+  {
+   "id": "eq-5-5",
+   "num": "(5.5)",
+   "page": 218,
+   "img": "eq-p218-573y611-137x385.png",
+   "section": "5.1 Cross-Validation › 5.1.1 The Validation Set Approach › 5.1.2 Leave-One-Out Cross-Validation › 5.1.3 k-Fold Cross-Validation › 5.1.4 Bias-Variance Trade-Off for k-Fold Cross-Validation › 5.1.5 Cross-Validation on Classification Problems",
+   "link": "../isl/06-resampling-methods.html#eq-5-5",
+   "before": "where Erri = I(yi̸ = ŷi). The k-fold CV error rate and validation set error rates are defined analogously. FIGURE 5.7 Logistic regression fits on the two-dimensional classification data displayed in Figure 2.13. The Bayes decision boundary is represented using a purple dashed line. Estimated decision boundaries from linear, quadratic, cubic and quartic (degrees 1–4) logistic regressions are displayed in black. The test error rates for the four logistic regression fits are respectively 0.201, 0.…",
+   "after": "FIGURE 5.8 Test error (brown), training error (blue), and 10-fold CV error (black) on the two-dimensional classification data displayed in Figure 5.7. Left: Logistic regression using polynomial functions of the predictors. The order of the polynomials used is displayed on the x-axis. Right: The KNN classifier with different values of K, the number of neighbors used in the KNN classifier. In practice, for real data, the Bayes decision boundary and the test error rates are unknown. So how might we decide between the four logistic regression models displayed in Figure 5.7? We can use cross-validation in order to make this decision. The left-hand panel of Figure 5.8 displays in black the 10-fold…"
+  },
+  {
+   "id": "eq-5-6",
+   "num": "(5.6)",
+   "page": 220,
+   "img": "eq-p220-359y387-198x385.png",
+   "section": "5.2 The Bootstrap",
+   "link": "../isl/06-resampling-methods.html#eq-5-6",
+   "before": "5.2The Bootstrap# The bootstrap is a widely applicable and extremely powerful statistical tool that can be used to quantify the uncertainty associated with a given estimator or statistical learning method. As a simple example, the bootstrap can be used to estimate the standard errors of the coefficients from a linear regression fit. In the specific case of linear regression, this is not particularly useful, since we saw in Chapter 3 that standard statistical software such as R outputs such stand…",
+   "after": "where σ2 X = Var(X), σY2 = Var(Y), and σXY = Cov(X, Y). In reality, the quantities σ2 X, σY2 , and σXY are unknown. We can compute estimates for these quantities, σ̂2 X, σ̂Y2 , and σ̂XY, using a data set that contains past measurements for X and Y. We can then estimate the value of α that minimizes the variance of our investment using (5.7)"
+  },
+  {
+   "id": "eq-5-7",
+   "num": "(5.7)",
+   "page": 220,
+   "img": "eq-p220-456y492-198x385.png",
+   "section": "5.2 The Bootstrap",
+   "link": "../isl/06-resampling-methods.html#eq-5-7",
+   "before": "(5.6) where σ2 X = Var(X), σY2 = Var(Y), and σXY = Cov(X, Y). In reality, the quantities σ2 X, σY2 , and σXY are unknown. We can compute estimates for these quantities, σ̂2 X, σ̂Y2 , and σ̂XY, using a data set that contains past measurements for X and Y. We can then estimate the value of α that minimizes the variance of our investment using",
+   "after": "Figure 5.9 illustrates this approach for estimating α on a simulated data set. In each panel, we simulated 100 pairs of returns for the investments X and Y. We used these returns to estimate σ2 X, σY2 , and σXY, which we then substituted into (5.7) in order to obtain estimates for α. The value of α̂ resulting from each simulated data set ranges from 0.532 to 0.657. It is natural to wish to quantify the accuracy of our estimate of α. To estimate the standard deviation of α̂, we repeated the process of simulating 100 paired observations of X and Y, and estimating α using (5.7), 1,000 times. We thereby obtained 1,000 estimates for α, which we can call α̂1, ̂α2,⋯, ̂α1,000. The left-hand panel of…"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 221,
+   "img": "eq-p221-378y415-190x315.png",
+   "section": "5.2 The Bootstrap",
+   "link": "../isl/06-resampling-methods.html",
+   "before": "FIGURE 5.9 Each panel displays 100 simulated returns for investments This approach is illustrated in Figure 5.11 on a simple data set, which we call Z, that contains only n = 3 observations. We randomly select n observations from the data set in order to produce a bootstrap data set, Z∗1. The sampling is performed with replacement, which means that the same observation can occur more than once in the bootstrap data set. In this example, Z∗1 contains the third observation twice, the first observa…",
+   "after": "very close to α = 0.6, and the standard deviation of the estimates is This gives us a very good idea of the accuracy of α̂: SE(̂α) ≈0.083. So roughly speaking, for a random sample from the population, we would expect α̂ to differ from α by approximately 0.08, on average. In practice, however, the procedure for estimating SE(̂α) outlined above cannot be applied, because for real data we cannot generate new samples from the original population. However, the bootstrap approach allows us to use a computer to emulate the process of obtaining new sample sets, so that we can estimate the variability of α̂ without generating additional samples. Rather than repeatedly obtaining independent data sets …"
+  },
+  {
+   "id": null,
+   "num": null,
+   "page": 221,
+   "img": "eq-p221-433y480-173x332.png",
+   "section": "5.2 The Bootstrap",
+   "link": "../isl/06-resampling-methods.html",
+   "before": "X and Y. From left to right and top to bottom, the resulting estimates for α are 0.576, 0.532, 0.657, and 0.651. The mean over all 1,000 estimates for α is very close to α = 0.6, and the standard deviation of the estimates is",
+   "after": "This gives us a very good idea of the accuracy of α̂: SE(̂α) ≈0.083. So roughly speaking, for a random sample from the population, we would expect α̂ to differ from α by approximately 0.08, on average. In practice, however, the procedure for estimating SE(̂α) outlined above cannot be applied, because for real data we cannot generate new samples from the original population. However, the bootstrap approach allows us to use a computer to emulate the process of obtaining new sample sets, so that we can estimate the variability of α̂ without generating additional samples. Rather than repeatedly obtaining independent data sets from the population, we instead obtain distinct data sets by repeatedl…"
+  },
+  {
+   "id": "eq-5-8",
+   "num": "(5.8)",
+   "page": 222,
+   "img": "eq-p222-388y432-147x385.png",
+   "section": "5.2 The Bootstrap",
+   "link": "../isl/06-resampling-methods.html#eq-5-8",
+   "before": "This gives us a very good idea of the accuracy of α̂: SE(̂α) ≈0.083. So roughly speaking, for a random sample from the population, we would expect α̂ to differ from α by approximately 0.08, on average. In practice, however, the procedure for estimating SE(̂α) outlined above cannot be applied, because for real data we cannot generate new samples from the original population. However, the bootstrap approach allows us to use a computer to emulate the process of obtaining new sample sets, so that we…",
+   "after": "This serves as an estimate of the standard error of α̂ estimated from the original data set. The bootstrap approach is illustrated in the center panel of Figure 5.10, which displays a histogram of 1,000 bootstrap estimates of α, each computed using a distinct bootstrap data set. This panel was constructed on the basis of a single data set, and hence could be created using real data. Note that the histogram looks very similar to the left-hand panel, which displays the idealized histogram of the estimates of α obtained by generating 1,000 simulated data sets from the true population. In particular the bootstrap estimate SE(̂α) from (5.8) is 0.087, very close to the estimate of 0.083 obtained u…"
+  }
+ ]
+}

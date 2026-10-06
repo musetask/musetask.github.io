@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Ch 5 奖励模型 · RLHF 数学推导手册</title>
+<link rel="icon" href="assets/icon.svg">
+<link rel="stylesheet" href="assets/style.css">
+<script>(function(){try{var t=localStorage.getItem('rlhf-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light')}catch(e){}}());</script>
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="bar">
+<a class="ib" href="index.html" aria-label="目录">&#9776;</a>
+<span class="title">Ch 5 奖励模型</span>
+<button class="ib" id="theme" type="button" aria-label="切换深色模式">&#9681;</button>
+</header>
+<main id="main">
+<h1 class="chapter"><span class="chno">Ch 5</span>奖励模型：从偏好到 loss</h1>
+<div class="callout"><div class="lab">This chapter covers</div><ul><li>Eq 5.1–5.3 Bradley-Terry：p<sub>i</sub>/(p<sub>i</sub>+p<sub>j</sub>) 与 σ(r<sub>i</sub>−r<sub>j</sub>) 等价</li><li>Eq 5.4–5.6 负对数似然：两种写法 −logσ(Δ)＝log(1+e<sup>−Δ</sup>)</li><li>Eq 5.7 margin、Eq 5.8 多比较加权、Eq 5.9 Plackett-Luce K-wise</li><li>Eq 5.10 ORM 与 Eq 5.11 PRM：二分类交叉熵搬到 token/step 上</li></ul></div>
+
+<h2 id="e51"><a class="anchor" href="#e51">#</a>Eq 5.1–5.2 BT 模型：强度 → sigmoid</h2>
+<div class="math"><span class="eqtag">原书 Eq 5.1</span><br>P(i≻j) ＝ p<sub>i</sub>/(p<sub>i</sub>＋p<sub>j</sub>)，p<sub>i</sub>＞0<br><span class="eqtag">原书 Eq 5.2</span><br>令 p<sub>i</sub>＝e<sup>r<sub>i</sub></sup>，则 P(i≻j) ＝ e<sup>r<sub>i</sub></sup>/(e<sup>r<sub>i</sub></sup>＋e<sup>r<sub>j</sub></sup>) ＝ σ(r<sub>i</sub>−r<sub>j</sub>)，σ(z)＝1/(1＋e<sup>−z</sup>)</div>
+<ol class="steps">
+<li><b>为什么要 p<sub>i</sub>＞0？</b>把每个物品的“潜在实力”想成正数，i 赢的概率正比于实力占比。实力翻倍，胜率按比例涨——这是 Bradley-Terry 1952 年的原始假设。</li>
+<li><b>换参：</b>正数不方便优化（梯度要 constrained），令 p<sub>i</sub>＝e<sup>r<sub>i</sub></sup>，r<sub>i</sub>∈ℝ 无约束。代入得 e<sup>r<sub>i</sub></sup>/(e<sup>r<sub>i</sub></sup>＋e<sup>r<sub>j</sub></sup>)。</li>
+<li><b>化成 sigmoid：</b>分子分母同除 e<sup>r<sub>i</sub></sup>：＝1/(1＋e<sup>−(r<sub>i</sub>−r<sub>j</sub>)</sup>)＝σ(r<sub>i</sub>−r<sub>j</sub>)。证毕。<b>只有差值重要</b>：全体 r 加常数 C，差不变，概率不变——奖励模型输出整体平移不影响偏好。</li>
+<li><b>数字：</b>r<sub>i</sub>−r<sub>j</sub>＝0→0.5；＝2→σ(2)≈0.88；＝−2→0.12。</li>
+</ol>
+
+<h2 id="e534"><a class="anchor" href="#e534">#</a>Eq 5.3–5.4 从概率到训练目标</h2>
+<div class="math"><span class="eqtag">原书 Eq 5.3</span><br>P(y<sub>1</sub>≻y<sub>2</sub>|x) ＝ exp(r<sub>θ</sub>(y<sub>1</sub>|x))/(exp(r<sub>θ</sub>(y<sub>1</sub>|x))＋exp(r<sub>θ</sub>(y<sub>2</sub>|x)))<br><span class="eqtag">原书 Eq 5.4 全程</span><br>θ*＝argmax<sub>θ</sub> P(y<sub>c</sub>≻y<sub>r</sub>|x)＝…＝argmax σ(r<sub>θ</sub>(y<sub>c</sub>|x)−r<sub>θ</sub>(y<sub>r</sub>|x))＝argmin −logσ(Δ)</div>
+<div class="recall"><div class="lab">前置 · 极大似然</div>想让模型“说对偏好”，就最大化它给正确偏好 y<sub>c</sub>≻y<sub>r</sub> 赋的概率。取 −log 后“最大化概率”变“最小化 loss”（数值更稳），这就是全部机器学习的 MLE 套路。</div>
+<ol class="steps">
+<li><b>记 Δ＝r<sub>c</sub>−r<sub>r</sub>。</b>由 5.2，P＝σ(Δ)。</li>
+<li><b>原书中间 4 行只是在消元：</b>exp(r<sub>c</sub>)/(exp(r<sub>c</sub>)＋exp(r<sub>r</sub>))→ 分母提 exp(r<sub>c</sub>) →1/(1＋exp(r<sub>r</sub>)/exp(r<sub>c</sub>))→1/(1＋exp(−Δ))→σ(Δ)。每一步都是“同除 exp(r<sub>c</sub>)＋指数相减”。</li>
+<li><b>取负对数：</b>loss＝−logσ(Δ)。Δ＝3（c 强很多）→σ≈0.953→loss≈0.048；Δ＝−1（排反了）→σ≈0.269→loss≈1.31，梯度会大力纠正。</li>
+</ol>
+
+<h2 id="e556"><a class="anchor" href="#e556">#</a>Eq 5.5＝Eq 5.6：两种写法等价</h2>
+<div class="math"><span class="eqtag">Eq 5.5 / 5.6</span><br>L ＝ −logσ(r<sub>c</sub>−r<sub>r</sub>) ＝ log(1＋e<sup>r<sub>r</sub>−r<sub>c</sub></sup>)，记 Δ＝r<sub>c</sub>−r<sub>r</sub></div>
+<ol class="steps">
+<li><b>证：</b>σ(Δ)＝1/(1＋e<sup>−Δ</sup>)，取 −log：−logσ＝−log1＋log(1＋e<sup>−Δ</sup>)＝log(1＋e<sup>−Δ</sup>)。而 −Δ＝r<sub>r</sub>−r<sub>c</sub>，即得 5.6。</li>
+<li><b>代码对应：</b><code>loss＝-F.logsigmoid(chosen−rejected).mean()</code> 就是 5.5 的 batch 平均；logsigmoid 比先 sigmoid 再 log 稳定（防 e<sup>−Δ</sup> 溢出）。</li>
+<li><b>梯度（后面 DPO 还会用）：</b>dL/dΔ＝−(1−σ(Δ))＝σ(Δ)−1≤0。所以 ∂L/∂r<sub>c</sub>＝σ(Δ)−1（负，增大 r<sub>c</sub> 降 loss），∂L/∂r<sub>r</sub>＝1−σ(Δ)（正，减小 r<sub>r</sub> 降 loss）。分错时 |梯度|≈1，分对且 Δ≫0 时梯度→0。</li>
+</ol>
+
+<h2 id="e57"><a class="anchor" href="#e57">#</a>Eq 5.7 margin：Likert 分差也要学</h2>
+<div class="math"><span class="eqtag">原书 Eq 5.7（Llama 2）</span><br>L ＝ −logσ(r<sub>c</sub>−r<sub>r</sub> − m(y<sub>c</sub>,y<sub>r</sub>))，如 5 分 vs 2 分则 m＝3</div>
+<p><b>人话：</b>原来只要求 r<sub>c</sub>＞r<sub>r</sub>（赢 0.01 也行）；现在要求赢 <b>至少 m 分</b>：r<sub>c</sub>−r<sub>r</sub>＞m。m 大＝“碾压局”，loss 更难降，梯度更大。Llama 3 发现放大量后收益递减，又去掉了——记住“margin 是可选插件”。</p>
+
+<h2 id="e58"><a class="anchor" href="#e58">#</a>Eq 5.8 一 prompt 多比较：除以 C(K,2)</h2>
+<div class="math"><span class="eqtag">原书 Eq 5.8（InstructGPT）</span><br>L ＝ −1/C(K,2)·E[logσ(r<sub>c</sub>−r<sub>r</sub>)]，C(K,2)＝K(K−1)/2</div>
+<p><b>人话：</b>一个 prompt 采 K 个回答，两两配对有 C(K,2) 对。若直接求和，K 大的 prompt 主导梯度（overfit 到这些 prompt）。除以对数＝“每 prompt 等权”。实现技巧：把同一 prompt 的 pairs 放同一 batch，自然平均。</p>
+
+<h2 id="e59"><a class="anchor" href="#e59">#</a>Eq 5.9 Plackett-Luce：K 个的排序概率</h2>
+<div class="math"><span class="eqtag">原书 Eq 5.9</span><br>P(σ|x,a<sub>0</sub>…a<sub>K−1</sub>) ＝ ∏<sub>k＝0</sub><sup>K−1</sup> exp(r(s,a<sub>σ(k)</sub>))/Σ<sub>j＝k</sub><sup>K−1</sup> exp(r(s,a<sub>σ(j)</sub>))</div>
+<div class="recall"><div class="lab">前置 · 排序即连摔</div>想象 K 个人依次领奖：先从 K 人里按 softmax 选第一（分母 K 项），再从剩下 K−1 人里选第二……连乘即整排序概率。K＝2 时只剩一项＝BT。</div>
+<ol class="steps">
+<li><b>验 K＝2：</b>k＝0 项＝e<sup>r<sub>σ0</sub></sup>/(e<sup>r<sub>σ0</sub></sup>＋e<sup>r<sub>σ1</sub></sup>)＝σ(Δ)，k＝1 项＝e<sup>r</sup>/e<sup>r</sup>＝1，乘积＝BT。证毕。</li>
+<li><b>Starling 用它：</b>一次给 K 个回答的完整排序，一条样本顶多对 pair，数据效率高，但标注贵。</li>
+</ol>
+
+<h2 id="e510"><a class="anchor" href="#e510">#</a>Eq 5.10 ORM：每 token 的二分类</h2>
+<div class="math"><span class="eqtag">原书 Eq 5.10</span><br>L<sub>CE</sub> ＝ −E[r·log p<sub>θ</sub>(s)＋(1−r)·log(1−p<sub>θ</sub>(s))]，r∈{0,1} 对错标签</div>
+<div class="recall"><div class="lab">前置 · BCE</div>二分类交叉熵：猜对（r＝1 时 p→1）loss→0；猜反 loss→∞。p<sub>θ</sub>＝sigmoid(logit)。ORM 把它搬到<b>每个 token</b>：整句对＝全 token 目标 1，错＝全 0。</div>
+<p>与 BT 的区别：BT 要成对 (y<sub>c</sub>,y<sub>r</sub>) 做差；ORM 只要单句＋对错标签，loss 更像语言建模。代价：每 token 都给同标签，噪声大（第一 token 何辜）。代码即 <code>BCEWithLogitsLoss(logits[mask], labels)</code>，prompt token 用 −100 mask 掉。</p>
+
+<h2 id="e511"><a class="anchor" href="#e511">#</a>Eq 5.11 PRM：只在 step 末打分</h2>
+<div class="math"><span class="eqtag">原书 Eq 5.11</span><br>L<sub>PRM</sub> ＝ −E[ Σ<sub>i＝1</sub><sup>K</sup> y<sub>i</sub>log r<sub>θ</sub>(s<sub>i</sub>|x)＋(1−y<sub>i</sub>)log(1−r<sub>θ</sub>(s<sub>i</sub>|x)) ]，y<sub>i</sub>∈{0,1} 每步对错</div>
+<p><b>人话：</b>ORM 的求和在 token 上，PRM 的求和在<b>推理步骤</b>上。实现：只在分隔符（如双换行）处放 label，其余 token label＝−100 不算 loss。三分类变体（−1/0/1）把 BCE 换成 CE：<code>CrossEntropy(logits[mask], labels)</code>。</p>
+<div class="warnbox"><div class="lab">三者速查</div>BT：整句一个分，对比学；ORM：每 token 一个分，对错学；PRM：每 step 一个分，逐步学。Value 函数（Ch 6）外形像 ORM（每 token 回归未来回报），但目标是 E[回报] 而非对错概率。</div>
+</main>
+<nav class="pager" aria-label="翻页">
+<a class="pv" href="02-rl-foundation.html"><span class="dir">上一章</span><span class="t">Ch 3 目标函数</span></a>
+<a class="nx" href="04-policy-gradient.html"><span class="dir">下一章</span><span class="t">策略梯度 Eq 6</span></a>
+</nav>
+<script src="assets/app.js"></script>
+</body>
+</html>
