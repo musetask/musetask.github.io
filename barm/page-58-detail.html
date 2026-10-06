@@ -72,7 +72,7 @@ P(y_1, \dots, y_T \mid x, \theta)
 <span class="tag">预备知识：概率的链式法则</span>
 <p>对任意两个事件，\(P(A, B) = P(A)\cdot P(B \mid A)\)——「\(A\) 和 \(B\) 都发生」等于「\(A\) 发生」乘以「在 \(A\) 已发生的条件下 \(B\) 发生」。把 \((y_1,\dots,y_{T-1})\) 看成 \(A\)、\(y_T\) 看成 \(B\)：</p>
 <p>\[
-P(y_1,\dots,y_T \mid x) = P(y_1,\dots,y_{T-1} \mid x)\cdot P(y_T \mid y_{<T}, x)
+P(y_1,\dots,y_T \mid x) = P(y_1,\dots,y_{T-1} \mid x)\cdot P(y_T \mid y_{&lt;T}, x)
 \]</p>
 <p>再对 \(P(y_1,\dots,y_{T-1}\mid x)\) 递归用同一招式，剥到只剩 \(P(y_1\mid x)\)，就得到正文的连乘式。它不是模型的假设，而是概率论的恒等式——任何联合分布都能这样分解；「自回归」只是说模型选择<b>按这个顺序</b>逐个建模条件分布。</p>
 </div>

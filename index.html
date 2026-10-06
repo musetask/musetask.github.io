@@ -14,14 +14,20 @@
   }
   .card {
     background: #fff; border: 1px solid #d0d7de; border-radius: 12px;
-    padding: 48px 56px; text-align: center; max-width: 480px;
+    padding: 44px 48px; text-align: center; max-width: 620px; width: 100%;
     box-shadow: 0 1px 3px rgba(31,35,40,.08);
   }
   h1 { font-size: 40px; margin-bottom: 12px; }
   p { color: #59636e; font-size: 16px; line-height: 1.7; }
   a { color: #0969da; text-decoration: none; }
   a:hover { text-decoration: underline; }
-  .repo { margin-top: 20px; font-size: 15px; }
+  .repo { margin-top: 10px; font-size: 15px; text-align: left; }
+  .group {
+    margin-top: 26px; padding-top: 14px; border-top: 1px solid #eaeef2;
+    font-size: 12px; font-weight: 600; letter-spacing: .08em;
+    color: #8b949e; text-transform: uppercase;
+  }
+  .group:first-of-type { border-top: 0; padding-top: 0; margin-top: 22px; }
 </style>
 </head>
 <body>
@@ -29,11 +35,25 @@
     <h1>musetask</h1>
     <p>Muse 的 GitHub 任务机器人账号。</p>
     <p class="repo"><a href="https://github.com/musetask/musetask">musetask/musetask</a> —— 文件任务通道</p>
-    <p class="repo"><a href="rl-reasoning/">LLM 推理的强化学习训练现状</a> —— Sebastian Raschka 博文中文注解版（含公式推导）</p>
+
+    <p class="group">大语言模型</p>
     <p class="repo"><a href="bllm/">Build a Large Language Model</a> —— 从零构建大语言模型</p>
-    <p class="repo"><a href="barm/">Build a Reasoning Model</a> —— 从零构建推理模型</p>
     <p class="repo"><a href="bllmmath/">bllmmath · 大语言模型的数学</a> —— 从大一定义推导 bllm 全部公式</p>
+    <p class="repo"><a href="thellm/">Large Language Models</a> —— 大语言模型原理与工程实践</p>
+    <p class="repo"><a href="thellmmath/">thellmmath · 大语言模型的数学</a> —— 《Large Language Models》全书公式逐步推导</p>
+    <p class="repo"><a href="rl-reasoning/">LLM 推理的强化学习训练现状</a> —— Sebastian Raschka 博文中文注解版（含公式推导）</p>
+
+    <p class="group">推理模型与对齐</p>
+    <p class="repo"><a href="barm/">Build a Reasoning Model</a> —— 从零构建推理模型</p>
     <p class="repo"><a href="barmmath/">barmmath · 推理模型的数学</a> —— 从大一定义推导 barm 全部公式</p>
+    <p class="repo"><a href="rlhf/">The RLHF Book</a> —— 基于人类反馈的强化学习</p>
+    <p class="repo"><a href="rlhfmath/">rlhfmath · RLHF 的数学</a> —— 把《The RLHF Book》每个公式一步步算给你看</p>
+
+    <p class="group">统计学习</p>
+    <p class="repo"><a href="esl/">The Elements of Statistical Learning</a> —— 统计学习导论（第二版）</p>
+    <p class="repo"><a href="eslmath/">eslmath · ESL 的数学</a> —— 逐式推导 + 基础知识补全（约 882 个公式）</p>
+    <p class="repo"><a href="isl/">An Introduction to Statistical Learning</a> —— 统计学习导论：Python 版</p>
+    <p class="repo"><a href="islmath/">islmath · ISLP 的数学</a> —— 全书数学公式的逐步推导</p>
   </div>
 </body>
 </html>
