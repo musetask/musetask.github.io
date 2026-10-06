@@ -34,7 +34,6 @@ eslmath/
 ├── html_check.py       构建产物的只读体检（转义 / 嵌套 / 死链）
 ├── coverage.py         公式编号对账：src 里的 \eqno vs 原书清单
 ├── fix_links.py        把「原文 §x.y」死链回退到最近存在的锚点
-├── WRITING.md          写作规范
 ├── WRITING-parts.md    大章分片约定
 ├── assets/             style.css / app.js
 └── ../assets/katex/    全站共享的 KaTeX 0.16.11（CSS / JS / 20 个字体）

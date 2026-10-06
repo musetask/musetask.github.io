@@ -1,5 +1,5 @@
 <h1><span class="chno">Chapter 12 · 2/2</span>第 12 章 · 评测（2/2）</h1>
-<p class="lead">本页覆盖原书 12.9–12.15 七条公式，全部落在 12.1.1 节 <em>Common Evaluation Metrics</em> 里，是"常用评测指标"的下半场：<strong>条件文本生成</strong>（BLEU 的 n-gram 精确率、ROUGE-n 召回率、ROUGE-L 的 LCS-F1）、<strong>任务执行</strong>（Pass@k 的无偏估计量）、<strong>偏好排序</strong>（Elo 期望胜率与 Elo 更新）。这七条公式串起来是一条主线：<em>评测分数 = 某种"计数比"或"概率"，而这些计数比要有意义，前提是分母能枚举全集、无偏估计要靠等概率抽样的对称性、排序分数要有一个满足概率公理的更新规则</em>。上一页 <a href="../15-ch12-eval-a.html">16-ch12-eval-a</a> 讲困惑度与分类指标，本页接着把"生成质量"和"偏好"两件事的算术讲完。</p>
+<p class="lead">本页覆盖原书 12.9–12.15 七条公式，全部落在 12.1.1 节 <em>Common Evaluation Metrics</em> 里，是"常用评测指标"的下半场：<strong>条件文本生成</strong>（BLEU 的 n-gram 精确率、ROUGE-n 召回率、ROUGE-L 的 LCS-F1）、<strong>任务执行</strong>（Pass@k 的无偏估计量）、<strong>偏好排序</strong>（Elo 期望胜率与 Elo 更新）。这七条公式串起来是一条主线：<em>评测分数 = 某种"计数比"或"概率"，而这些计数比要有意义，前提是分母能枚举全集、无偏估计要靠等概率抽样的对称性、排序分数要有一个满足概率公理的更新规则</em>。上一页 <a href="15-ch12-eval-a.html">16-ch12-eval-a</a> 讲困惑度与分类指标，本页接着把"生成质量"和"偏好"两件事的算术讲完。</p>
 <p class="where"><b>原书位置</b>第 12 章 12.1.1 节 Common Evaluation Metrics（BLEU / ROUGE / Pass@k / Elo rating 四小段）　<a href="../thellm/20-12-evaluation.html#12-1-1-common-evaluation-metrics">对照原文</a></p>
 
 <h2 id="toc-b">本页公式一览</h2>
@@ -109,7 +109,7 @@
 </ol>
 <div class="note"><b>直觉</b>分母是"我写了多少个 \(n\)-gram"，分子是"其中有多少个在参考里真的存在"。裁剪这一步是 BLEU 相对早期版本的核心修正：<strong>复读机拿不到高分</strong>。想象翻译里把一个虚词重复 20 次，没裁剪时分子会按 20 算、白送 19 分。</div>
 <div class="warn"><b>易错点</b>原书这一式把"多参考"简化成<strong>逐个 n-gram 取 max</strong>（先在每个 n-gram 上跨参考取最好，再求和）。原始 BLEU 论文用的是另一个口径：对<em>每条参考分别</em>裁剪、算出该参考下的 \(p_n\)，再跨参考取<em>最大值</em>（多参考时取平均）。前者更宽松、对参考集大小不敏感，是工业界（如 sacreBLEU）的近似做法；两者数值略有差别，读论文时不要混用。另一注意：式 12.8 的 BP 用的是<em>最短</em>参考长度 \(l_r\)，与这里"逐 n-gram 取 max"的乐观口径不一致，会让长度惩罚略偏松。</div>
-<div class="relnav">相关：<a href="#eq-12-10">(12.10) ROUGE-n</a>　<a href="#eq-12-11">(12.11) ROUGE-L</a>　<a href="../15-ch12-eval-a.html">公式 12.7 BLEU 主式与 12.8 长度惩罚</a></div>
+<div class="relnav">相关：<a href="#eq-12-10">(12.10) ROUGE-n</a>　<a href="#eq-12-11">(12.11) ROUGE-L</a>　<a href="15-ch12-eval-a.html">公式 12.7 BLEU 主式与 12.8 长度惩罚</a></div>
 </section>
 
 <!-- ============================== 公式 12.10 ============================== -->
@@ -190,7 +190,7 @@ F1&amp;=\frac{(1+\beta^{2})\cdot\mathrm{Precision}\cdot\mathrm{Recall}}{\beta^{2
 </ol>
 <div class="note"><b>直觉</b>Recall 问"参考该说的都说了吗"，Precision 问"我说的都是废话吗"。ROUGE-L 用 LCS 当"有效字数"：它既数到了真正对齐的内容，又天然包含顺序信息，所以比 ROUGE-n 更贴近人读起来的相似度。F1 是"两个都及格才算好"的门槛。</div>
 <div class="warn"><b>易错点</b>(a) 原书正文说"用 F1 合并 precision 和 recall"，但没有给 \(\beta\) 的推荐值，也没有解释它为何以平方出现——不要以为 \(\beta\) 可以当权重线性代入。(b) LCS 是<strong>全局</strong>最优对齐，不是贪心逐词匹配；实现时若用贪心（例如统计共同词频后取交集）会得到偏小的值，ROUGE-L 会被系统性低估。(c) LCS 不惩罚<strong>顺序完全相同但内容差</strong>的情况，所以 ROUGE-L 同样会被"复读"刷分，只是比 ROUGE-n 难刷。</div>
-<div class="relnav">相关：<a href="#eq-12-10">(12.10) ROUGE-n</a>　<a href="#eq-12-9">(12.9) BLEU 精确率</a>　<a href="../15-ch12-eval-a.html">公式 12.6 分类任务的 F1</a></div>
+<div class="relnav">相关：<a href="#eq-12-10">(12.10) ROUGE-n</a>　<a href="#eq-12-9">(12.9) BLEU 精确率</a>　<a href="15-ch12-eval-a.html">公式 12.6 分类任务的 F1</a></div>
 </section>
 
 <!-- ============================== 公式 12.12 ============================== -->
@@ -274,7 +274,7 @@ F1&amp;=\frac{(1+\beta^{2})\cdot\mathrm{Precision}\cdot\mathrm{Recall}}{\beta^{2
 <div class="note"><b>直觉</b>Elo 分不是"实力"，是"实力差"的一个对数刻度。它只回答"在这套对手里，A 该赢多少"，不回答"A 到底有多好"。把一个新模型丢进一个全是强对手的池子里，它的分自然低——分是<strong>相对的</strong>。</div>
 <div class="why"><b>为什么用 \(\pi\propto 10^{r/400}\) 而不是 \(\pi=e^{r}\)</b>两种取法在数学上<strong>完全等价</strong>（后者相当于把分母换成 1，把 \(r\) 重新标定为"自然对数强度"）。用 10 为底纯粹是 Elo 的工程惯例：分数是整数、变化是 50 分/200 分这种粗粒度增量，10 为底让"分差"和"倍数"能心算对应。真正的区别只在第 (ii)(iii) 条那些数值性质上。</div>
 <div class="warn"><b>易错点</b>(a) <strong>400 是经验常数，不是理论值</strong>；照抄 400 到新的评分体系前应先用少量对战数据拟合尺度。(b) \(\mathbb{E}_A\) 是<em>期望得分</em>而非"胜率"的严格定义——当允许和棋且记 0.5 分时它才是 \(\Pr(A\succ B)\)；不区分"胜率"和"期望得分"是常见混淆。(c) Elo 分数<strong>只能横向比、不能纵向比</strong>：换一批对手重跑，分数不可比；随时间推移整体分数会漂移（新人涌入、对手变强），所以榜单要看"区间"和"漂移量"。(d) 前提是<strong>传递性</strong>：若人类偏好存在循环（A&gt;B、B&gt;C、C&gt;A），任何基于单一标量的评分都无法同时满足，必须靠 \(K\) 与投票噪声吸收。</div>
-<div class="relnav">相关：<a href="#eq-12-14">(12.14) \(\mathbb E_B=1-\mathbb E_A\)</a>　<a href="#eq-12-15">(12.15) Elo 更新</a>　<a href="../09-ch08-align-a.html">Bradley–Terry 与奖励模型（第 8 章）</a></div>
+<div class="relnav">相关：<a href="#eq-12-14">(12.14) \(\mathbb E_B=1-\mathbb E_A\)</a>　<a href="#eq-12-15">(12.15) Elo 更新</a>　<a href="09-ch08-align-a.html">Bradley–Terry 与奖励模型（第 8 章）</a></div>
 </section>
 
 <!-- ============================== 公式 12.14 ============================== -->
@@ -370,5 +370,5 @@ F1&amp;=\frac{(1+\beta^{2})\cdot\mathrm{Precision}\cdot\mathrm{Recall}}{\beta^{2
 (c) <strong>顺序依赖</strong>：更新是逐场的在线 SGD，同一批对局按不同顺序处理结果不同；<strong>对局对手的选择偏差会被直接写进分数</strong>（只在弱对手身上刷分能拿高分）。
 (d) <strong>LLM-as-a-judge 的位置偏置与长度偏置</strong>：当对战由另一个 LLM 当裁判时，它对"排在前面"的回答、对"更长的回答"有系统性偏好，这会污染 \(S_A\)。矫正办法是<strong>交换呈现顺序各判一次再取平均</strong>：\(S_A^{\text{avg}}=\frac{S_A^{\text{A先}}+S_A^{\text{B先}}}{2}\)。在 Bradley–Terry 视角下这很有道理——偏置 \(\delta\) 若与顺序相关，交换平均把它变成零均值噪声，而 12.15 的更新对 \(S_A-\mathbb{E}_A\) 是<strong>线性</strong>响应，所以 \(K\) 取小一点（或对同一对重复判定 \(\ge2\) 次）能把这种噪声的方差也一起压下去。长度偏置无法靠交换消除（交换后长度不变），需要用长度归一化的分数或成对约束样本专门压制。
 (e) <strong>不保证收敛到"真实"质量</strong>：Elo 只拟合对战数据里的相对序，如果偏好本身有偏或存在循环，分数照样稳定但有偏。</div>
-<div class="relnav">相关：<a href="#eq-12-13">(12.13) 期望胜率 \(\mathbb E_A\)</a>　<a href="#eq-12-14">(12.14) 期望胜率 \(\mathbb E_B\)</a>　<a href="#calc">数学工具箱 (T3)(T4)</a>　<a href="../09-ch08-align-a.html">Bradley–Terry 与 DPO（第 8 章）</a></div>
+<div class="relnav">相关：<a href="#eq-12-13">(12.13) 期望胜率 \(\mathbb E_A\)</a>　<a href="#eq-12-14">(12.14) 期望胜率 \(\mathbb E_B\)</a>　<a href="#calc">数学工具箱 (T3)(T4)</a>　<a href="09-ch08-align-a.html">Bradley–Terry 与 DPO（第 8 章）</a></div>
 </section>
