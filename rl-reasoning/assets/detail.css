@@ -3,8 +3,8 @@
 /* 只在推导页（<body class="detail">）上放宽栏宽，
    这样原书章节页即使也引了本文件，排版也不会被改变 */
 body.detail main{max-width:46rem}
-@media (min-width:720px){
-  body.detail main{max-width:52rem}
+@media (min-width:1400px){
+  body.detail main{max-width:46rem}
 }
 
 /* 公式块：KaTeX display 模式的容器 */

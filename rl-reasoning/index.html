@@ -87,7 +87,6 @@
 <li><strong>KL 散度惩罚</strong>：把当前策略和原始 SFT 模型比较，鼓励更新不要偏离太远——毕竟我们是做偏好微调，不是彻底重训。这就是 "proximal"（近端）的来历。</li>
 </ul>
 <p>另外 PPO 还会加一个<strong>熵奖励（entropy bonus）</strong>，鼓励训练时输出多样化，促进探索。</p>
-</main>
 
 <h2 id="s3">三、PPO 简介：RL 的主力算法</h2>
 
@@ -173,7 +172,6 @@ clipped_score = clipped_ratio * advantage</code></pre>
 <li><strong>(2) 格式奖励</strong>：强制模型把思考过程放在 <code>&lt;think&gt;</code> 和 <code>&lt;/think&gt;</code> 标签之间。</li>
 </ul>
 <p>（他们不用 outcome/process 神经奖励模型的原因：发现神经奖励模型在大规模 RL 里容易被<strong>奖励 hack</strong>。）</p>
-</main>
 
 <h2 id="s7">七、近期 RL 论文的经验教训</h2>
 

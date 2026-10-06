@@ -180,7 +180,8 @@ ul.index .secs .l3{padding-left:14px;font-size:13.5px;color:var(--muted)}
   color:#fff;background:rgba(255,255,255,.14);border:0;border-radius:10px;padding:12px 14px;
   font:14px/1 var(--sans);cursor:pointer}
 
-@media (min-width:720px){
+/* 桌面增强断点：只在 ≥1400px 的目标屏幕上生效（见 AGENTS.md） */
+@media (min-width:1400px){
   body{font-size:18px}
   main{padding:34px 24px 140px}
   h1{font-size:2rem} h2{font-size:1.45rem} h3{font-size:1.2rem}
