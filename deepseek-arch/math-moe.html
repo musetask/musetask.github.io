@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MoE 与负载均衡的数学 · DeepSeek 架构演进</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f5f8f'/%3E%3Cpath d='M9 8h9a4.5 4.5 0 0 1 0 9H9zm0 9h9a4.5 4.5 0 0 1 0 9H9z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+<script>(function(){try{var t=localStorage.getItem('pdf2html-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">DeepSeek 架构演进</a>
+  <button class="btn" id="themeToggle" aria-label="切换深色模式">&#9788;</button>
+</header>
+<main id="main">
+
+<h1>MoE 与负载均衡的数学</h1>
+
+<div class="plainbox">
+<p>这一页算清楚两件事：<b>MoE 是怎么把"容量"和"计算量"解耦的</b>，以及 V3 的 <b>aux-loss-free 负载均衡</b>为什么比传统 aux loss 高明——关键在于"选谁"和"怎么加权"被干净地分开了。</p>
+<p>记号：\(E\) 个专家 \(\{F_1,\dots,F_E\}\)，每 token 选 Top-\(K\) 个；\(s_i\) 为 token 对专家 \(i\) 的原始亲和度。</p>
+</div>
+
+<h2 class="deriv">一、MoE 的基本形式</h2>
+<p>Router 先给每个专家打分，取 Top-\(K\)，输出是选中专家的加权和：</p>
+<p>\[
+s = xW_g \in \mathbb{R}^{E}, \qquad
+\mathcal{T} = \mathrm{TopK}(s), \qquad
+y = \sum_{i\in\mathcal{T}} \underbrace{\frac{e^{s_i}}{\sum_{j\in\mathcal{T}}e^{s_j}}}_{g_i}\, F_i(x)
+\]</p>
+<p class="eq-note">\(g_i\) 是归一化后的门控权重。V2：\(E\) 很大、总参数 236B，但 \(|\mathcal{T}|\) 很小，每 token 只算 21B——<b>容量</b>（所有专家的参数）与<b>计算量</b>（实际激活的参数）解耦。</p>
+
+<h2 class="deriv">二、负载不均与 aux loss 的两难</h2>
+<p>Router 自由发挥时，token 会涌向少数热门专家：某块 GPU 累死，其他 GPU 围观。传统解法是给 loss 加一项均衡惩罚：</p>
+<p>\[
+\mathcal{L}_{\text{total}} = \mathcal{L}_{\text{LLM}} + \lambda\,\mathcal{L}_{\text{aux}}
+\]</p>
+<div class="derivation">
+<span class="tag">推导：aux loss 为什么是"污染"</span>
+<p>对 router 参数 \(\theta_g\) 求梯度：</p>
+<p>\[
+\nabla_{\theta_g}\mathcal{L}_{\text{total}}
+= \underbrace{\nabla_{\theta_g}\mathcal{L}_{\text{LLM}}}_{\text{想答对题}}
+\;+\; \lambda\underbrace{\nabla_{\theta_g}\mathcal{L}_{\text{aux}}}_{\text{想分均匀}}
+\]</p>
+<p>第二项的方向与"把语言建模做好"毫无关系，是纯粹的基础设施约束硬塞进来的梯度。\(\lambda\) 大了，语言建模性能肉眼可见地掉；\(\lambda\) 小了，热点照旧。这是一个<b>调参两难</b>，不是工程细节。</p>
+</div>
+
+<h2 class="deriv">三、Aux-loss-free：拥堵收费制</h2>
+<p>V3 把均衡做成一个<b>不进 loss 的反馈控制环</b>。每个专家维护一个动态偏置 \(b_i\)（初值 0）：</p>
+<p>\[
+\text{选择分}_i = s_i + b_i \quad\text{（取 Top-}K\text{）}, \qquad
+b_i \leftarrow b_i + \gamma\,\big(\overline{\text{load}} - \text{load}_i\big)
+\]</p>
+<p class="eq-note">每 batch 统计各专家分到的 token 数 \(\text{load}_i\)：超载的专家 \(b_i\) 被下调（收"拥堵费"），空闲的被上调（发补贴）。\(\gamma\) 是很小的步长。</p>
+<div class="derivation">
+<span class="tag">推导：为什么偏置不污染梯度——关键的那一行</span>
+<p>Top-\(K\) <b>选出来之后</b>，输出加权用的门控权重只看原始亲和度 \(s_i\)，偏置 \(b_i\) 被直接扔掉：</p>
+<p>\[
+y = \sum_{i\in\mathcal{T}(s+b)} \mathrm{softmax}(s_i)\, F_i(x)
+\quad\text{—— 注意 softmax 里没有 } b
+\]</p>
+<p>\(b_i\) 只参与<b>离散的"选谁"</b>这一步（Top-K 是不可微的，本来就不走梯度），而所有<b>可微的加权系数</b>里都没有 \(b\) 的影子。于是反向传播时：</p>
+<p>\[
+\nabla_{\theta_g}\mathcal{L}_{\text{total}} = \nabla_{\theta_g}\mathcal{L}_{\text{LLM}} + 0
+\]</p>
+<p>aux 梯度项恒为零——不是调小了，是<b>结构上不存在</b>。router 的每一分梯度都花在"答对题"上，而负载均衡由 \(b_i\) 这个"价格信号"在训练循环外默默完成。这就是"选谁"和"怎么加权"解耦的全部含义。</p>
+</div>
+
+<div class="derivation">
+<span class="tag">算例：偏置的一次更新</span>
+<p>4 个专家，某 batch 负载 \(\text{load} = [70, 10, 10, 10]\)，均值 \(\overline{\text{load}} = 25\)，取 \(\gamma = 0.05\)：</p>
+<p>\[
+\begin{aligned}
+b_1 &\leftarrow b_1 + 0.05\times(25-70) = b_1 - 2.25 \quad\text{（热门专家被收费）}\\
+b_{2,3,4} &\leftarrow b_{2,3,4} + 0.05\times(25-10) = b_{2,3,4} + 0.75 \quad\text{（冷门专家被补贴）}
+\end{aligned}
+\]</p>
+<p>下一 batch，处在边界上的 token（\(s_1\) 只比 \(s_2\) 高一点点的）就会被 \(-2.25/+0.75\) 的价差推向空闲专家；而 \(s_1\) 遥遥领先的 token 不受影响——<b>只搬运"边际"流量，不碰"铁粉"流量</b>，这正是收费制比配额制聪明的地方。</p>
+</div>
+
+<div class="key"><span class="tag">直觉</span>
+<p>把专家想成高速公路的车道：aux loss 是在交规里写"每条车道必须走够多少车"（还得交警拿着 loss 的鞭子抽）；aux-loss-free 是装 ETC 龙门架——堵的车道涨价、空的车道降价，司机（token）自己用脚投票。路还是那些路，规则不进刑法（loss）。</p>
+</div>
+
+<nav class="deriv-nav">
+<a href="index.html"><span class="dir">返回</span>导读目录</a>
+<a href="math-attention.html"><span class="dir">上一篇</span>注意力机制的数学</a>
+<a href="math-sparse.html"><span class="dir">下一篇</span>稀疏注意力：DSA / CSA / HCA</a>
+</nav>
+
+</main>
+<script src="app.js"></script>
+<script defer src="../assets/katex/katex.min.js"></script>
+<script defer src="../assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>

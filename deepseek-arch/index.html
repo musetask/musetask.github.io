@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>DeepSeek 架构演进：从 V1 到 V4.1 Flash · 中文学习笔记</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f5f8f'/%3E%3Cpath d='M9 8h9a4.5 4.5 0 0 1 0 9H9zm0 9h9a4.5 4.5 0 0 1 0 9H9z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+<script>(function(){try{var t=localStorage.getItem('pdf2html-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">DeepSeek 架构演进</a>
+  <button class="btn" id="themeToggle" aria-label="切换深色模式">&#9788;</button>
+</header>
+<main id="main">
+
+<h1>DeepSeek 架构演进：从 V1 到 V4.1 Flash</h1>
+<p class="eq-note">原创中文学习笔记：用自己的话总结两篇公开博文的技术要点，数学推导均为自写。<b>不是原文翻译</b>，建议对照原文阅读——<a href="https://note.com/shi3zblog/n/ne7247c087e20">shi3z《The Internal Architecture of DeepSeek v4.1 Flash》</a>（V1→V4.1 演进史）· <a href="https://zartbot.github.io/blog/model_arch/dsv41flash_arch/en.html">zartbot《DeepSeek-V4.1 Flash: Pushing the Limits of KV Cache Compression》</a>（V4.1 Flash 技术报告解读）· <a href="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/blob/main/DeepSeek_V41_Tech_Report.pdf">官方技术报告 PDF</a>。</p>
+
+<div class="key"><span class="tag">一句话主线</span>
+<p>DeepSeek 的全部架构史可以压缩成一句话：<b>参数规模拼命膨胀，实际计算和访存拼命只取所需</b>——不算不必算的，不存不必存的，不看不必看的。</p>
+</div>
+
+<h2>数学推导</h2>
+<ul>
+<li><a href="math-attention.html">注意力机制的数学</a> —— MHA → MQA → GQA → MLA：KV cache 核算、解耦 RoPE、注意力折叠、mHC</li>
+<li><a href="math-moe.html">MoE 与负载均衡的数学</a> —— 路由公式、aux loss 的问题、aux-loss-free 偏置更新</li>
+<li><a href="math-sparse.html">稀疏注意力的数学</a> —— DSA / CSA / HCA / CSA2 / CED：indexer 打分、压缩比、跨层 KV 复用</li>
+</ul>
+
+<h2>目录</h2>
+<ol>
+<li><a href="#s1">Scaling Laws：训练的信仰</a></li>
+<li><a href="#s2">V1：一碗白开水般的 Transformer</a></li>
+<li><a href="#s3">GQA：K 和 V 何必人手一份</a></li>
+<li><a href="#s4">V2：236B 参数，只算 21B —— MoE 与 MLA</a></li>
+<li><a href="#s5">V3：671B 参数，只算 37B —— 负载均衡、MTP、FP8</a></li>
+<li><a href="#s6">V3.2：DSA —— 只看值得看的 token</a></li>
+<li><a href="#s7">V4：1M 上下文 —— CSA、HCA 与 mHC</a></li>
+<li><a href="#s8">V4.1 Flash：把 KV cache 压缩推向极限</a></li>
+</ol>
+
+<h2 id="s1">一、Scaling Laws：训练的信仰</h2>
+<p>Kaplan 等人 2020 年的论文给出三条幂律：\(L(N)\)、\(L(D)\)、\(L(C)\)——模型越大、数据越多、算力越多，loss 越低。OpenAI 与 Anthropic 把它当作技术路线的基石：砸钱、买卡、扫书。</p>
+<p>但那是<b>训练</b>的故事。DeepSeek 玩的是另一局：<b>推理</b>。Scaling Laws 在推理侧的形态不是"把模型做大"，而是"把不必算的砍掉"。后面每一代架构，都是在这句话上再往前走一步。</p>
+
+<h2 id="s2">二、V1：一碗白开水般的 Transformer</h2>
+<p>DeepSeek V1（7B / 67B）几乎就是 LLaMA 的翻版：decoder-only，7B 用标准 MHA，67B 用 GQA，上下文 4K，在 2T tokens 上训练。架构上毫无"DeepSeek 味"。</p>
+<p>但它点出了此后全部优化的两个靶子：</p>
+<ul>
+<li><b>计算瓶颈</b>：模型变大，每一步前向都要把全网算一遍；</li>
+<li><b>显存瓶颈</b>：上下文变长，attention 计算量和 KV cache 按长度平方/线性爆炸。</li>
+</ul>
+
+<h2 id="s3">三、GQA：K 和 V 何必人手一份</h2>
+<p>MHA 里每个 Q 头都配一套专属 K/V 头；MQA 走极端，所有 Q 头共享同一套 K/V，cache 下来了但精度常受损；GQA 取中间：把 Q 头分组，组内共享一套 K/V。32 个 Q 头分成 8 组，只存 8 套 K/V，KV cache 降到原来的 1/4～1/8，精度基本不掉。</p>
+<p>核心直觉：Q 头需要各不相同（负责"问什么"），但 K/V 存的是"被问的内容"，没必要人手一份。<a href="math-attention.html">→ KV cache 的完整核算见注意力机制推导</a></p>
+
+<h2 id="s4">四、V2：236B 参数，只算 21B —— MoE 与 MLA</h2>
+<p>V2 一步跳到 236B 参数，但每 token 只激活 21B，上下文拉到 128K。官方口径：相对 V1 67B，KV cache 降低 93.3%，峰值生成吞吐提升 5.76 倍。靠两招：</p>
+<ul>
+<li><b>DeepSeekMoE</b>：把 FFN 拆成一堆小专家，按 token 路由只激活少数几个。236B 的"容量"和 21B 的"计算量"解耦——图书馆有一百万本书，不必一次全读。</li>
+<li><b>MLA（Multi-head Latent Attention）</b>：KV cache 的真正杀器。不存各头的 K/V 全量，只存一个约 512 维的压缩隐向量 \(c_t^{KV}\)（外加 64 维专管位置的键），合计每 token 576 维；推理时用 \(W_{UK}\)、\(W_{UV}\) 按需重建。RoPE 的位置旋转会破坏隐空间的线性，所以把内容键和位置键<b>解耦</b>存放。更进一步，矩阵结合律允许把重建矩阵预先折叠进 Q，推理时<b>直接对 512 维隐向量打分</b>，连 K/V 都不用物化。<a href="math-attention.html">→ 完整推导见注意力机制</a></li>
+</ul>
+
+<h2 id="s5">五、V3：671B 参数，只算 37B —— 负载均衡、MTP、FP8</h2>
+<p>V3 把 MoE 放大到 671B，每 token 实际计算 37B。新加入三样东西：</p>
+<ul>
+<li><b>Aux-loss-free 负载均衡</b>：MoE 的老大难是 router 把 token 全塞给少数热门专家。传统做法是在 loss 里加一项均衡惩罚，但那会污染主目标（"答对题"和"均匀分流"两个目标打架）。V3 改用<b>偏置收费制</b>：给每个专家的选择分加一个动态偏置 \(b_i\)，拥堵的专家降偏置、空闲的加偏置；关键是输出加权时把 \(b_i\) 扔掉、只用原始亲和度——分流归分流，加权归加权，梯度互不干扰。<a href="math-moe.html">→ 推导见 MoE 页面</a></li>
+<li><b>MTP（Multi-Token Prediction）</b>：一次前向同时预测 \(t+1, t+2, \dots\)。训练时是辅助目标（提升表示质量），推理时天然做推测解码：猜对就省一次主模型前向，猜错就地回退。这招只在管线有空闲时有效，是给低 batch 交互推理准备的。</li>
+<li><b>FP8 训练</b>：能压到 8 位的算子压到 8 位，显存减半、带宽减半、Tensor Core 跑满；代价是数值精度的精细化管理（哪些层必须高精度、缩放因子、 防溢出）。</li>
+</ul>
+
+<h2 id="s6">六、V3.2：DSA —— 只看值得看的 token</h2>
+<p>上下文冲到 1M 时，attention 的"全量回看"成了笑话。DSA（DeepSeek Sparse Attention）的思路是搜索引擎式的：先用一个极轻的 <b>indexer</b> 召回候选，再对候选做精确 attention。</p>
+<ul>
+<li>indexer 只用 16～32 维、INT8 量化的键（对比主 attention 的 512+64 维），按 64 个 token 打包成 block 取均值代表；</li>
+<li>1M tokens → 约 15625 个 block，一次点积扫描只要几百 KB，全在 SRAM 里几微秒搞定；</li>
+<li>取 top-32 个 block（2048 tokens）+ 局部滑动窗口，交还 MLA 做精确计算；</li>
+<li>indexer 的训练信号来自蒸馏：让它的打分分布去拟合主 attention 的权重分布（KL 散度）。<a href="math-sparse.html">→ 完整管线见稀疏注意力推导</a></li>
+</ul>
+<p>V2 的哲学是"把 KV 存小一点"，DSA 的哲学是"大部分根本不看"。</p>
+
+<h2 id="s7">七、V4：1M 上下文 —— CSA、HCA 与 mHC</h2>
+<p>V4 把 1M 上下文变成实用配置（Flash 284B/13B，Pro 1.6T/49B——但到这个量级，参数数本身已没什么意义）。主角是两个新注意力：</p>
+<ul>
+<li><b>CSA（Compressed Sparse Attention）</b>：先压缩、再稀疏。相邻 \(r=4\sim8\) 个 token 经因果卷积/门控投影压成一个 slot，序列先缩到 1/4～1/8，再用 indexer 做 top-K 检索。压缩 + 检索双管齐下。</li>
+<li><b>HCA（Heavily Compressed Attention）</b>：更激进，\(r=64\sim128\)，把一整段压成一个 slot（用可学习的 cross-attention 做 perceiver 式池化，而不是粗暴平均）。1M tokens 只剩约 7812 个 slot——这个规模下<b>直接做 dense 全量 attention</b>，不需要检索，也就没有检索遗漏（needle-in-a-haystack 盲区）。</li>
+<li><b>混合部署</b>：浅层用滑动窗口保语法（2–4K），中层用 CSA 做放大镜（点查实体、变量），深层用 HCA 当望远镜（全局结构）——正好对应人读书时的精读、查索引、泛读。</li>
+<li><b>mHC（Manifold-Constrained Hyper-Connections）</b>：残差连接从 \(y=x+F(x)\) 的单车道升级成 4 条并行残差流，混合矩阵经 Sinkhorn 迭代约束为近似双随机矩阵，防止信号失控放大。<a href="math-attention.html">→ 见注意力机制页末节</a></li>
+</ul>
+
+<h2 id="s8">八、V4.1 Flash：把 KV cache 压缩推向极限</h2>
+<p>zartbot 对官方技术报告的解读。V4.1 Flash 是 552B 的多模态 MoE，目标只有一个：KV cache 压到极限，因为长程 agent 的上下文越来越长，KV 的 HBM/SSD 存储和搬运成了 scaling 的真正瓶颈。手段是三处：</p>
+<ul>
+<li><b>CED（Causal Encoder-Decoder）</b>：40 层中前 20 层是 Encoder、后 20 层是 Decoder；Decoder 的全局 KV 由 Encoder 末态 hidden 投影而来、跨层共享。长 prompt 的 prefill 只走前 20 层——prefill 激活 8B / decode 激活 16B，对输入主导的 agent 场景极划算。</li>
+<li><b>CSA2</b>：在 CSA 基础上从三个维度压 KV——channel 维用 512 维隐向量统一表示各头 K/V；sequence 维 Encoder 把相邻 2 个位置并成 1 个 cache 条目；layer 维多层共享同一份全局 KV（全网只保留 3 份 Encoder cache + 1 份 Decoder cache）。再叠加 FP4 量化，<b>每 token 约 890 字节</b>（全局主 KV + indexer 口径）。</li>
+<li><b>Engram + DSpark</b>：Engram 是条件记忆（n-gram 表格注入），DSpark 是推测解码（3 个 SWA draft block + 小 MoE，一次并行算 5 个 draft 位置）。</li>
+</ul>
+<p>zartbot 还画了一张以 KV 为中心的递归 Transformer 视角：Decoder 层复用 Encoder 的 KV、只重写 Q——"改 Q、复用 KV"的递归结构。<a href="math-sparse.html">→ CSA2 与 CED 的核算见稀疏注意力页</a></p>
+
+<nav class="deriv-nav">
+<a href="math-attention.html"><span class="dir">数学详解</span>注意力机制：MHA → MLA</a>
+<a href="math-moe.html"><span class="dir">数学详解</span>MoE 与负载均衡</a>
+<a href="math-sparse.html"><span class="dir">数学详解</span>稀疏注意力：DSA / CSA / HCA</a>
+</nav>
+
+</main>
+<script src="app.js"></script>
+<script defer src="../assets/katex/katex.min.js"></script>
+<script defer src="../assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>

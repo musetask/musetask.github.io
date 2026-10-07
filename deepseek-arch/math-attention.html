@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>注意力机制的数学：MHA → MLA · DeepSeek 架构演进</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f5f8f'/%3E%3Cpath d='M9 8h9a4.5 4.5 0 0 1 0 9H9zm0 9h9a4.5 4.5 0 0 1 0 9H9z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+<script>(function(){try{var t=localStorage.getItem('pdf2html-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">DeepSeek 架构演进</a>
+  <button class="btn" id="themeToggle" aria-label="切换深色模式">&#9788;</button>
+</header>
+<main id="main">
+
+<h1>注意力机制的数学：MHA → MLA</h1>
+
+<div class="plainbox">
+<p>这一页把 DeepSeek 注意力演进路线上的每个关键公式算清楚：<b>缩放因子 \(\sqrt{d_k}\) 的来历</b>、<b>MHA/MQA/GQA 的 KV cache 精确核算</b>、<b>MLA 为什么敢把 KV 压成 576 维</b>（解耦 RoPE + 注意力折叠），最后是 V4 的 <b>mHC</b>。</p>
+<p>记号：\(h_t\in\mathbb{R}^{d}\) 是第 \(t\) 个 token 的 hidden state；\(n\) 为头数，\(d_h\) 为每头维度；\(L\) 为上下文长度。</p>
+</div>
+
+<h2 class="deriv">一、\(\mathrm{softmax}\!\left(\frac{QK^T}{\sqrt{d_k}}+M\right)V\)：缩放因子哪来的</h2>
+
+<p>设 query 和 key 的每个分量独立、均值 0、方差 1。点积 \(s=\sum_{i=1}^{d_k} q_i k_i\) 的方差是：</p>
+<div class="derivation">
+<span class="tag">推导：点积的方差</span>
+<p>\[
+\begin{aligned}
+\mathbb{E}[q_i k_i] &= \mathbb{E}[q_i]\,\mathbb{E}[k_i] = 0 \qquad\text{（独立）}\\
+\mathrm{Var}(q_i k_i) &= \mathbb{E}[(q_i k_i)^2] - 0 = \mathbb{E}[q_i^2]\,\mathbb{E}[k_i^2] = 1\\
+\mathrm{Var}(s) &= \sum_{i=1}^{d_k}\mathrm{Var}(q_i k_i) = d_k \qquad\text{（独立项方差相加）}
+\end{aligned}
+\]</p>
+<p>于是 \(s\) 的标准差是 \(\sqrt{d_k}\)。\(d_k=128\) 时点积的典型幅度是 ±11 左右——直接喂给 softmax 会让它<b>饱和</b>（一个 logit 比其他大几十，softmax 输出 ≈ one-hot，梯度 ≈ 0）。除以 \(\sqrt{d_k}\) 把方差拉回 1，softmax 才能工作在有梯度的区间。\(M\) 是因果掩码：未来位置填 \(-\infty\)，softmax 后权重为 0。</p>
+</div>
+
+<h2 class="deriv">二、Q、K、V 为什么是三份</h2>
+<div class="key"><span class="tag">直觉</span>
+<p>同一个 \(X\) 既要"提问"又要"被匹配"还要"搬运内容"，三个角色需要的几何空间不一样：\(Q\) 是"找什么"的天线，\(K\) 是" 我是谁"的名牌，\(V\) 是真正要搬给下一层的行李。硬拿 \(XX^T\) 做相似度，只能匹配到语义相近的词（apple→banana），抓不住"apple 找它的动词 ate"这种结构关系。三套可学习的投影就是把三个角色投影到三个不同的向量空间。</p>
+</div>
+
+<h2 class="deriv">三、MHA → MQA → GQA：KV cache 核算</h2>
+<p>推理时每个 token、每层要缓存当下及历史所有 token 的 K 和 V。设 KV 头数为 \(n_{kv}\)（MHA 里 \(n_{kv}=n\)，MQA 里 \(n_{kv}=1\)，GQA 里 \(n_{kv}=\) 组数），则：</p>
+<p>\[
+\text{每 token 每层元素数} = 2 \cdot n_{kv} \cdot d_h, \qquad
+\text{总元素数} = 2 \cdot n_{\text{layers}} \cdot n_{kv} \cdot d_h \cdot L
+\]</p>
+<p class="eq-note">系数 2 是因为 K 和 V 各存一份。乘上每元素的字节数（bf16=2B，FP8=1B）即得字节数。</p>
+
+<div class="derivation">
+<span class="tag">算例：80 层、\(d_h=128\)、\(L=128\mathrm{K}=131072\)、bf16</span>
+<p>\[
+\begin{aligned}
+\text{MHA（64 个 KV 头）}&: 2\cdot80\cdot64\cdot128\cdot131072\cdot2\mathrm{B} \approx 343.6\,\mathrm{GB}\\
+\text{GQA-8（8 个 KV 头）}&: 2\cdot80\cdot8\cdot128\cdot131072\cdot2\mathrm{B} \approx 42.9\,\mathrm{GB}\\
+\text{MLA（见下节）}&: 576\cdot80\cdot131072\cdot2\mathrm{B} \approx 12.1\,\mathrm{GB}\;\;(\text{FP8 下约 }6\,\mathrm{GB})
+\end{aligned}
+\]</p>
+<p>GQA 相对 MHA 恰好是 \(64/8 = 8\) 倍的差距——"KV cache 降到 1/4～1/8"就是这么来的。MLA 一行里的 576 是下一节的结论。</p>
+</div>
+
+<h2 class="deriv">四、MLA：把 KV 压成 576 维</h2>
+<p>MLA 不存各头的 K/V 全量，只存一个低维隐向量。设隐维度 \(d_c = 512\)：</p>
+<p>\[
+c_t^{KV} = h_t W_{DKV} \in \mathbb{R}^{512}, \qquad
+k_{t,i} = c_t^{KV} W_{UK,i},\;\; v_{t,i} = c_t^{KV} W_{UV,i}
+\]</p>
+<p class="eq-note">\(W_{DKV}\) 是下投影（压缩），\(W_{UK,i}\)、\(W_{UV,i}\) 是第 \(i\) 个头的上投影（重建）。cache 里只躺 \(c_t^{KV}\)，K/V 在推理时按需重建。</p>
+
+<h3>为什么 RoPE 必须解耦</h3>
+<div class="derivation">
+<span class="tag">推导：旋转破坏线性的位置</span>
+<p>RoPE 给第 \(m\) 个位置的 key 施加一个位置相关的正交旋转 \(R_m\)。如果直接对压缩向量做旋转再重建：</p>
+<p>\[
+(R_m\, c_t^{KV})\, W_{UK} \;\neq\; R_m\, (c_t^{KV} W_{UK})
+\]</p>
+<p>因为一般的 \(W_{UK}\) 与 \(R_m\) <b>不对易</b>。而先重建再旋转 \(R_m(c_t^{KV}W_{UK})\) 又要求把全量 K 物化出来——压缩的意义就没了。DeepSeek 的解法是<b>解耦</b>：内容键 \(K^C\) 从隐向量重建（不带位置，保持线性），另设一条 64 维的<b>纯位置键</b> \(K^R\) 专管 RoPE、各头共享。cache 内容变为：</p>
+<p>\[
+\underbrace{c_t^{KV}}_{512\text{ 维}} + \underbrace{k_t^{R}}_{64\text{ 维}} = 576\text{ 维/token/层}
+\]</p>
+</div>
+
+<h3>注意力折叠：连 K 都不用物化</h3>
+<div class="derivation">
+<span class="tag">推导：结合律 \(A(BC)=(AB)C\)</span>
+<p>第 \(i\) 个头的 attention 打分是：</p>
+<p>\[
+\begin{aligned}
+\mathrm{score}_{t,i} &= q_{t,i}\, k_{t,i}^T
+= q_{t,i}\, (c_t^{KV} W_{UK,i})^T \\
+&= q_{t,i}\, W_{UK,i}^T\, (c_t^{KV})^T
+= \underbrace{(q_{t,i}\, W_{UK,i}^T)}_{\tilde{q}_{t,i}\in\mathbb{R}^{512}}\, (c_t^{KV})^T
+\end{aligned}
+\]</p>
+<p>即<b>直接拿吸收了 \(W_{UK,i}^T\) 的 query \(\tilde{q}\) 去和 512 维隐向量 \(c_t^{KV}\) 做点积</b>，全程不物化 \(k_{t,i}\)。\(W_{UK,i}^T\) 可以离线折叠进 Q 的投影矩阵，推理零开销。这就是 MLA 敢把 cache 压到每 token 每层 576 个元素的底气：存得少，算得也不多。</p>
+</div>
+
+<h2 class="deriv">五、压缩比对照</h2>
+<p>以每 token 每层存的元素数计（MHA：\(2\cdot64\cdot128 = 16384\) 为 100%）：</p>
+<ul>
+<li><b>MHA</b>：16384 —— 基准 100%</li>
+<li><b>GQA-8</b>：\(2\cdot8\cdot128 = 2048\) —— 12.5%</li>
+<li><b>MLA</b>：\(512 + 64 = 576\) —— 约 3.5%，不到 GQA 的三分之一</li>
+</ul>
+
+<h2 class="deriv">六、mHC：残差从单车道变四车道</h2>
+<p>经典残差 \(y = x + F(x)\) 只是朴素相加。mHC 给每个 token 维护 \(n_s = 4\) 条并行残差流，流之间的混合系数矩阵 \(A\in\mathbb{R}^{4\times4}\) 经 20 轮 Sinkhorn 迭代约束为<b>近似双随机矩阵</b>（每行每列之和都 ≈1）。</p>
+<div class="prereq">
+<span class="tag">预备知识：为什么双随机</span>
+<p>双随机矩阵作用在向量上是<b>凸组合</b>（系数非负、和为 1），输出被钳在输入的凸包里——信号既不会被放大也不会被湮灭，前向/反向的数值稳定性就有了数学保证。这正是深层（万亿参数量级）网络最怕的"层间通信失稳"的解药。</p>
+</div>
+
+<nav class="deriv-nav">
+<a href="index.html"><span class="dir">返回</span>导读目录</a>
+<a href="math-moe.html"><span class="dir">下一篇</span>MoE 与负载均衡的数学</a>
+<a href="math-sparse.html"><span class="dir">数学详解</span>稀疏注意力：DSA / CSA / HCA</a>
+</nav>
+
+</main>
+<script src="app.js"></script>
+<script defer src="../assets/katex/katex.min.js"></script>
+<script defer src="../assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>

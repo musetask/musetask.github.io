@@ -1,0 +1,165 @@
+/* 数学推导详解页专用样式（在 style.css 之后加载） */
+
+/* 只在推导页（<body class="detail">）上放宽栏宽，
+   这样原书章节页即使也引了本文件，排版也不会被改变 */
+body.detail main{max-width:46rem}
+@media (min-width:1400px){
+  body.detail main{max-width:46rem}
+}
+
+/* 公式块：KaTeX display 模式的容器 */
+.katex-display{
+  margin:1.15rem 0 !important;
+  padding:.85rem .6rem;
+  background:var(--accent-soft);
+  border:1px solid var(--rule);
+  border-left:3px solid var(--accent);
+  border-radius:6px;
+  overflow-x:auto;
+  overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior-x:contain;
+  color:var(--ink);
+}
+/* 行内公式不要撑破行宽 */
+.katex{font-size:1.04em}
+p > .katex{white-space:nowrap}
+
+/* 手动标注：公式旁的解释 */
+.eq-note{
+  margin:.1rem 0 1.3rem;
+  font-size:.94rem;
+  color:var(--muted);
+}
+.eq-note b{color:var(--ink); font-weight:600}
+
+/* 推导小节标题 */
+h2.deriv{margin-top:2.4rem}
+
+/* 关键结论的高亮条 */
+.key{
+  background:var(--accent-soft);
+  border-left:3px solid var(--accent);
+  border-radius:0 6px 6px 0;
+  padding:.7rem .85rem;
+  margin:0 0 1.1rem;
+}
+.key .tag{
+  font:700 .7rem/1 var(--sans); letter-spacing:.1em;
+  text-transform:uppercase; color:var(--accent);
+  display:block; margin-bottom:.3rem;
+}
+.key p:last-child{margin-bottom:0}
+
+/* 陷阱 / 坑 */
+.warn{
+  background:#fdf1ef;
+  border-left:3px solid var(--warm);
+  border-radius:0 6px 6px 0;
+  padding:.7rem .85rem;
+  margin:0 0 1.1rem;
+}
+.warn .tag{
+  font:700 .7rem/1 var(--sans); letter-spacing:.1em;
+  text-transform:uppercase; color:var(--warm);
+  display:block; margin-bottom:.3rem;
+}
+.warn p:last-child{margin-bottom:0}
+html[data-theme="dark"] .warn{background:#241a1c}
+
+/* 推导步骤的编号圆点 */
+ol.steps{counter-reset:st; list-style:none; padding-left:0; margin:.3em 0 1.1em}
+ol.steps > li{
+  counter-increment:st;
+  position:relative;
+  padding-left:2.2rem;
+  margin:.7rem 0;
+}
+ol.steps > li::before{
+  content:counter(st);
+  position:absolute; left:0; top:.3rem;
+  width:1.5rem; height:1.5rem; line-height:1.5rem;
+  text-align:center;
+  border-radius:50%;
+  background:var(--accent); color:#fff;
+  font:700 .75rem/1.5rem var(--sans);
+  font-variant-numeric:tabular-nums;
+}
+ol.steps > li > :first-child{margin-top:0}
+
+/* 从原书页面插进去的「补充材料」提示条 */
+aside.detail-link{
+  background:var(--accent-soft);
+  border-left:3px solid var(--accent);
+  border-radius:0 6px 6px 0;
+  padding:.7rem .85rem;
+  margin:0 0 1.4rem;
+  font-size:.94rem;
+}
+aside.detail-link .tag{
+  font:700 .7rem/1 var(--sans); letter-spacing:.1em;
+  text-transform:uppercase; color:var(--accent);
+  display:block; margin-bottom:.3rem;
+}
+aside.detail-link a{font-weight:600}
+aside.detail-link p:last-child{margin-bottom:0}
+
+/* 章节间导航 */
+.deriv-nav{
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));
+  gap:.55rem;
+  margin:2rem 0 0; padding-top:1rem; border-top:1px solid var(--rule);
+}
+.deriv-nav a{
+  display:block; padding:.6rem .7rem;
+  border:1px solid var(--rule); border-radius:8px; background:var(--panel);
+  color:var(--ink); text-decoration:none; line-height:1.4; font-size:.9rem;
+}
+.deriv-nav a:active{background:var(--accent-soft)}
+.deriv-nav a .dir{
+  display:block; font:600 .68rem/1 var(--sans); letter-spacing:.1em;
+  text-transform:uppercase; color:var(--muted); margin-bottom:.2rem;
+}
+
+/* 符号速查表：推导页第一列多为短公式，禁止折行以免看起来像排版坏了 */
+.sym td:first-child,
+.sym th:first-child{white-space:nowrap}
+.sym .katex{font-size:1em}
+
+/* 推导页里塞进去的短代码片段 */
+body.detail pre{font-size:12.4px}
+body.detail table{font-size:.88rem}
+
+@media print{
+  .katex-display{overflow:visible}
+}
+
+/* 补充推导 / 预备知识块（Batch 7 统一样式） */
+.derivation{
+  background:var(--panel);
+  border:1px solid var(--rule);
+  border-left:3px solid var(--accent);
+  border-radius:0 6px 6px 0;
+  padding:.7rem .85rem;
+  margin:0 0 1.1rem;
+}
+.derivation .tag{
+  font:700 .7rem/1 var(--sans); letter-spacing:.1em;
+  text-transform:uppercase; color:var(--accent);
+  display:block; margin-bottom:.3rem;
+}
+.prereq{
+  background:var(--accent-soft);
+  border:1px solid var(--rule);
+  border-left:3px solid var(--warm);
+  border-radius:0 6px 6px 0;
+  padding:.7rem .85rem;
+  margin:0 0 1.1rem;
+}
+.prereq .tag{
+  font:700 .7rem/1 var(--sans); letter-spacing:.1em;
+  text-transform:uppercase; color:var(--warm);
+  display:block; margin-bottom:.3rem;
+}
+.derivation p:last-child,.prereq p:last-child{margin-bottom:0}
+html[data-theme="dark"] .prereq{background:#241a1c}

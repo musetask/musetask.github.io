@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>稀疏注意力的数学：DSA / CSA / HCA · DeepSeek 架构演进</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f5f8f'/%3E%3Cpath d='M9 8h9a4.5 4.5 0 0 1 0 9H9zm0 9h9a4.5 4.5 0 0 1 0 9H9z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+<script>(function(){try{var t=localStorage.getItem('pdf2html-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">DeepSeek 架构演进</a>
+  <button class="btn" id="themeToggle" aria-label="切换深色模式">&#9788;</button>
+</header>
+<main id="main">
+
+<h1>稀疏注意力的数学：DSA / CSA / HCA</h1>
+
+<div class="plainbox">
+<p>这一页算清楚 V3.2→V4.1 的稀疏注意力三件套：<b>DSA</b>（检索式稀疏）、<b>CSA</b>（先压缩再检索）、<b>HCA</b>（压到可以直接全量扫），以及 V4.1 Flash 的 <b>CSA2 + CED</b> 是怎么把 KV 压到每 token 约 890 字节的。</p>
+<p>记号：\(L\) 为上下文长度；\(h_t\) 为第 \(t\) 个 token 的 hidden state。</p>
+</div>
+
+<h2 class="deriv">一、为什么必须稀疏</h2>
+<p>标准 attention 每生成一个 token 要回看全部历史：计算量 \(\mathcal{O}(L^2\cdot d)\)（prefill），KV cache \(\mathcal{O}(L\cdot n_{\text{layers}}\cdot d)\)。\(L=10^6\) 时，"全量回看"在物理上就不可行。两条路：MLA 是把<b>每个</b> token 存小一点；稀疏注意力是<b>大部分 token 根本不看</b>。</p>
+
+<h2 class="deriv">二、DSA：搜索引擎式 attention</h2>
+<p>DSA = 一个极轻的 <b>indexer</b>（召回）+ 主 MLA（精排）。indexer 的管线：</p>
+<div class="derivation">
+<span class="tag">推导：indexer 五步</span>
+<p>\[
+\begin{aligned}
+\text{(1) 索引向量：}&\quad q_t^{\text{idx}} = h_t W_Q^{\text{idx}},\;\; k_j^{\text{idx}} = h_j W_K^{\text{idx}} \in \mathbb{R}^{d_{\text{idx}}},\; d_{\text{idx}}=32 \\
+\text{(2) Block 打包：}&\quad K_m^{\text{block}} = \frac{1}{B}\sum_{j\in\mathcal{C}_m} k_j^{\text{idx}},\quad B=64 \\
+\text{(3) 打分扫描：}&\quad S_m = \langle q_t^{\text{idx}},\, K_m^{\text{block}}\rangle,\quad m=1,\dots,M \\
+\text{(4) 取 Top-}K\text{：}&\quad \mathcal{I} = \mathrm{TopK}(\{S_m\}, 32) \\
+\text{(5) 精排：}&\quad \text{对 } 32\times64=2048 \text{ 个 token} + \text{局部滑动窗口做 MLA}
+\end{aligned}
+\]</p>
+<p>规模核算（\(L=10^6\)）：\(M = 10^6/64 \approx 15625\) 个 block；一次扫描 \(15625\times32 \approx 5\times10^5\) 次乘加，键表 \(15625\times32\times1\mathrm{B}\approx 0.5\mathrm{MB}\)（INT8 量化）——<b>全部塞进 SRAM/L2，几微秒完成</b>，不碰 HBM。这就是"检索"相对"精排"便宜两个数量级的原因。</p>
+</div>
+<div class="prereq">
+<span class="tag">预备知识：indexer 怎么学会"什么重要"——KL 蒸馏</span>
+<p>训练时让主 attention 算出真实权重 \(\alpha_{t,j}\)，按 block 加总得到"标准答案"的重要性分布 \(P(m)\)；indexer 的打分经 softmax 得到 \(Q(m)\)，用 <b>KL 散度</b> \(\mathrm{KL}(P\|Q)=\sum_m P(m)\log\frac{P(m)}{Q(m)}\) 做辅助 loss。32 维的小网络就这样学会了模仿大网络"往哪看"。</p>
+</div>
+
+<h2 class="deriv">三、CSA：先压缩，再检索</h2>
+<p>DSA 的检索空间还是 1M 个 token。CSA 先在<b>时间轴上压缩</b> \(r=4\sim8\) 倍，把检索空间本身缩小：</p>
+<p>\[
+c_m^{KV} = \mathrm{LayerNorm}\!\left(\sum_{j=1}^{r} W_{\text{comp}}^{(j)}\, h_{(m-1)r+j}\right),
+\qquad m = 1,\dots,L/r
+\]</p>
+<p class="eq-note">不是粗暴平均池化，而是因果 1D 卷积/门控线性投影——\(r\) 个连续 hidden state 压成一个 slot \(c_m^{KV}\)（落在 MLA 的隐空间里）。</p>
+<div class="derivation">
+<span class="tag">推导：压缩带来的三笔账（\(r=4,\;L=10^6\)）</span>
+<p>\[
+\begin{aligned}
+\text{序列长度：}&\quad 10^6 \to 2.5\times10^5\ \text{slots} \\
+\text{indexer 扫描量：}&\quad 15625 \to 250000/64\approx 3906\ \text{blocks} \approx \text{降为 } 1/4 \\
+\text{精排规模：}&\quad \mathrm{Top}\text{-}512\ \text{slots} \approx 2048\ \text{tokens 当量}
+\end{aligned}
+\]</p>
+<p>文中口径：FP8 下 CSA 的 cache 约 1.6GB，相对标准 Transformer 降 98.6% 以上。为什么敢压？语言学直觉：<b>远距离上下文只需要语义质心</b>（"前面在讨论什么"），逐 token 的精确语法只在近处重要——而近处有<b>不压缩的局部滑动窗口</b>兜底。</p>
+</div>
+
+<h2 class="deriv">四、HCA：压到可以直接全量扫</h2>
+<p>HCA 把压缩推到 \(r=64\sim128\)：\(10^6/128 \approx 7812\) 个 slot。现代 GPU 的 tensor 引擎扫 7800 个元素 ≈ 跑一个普通 8K 上下文——于是<b>不需要 indexer，直接 dense 全量 attention</b>，彻底消灭检索遗漏（sparse 方法的 needle-in-a-haystack 盲区）。</p>
+<p>\[
+C_k^{\text{heavy}} = \mathrm{CrossAttention}\!\big(Q_{\text{learnable}},\, H_{[(k-1)R:kR]}\big)\, W_{\text{proj}}, \qquad R=128
+\]</p>
+<p class="eq-note">128 个 token 若用平均池化，关键词会溶成一锅灰汤；HCA 用可学习的 query 做 perceiver 式 cross-attention 去"萃取"（主语、关键事件等），cache 降到原来的 \(1/128\)。</p>
+<div class="key"><span class="tag">混合部署：三层分工</span>
+<p>全用 HCA 会丢精细区分度，所以按层分工：<b>浅层</b>滑动窗口（2–4K，语法）→ <b>中层</b> CSA（放大镜，点查实体/变量）→ <b>深层</b> HCA（望远镜，全局结构）。精读、查索引、泛读，三种读法装进一个模型。</p>
+</div>
+
+<h2 class="deriv">五、V4.1 Flash 的 CSA2：三维压缩到 890 字节/token</h2>
+<p>zartbot 对技术报告的解读：V4.1 放弃 HCA 式 block 高压缩，专攻 CSA，形成 <b>CSA2</b>——从三个维度同时压 KV（以下均为文中口径）：</p>
+<ul>
+<li><b>Channel 维</b>：512 维隐向量统一表示各头所需的 K/V（沿用 MLA）；</li>
+<li><b>Sequence 维</b>：Encoder 把相邻 2 个位置并成 1 个 cache 条目（可学习的 channel-wise 权重），Decoder 保持逐位置；</li>
+<li><b>Layer 维</b>：跨层共享——只在第 2/8/14/20 层建全局 KV（Full 模式），全网只保留 <b>3 份 Encoder cache + 1 份 Decoder cache</b>，其余层复用（Reindex/Reuse 模式只重写 Q）。</li>
+</ul>
+<div class="derivation">
+<span class="tag">核算：890 字节/token 的构成</span>
+<p>\[
+\underbrace{576 \times 0.5\mathrm{B}}_{\text{FP4 隐向量+位置键}} = 288\mathrm{B/份}
+\quad+\quad \text{跨层共享摊薄} \quad+\quad \text{indexer 开销}
+\;\approx\; 890\mathrm{B/token}
+\]</p>
+<p>288B 是单份 FP4 隐向量的硬账；剩下的大头是 indexer（32 头 × 128 维的索引键，量化后）与 encoder/decoder 多份 cache 的摊销——"约 890 字节"是<b>全局主 KV + indexer 的 runtime 口径</b>，相对 V4 Flash 的 runtime KV 是 1/4、持久化 KV 是 1/8。</p>
+</div>
+
+<h2 class="deriv">六、CED：Decoder 的 KV 从 Encoder 借</h2>
+<p>40 层中前 20 层为 Encoder、后 20 层为 Decoder；<b>Decoder 的全局 KV 由 Encoder 末态 hidden 投影而来</b>，后续 Decoder 层共享。于是长 prompt 的 prefill 只需走前 20 层：</p>
+<p>\[
+\text{prefill 激活 } \approx 8\mathrm{B},\qquad \text{decode 激活 } \approx 16\mathrm{B}
+\]</p>
+<p class="eq-note">对"输入很长、输出很短"的 agent 场景，这是把 prefill 的计算量直接砍半。zartbot 的递归 Transformer 视角：整个 Decoder 是在"复用 Encoder 的 KV、只重写 Q"的递归过程中完成推理的。</p>
+
+<nav class="deriv-nav">
+<a href="index.html"><span class="dir">返回</span>导读目录</a>
+<a href="math-moe.html"><span class="dir">上一篇</span>MoE 与负载均衡的数学</a>
+<a href="math-attention.html"><span class="dir">数学详解</span>注意力机制：MHA → MLA</a>
+</nav>
+
+</main>
+<script src="app.js"></script>
+<script defer src="../assets/katex/katex.min.js"></script>
+<script defer src="../assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>
