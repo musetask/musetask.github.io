@@ -111,12 +111,44 @@ k_{t,i} = c_t^{KV} W_{UK,i},\;\; v_{t,i} = c_t^{KV} W_{UV,i}
 <li><b>MLA</b>：\(512 + 64 = 576\) —— 约 3.5%，不到 GQA 的三分之一</li>
 </ul>
 
-<h2 class="deriv">六、mHC：残差从单车道变四车道</h2>
-<p>经典残差 \(y = x + F(x)\) 只是朴素相加。mHC 给每个 token 维护 \(n_s = 4\) 条并行残差流，流之间的混合系数矩阵 \(A\in\mathbb{R}^{4\times4}\) 经 20 轮 Sinkhorn 迭代约束为<b>近似双随机矩阵</b>（每行每列之和都 ≈1）。</p>
-<div class="prereq">
-<span class="tag">预备知识：为什么双随机</span>
-<p>双随机矩阵作用在向量上是<b>凸组合</b>（系数非负、和为 1），输出被钳在输入的凸包里——信号既不会被放大也不会被湮灭，前向/反向的数值稳定性就有了数学保证。这正是深层（万亿参数量级）网络最怕的"层间通信失稳"的解药。</p>
+<h2 class="deriv" id="s-mhc">六、mHC：残差从单车道变四车道</h2>
+<p>经典残差 \(y = x + F(x)\) 只是朴素相加。mHC（Manifold-Constrained Hyper-Connections）给每个 token 维护 \(n_s=4\) 条并行残差流，<b>并且用两组不同的约束分别管"读入"和"写出"</b>——这是常被简化掉、但决定成败的细节。</p>
+<figure>
+<img src="assets/img/z-mhc-dataflow.png" alt="mHC 数据流细节：pre 输入混合、post 输出注入、comb 残差混合三组系数及其公式">
+<figcaption>mHC 的完整数据流。把四条流展平后（\(z=\mathrm{vec}(X_l)\in\mathbb{R}^{20480}\)，即 \(4\times5120\)）投影出一个<b>逐 token 的标量</b> \(m=Wz/r\)（\(W\in\mathbb{R}^{24\times20480}\)，24 = 4+4+16），再分三路生成三组系数——<b>注意它们的约束方式完全不同</b>。出处：zartbot 1.2 节</figcaption>
+</figure>
+<div class="derivation">
+<span class="tag">推导：三组系数与各自的约束</span>
+<p>\[
+\text{pre}\to\text{输入混合：}\quad A_l=\sigma(\alpha_A m+\beta)+\epsilon_{hc},
+\qquad \text{取值范围 }(\epsilon,\ 1+\epsilon)\ \textbf{（不是 softmax）}
+\]</p>
+<p>\[
+\text{post}\to\text{输出注入：}\quad C_l=2\,\sigma(\alpha_C m+\beta),
+\qquad \text{取值范围 }(0,\ 2)
+\]</p>
+<p>\[
+\text{comb}\to\text{残差混合：}\quad \mathrm{comb}=\operatorname{Sinkhorn}_{20}(\alpha_B m+\beta),
+\qquad B_l=\mathrm{comb}^{\top}\ \textbf{（双随机）}
+\]</p>
+<p>\[
+u_l=\sum_{i=0}^{3}A_l[i]\,X_l[i,:],
+\qquad
+X_{l+1}=C_l\,Y_l+B_l\,X_l
+\]</p>
 </div>
+<div class="warn"><span class="tag">一处容易搞混的细节</span>
+<p><b>只有 <code>comb</code>（也就是 \(B_l\)）走 Sinkhorn 迭代并被约束成双随机矩阵</b>。\(A_l\) 是 sigmoid 加一个 \(\epsilon_{hc}\) 偏移，取值落在 \((\epsilon,1+\epsilon)\)——<b>它不是 softmax，也不是双随机的</b>。所以"mHC 的混合矩阵被 Sinkhorn 约束为近似双随机"这句话<b>只对输出侧成立</b>，输入侧不受此约束。</p>
+</div>
+<div class="prereq">
+<span class="tag">预备知识：为什么输出侧要双随机</span>
+<p>双随机矩阵作用在向量上是<b>凸组合</b>（系数非负、行和列和都为 1），输出被钳在输入的凸包里——信号既不会被放大也不会被湮灭，前向/反向的数值稳定性就有了数学保证。这正是深层（万亿参数量级）网络最怕的"层间通信失稳"的解药。</p>
+</div>
+<p>而输入侧用 sigmoid 而非双随机，是因为它的职责不同：<code>pre</code> 系数决定"读入时四条流各占多少"，允许一定的放大以补偿子层输出的尺度；<code>post</code> 系数 \(C_l\in(0,2)\) 同理。<b>约束只加在真正会造成层间失稳的那一环</b>。</p>
+<figure>
+<img src="assets/img/z-mhc-single-pass-compare.png" alt="mHC 原始版与 Single-Pass 版的逐层数据流对比">
+<figcaption>Single-Pass 的改造：<b>用上一个子层已经算好的 pre 系数 \(A_{2r-1}\) 来算本层的输入混合</b>，从而解除"本层系数依赖本层输入、又要把输入喂给下一个系数计算"的循环依赖（图中橙色标注的 "Wait for full reduction"）。代价是本层进入下一个 block 时要同时携带 \((X_{2r+2},A_{2r+1})\)。好处是能 kernel fusion、少一轮显存读写。出处：zartbot 1.2 节</figcaption>
+</figure>
 
 <nav class="deriv-nav">
 <a href="index.html"><span class="dir">返回</span>导读目录</a>

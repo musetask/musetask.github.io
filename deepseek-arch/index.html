@@ -21,7 +21,7 @@
 <main id="main">
 
 <h1>DeepSeek 架构演进：从 V1 到 V4.1 Flash</h1>
-<p class="eq-note">原创中文学习笔记：用自己的话总结两篇公开博文的技术要点，数学推导均为自写。<b>不是原文翻译</b>，建议对照原文阅读——<a href="https://note.com/shi3zblog/n/ne7247c087e20">shi3z《The Internal Architecture of DeepSeek v4.1 Flash》</a>（V1→V4.1 演进史）· <a href="https://zartbot.github.io/blog/model_arch/dsv41flash_arch/en.html">zartbot《DeepSeek-V4.1 Flash: Pushing the Limits of KV Cache Compression》</a>（V4.1 Flash 技术报告解读）· <a href="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/blob/main/DeepSeek_V41_Tech_Report.pdf">官方技术报告 PDF</a>。</p>
+<p class="eq-note">原创中文学习笔记：用自己的话总结三篇公开博文的技术要点，数学推导均为自写。<b>不是原文翻译</b>，建议对照原文阅读——<a href="https://note.com/shi3zblog/n/ne7247c087e20">shi3z《The Internal Architecture of DeepSeek v4.1 Flash》</a>（V1→V4.1 演进史）· <a href="https://zartbot.github.io/blog/model_arch/dsv41flash_arch/en.html">zartbot《DeepSeek-V4.1 Flash: Pushing the Limits of KV Cache Compression》</a>（V4.1 Flash 技术报告解读）· <a href="https://mp.weixin.qq.com/s/RRHg9UCCInSc_zEcIgjNBQ">《详细解读 DSpark 投机解码的原理》</a>（投机解码与 DSpark）· <a href="https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/blob/main/DeepSeek_V41_Tech_Report.pdf">官方技术报告 PDF</a>。</p>
 
 <div class="key"><span class="tag">一句话主线</span>
 <p>DeepSeek 的全部架构史可以压缩成一句话：<b>参数规模拼命膨胀，实际计算和访存拼命只取所需</b>——不算不必算的，不存不必存的，不看不必看的。</p>
@@ -32,6 +32,8 @@
 <li><a href="math-attention.html">注意力机制的数学</a> —— MHA → MQA → GQA → MLA：KV cache 核算、解耦 RoPE、注意力折叠、mHC</li>
 <li><a href="math-moe.html">MoE 与负载均衡的数学</a> —— 路由公式、aux loss 的问题、aux-loss-free 偏置更新</li>
 <li><a href="math-sparse.html">稀疏注意力的数学</a> —— DSA / CSA / HCA / CSA2 / CED：indexer 打分、压缩比、跨层 KV 复用</li>
+<li><a href="dspark.html">投机解码与 DSpark</a> —— 半自回归起草、置信度头与 STS 校准、硬件感知前缀调度器</li>
+<li><a href="math-speculative.html">投机解码的数学</a> —— 接受率 \(=1-\operatorname{TV}\)、无损性证明、期望长度的尾和公式、贪心调度的交换论证</li>
 </ul>
 
 <h2>目录</h2>
@@ -97,18 +99,60 @@
 </ul>
 
 <h2 id="s8">八、V4.1 Flash：把 KV cache 压缩推向极限</h2>
-<p>zartbot 对官方技术报告的解读。V4.1 Flash 是 552B 的多模态 MoE，目标只有一个：KV cache 压到极限，因为长程 agent 的上下文越来越长，KV 的 HBM/SSD 存储和搬运成了 scaling 的真正瓶颈。手段是三处：</p>
+<p>zartbot 对官方技术报告的解读。V4.1 Flash 是 552B 的多模态 MoE，目标只有一个：KV cache 压到极限，手段是三处（CED 砍 prefill、CSA2 砍 KV、FP4 砍位宽）：</p>
+<figure>
+<img src="assets/img/z-v41-architecture.png" alt="DeepSeek-V4.1-Flash 整体架构：Causal Encoder 与 Decoder 两侧的层配置与跨层数据流">
+<figcaption>V4.1 Flash 整体架构。<b>左侧 Causal Encoder</b>：2 层 SWA 之后是 3 个宏块，每块 = <code>CSA2(2, Full)</code> + MoE + <code>CSA2(2, Reuse)</code> ×5；<b>右侧 Decoder</b>：<code>CSA2(1, Full)</code> 起手 + 4 个 Reindex 块，压缩比全为 1。<b>全网只有 4 个层真正产出 Main KV</b>（<code>kv_source_layers=[2,8,14,20]</code>）——这正是 890 B/token 的来源。底部两条箭头是 CED 与层次化稀疏索引器。出处：zartbot 1.2 节</figcaption>
+</figure>
+<figure>
+<img src="assets/img/z-agentic-prefill-cache-miss.png" alt="示意图：工具调用结果作为下一轮模型输入，prompt 不断增长，命中缓存则只 prefill 新后缀">
+<figcaption>为什么要死磕 KV 存储：agent 循环里工具结果是<b>下一轮 prompt 的一部分</b>，prompt 一轮轮变长。命中缓存只需 prefill 新后缀，未命中就得重算全部未缓存上下文——<b>长历史 + 大工具输出会把未命中 prefill 的开销成倍放大</b>。这解释了 1.1 节"持久化与搬运成为瓶颈"的动机。出处：zartbot 1.1 节</figcaption>
+</figure>
 <ul>
 <li><b>CED（Causal Encoder-Decoder）</b>：40 层中前 20 层是 Encoder、后 20 层是 Decoder；Decoder 的全局 KV 由 Encoder 末态 hidden 投影而来、跨层共享。长 prompt 的 prefill 只走前 20 层——prefill 激活 8B / decode 激活 16B，对输入主导的 agent 场景极划算。</li>
 <li><b>CSA2</b>：在 CSA 基础上从三个维度压 KV——channel 维用 512 维隐向量统一表示各头 K/V；sequence 维 Encoder 把相邻 2 个位置并成 1 个 cache 条目；layer 维多层共享同一份全局 KV（全网只保留 3 份 Encoder cache + 1 份 Decoder cache）。再叠加 FP4 量化，<b>每 token 约 890 字节</b>（全局主 KV + indexer 口径）。</li>
-<li><b>Engram + DSpark</b>：Engram 是条件记忆（n-gram 表格注入），DSpark 是推测解码（3 个 SWA draft block + 小 MoE，一次并行算 5 个 draft 位置）。</li>
+<li><b>Engram + DSpark</b>：Engram 是条件记忆（n-gram 表格注入，挂在第 1 和第 14 层，两张表约 3.84 亿行）；DSpark 是推测解码——<b>一次并行起草 5 个 draft 位置</b>（<code>dspark_block_size=5</code>），草稿侧是挂在主干第 37/38/39 层的 3 个 SWA-128 block、每层用 128 个路由专家取 Top-3 的小 MoE，读主干层入口处 4 条残差流的均值作为输入。难点不在起草模型本身，而在两处：并行起草让接受率沿块衰减（草稿模型一次前向产出全部位置 logits，每个位置都在对所有可能的前置 token 做边缘化），以及高并发下把长草稿整块丢给目标模型验证会挤占批处理容量、拉低系统总吞吐。解法是<b>半自回归起草</b>（重并行主干拿高起点 + 极轻串行头建模块内依赖）和<b>置信度调度</b>（模型自己预测每个草稿的存活概率，按真实硬件吞吐曲线决定验证多长）。<a href="dspark.html">→ 完整拆解见投机解码与 DSpark</a></li>
 </ul>
+<figure>
+<img src="assets/img/z-engram-injection-points.png" alt="Causal Encoder 中 Engram 的两个注入位置与 CSA2 跨层复用的落点">
+<figcaption>Engram 与 CSA2 的注入位置（对应 <code>engram_layer_ids=[1,14]</code>）。注意注入点都<b>刻意避开</b>产出 Main KV 的 Full 层——否则会污染被下游 5 层共享的那份缓存。出处：zartbot 2.3.3 节</figcaption>
+</figure>
+<figure>
+<img src="assets/img/z-engram-compare.png" alt="原版 Engram 与 V4.1 Flash Engram 的结构对比，含 n-gram 表、门控与卷积精炼的差异">
+<figcaption>Engram 从原版到 V4.1 Flash 的三处改动：<b>①n-gram 从 {2,3} 扩到 {2,3,4}</b>，每表从 BF16/dim 80 换成 FP8/dim 256，拼接后从 1280 维涨到 6144 维；<b>②key 与 value 的两个 Linear 合成一个 <code>Linear wkv</code></b>（4 个 key 共享一个 value），6144→25600 一次算完；<b>③把门控从 \(\alpha=\sigma(\mathrm{RMS}(h)^{\top}\mathrm{RMS}(k)/\sqrt d)\) 换成带符号平方根的 \(g=\sigma(\mathrm{sign}(s)\sqrt{|s|})\)，并<b>直接去掉 Conv1D+SiLU 的短卷积精炼</b>——原文给的理由是它在推理软件栈复杂度与收益之间的取舍不划算。此外训练侧还用了<b>动量更新 + Sinkhorn Balance</b> 来优化 Engram embedding。出处：zartbot 2.4.2 节</figcaption>
+</figure>
+
+<h3>视觉分支：把一张图压成不超过 1024 个 token</h3>
+<p>V4.1 Flash 是多模态模型，图像走一条独立的短通路进入语言主干：</p>
+<ol>
+<li><b>预处理</b>：不做 OCR。解码成 RGB 后检查像素面积，过小则按比例放大；再把两条边<b>向上对齐到 <code>vision_patch_size=14</code> 的整数倍</b>，补齐处填灰色。最后检查是否超 <code>vision_max_n_token=1024</code> 预算，超了就按长宽比重算更小的画布。</li>
+<li><b>ViT</b>：32 层、隐维 1024。<b>刻意不做 CLS 聚合，保留全部 patch 位置</b>。每层先 RMSNorm 再算注意力、加残差，再 Norm 后走 SwiGLU 前馈、加残差。注意力用 <b>2D RoPE</b> 按原始行列坐标旋转 Q/K（<b>不旋 V</b>）。</li>
+<li><b>空间重排 + 下采样</b>：把 <b>9 个相邻特征装进同一个宽向量</b>，token 数降到 <b>1/9</b>。特征图网格不整除 3 时，在右侧与底部补零。</li>
+<li><b>两层 MLP</b>：投影到语言主干维度，插回文本序列。</li>
+</ol>
+<figure>
+<img src="assets/img/z-vision-pixel-unshuffle.png" alt="图：把 9 个相邻 patch 特征合并进同一个宽向量并下采样">
+<figcaption>空间重排：<b>3×3 邻域的 9 个特征装进同一个宽向量</b>，实现 <code>vision_downsample_ratio=3</code> 对应的 <b>9 倍 token 削减</b>。出处：zartbot 2.1 节</figcaption>
+</figure>
+<figure>
+<img src="assets/img/z-vision-spatial-rearrange.png" alt="图：空间重排与压缩投影后送入 LLM">
+<figcaption>重排后的高分辨率特征经压缩投影进入 LLM。出处：zartbot 2.1 节</figcaption>
+</figure>
+<figure>
+<img src="assets/img/z-vision-span-markers.png" alt="图：图像 token span 内插入行分隔符与起止标记">
+<figcaption>图像 token span 还要补标记：<b>每行一个 <code>IMAGE_NEW_LINE</code>，再加 <code>IMAGE_START</code> / <code>IMAGE_END</code></b>。这就是为什么论文说"支持约 1344×1344 分辨率"——它实际由 1024 的 token 预算卡住：一张恰好算出 1024 token 的图，因为要加标记会被缩到 964，加 31 个行标记和 2 个起止标记共 <b>994 token</b>。出处：zartbot 2.1 节</figcaption>
+</figure>
+<div class="prereq"><span class="tag">多模态的 aux-loss-free 负载均衡</span>
+<p>图文 token 的表示分布不同，在 MoE 里可能形成不同的专家路由偏好；<b>只平衡聚合负载会把各模态内部的不均衡掩盖掉</b>。DeepSeek 的做法是：<b>为文本与图像 token 各自维护一套 per-expert 修正偏置</b>，路由时各用自己模态的偏置选专家，但<b>加权输出时仍用原始路由分数</b>；每步训练结束后按各自负载独立更新这两套偏置。结构与 <a href="math-moe.html">aux-loss-free 偏置更新</a>同源，只是按模态拆成了两份。<a href="math-moe.html">→ 见 MoE 与负载均衡的数学</a></p>
+</div>
 <p>zartbot 还画了一张以 KV 为中心的递归 Transformer 视角：Decoder 层复用 Encoder 的 KV、只重写 Q——"改 Q、复用 KV"的递归结构。<a href="math-sparse.html">→ CSA2 与 CED 的核算见稀疏注意力页</a></p>
 
 <nav class="deriv-nav">
 <a href="math-attention.html"><span class="dir">数学详解</span>注意力机制：MHA → MLA</a>
 <a href="math-moe.html"><span class="dir">数学详解</span>MoE 与负载均衡</a>
 <a href="math-sparse.html"><span class="dir">数学详解</span>稀疏注意力：DSA / CSA / HCA</a>
+<a href="dspark.html"><span class="dir">机制解读</span>投机解码与 DSpark</a>
+<a href="math-speculative.html"><span class="dir">数学详解</span>投机解码的数学</a>
 </nav>
 
 </main>

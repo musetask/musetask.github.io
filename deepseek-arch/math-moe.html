@@ -89,6 +89,23 @@ b_{2,3,4} &\leftarrow b_{2,3,4} + 0.05\times(25-10) = b_{2,3,4} + 0.75 \quad\tex
 <p>把专家想成高速公路的车道：aux loss 是在交规里写"每条车道必须走够多少车"（还得交警拿着 loss 的鞭子抽）；aux-loss-free 是装 ETC 龙门架——堵的车道涨价、空的车道降价，司机（token）自己用脚投票。路还是那些路，规则不进刑法（loss）。</p>
 </div>
 
+<h3>3.1 多模态版本：偏置按模态拆成两份</h3>
+<p>V4.1 Flash 把同一套收费制<b>按模态复制了一遍</b>。动机是：图像 token 与文本 token 的表示分布不同，在 MoE 里会形成不同的专家路由偏好；<b>只平衡聚合负载会把每个模态内部的不均衡掩盖掉</b>——图文恰好互补时，总负载看着完美，某一模态的专家却已经严重倾斜。</p>
+<div class="derivation">
+<span class="tag">推导：按模态独立的偏置集</span>
+<p>\[
+b_i^{\text{text}}\ \leftarrow\ b_i^{\text{text}}+\gamma\bigl(\overline{\text{load}}-n_i^{\text{text}}\bigr),
+\qquad
+b_i^{\text{image}}\ \leftarrow\ b_i^{\text{image}}+\gamma\bigl(\overline{\text{load}}-n_i^{\text{image}}\bigr)
+\]</p>
+<p>\[
+\text{路由：}\ s_i^{(m)}=s_i+b_i^{(m)}\ \text{选专家（}m\in\{\text{text},\text{image}\}\text{）};
+\qquad
+\text{加权：}\ o=\sum_{i\in\mathcal{T}} s_i\,e_i\ \text{（丢掉 }b^{(m)}\text{）}
+\]</p>
+</div>
+<p>两条关键设计没变：<b>偏置只进选择、不进加权</b>，所以梯度依旧干净；<b>两套偏置各自独立更新</b>，互不干扰。这条改动让"收费制"从单模态的均衡器变成了<b>分模态的均衡器</b>，代价只是多存一份长度等于专家数的偏置向量。</p>
+
 <nav class="deriv-nav">
 <a href="index.html"><span class="dir">返回</span>导读目录</a>
 <a href="math-attention.html"><span class="dir">上一篇</span>注意力机制的数学</a>

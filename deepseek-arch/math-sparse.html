@@ -96,12 +96,175 @@ C_k^{\text{heavy}} = \mathrm{CrossAttention}\!\big(Q_{\text{learnable}},\, H_{[(
 <p>288B 是单份 FP4 隐向量的硬账；剩下的大头是 indexer（32 头 × 128 维的索引键，量化后）与 encoder/decoder 多份 cache 的摊销——"约 890 字节"是<b>全局主 KV + indexer 的 runtime 口径</b>，相对 V4 Flash 的 runtime KV 是 1/4、持久化 KV 是 1/8。</p>
 </div>
 
+<figure>
+<img src="assets/img/z-ced-two-stage-layout.png" alt="Causal Encoder 与 Decoder 的两段式层配置与 KV 借用关系">
+<figcaption>整体层配置。Encoder 侧 <code>compress_ratios=[0,0, 2×18, 1×20, 0,0,0]</code>：前 2 层 SWA 不压缩，18 层 CSA2 压缩比 2（即相邻 2 个 token 合成 1 个 cache 条目），20 层 Decoder 全为 1。出处：zartbot 1.2 / 2.3.3 节</figcaption>
+</figure>
+<figure>
+<img src="assets/img/z-ced-no-per-layer-kv.png" alt="示意图：Encoder 读历史但不写逐层 KV，全局 KV 由末态 hidden 投影后跨层共享">
+<figcaption>Encoder 侧<b>读历史但不写逐层 KV</b>；全局 KV 只在 Full 层产出一次、由后续层共享。这是 CED 与 CSA2 叠加后能省下大量存储的机制根源。出处：zartbot 2.2 节</figcaption>
+</figure>
+
+<h3>5.1 Reuse 模式为什么"只改 Q"也有表达力</h3>
+<p>这是跨层复用最值得推敲的一步：Main KV 冻结后，输出还能变吗？把被选中的 cache 向量按行堆成矩阵 \(C_A\in\mathbb{R}^{|A|\times d}\)（\(A\) 是被选中的地址集合），由于 <b>key = value</b>，单层注意力就是一个<b>固定字典的读出</b>：</p>
+<div class="derivation">
+<span class="tag">推导：冻结字典上的凸组合</span>
+<p>\[
+p(q)=\operatorname{softmax}\!\left(C_A q/\sqrt{d}\right),\qquad o(q)=C_A^{\top}p(q)\in\operatorname{conv}\{c_j:j\in A\}
+\]</p>
+</div>
+<p>因为 \(p(q)\) 非负且和为 1，输出是字典向量的<b>凸组合</b>——被锁在一个顶点固定的凸包内，重写 \(q\) 只能在包内移动。Full / Reindex / Reuse 三种模式的差别因此可以精确表述为：Full <b>增删或移动顶点</b>（新内容）、Reindex <b>换激活哪些顶点</b>（新地址）、Reuse <b>只在包内挪动内点</b>（新 \(q\)）。</p>
+<figure>
+<img src="assets/img/z-reuse-frozen-convex-hull.png" alt="示意图：Reuse 模式冻结字典顶点与激活集合，输出在固定凸包内移动">
+<figcaption>Reuse 冻结字典的直观图。<b>蓝点是内容向量（凸包顶点，冻结）</b>，紫点与绿点是不同 \(q\) 下的输出——它们只能在这个凸包内部移动，出不去。出处：zartbot 3.3.2.1 节</figcaption>
+</figure>
+<p>那"包内移动"能动多远？把 query 写成扰动形式 \(q=q_0+\Delta q\)，代入上式的 logit：</p>
+<div class="derivation">
+<span class="tag">推导：query 扰动 = 指数倾斜</span>
+<p>\[
+(C_A q)^{\top}=\underbrace{(C_A q_0)^{\top}}_{p^*}+\underbrace{(C_A\,\Delta q)^{\top}}_{t}
+\quad\Longrightarrow\quad
+p_j\ \propto\ p_j^{*}\exp(t_j),\qquad t=\frac{C_A\,\Delta q}{\sqrt d}\in\operatorname{col}(C_A)
+\]</p>
+<p>\[
+\dim\operatorname{col}(C_A)\ \le\ \min\!\left(d,\ |A|\right)
+\]</p>
+</div>
+<p>即：改 \(q\) 等价于<b>沿 \(t\) 方向对基线分布做一次指数倾斜再归一化</b>。倾斜向量的活动范围被 \(C_A\) 的列空间限制住，维度上界是 \(\min(d,|A|)\)——本例 \(d=512\)、\(|A|=\text{SWA 128}+\text{index\_topk 512}=640\)，故倾斜被限制在至多 512 维子空间内。</p>
+<figure>
+<img src="assets/img/z-query-exponential-tilting.png" alt="示意图：基线分布被指数倾斜因子重加权后的分布对比">
+<figcaption>指数倾斜的数值示例：基线分布 \([0.30,0.22,0.18,0.12,0.10,0.08]\) 乘上倾斜因子 \(\exp(t)=[1.22,0.61,2.23,0.82,1.49,0.37]\) 后重新归一化。注意 \(c_3\) 与 \(c_5\) 被<b>相对抬高</b>——这就是"只改 Q"能做的事：调整读取重心，而非增删可读条目。出处：zartbot 3.3.2.2 节</figcaption>
+</figure>
+<div class="warn"><span class="tag">表达力的边界</span>
+<p>Reuse 的输出被锁在 \(\operatorname{conv}\{c_j:j\in A\}\) 里，而 Full 可以在<b>所有层各自的</b> \(\operatorname{conv}\) 上取并集。差距正好是三件事：<b>召回上限</b>（不在字典里的内容永远够不着，且上游 Top-K 选错下游无法纠正）、<b>顶点不可动</b>、以及<b>倾斜几何不可换</b>——Reuse 能到达的分布是一个由 \(C_A\) 钉死的<b>固定的指数族</b>，而 Full 重选地址等于<b>换掉整个指数族</b>。</p>
+<p>一个顺带澄清：RoPE 只对 \(q\) 与 \(c\) 的 rope 尾巴施加一个<b>依赖位置的正交旋转</b>，而正交旋转会被内积 \(q^{\top}c\) 完全吸收，所以<b>上面关于凸包与倾斜的全部结论对 RoPE 不敏感</b>——加 RoPE 既不会让可达集合变大，也不会变小。</p>
+</div>
+
+<figure>
+<img src="assets/img/z-injection-surface-ports.png" alt="图：Transformer block 的十个可注入端口，围绕同一条残差总线">
+<figcaption>为什么注意力只有三个自由度？一个 Transformer block 暴露的注入面其实有十个（token 空间、embedding、<b>残差加法注入</b>、度量 \(G\)、logits 偏置、求和范围、head 集合、门控、FFN 权重、logit 空间记忆）。但对<b>稀疏注意力的单次读出</b>而言真正起作用的只有三个：<b>内容</b>（读什么）、<b>地址</b>（从哪读）、<b>query</b>（怎么读）。图中的 \(s_{ij}=x_i^{\top}Gx_j+b_{ij}\) 与 \(o_i=\sum_{j\le i}a_{ij}v_j\) 标出了三者各自落在哪一步。出处：zartbot 3.3.1 节（引自《On the Future Transformer: Loops Are Not What You Need》）</figcaption>
+</figure>
+
+<h3>5.2 三个自由度的三重不对称，与三种刷新节奏</h3>
+<p>内容、地址、query 在三个维度上<b>两两对立</b>，这正是 CSA2 全部设计的支点：</p>
+<div class="tablewrap">
+<table class="sym">
+<caption>注意力三个自由度的性质与代价</caption>
+<thead><tr><th>自由度</th><th>数学类型</th><th>语义</th><th>生成代价</th></tr></thead>
+<tbody>
+<tr><td>内容 \(C\)</td><td>连续张量，可微</td><td>读什么（字典顶点）</td><td><b>最贵</b>：压缩器要扫全历史，全局计算</td></tr>
+<tr><td>地址 \(S\)</td><td>离散组合对象，<b>几乎处处零梯度</b></td><td>从哪读（选哪些顶点）</td><td><b>中等</b>：Indexer 打分候选集</td></tr>
+<tr><td>query \(q\)</td><td>连续向量，可微</td><td>怎么读（读取方向）</td><td><b>最便宜</b>：本层自己的投影，逐 token，不扫历史</td></tr>
+</tbody>
+</table>
+</div>
+<p>三重不对称即：<b>连续 vs 离散</b>（梯度只能沿 \(C\) 与 \(q\) 流，\(S\) 只能靠以主注意力为教师的独立蒸馏路径学）、<b>局部 vs 全局</b>（\(q\) 是本层投影，\(C\) 要压全局，\(S\) 要打全候选）、<b>快变 vs 慢变</b>（历史语义跨层变化最慢，值得关注的地址中等漂移，每层的读取方向变化最快）。</p>
+<p>三者还构成<b>单向依赖链</b>：地址由 Indexer 对内容打分得到，故 \(S\) 依赖 \(C\)；query 只在读出端注入以确定权重。所以复用<b>只能沿依赖链自上而下</b>：可以复用内容并连带复用地址（Reuse），可以复用内容但在同一内容上重选地址（Reindex），但<b>不能改内容却沿用旧地址</b>。三种模式正是"刷新哪几个自由度"的三种选择。</p>
+<figure>
+<img src="assets/img/z-modes-layer-structure.png" alt="图：Full / Reindex / Reuse 三种模式在层维度上的排布结构">
+<figcaption>三种模式在层维度上的排布。<b>Full 是锚点</b>，负责重建 KV cache、跑完整 Indexer + TopK；<b>Reindex</b> 保留内容、在 HSI 候选池内重打分重选 Top-K，不重建 KV；<b>Reuse</b> 只做 Q 投影 + SWA + 一次 sparse_attn，不打分、不 TopK、不写 KV。出处：zartbot 3.3.3 节</figcaption>
+</figure>
+<figure>
+<img src="assets/img/z-three-timescales.png" alt="图：内容 ×4 重建、地址 ×8 重选、query ×40 逐层刷新，三个时间尺度">
+<figcaption><b>三种模式构成一条由粗到细的刷新调度，对应三个时间尺度。</b>横轴是 40 层：内容 <code>C</code> 只在 <b>4 个</b> kv-source 层重建（对应 <code>kv_source_layers=[2,8,14,20]</code>）、地址 <code>S</code> 在 <b>8 个</b> index-source 层重选、query <code>q</code> <b>每层都刷新</b>。<b>刷新频率严格正比于重算成本</b>——这正是 CSA2 的调度哲学：贵的东西少刷，便宜的东西勤刷。出处：zartbot 3.3.3 节</figcaption>
+</figure>
+<div class="prereq"><span class="tag">Decoder 侧的三层分工（可与上图逐项对照）</span>
+<p><b>Full</b>（第 20 层）：定义内容 \(C\)，定义候选池（<b>16384</b> 个位置），并给出自己的 Top-<b>512</b>。<br>
+<b>Reindex</b>（第 24/28/32/36 层）：内容不变，在候选池内各自重选 Top-512。<br>
+<b>Reuse</b>：沿用最近一个 index 层发布的 Top-K，只重写 query。</p>
+</div>
+<figure>
+<img src="assets/img/z-transformer-as-computer.png" alt="图：把 Transformer block 看成计算机，Attention 是计算单元、MoE/FFN 是存储单元">
+<figcaption>作者采用的视角来自另一篇《The Art of memory》：<b>把整个 Transformer block 当成一台计算机</b>——Attention block 是计算部件，MoE/FFN 是存储部件，KV 相关部分是计算的 Cache。这个视角下<b>提高 cache 命中率就等价于做跨层数据复用</b>。出处：zartbot 3.2 节</figcaption>
+</figure>
+<figure>
+<img src="assets/img/z-three-cache-hit-states.png" alt="图：三种模式对应同一组数据路径在三种 cache 命中状态下的运行">
+<figcaption>把一层 CSA2 当成一台小计算机，则<b>三种模式就是同一组数据路径在三种 cache 命中状态下的一次执行</b>。出处：zartbot 3.2 节</figcaption>
+</figure>
+<figure>
+<img src="assets/img/z-cross-layer-data-locality.png" alt="图：跨层复用 KV 与索引被建模为数据局部性">
+<figcaption>同一视角的另一种说法：<b>跨层复用 KV 与 Index 就是一种数据局部性（Data Locality）优化</b>。出处：zartbot 2.3.2 节</figcaption>
+</figure>
+
+<h3>5.3 CSA2 相对 CSA 的两处工程简化</h3>
+<p>压缩比意味着每个 main KV 条目由若干原始条目合成，因此<b>相邻条目之间天然重叠</b>，还需要额外的绝对位置嵌入来编码这些条目的位置。CSA2 <b>把重叠和绝对位置嵌入都去掉了</b>：因为前两层的 SWA + Engram 已经把感受野展开、输入本身已是处理过的局部表示，压缩器不再需要做 overlap 处理。</p>
+<figure>
+<img src="assets/img/z-csa2-compressor-simplify.png" alt="图：CSA 相邻压缩条目重叠并需绝对位置嵌入，CSA2 将两者都去除">
+<figcaption>CSA 与 CSA2 的压缩器对比。CSA 需处理相邻条目的源重叠、并额外携带绝对位置嵌入；<b>CSA2 两者皆去</b>，实现更简单、训练效率更高。出处：zartbot 2.3.1 节</figcaption>
+</figure>
+<p>第二处：<b>indexer K 改为从 main KV 条目投影得到</b>，取代了 CSA 那条"从 hidden state 独立压缩"的旁路。</p>
+<figure>
+<img src="assets/img/z-csa2-indexer-k-projection.png" alt="图：CSA2 的 indexer K 由 main KV 投影而来，取代独立压缩路径">
+<figcaption>Indexer K 由 Main KV 投影获得，<b>省掉一条独立的压缩路径</b>。出处：zartbot 2.3.1 节</figcaption>
+</figure>
+
+<h3>5.4 FP4 Main KV：为什么可以省掉二级全局 scale</h3>
+<p>Main KV 用 <b>FP4</b> 存，但这里的 FP4 <b>只为省存储、不为加速矩阵乘法</b>：为兼容尽可能多的硬件平台，仍采用 OCP 标准的 MXFP4 格式，注意力计算前把 cache 反量化回更高精度即可。DeepSeek 选 <b>E2M1</b> 数据类型、<b>每 16 个通道共享一个 E4M3 scale 因子</b>，对齐 NVFP4 但<b>省掉它的二级全局 scale 因子</b>。凭什么敢省？算一遍动态范围就知道：</p>
+<div class="derivation">
+<span class="tag">核算：E2M1 的量程够不够</span>
+<p>\[
+\text{RMSNorm 后近似单位 RMS}\ \Longrightarrow\ \|c\|_2\ \lesssim\ \sqrt{d}\cdot\max|g|
+\]</p>
+<p>\[
+d=512,\ \max|g|\approx 1\ \Longrightarrow\ \|c\|_2\ \lesssim\ \sqrt{512}\approx 22.6,
+\qquad \max_j|c_j|\ \le\ \|c\|_2
+\]</p>
+<p>\[
+\text{RoPE 是正交旋转}\ \Longrightarrow\ \|R_{\text{rope}}c\|_2=\|c\|_2
+\ \Longrightarrow\ \text{旋转后逐通道上界不变}
+\]</p>
+</div>
+<p>而 E2M1 的最大可表示幅度是 <b>6</b>。逐通道上界约 22.6 看似远超 6，但<b>每 16 通道一个的 E4M3 scale 是按块自适应的</b>——量程缩放本就由它承担，二级全局 scale 只是额外保险。原文结论：训练中观测到的最大幅度约 10，省掉全局 scale <b>不产生可测量的精度退化</b>，同时简化了 cache 布局。</p>
+<figure>
+<img src="assets/img/z-nvfp4-e2m1-format.png" alt="图：NVFP4 的 E2M1 分级量化格式示意，含每 16 通道一个 E4M3 scale">
+<figcaption>作为参照的 NVFP4(E2M1) 格式：块内 4 bit 存 E2M1，块级用 E4M3 存 scale。出处：zartbot 2.4.4 节</figcaption>
+</figure>
+<figure>
+<img src="assets/img/z-quant-two-level-scale.png" alt="图：DeepSeek 采用单级 scale、省略 NVFP4 的二级全局 scale 因子">
+<figcaption>DeepSeek 的取舍：<b>保留块级 scale、省略二级全局 scale</b>。出处：zartbot 2.4.4 节</figcaption>
+</figure>
+<p>另有两条量化细节值得记：<b>cache 在 RoPE 之后量化</b>（RoPE 之前量化只带来极小的精度改善，却引入额外解码开销）；<b>SWA 的 KV 保留 FP8</b>，因为它对量化敏感。相对 V4 的 FP8 Main KV，HBM 占用与 SSD 卸载量都<b>接近减半</b>。</p>
+
 <h2 class="deriv">六、CED：Decoder 的 KV 从 Encoder 借</h2>
 <p>40 层中前 20 层为 Encoder、后 20 层为 Decoder；<b>Decoder 的全局 KV 由 Encoder 末态 hidden 投影而来</b>，后续 Decoder 层共享。于是长 prompt 的 prefill 只需走前 20 层：</p>
 <p>\[
 \text{prefill 激活 } \approx 8\mathrm{B},\qquad \text{decode 激活 } \approx 16\mathrm{B}
 \]</p>
 <p class="eq-note">对"输入很长、输出很短"的 agent 场景，这是把 prefill 的计算量直接砍半。zartbot 的递归 Transformer 视角：整个 Decoder 是在"复用 Encoder 的 KV、只重写 Q"的递归过程中完成推理的。</p>
+<figure>
+<img src="assets/img/z-decoder-block-structure.png" alt="Decoder 的 5 个块：1 个 Full 模式块加 4 个 Reindex 模式块，及其 Cache/Compute/Memory 分层">
+<figcaption>Decoder 的 5 个块：<b>1 个 Full 模式块 + 4 个 Reindex 模式块</b>。Decoder 侧<b>不用 Reuse 模式</b>（压缩比为 1，无需为存储让步，换取每层都能重选地址）。Full 块顺手通过层次化稀疏索引器构造出 Candidate Pool，供后面 4 个块收窄搜索域。出处：zartbot 2.3.3 节</figcaption>
+</figure>
+<figure>
+<img src="assets/img/z-hsi-candidate-pool.svg" alt="示意图：Full 层的层次化索引产出候选池，Reindex 层只在候选池内重打分">
+<figcaption>HSI：Full 层对全部因果可见位置打分，额外做一次 <b>block 级取最大值</b>的粗筛，选 2048 个 block × 8 个位置 = 16384 个候选，构成 Candidate Pool。之后每个 Reindex 层只在池内重打分选自己的 Top-K。<b>用 max 而非 mean 做粗筛</b>是为了避免平均池化把峰值稀释掉。出处：zartbot 2.3.4 节</figcaption>
+</figure>
+
+<p>HSI 的思路来自 HISA 的"块级粗筛 + token 级细筛"，但两者<b>粗筛的依据不同</b>：</p>
+<figure>
+<img src="assets/img/z-hisa-hierarchical-indexing.png" alt="图：HISA 在每层先做块级池化打分再做稀疏 TopK 选择">
+<figcaption>HISA 的做法：<b>每一层都要先做一遍块级池化打分</b>，再做稀疏 TopK 选择。出处：zartbot 2.3.4 节（引自 HISA）</figcaption>
+</figure>
+<div class="tablewrap">
+<table>
+<caption>HISA 与 HSI 的差别</caption>
+<thead><tr><th></th><th>HISA</th><th>HSI（DeepSeek 采用）</th></tr></thead>
+<tbody>
+<tr><td>块统计量</td><td>块内 indexer 分数的<b>均值</b></td><td>块内位置分数的<b>最大值</b></td></tr>
+<tr><td>何时算块统计</td><td><b>每层</b>各自算</td><td><b>复用</b>浅层已算出的完整位置分数，取块最大值</td></tr>
+<tr><td>训练一致性</td><td>需额外状态</td><td><b>后训练阶段引入</b>，训练与推理施加<b>完全相同</b>的候选限制</td></tr>
+</tbody>
+</table>
+</div>
+<p>HSI 的关键优势是<b>训练感知（training-aware）</b>：候选限制在训练时就一并施加，深层 Indexer 因此是在推理时真正使用的搜索域下被优化的，不会出现训练能看全、推理被卡住的错配。</p>
+<figure>
+<img src="assets/img/z-cs2-recursive-transformer.png" alt="图：以 KV 为中心的递归 Transformer 视角，各层复用 KV 只重写 Q">
+<figcaption>另一种读法：把整个网络看成<b>以 KV 为中心的递归 Transformer</b>——后面的层复用前面层产出的 KV，只重写 Q。这正是上面"只改 Q 也有表达力"那一节的图景。出处：zartbot 1.5 节</figcaption>
+</figure>
+<figure>
+<img src="assets/img/z-cs2-refresh-schedule.png" alt="图：按重算成本为每类状态安排刷新频率">
+<figcaption>一句话概括 CSA2 的调度：<b>把每类状态放在与其重算成本相匹配的刷新频率上</b>。出处：zartbot 1.5 节</figcaption>
+</figure>
 
 <nav class="deriv-nav">
 <a href="index.html"><span class="dir">返回</span>导读目录</a>

@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>投机解码的数学：接受率、期望长度与贪心调度 · DeepSeek 架构演进</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f5f8f'/%3E%3Cpath d='M9 8h9a4.5 4.5 0 0 1 0 9H9zm0 9h9a4.5 4.5 0 0 1 0 9H9z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="assets/detail.css">
+<script>(function(){try{var t=localStorage.getItem('pdf2html-theme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();</script>
+</head>
+<body class="detail">
+<a class="skip" href="#main">跳到正文</a>
+<div class="progress" id="progress"></div>
+<header class="topbar">
+  <a class="btn" href="index.html" title="目录">&#9776;</a>
+  <a class="brand" href="index.html">DeepSeek 架构演进</a>
+  <button class="btn" id="themeToggle" aria-label="切换深色模式">&#9788;</button>
+</header>
+<main id="main">
+
+<h1>投机解码的数学：接受率、期望长度与贪心调度</h1>
+
+<div class="plainbox">
+<p>这一页把 DSpark 依赖的数学<b>从头算一遍</b>。读者假设有大学数学底子、但计算细节忘了——所以每一步都不跳步，链式法则、尾和公式、全变差距离都先用小例子垫一下，再进入正题。</p>
+<p>要证明的东西其实只有四条：</p>
+<ol>
+<li>接受率恰好等于 \(1-\operatorname{TV}(p,q)\)（含无损性的完整证明）；</li>
+<li>期望产出长度是一个<b>链式乘积的尾和</b>，i.i.d. 下退化成截断几何级数；</li>
+<li>位置 1 的敏感度天然高于后续位置（求导）；</li>
+<li>调度器的贪心在<b>固定预算下可证最优</b>（交换论证），但依赖单峰假设，且无损性要求非预见性。</li>
+</ol>
+<p>记号：\(V\) 词表；\(p\) 目标模型分布、\(q\) 草稿模型分布；\(\gamma\) 草稿块长；\(y_i\) 第 \(i\) 个草稿 token；\(\alpha_i\) 位置 \(i\) 的条件接受概率；\(S_i=\prod_{j\le i}\alpha_j\) 前缀存活概率；\(K\) 被接受的草稿数、\(N=K+1\) 实际产出；\(b_i\) 置信度头输出；\(R\) 活动请求数、\(\ell_r\) 请求 \(r\) 的验证长度、\(B=\sum_r\ell_r\)；\(\mathrm{SPS}(B)\) batch 为 \(B\) 时的每秒步数。</p>
+</div>
+
+<h2 class="deriv">〇、预备知识（带着算一遍）</h2>
+
+<h3>0.1 指示变量与期望</h3>
+<p>设事件 \(A\) 的指示变量 \(X=\mathbb{1}\{A\}\)：\(A\) 发生取 1，否则取 0。于是 \(X^2=X\)，且</p>
+<div class="derivation">
+<span class="tag">推导：期望的线性性</span>
+<p>\[
+\mathbb{E}[X]=\mathbb{P}(A)\cdot 1+\mathbb{P}(A^c)\cdot 0=\mathbb{P}(A)
+\]</p>
+</div>
+<p>关键在于 <b>\(\mathbb{E}\) 是线性的</b>，不要求被取期望的随机变量互相独立。所以下面求和时可以放心地把一堆相关的事件拆开。</p>
+
+<h3>0.2 尾和公式</h3>
+<p>这是本页用得最多的一条。设 \(X\) 是非负整数且 \(X\le M\)，则</p>
+<div class="derivation">
+<span class="tag">推导：尾和公式</span>
+<p>\[
+X=\sum_{i=1}^{M}\mathbb{1}\{X\ge i\}
+\quad\Longrightarrow\quad
+\boxed{\mathbb{E}[X]=\sum_{i=1}^{M}\mathbb{P}(X\ge i)}
+\]</p>
+</div>
+<p>左边成立是因为若 \(X=3\)，右边是 \(1+1+1+0+\cdots=3\)。右边只是逐项取期望（用 0.1）。</p>
+<p>小例子：骰子点数 \(X\in\{1,\dots,6\}\)。\(\mathbb{P}(X\ge i)=\frac{7-i}{6}\)，于是 \(\mathbb{E}[X]=\sum_{i=1}^{6}\frac{7-i}{6}=\frac{21}{6}=3.5\)。</p>
+
+<h3>0.3 全变差距离</h3>
+<p>两个概率分布 \(p,q\) 都在同一词表 \(V\) 上，各自求和为 1。全变差距离定义为</p>
+<div class="derivation">
+<span class="tag">推导：TV 与重叠质量</span>
+<p>\[
+\operatorname{TV}(p,q)=\frac12\sum_{y\in V}\left|p(y)-q(y)\right|
+\]</p>
+<p>\[
+\Rightarrow\quad
+\sum_{y\in V}\min\bigl(p(y),q(y)\bigr)
+=\sum_y\frac{p(y)+q(y)-|p(y)-q(y)|}{2}
+=\frac{1+1-\sum_y|p(y)-q(y)|}{2}
+=\boxed{1-\operatorname{TV}(p,q)}
+\]</p>
+</div>
+<p>第二行是整页最关键的一个恒等式，务必记牢。几何意义：TV 就是两个分布图上"多出来、不重叠"的那部分面积，所以重叠质量 \(=\,1-\operatorname{TV}\)。</p>
+<p>基本性质：\(0\le\operatorname{TV}\le 1\)；\(\operatorname{TV}(p,q)=0\iff p=q\)；对称；三角不等式。</p>
+
+<h3>0.4 链式法则与鞅</h3>
+<div class="derivation">
+<span class="tag">推导：条件概率的链式展开</span>
+<p>\[
+\mathbb{P}\Bigl(\bigcap_{i=1}^{k}A_i\Bigr)
+=\mathbb{P}(A_1)\,\mathbb{P}(A_2\mid A_1)\cdots\mathbb{P}(A_k\mid A_1\cap\cdots\cap A_{k-1})
+\]</p>
+</div>
+<p>注意这条式子<b>不需要任何独立性假设</b>——这是它最有用的地方。</p>
+<p><b>鞅</b>：随机过程 \((X_t)\) 相对于信息结构 \(\mathcal{F}_t\)（\(\mathcal{F}_t\) 是"截至时刻 \(t\) 已知的一切"），若 \(\mathbb{E}[X_{t+1}\mid\mathcal{F}_t]=X_t\) 则称鞅。第七节要说的"无损性要求"，本质就是要求输出序列相对于自己的自然过滤是一个鞅。</p>
+
+<h2 class="deriv">一、接受率 \(=1-\operatorname{TV}(p,q)\)，以及为什么它无损</h2>
+
+<h3>1.1 单个 token 的接受概率</h3>
+<p>固定前缀 \(y_{&lt;i}\)，目标模型给出 \(p(\cdot\mid y_{&lt;i})\)，草稿模型给出 \(q(\cdot\mid y_{&lt;i})\)。草稿 token \(y\sim q(\cdot\mid y_{&lt;i})\) 按下式接受：</p>
+<div class="derivation">
+<span class="tag">推导：逐 token 接受概率</span>
+<p>\[
+M(y)=\min\!\left(1,\ \frac{p(y\mid y_{&lt;i})}{q(y\mid y_{&lt;i})}\right)
+\]</p>
+<p>\[
+\mathbb{E}[\text{接受}]=\sum_y q(y)\,M(y)=\sum_y q(y)\min\!\left(1,\frac{p(y)}{q(y)}\right)=\sum_y\min\bigl(q(y),p(y)\bigr)=\boxed{1-\operatorname{TV}(p,q)}
+\]</p>
+</div>
+<p>第二行的变形是关键一步：\(q(y)\cdot\min(1,p/q)=\min(q,p)\)。当 \(q(y)=0\) 时该 token 根本不会被起草，贡献为 0，与 \(\min(q,p)=0\) 一致，无奇点。</p>
+<p>于是<b>接受率只取决于两个分布的重叠程度</b>，与它们各自的参数化无关。</p>
+
+<h3>1.2 无损性：为什么必须用残差重采样</h3>
+<p>只用上面的"接受/拒绝"，整个块的输出分布<b>并不</b>等于 \(p\)——被拒绝的位置总得填个 token 进去。标准做法是：被拒绝时，从<b>残差分布</b>里采一个。定义</p>
+<div class="derivation">
+<span class="tag">推导：残差分布</span>
+<p>\[
+Z=\sum_v\bigl(p(v)-q(v)\bigr)_+=\tfrac12\sum_v|p(v)-q(v)|=\operatorname{TV}(p,q),
+\qquad
+r(y)=\frac{\bigl(p(y)-q(y)\bigr)_+}{Z}
+\]</p>
+</div>
+<p>（用到了 \(\sum_v(p(v)-q(v))=0\)，故正部之和等于半绝对差之和。）\(r\) 归一化合法因为 \(Z>0\)（除非 \(p=q\)，那时无需投机）。</p>
+<p><b>命题</b>：若草稿 token \(v\sim q\) 以概率 \(M(v)\) 被接受；否则改为从 \(r\) 采一个，则最终发出的 token \(y\) 满足 \(\mathbb{P}(\text{发出 }y)=p(y)\)。</p>
+<div class="derivation">
+<span class="tag">证明：分两种情况</span>
+<p>\[
+\mathbb{P}(\text{发出 }y)=q(y)M(y)+\sum_v q(v)\bigl(1-M(v)\bigr)r(y)
+\]</p>
+<p><b>情形 A：</b>\(p(y)>q(y)\)。此时 \(M(y)=1\)，首项 \(=q(y)\)；又因 \(M(v)=1\) 对所有 \(p(v)\ge q(v)\) 的 \(v\) 成立，求和只在 \(p(v)&lt;q(v)\) 上非零：</p>
+<p>\[
+\sum_{p(v)&lt;q(v)}q(v)\left(1-\frac{p(v)}{q(v)}\right)r(y)=\sum_{p(v)&lt;q(v)}\bigl(q(v)-p(v)\bigr)r(y)=Z\,r(y)
+\]</p>
+<p>合计 \(q(y)+Z\cdot\frac{p(y)-q(y)}{Z}=p(y)\)。✓</p>
+<p><b>情形 B：</b>\(p(y)\le q(y)\)。首项 \(=q(y)\cdot\frac{p(y)}{q(y)}=p(y)\)；而 \(r(y)=0\)，求和项为 \(0\)。合计 \(p(y)\)。✓</p>
+</div>
+<p>这就是<b>无损（lossless）</b>的精确含义：输出分布与直接从 \(p\) 采样完全相同，所以加速不改变模型行为。注意残差项是<b>必须</b>的——它的存在正是为了让 \(p\) 里"草稿没覆盖到"的那部分质量被正确补回来。</p>
+
+<h2 class="deriv">二、期望产出长度：链式乘积的尾和</h2>
+<p>定义条件接受概率（这一步把 1.1 的结论推广到整块）：</p>
+<div class="derivation">
+<span class="tag">定义：条件接受概率与存活概率</span>
+<p>\[
+\alpha_i=\mathbb{E}\Bigl[M(y_i)\mid y_1,\dots,y_{i-1}\text{ 全部被接受}\Bigr]
+=\mathbb{E}\Bigl[1-\operatorname{TV}\bigl(q(\cdot\mid y_{&lt;i}),\,p(\cdot\mid y_{&lt;i})\bigr)\ \Big|\ \cdots\Bigr]
+\]</p>
+<p>\[
+S_i:=\mathbb{P}(K\ge i)=\mathbb{P}(y_1,\dots,y_i\text{ 全被接受})=\prod_{j=1}^{i}\alpha_j
+\]</p>
+</div>
+<p>第二行直接用 0.4 的链式法则——<b>没有引入独立性假设</b>。这正是链式法则比"假设独立"更强的地方。</p>
+<p>被接受的草稿数 \(K\in\{0,\dots,\gamma\}\)。无论 \(K\) 是多少，目标模型总会补上 1 个 token（要么是被拒位置上由残差采出的那个，要么是整块全中时 \(\gamma+1\) 位置的新 token），所以 \(N=K+1\)。用 0.2 的尾和公式：</p>
+<div class="derivation">
+<span class="tag">推导：期望长度的精确式</span>
+<p>\[
+\mathbb{E}[N]=1+\mathbb{E}[K]=1+\sum_{i=1}^{\gamma}\mathbb{P}(K\ge i)=\boxed{\sum_{i=0}^{\gamma}S_i},\qquad S_0:=1
+\]</p>
+</div>
+<p><b>\(S_0=1\)</b> 这一项就是那个 bonus token——对应 Algorithm 1 伪代码第 5 行"初值 Expected accepts \(\tau^*\leftarrow R\)"：\(R\) 个请求各贡献 1 个，合计 \(R\)。</p>
+
+<h3>2.1 i.i.d. 简化：截断几何级数</h3>
+<p>若各位置接受率相同（\(\alpha_j\equiv\alpha\)，这是<b>理想化假设</b>，真实系统里 \(\alpha_i\) 随前缀变化），则 \(S_i=\alpha^i\)，于是</p>
+<div class="derivation">
+<span class="tag">推导：等比求和</span>
+<p>\[
+\mathbb{E}[N]=\sum_{i=0}^{\gamma}\alpha^{\,i}
+\]</p>
+<p>\[
+(1-\alpha)\sum_{i=0}^{\gamma}\alpha^{\,i}
+=\bigl(1+\alpha+\cdots+\alpha^{\gamma}\bigr)-\bigl(\alpha+\alpha^2+\cdots+\alpha^{\gamma+1}\bigr)
+=1-\alpha^{\gamma+1}
+\]</p>
+<p>\[
+\Rightarrow\quad
+\mathbb{E}[N]=\frac{1-\alpha^{\,\gamma+1}}{1-\alpha}\quad(\alpha\ne1),\qquad
+\mathbb{E}[N]=\gamma+1\quad(\alpha=1)
+\]</p>
+</div>
+<p>两个边界（务必和求和下标 \(i\) 从 0 起一起记，否则会算错）：\(\alpha\to1\) 时 \(\mathbb{E}[N]=\gamma+1\)；\(\alpha\to0\) 时 \(\mathbb{E}[N]\to1\)，退化成普通自回归。</p>
+<p>敏感性：\(\gamma=8\) 时，\(\alpha:0.7\to0.9\) 使 \(\mathbb{E}[N]\) 从 <b>2.94</b> 跳到 <b>5.22</b>。</p>
+
+<h2 class="deriv">三、位置 1 为什么杠杆最高</h2>
+<p>原文强调"第一个 token 具有最高的杠杆作用，第一个被拒整块作废"。这句话可以精确证明。由 \(\mathbb{E}[N]=\sum_{i=0}^{\gamma}S_i\)，\(S_i=\prod_{j\le i}\alpha_j\)：</p>
+<div class="derivation">
+<span class="tag">推导：逐位置敏感度</span>
+<p>\[
+\frac{\partial S_i}{\partial\alpha_k}=
+\begin{cases}
+0, & i&lt;k\\[2pt]
+\dfrac{S_i}{\alpha_k}, & i\ge k
+\end{cases}
+\quad\Longrightarrow\quad
+\frac{\partial\mathbb{E}[N]}{\partial\alpha_k}=\frac{1}{\alpha_k}\sum_{i=k}^{\gamma}S_i
+\]</p>
+<p>\[
+\frac{\partial\mathbb{E}[N]}{\partial\alpha_1}=\frac{\mathbb{E}[N]-1}{\alpha_1},
+\qquad
+\frac{\partial\mathbb{E}[N]}{\partial\alpha_k}=\frac{S_{k-1}}{\alpha_k}\sum_{i=k}^{\gamma}S_i
+\ \le\ \frac{\mathbb{E}[N]-1}{\alpha_k}
+\]</p>
+</div>
+<p>关键在因子 \(S_{k-1}=\prod_{j&lt;k}\alpha_j\)：位置 \(k\) 的敏感度被"走到这一步之前全部存活"的概率乘了一遍，而位置 1 没有这个折扣（\(S_0=1\)）。因此</p>
+<div class="derivation">
+<span class="tag">结论</span>
+<p>\[
+\alpha_k\,\frac{\partial\mathbb{E}[N]}{\partial\alpha_k}\;\le\;\alpha_1\,\frac{\partial\mathbb{E}[N]}{\partial\alpha_1}
+\]</p>
+</div>
+<p>即<b>同样幅度地提升 \(\alpha_k\)，永远不如提升 \(\alpha_1\) 值钱</b>（等号仅在所有 \(\alpha_j=1\) 时成立）。这就把实验观察（DSpark 数学上从 0.93 起步、并靠并行主干的高容量赢下位置 1）变成了架构设计的依据：<b>重容量投在前，轻依赖投在后</b>。</p>
+
+<h2 class="deriv">四、训练目标：为什么是分布匹配而非交叉熵</h2>
+<p>由第一节，\(\alpha_i = 1-\operatorname{TV}(q_i,p_i)\)，而 \(\mathbb{E}[N]\) 对每个 \(\alpha_i\) 单调增。所以</p>
+<div class="derivation">
+<span class="tag">结论：训练目标</span>
+<p>\[
+\max\ \mathbb{E}[N]\ \iff\ \min\ \sum_i \operatorname{TV}\bigl(q(\cdot\mid y_{&lt;i}),\,p(\cdot\mid y_{&lt;i})\bigr)
+\]</p>
+</div>
+<p><b>关键提醒：交叉熵不是这个目标。</b>交叉熵与前向 KL 只差一个与 \(q\) 无关的常数：</p>
+<div class="derivation">
+<span class="tag">推导：CE 与前向 KL 的关系</span>
+<p>\[
+\operatorname{CE}(q,p)=-\sum_y p(y)\log q(y)
+=\underbrace{\sum_y p(y)\log\frac{p(y)}{q(y)}}_{=\,\operatorname{KL}(p\|q)}
++\underbrace{\sum_y p(y)\log p(y)}_{=\,-H(p)\ \text{，与 }q\text{ 无关}}
+\]</p>
+</div>
+<p>而接受率依赖的是 <b>TV</b>，不是 KL。两者对"草稿把质量放在错误位置"的惩罚方式不同：前向 KL 在 \(q(y)\to0\) 而 \(p(y)>0\) 处发散，TV 只线性惩罚。所以<b>用 CE 当代理是常见做法，但严格来说优化的不是接受率</b>。</p>
+<p>TV 的梯度也有个需要注意的性质：</p>
+<div class="derivation">
+<span class="tag">推导：TV 的梯度</span>
+<p>\[
+\frac{\partial\,\operatorname{TV}}{\partial q(y)}=\frac{\partial}{\partial q(y)}\cdot\frac12|p(y)-q(y)|
+=-\frac12\,\operatorname{sign}\bigl(p(y)-q(y)\bigr),\qquad p(y)\ne q(y)
+\]</p>
+</div>
+<p>即梯度<b>模长恒为 \(\tfrac12\)、只有符号</b>，在 \(p(y)=q(y)\) 处不可微（次梯度取 \([-\tfrac12,\tfrac12]\) 的任意值）。好消息是它不像前向 KL 那样在 \(q\to0\) 时爆炸；代价是它对"错得少"和"错得多"给出的信号强度一样，信息量较低。这也解释了 DSpark 训练时为什么三项损失里同时用了分布匹配项和交叉熵项。</p>
+
+<h2 class="deriv">五、校准：ECE、保序性、以及乘积校准</h2>
+
+<h3>5.1 ECE 的定义</h3>
+<div class="derivation">
+<span class="tag">定义：期望校准误差</span>
+<p>\[
+\operatorname{ECE}=\sum_{m=1}^{M}\frac{|B_m|}{n}\,\bigl|\operatorname{acc}(B_m)-\operatorname{conf}(B_m)\bigr|
+\]</p>
+</div>
+<p>把 \(n\) 个预测按预测概率分进 \(M\) 个区间 \(B_1,\dots,B_M\)；\(\operatorname{acc}\) 是该区间内"实际被接受"的比例，\(\operatorname{conf}\) 是平均预测概率。完美校准时两项相等，曲线落在对角线上。</p>
+
+<h3>5.2 温度缩放是保序变换（证明）</h3>
+<div class="derivation">
+<span class="tag">推导：保序性</span>
+<p>\[
+p_T(y)=\frac{\exp(z_y/T)}{\sum_v\exp(z_v/T)},\qquad T>0
+\]</p>
+<p>设 \(z_a>z_b\)。则 \(z_a/T>z_b/T\)，故 \(\exp(z_a/T)>\exp(z_b/T)\)。两者同除以同一正数 \(\sum_v\exp(z_v/T)\)：</p>
+<p>\[
+p_T(a)=\frac{\exp(z_a/T)}{Z}>\frac{\exp(z_b/T)}{Z}=p_T(b)
+\]</p>
+</div>
+<p>所以 \(z\mapsto p_T(z)\) <b>严格单调递增</b>。置信度头输出还要过一层 \(\sigma\)，而 \(\sigma\) 也严格单调增，所以复合 \(\sigma(z/T)\) 仍然保序。</p>
+<p><b>这条保序性是 STS 能用的前提</b>：它只纠正概率的绝对值（让阈值剪枝和期望长度算得准），<b>不会打乱</b>置信度头学到的相对草稿排名——而阈值剪枝恰恰只需要排名正确。</p>
+
+<h3>5.3 为什么逐位置校准推不出乘积校准</h3>
+<p>调度器要的是前缀存活概率 \(S_k=\prod_{i\le k}b_i\) 的<b>绝对值</b>，不是各 \(b_i\) 的排名。直觉上"每个位置都校准了，乘起来自然也对"，但这一步并不成立：</p>
+<ul>
+<li><b>误差是乘性累积的。</b>若每个位置的相对误差约 \(\varepsilon\)，则 \(k\) 项乘积的相对误差量级约 \(k\varepsilon\)。所以位置 1 上 5% 的 ECE，到位置 7 已经不可忽略——实测正是这个趋势（ECE 5.7%→3.3%，而 \(\mathrm{AUC}\) 0.818→0.907）。</li>
+<li><b>条件分布会漂移。</b>\(b_i\) 是在"前 \(i-1\) 个都被接受"的训练分布上拟合的；真实运行中到达位置 \(i\) 的前缀分布与之不同。</li>
+</ul>
+<p>所以 DSpark 的 STS 直接对<b>累积乘积</b>做校准：逐位置做 1 维网格搜索，最小化 \(\mathbb{E}\bigl[\bigl|S_k^{\text{true}}-S_k^{\text{pred}}\bigr|\bigr]\)，且保持已校准的前序位置固定。</p>
+
+<h2 class="deriv">六、调度器：贪心为什么可证最优</h2>
+<p>设 \(R\) 个活动请求，请求 \(r\) 的草稿块存活概率为 \(a_{r,1}\ge a_{r,2}\ge\cdots\ge a_{r,\gamma_r}\)。<b>单调性来自定义</b>：\(a_{r,j}=\prod_{i\le j}b_{r,i}\)，而每个 \(b\le1\)，故 \(a_{r,j}\) 关于 \(j\) 单调不增。决策 \(\ell=(\ell_1,\dots,\ell_R)\)：</p>
+<div class="derivation">
+<span class="tag">推导：调度目标</span>
+<p>\[
+B(\ell)=\sum_r\ell_r,\qquad
+\tau(\ell)=R+\sum_{r}\sum_{j\le\ell_r}a_{r,j},\qquad
+\Theta(\ell)=\tau(\ell)\cdot\mathrm{SPS}\bigl(B(\ell)\bigr)
+\]</p>
+<p>\(\max_\ell\ \Theta(\ell)\)</p>
+</div>
+<p>（\(R\) 来自 bonus token；\(\mathrm{SPS}\) 只依赖总 batch。目标形式是<b>最大化比值</b>，不是最大化分子或最小化分母。）</p>
+
+<h3>6.1 命题：固定预算下，取全局最大的 \(B\) 个值最优</h3>
+<div class="derivation">
+<span class="tag">命题与证明（交换论证）</span>
+<p>记多重集 \(\mathcal{A}=\{a_{r,j}\}\)，令 \(A(B)\) 为其中最大的 \(B\) 个数之和。则对任意满足 \(B(\ell)=B\) 的可行 \(\ell\)，有 \(\tau(\ell)\le A(B)\)，且存在可行 \(\ell^*\) 取到等号。</p>
+<p><b>可行性：</b>取"最大的 \(B\) 个"得到集合 \(F^*\)。因 \(a_{r,j}\ge a_{r,k}\) 对 \(j\le k\)，若 \(a_{r,k}\in F^*\) 则所有 \(a_{r,j}\,(j&lt;k)\) 的值都不小于它，因而也在前 \(B\) 名内（并列时一致地打破平局即可）。故 \(F^*\) 自动满足"取了位置 \(k\) 就得取 \(1..k-1\)"的前缀约束，\(\ell^*\) 可行。</p>
+<p><b>最优性：</b>任意可行的 \(\ell\) 对应一个大小为 \(B\) 的前缀闭合集合 \(F\)。对任意大小为 \(B\) 的子集（不论是否闭合），其元素和 \(\le A(B)\)——这是"取最大的 \(B\) 个"的定义性质（任何更小的元素换入更大的元素只会让和变大）。故 \(\tau(\ell)\le A(B)\)。∎</p>
+</div>
+<p>于是 6.1 说明：对<b>每一个固定的 \(B\)</b>，分子的最大值都是 \(A(B)\)，因此</p>
+<div class="derivation">
+<span class="tag">推导：降为一维扫描</span>
+<p>\[
+\max_\ell\Theta(\ell)=\max_{B}\ \underbrace{A(B)\cdot\mathrm{SPS}(B)}_{=:\,f(B)}
+\]</p>
+</div>
+<p>Algorithm 1 做的事正是<b>增量地扫 \(B\)</b>：每准入一个 token 就让 \(B\) 加一、\(\tau\) 加 \(a_{r,j}\)、查表更新 \(f(B)\)。等价性成立，贪心在<b>固定预算意义下是精确最优的</b>，不是启发式。</p>
+
+<h3>6.2 但提前停止需要单峰假设——反例</h3>
+<p>Algorithm 1 在 \(f(B)\) 不再上升时就 <code>break</code>。若 \(f\) 非单峰，这只会找到局部最优：</p>
+<div class="derivation">
+<span class="tag">反例</span>
+<p>\[
+A(1)=1,\ A(2)=2,\ A(3)=3;\qquad
+\mathrm{SPS}(1)=10,\ \mathrm{SPS}(2)=1,\ \mathrm{SPS}(3)=10
+\]</p>
+<p>\[
+f(1)=10,\qquad f(2)=2,\qquad f(3)=30
+\]</p>
+</div>
+<p>贪心：\(f\) 从 10 升到 2？——2 &lt; 10，于是在 \(B=2\) 处停止，得 2。而真正最大值是 \(f(3)=30\)，被整个跳过。物理上这对应 batch size 2 撞上硬件悬崖（\(\mathrm{SPS}\) 掉到 1）。</p>
+<p>这正是生产部署要<b>去掉 break</b> 的动机。但去掉它会破坏无损性——于是引出下一节。</p>
+
+<h2 class="deriv">七、非预见性：无损性的数学边界</h2>
+
+<h3>7.1 命题：任何位置级判据必须只依赖该位置自身 token 之前的前缀</h3>
+<div class="derivation">
+<span class="tag">命题</span>
+<p>记 \(\mathcal{F}_{i-1}=\sigma(y_{&lt;i})\) 为"位置 \(i\) 的 token 被采样之前可知的一切"。若验证器额外施加一个判据 \(g:\mathcal{F}_{i-1}\to\{0,1\}\)（\(g=1\) 才保留该位置），则输出分布<b>仍然精确等于 \(p\)</b>。反之若 \(g\) 依赖了 \(y_i\) 本身，则一般<b>不再等于</b> \(p\)。</p>
+<p><b>证明：</b>由 1.1，\(q(y)M(y)=\min(q(y),p(y))\)。加判据后，条件于 \(\mathcal{F}_{i-1}\) 发出 \(y\) 的概率正比于</p>
+<p>\[
+q(y)\,M(y)\,g(y)=\min\bigl(q(y),p(y)\bigr)\,g(y)
+\]</p>
+<p>而无损要求它恰为 \(p(y)\)。两者相容，当且仅当 \(g\) 在 \(\{y:\min(q,p)&gt;0\}\) 上取常值——即 \(g\) 不携带关于 \(y\) 的信息，也就是 \(g\) 是 \(\mathcal{F}_{i-1}\)-可测的。∎</p>
+</div>
+<p><b>直观说法</b>：\(p(y)\cdot g(y)/\sum_v p(v)g(v)\) 是"<b>被 \(g\) 挑中的那部分</b>"在 \(p\) 下的条件分布。只要挑法本身与 \(y\) 相关，输出就被"筛"过了，不再是 \(p\)。这就是选择偏差。</p>
+
+<h3>7.2 用鞅重述</h3>
+<p>无损性等价于输出序列 \((y_i)\) 满足</p>
+<div class="derivation">
+<span class="tag">等价刻画</span>
+<p>\[
+\mathbb{E}\bigl[y_{i+1}\ \big|\ \mathcal{F}_i\bigr]=p\bigl(y_{i+1}\mid y_{&lt;i+1}\bigr)\qquad\forall i
+\]</p>
+</div>
+<p>即"下一步的条件期望等于模型自己的条件分布"——这正是 0.4 里鞅定义的离散版本。一旦某个决策条件在 \(y_i\) 上，被条件化的对象就变了，上式左边会额外带上 \(\mathbb{E}[\,\cdot\mid g(y_i)=1\,]\) 这一层，等式破裂。<b>非预见性不是工程洁癖，是正确性的边界。</b></p>
+
+<h3>7.3 落到 DSpark 上</h3>
+<p>置信度头吃的是"主干隐藏状态 + 前一个草稿 token 的马尔可夫嵌入"，所以 \(b_{i+1}\) 依赖 \(y_i\)。于是：</p>
+<ul>
+<li><b>若在第 \(i\) 步的准入决策里用了 \(S_{i+1}\)</b>（需要先实例化 \(y_i\)），判据就不再是 \(\mathcal{F}_i\)-可测的，7.1 的结论失效。所以 Algorithm 1 的 <code>break</code> 不是性能优化，是把决策限制在"截至当前步已处理的前缀"上的<b>正确性护栏</b>。</li>
+<li><b>生产部署改成两步延迟后</b>，"决定截断多长"只看两步前的历史量——它是 \(\mathcal{F}_{i-2}\)-可测的，因而自动满足 \(\mathcal{F}_{i-1}\)-可测。护栏重新成立，于是可以安全地<b>移除 break</b> 做无约束全局搜索，跨过 6.2 的硬件悬崖。这就是所谓"因果屏障"。</li>
+</ul>
+<div class="warn"><span class="tag">一处不确定，已标注</span>
+<p>7.3 里"第 \(i\) 步的决策用了 \(S_{i+1}\)"这个<b>下标层面的细节</b>，是我按原文文字（"计算下一个存活概率明确需要实例化的候选项"）重建的。原文的公式是图片、符号无法提取，所以索引细节无法逐字核对。7.1 和 7.2 的<b>数学结论不依赖</b>这个下标约定，只依赖"判据必须只依赖该位置自身 token 之前的前缀"这一条。</p>
+</div>
+
+<h2 class="deriv">八、结果汇总</h2>
+<div class="tablewrap">
+<table class="sym">
+<caption>本页结论一览</caption>
+<thead><tr><th>结论</th><th>式子</th></tr></thead>
+<tbody>
+<tr><td>单 token 接受率</td><td>\(1-\operatorname{TV}(p,q)\)</td></tr>
+<tr><td>无损条件</td><td>判据 \(\mathcal{F}_{i-1}\)-可测；被拒时从残差 \(r\) 重采样</td></tr>
+<tr><td>期望产出长度（精确）</td><td>\(\mathbb{E}[N]=\sum_{i=0}^{\gamma}\prod_{j\le i}\alpha_j\)</td></tr>
+<tr><td>期望产出长度（i.i.d.）</td><td>\((1-\alpha^{\gamma+1})/(1-\alpha)\)</td></tr>
+<tr><td>位置敏感度</td><td>\(\partial\mathbb{E}[N]/\partial\alpha_k=\frac{1}{\alpha_k}\sum_{i\ge k}S_i\)，位置 1 无 \(S_{k-1}\) 折扣</td></tr>
+<tr><td>训练目标</td><td>\(\min\operatorname{TV}\)，非 CE（CE 只差常数等于前向 KL）</td></tr>
+<tr><td>TV 梯度</td><td>\(-\tfrac12\operatorname{sign}(p-q)\)，模长恒定</td></tr>
+<tr><td>温度缩放</td><td>\(z\mapsto\sigma(z/T)\) 严格单调 ⇒ 保序</td></tr>
+<tr><td>调度最优</td><td>\(\max_B A(B)\mathrm{SPS}(B)\)，\(A(B)\) 为最大的 \(B\) 个存活概率之和</td></tr>
+<tr><td>提前停止</td><td>仅在 \(f(B)=A(B)\mathrm{SPS}(B)\) 单峰时全局最优</td></tr>
+</tbody>
+</table>
+</div>
+
+<nav class="deriv-nav">
+<a href="dspark.html"><span class="dir">机制解读</span>投机解码与 DSpark</a>
+<a href="index.html"><span class="dir">返回</span>DeepSeek 架构演进总览</a>
+<a href="math-sparse.html"><span class="dir">数学详解</span>稀疏注意力：DSA / CSA / HCA</a>
+</nav>
+
+<p class="eq-note">本页为<b>自行推导</b>，非原文翻译。结构与数值依据 <a href="https://mp.weixin.qq.com/s/RRHg9UCCInSc_zEcIgjNBQ">《详细解读DSpark投机解码的原理》</a>及其引用的 DeepSpec 论文（算法 1 伪代码见图）· <a href="https://arxiv.org/abs/2211.17192">Leviathan et al., Fast Inference from Transformers via Speculative Decoding</a>（无损性论证的原始出处）。第七节的下标约定为重建结果，已在该节标注。实验数值与配图另见 <a href="dspark.html">机制解读页</a>。</p>
+
+</main>
+<script src="app.js"></script>
+<script defer src="../assets/katex/katex.min.js"></script>
+<script defer src="../assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [
+      {left: "\\[", right: "\\]", display: true},
+      {left: "\\(", right: "\\)", display: false}
+    ],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>

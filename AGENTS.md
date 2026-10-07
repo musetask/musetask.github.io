@@ -23,7 +23,7 @@
 
 | 方式 | 项目 | 怎么改 |
 |---|---|---|
-| 手写 HTML | bllm、barm、bllmmath、barmmath、rl-reasoning | 直接改 HTML，改完即发布，无构建步骤 |
+| 手写 HTML | bllm、barm、bllmmath、barmmath、rl-reasoning、deepseek-arch | 直接改 HTML，改完即发布，无构建步骤 |
 | Markdown + 构建 | eslmath（`src/*.md` → `python3 build_site.py`）、islmath（`src/*.md` → `node tools/build.mjs`） | 只改 `src/` 下的 md，跑构建脚本重新生成，**不直接改产物 HTML** |
 | body 片段 + 构建 | thellmmath（`_src/*.body.html` → `python3 build.py`） | 只改 `_src/`，跑构建脚本重新生成，**不直接改产物 HTML** |
 
