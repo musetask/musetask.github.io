@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>KL 散度：从零讲起 · bllmmath</title>
+<link rel="stylesheet" href="../bllm/style.css">
+<link rel="stylesheet" href="../assets/katex/katex.min.css">
+<link rel="stylesheet" href="../bllm/assets/detail.css">
+<link rel="stylesheet" href="../assets/mathbook.css">
+<style>
+.bar-row{display:flex;align-items:center;gap:.6rem;margin:.35rem 0}
+.bar-label{width:4.5rem;flex:none;font-size:.9rem}
+.bar-track{flex:1;background:var(--rule);border-radius:6px;height:1.1rem;position:relative;overflow:hidden}
+.bar-fill{height:100%;border-radius:6px;transition:width .15s}
+.bar-fill.p{background:#1f5f8f}
+.bar-fill.q{background:#c67a1a}
+.bar-val{width:3.2rem;flex:none;text-align:right;font-variant-numeric:tabular-nums;font-size:.9rem}
+.demo-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+@media(max-width:640px){.demo-grid{grid-template-columns:1fr}}
+input[type=range]{width:100%}
+.big-num{font-size:1.6rem;font-weight:700}
+table.num td{font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body class="detail">
+<header class="topbar">
+<a class="btn" href="index.html" title="目录">&#9776;</a>
+<a class="brand" href="index.html">bllmmath · KL 散度：从零讲起</a>
+</header>
+<main>
+<h1>KL 散度：从“分布”开始，一步步推出来</h1>
+<div class="plainbox">
+<p>这一页只讲一件事：<b>KL 散度是怎么定义的，为什么长成那个样子</b>。不需要任何前置数学，每用一个概念就在这里现推。</p>
+<p>路线：分布 → 期望 → 对数 → 自信息 → 熵 → 交叉熵 → KL。最后回到书里第 5 章的困惑度。</p>
+</div>
+
+<h2 class="deriv">0. 分布：就是一张和为 1 的表</h2>
+<p>抛一个骰子，1~6 点各占多大概率？就是一个<b>离散概率分布</b>：</p>
+<div class="tablewrap"><table class="num">
+<thead><tr><th>点数</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th></tr></thead>
+<tbody><tr><td>概率 \(p_i\)</td><td>1/6</td><td>1/6</td><td>1/6</td><td>1/6</td><td>1/6</td><td>1/6</td></tr></tbody>
+</table></div>
+<p>合法只有两条：</p>
+\[
+p_i \ge 0, \qquad \sum_{i} p_i = 1
+\]
+<p>换到 LLM，只是把 6 面换成 50257 个 token：</p>
+\[
+q = (q_1, \dots, q_{50257}), \quad \sum q_i = 1
+\]
+<p>比如书 5.3.1 节 \(T=1\) 时：forward 0.5721，toward 0.3576，closer 0.0609，其余全是 0.00 几，加起来 =1。这就是<b>模型分布 \(q\)</b>。</p>
+<p>而<b>真实分布 \(p\)</b>在训练时是确定的：答案是哪个词，哪个位置就是 1，其余 0。这叫 one-hot。比如目标是 forward：</p>
+<div class="tablewrap"><table class="num">
+<thead><tr><th>词</th><th>closer</th><th>forward</th><th>toward</th><th>其余50254个</th></tr></thead>
+<tbody><tr><td>\(p\)</td><td>0</td><td><b>1</b></td><td>0</td><td>0</td></tr>
+<tr><td>\(q\)（模型）</td><td>0.0609</td><td>0.5721</td><td>0.3576</td><td>≈0</td></tr></tbody>
+</table></div>
+<p><b>预训练就是想让下面那行越来越像上面那行。</b>KL 就是量“有多不像”的尺子。</p>
+<div class="key"><span class="tag">为什么需要 softmax</span>
+<p>模型的原始输出 logits 比如 \([4.51, 0.89, -1.90]\) 是可以为负、加起来不为 1 的，没法当概率。\(p_i = e^{z_i}/\sum_j e^{z_j}\) 的全部作用就是把它们变成合法的分布：分子 \(>0\) 保证非负，分母一除保证求和 =1。</p>
+</div>
+
+<h2 class="deriv">1. 期望：加权平均</h2>
+<p>设 \(X\) 是“掷出几点”，取到 \(i\) 的概率是 \(p_i\)。长期平均值叫<b>期望</b>：</p>
+\[
+\mathbb{E}[X] = \sum_i i \cdot p_i
+\]
+<p>例：\(p=(0.6,0.3,0.1)\) 对应取值 1,2,3：</p>
+\[
+\mathbb{E}[X] = 1\times 0.6 + 2\times 0.3 + 3\times 0.1 = 1.5
+\]
+<p>记住这个句式：<b>\(p_i\) 是权重，加权的对象后面会换</b>。后面熵就是把 \(i\) 换成 \(-\log p_i\)。</p>
+
+<h2 class="deriv">2. 对数：把乘法变加法</h2>
+<p>全章只用两条：</p>
+\[
+\log(ab)=\log a+\log b, \qquad \log a^b = b\log a
+\]
+<p>外加单调性：\(a>b \iff \log a > \log b\)。所以“最大化概率”和“最小化 \(-\log\)概率”是同一件事。</p>
+<p>为什么非取对数不可？书 5.1.2 节 6 个词的概率是 \(7\times 10^{-5}, 3\times 10^{-5}\dots\)，连乘得 \(10^{-23}\) 量级，32 个词连乘直接下溢到 0（float32 最小 \(1.2\times 10^{-38}\)）。取对数变成 \([-9.5,-10.3\dots]\) 相加，数值很健康。<b>这步是必需的。</b></p>
+<p>底的选择：\(\ln\)（自然对数）求导最方便，\(\log_2\) 读成“比特”最直观，两者差常数 \(\ln 2 = 0.6931\)。记住 \(\ln 50257 = 10.8249\)，后面会用。</p>
+
+<h2 class="deriv">3. 自信息与熵：有多“意外”</h2>
+<p><b>自信息</b>（surprisal）：概率越小的事越意外：</p>
+\[
+\mathrm{sp}(i) = -\log_2 p_i
+\]
+<p>\(p=1\) 必然发生，意外为 0；\(p=0.0001\) 很意外，值很大。</p>
+<p><b>熵</b>：把意外程度按 \(p\) 取期望：</p>
+\[
+H(p) = \sum_i p_i (-\log_2 p_i) = -\sum_i p_i\log_2 p_i
+\]
+<p>均匀分布最意外：\(p_i=1/V\) 时 \(H=\log_2 V\)。代入 \(V=50257\) 得 15.62 比特。</p>
+<div class="key"><span class="tag">一句话</span><p>熵 = 这个分布平均有多意外。分布越平，熵越大。</p></div>
+
+<h2 class="deriv">4. 交叉熵：用真实权重去量模型</h2>
+<p>不能用 \(q\) 自己的权重算熵，那是自说自话——模型自信地犯错时它会说自己很确定。正确做法：<b>用真实 \(p\) 做权重，去量模型 \(q\) 有多意外</b>：</p>
+\[
+H(p,q) = -\sum_i p_i \log_2 q_i
+\]
+<p>训练时 \(p\) 是 one-hot，只剩一项。比如目标是 forward，\(p_{forward}=1\)：</p>
+\[
+H = -\log q_{forward} = -\log 0.5721 = 0.81 \,\text{比特}
+\]
+<p>这就是书 figure 5.7 算的 \(-\log\) 再平均。\(q\) 给真实词的概率越高，交叉熵越小。</p>
+
+<h2 class="deriv">5. KL 散度：定义与手算</h2>
+\[
+\boxed{D_{KL}(p\|q) = \sum_i p_i \log_2 \frac{p_i}{q_i}}
+\]
+<p>读法：<b>拿 \(q\) 去假装 \(p\)，平均每件事多花多少比特。</b>权重永远是真实 \(p\)，里面是比值 \(p_i/q_i\)：猜准了比值=1，\(\log 1=0\) 不罚钱；低估了比值&gt;1，罚钱。</p>
+<h3>手算一个：偏向硬币 vs 公平硬币</h3>
+<p>真实 \(p=(0.9,0.1)\)，模型以为 \(q=(0.5,0.5)\)：</p>
+\[
+\begin{aligned}
+D &= 0.9\log_2\frac{0.9}{0.5} + 0.1\log_2\frac{0.1}{0.5} \\
+&= 0.9\times 0.848 + 0.1\times (-2.322) \\
+&= 0.531 \,\text{比特}
+\end{aligned}
+\]
+<p>拿公平硬币的假设去解释 9:1 的硬币，每抛一次多花 0.53 比特。若 \(q=p\)，比值全 1，\(D=0\)。</p>
+<div class="warn"><span class="tag">无穷大惩罚</span><p>若 \(p_i>0\) 但 \(q_i=0\)（模型说“不可能”，现实却发生了），那一项是 \(\log(p_i/0)=+\infty\)。所以训练时模型不敢把正确答案的概率压到 0。</p></div>
+<h3>关键恒等式（书 0.3 节的）</h3>
+<p>用 \(\log\frac{p_i}{q_i}=\log p_i-\log q_i\) 展开：</p>
+\[
+\boxed{H(p,q) = H(p) + D_{KL}(p\|q)}
+\]
+<p>模型花掉的比特 = 文本本身的随机性（改不了）+ 模型浪费的比特（能优化）。所以最小化交叉熵 = 最小化 KL。困惑度就是它取指数：\(\mathrm{PPL}=2^{H(p)+D}\)。</p>
+<h3>为什么恒 ≥0（Gibbs 不等式，一行证完）</h3>
+<p>只用 \(\ln x \le x-1\)（等号仅 \(x=1\)）：</p>
+\[
+-D = \sum p_i\ln\frac{q_i}{p_i} \le \sum p_i\left(\frac{q_i}{p_i}-1\right) = \sum q_i-\sum p_i = 0
+\]
+<p>故 \(D\ge 0\)，仅 \(p=q\) 处处相等时为 0。</p>
+<div class="warn"><span class="tag">它不是距离</span><p>不对称：上面例子反过来 \(D(q\|p)=0.737\)，和正过来 0.531 不一样。预训练用的是 \(D(真实\|模型)\)，特点是模型不敢漏掉真实的任何可能。</p></div>
+
+<h2 class="deriv">6. 动手玩：拖动滑块看 KL</h2>
+<p>下面是 3 个词的小词表。拖动滑块改变 \(p\)（真实）和 \(q\)（模型），KL 实时重算（\(\log_2\)，单位比特）。试试把 \(q\) 拖到和 \(p\) 完全一样，KL 会变成 0；把 \(q\) 在 \(p>0\) 处拖到 0，KL 会爆炸。</p>
+<div class="demo-grid">
+<div class="key"><span class="tag">真实分布 p（拖动）</span>
+<div class="bar-row"><span class="bar-label">A</span><div class="bar-track"><div class="bar-fill p" id="bp0"></div></div><span class="bar-val" id="vp0"></span></div>
+<div class="bar-row"><span class="bar-label">B</span><div class="bar-track"><div class="bar-fill p" id="bp1"></div></div><span class="bar-val" id="vp1"></span></div>
+<div class="bar-row"><span class="bar-label">C</span><div class="bar-track"><div class="bar-fill p" id="bp2"></div></div><span class="bar-val" id="vp2"></span></div>
+<input type="range" id="p0" min="1" max="98" value="70"><input type="range" id="p1" min="1" max="98" value="20">
+<p style="font-size:.85rem;color:var(--muted)">第三个自动补足到 100%。当前为三滑块归一化。</p>
+</div>
+<div class="key"><span class="tag">模型分布 q（拖动）</span>
+<div class="bar-row"><span class="bar-label">A</span><div class="bar-track"><div class="bar-fill q" id="bq0"></div></div><span class="bar-val" id="vq0"></span></div>
+<div class="bar-row"><span class="bar-label">B</span><div class="bar-track"><div class="bar-fill q" id="bq1"></div></div><span class="bar-val" id="vq1"></span></div>
+<div class="bar-row"><span class="bar-label">C</span><div class="bar-track"><div class="bar-fill q" id="bq2"></div></div><span class="bar-val" id="vq2"></span></div>
+<input type="range" id="q0" min="1" max="98" value="50"><input type="range" id="q1" min="1" max="98" value="30">
+</div>
+</div>
+<div class="key" style="margin-top:1rem"><span class="tag">实时计算</span>
+<p>\(D_{KL}(p\|q) =\) <span class="big-num" id="kl">–</span> 比特 &nbsp;|&nbsp; \(D_{KL}(q\|p) =\) <span class="big-num" id="klr">–</span> 比特（反过来，不一样）</p>
+<p>\(H(p) =\) <span id="hp">–</span> 比特 &nbsp;|&nbsp; \(H(p,q) =\) <span id="hpq">–</span> 比特 &nbsp;|&nbsp; 验证 \(H(p)+D =\) <span id="chk">–</span></p>
+<p style="font-size:.85rem;color:var(--muted)">公式：\(D=\sum p_i\log_2(p_i/q_i)\)，逐项在控制台可展开。把 q 拖得和 p 一样，D 会归零。</p>
+<div id="terms" style="font-size:.9rem"></div>
+</div>
+
+<h2 class="deriv">7. 回到书：和 loss、困惑度的关系</h2>
+<div class="tablewrap"><table>
+<thead><tr><th>书里的量</th><th>公式</th><th>书的数字</th></tr></thead>
+<tbody>
+<tr><td>loss（交叉熵，自然对数）</td><td>\(\mathcal{L}=-\frac1N\sum\log q\)</td><td>10.7940（随机初始化）→ 3.11（10 epoch 后）</td></tr>
+<tr><td>困惑度</td><td>\(\mathrm{PPL}=e^{\mathcal{L}}\)</td><td>48726 → 22.4</td></tr>
+<tr><td>均匀分布</td><td>\(\mathcal{L}=\ln V,\ \mathrm{PPL}=V\)</td><td>\(\ln 50257=10.8249,\ \mathrm{PPL}=50257\)</td></tr>
+</tbody>
+</table></div>
+<p>所以 48726 ≈ 50257 说明“几乎完全随机”，22.4 说明“等效于在 22 个词里犹豫”。下界不是 1，是 \(e^{H(p)}\)，英文粗估约 16——124M 模型做到 20~30 就是在逼近它。</p>
+<nav class="deriv-nav">
+<a href="10-loss.html"><span class="dir">回正文</span>第 10 章 损失函数：交叉熵与困惑度</a>
+<a href="../bllm/11-pretraining-on-unlabeled-data-detail.html"><span class="dir">深挖</span>原书第 5 章数学详解 · 预训练</a>
+<a href="index.html"><span class="dir">目录</span>全部章节</a>
+</nav>
+</main>
+<script>
+function norm(a,b){var c=100-a-b; if(c<1){var s=(a+b)/99; a=Math.max(1,Math.round(a/s)); b=Math.max(1,Math.round(b/s)); c=100-a-b;} return [a/100,b/100,c/100];}
+function update(){
+  var p=norm(+document.getElementById('p0').value,+document.getElementById('p1').value);
+  var q=norm(+document.getElementById('q0').value,+document.getElementById('q1').value);
+  var names=['A','B','C'];
+  for(var i=0;i<3;i++){
+    document.getElementById('bp'+i).style.width=(p[i]*100)+'%';
+    document.getElementById('bq'+i).style.width=(q[i]*100)+'%';
+    document.getElementById('vp'+i).textContent=p[i].toFixed(2);
+    document.getElementById('vq'+i).textContent=q[i].toFixed(2);
+  }
+  function kl(A,B){var s=0,ts=[];for(var i=0;i<3;i++){var t=A[i]*Math.log2(A[i]/B[i]);ts.push(t);s+=t;}return [s,ts];}
+  function ent(A){var s=0;for(var i=0;i<3;i++)s+=-A[i]*Math.log2(A[i]);return s;}
+  var r=kl(p,q), rr=kl(q,p), hp=ent(p), hpq=hp+r[0];
+  document.getElementById('kl').textContent=r[0].toFixed(3);
+  document.getElementById('klr').textContent=rr[0].toFixed(3);
+  document.getElementById('hp').textContent=hp.toFixed(3);
+  document.getElementById('hpq').textContent=hpq.toFixed(3);
+  document.getElementById('chk').textContent=(hp+r[0]).toFixed(3);
+  document.getElementById('terms').innerHTML=names.map(function(n,i){return n+': '+p[i].toFixed(2)+'×log₂('+p[i].toFixed(2)+'/'+q[i].toFixed(2)+') = '+r[1][i].toFixed(3);}).join(' &nbsp;|&nbsp; ');
+}
+['p0','p1','q0','q1'].forEach(function(id){document.getElementById(id).addEventListener('input',update);});
+update();
+</script>
+<script defer src="../assets/katex/katex.min.js"></script>
+<script defer src="../assets/katex/auto-render.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  renderMathInElement(document.body, {
+    delimiters: [{left: "\\[", right: "\\]", display: true},{left: "\\(", right: "\\)", display: false}],
+    throwOnError: false
+  });
+  document.body.dataset.math = "ready";
+});
+</script>
+</body>
+</html>
