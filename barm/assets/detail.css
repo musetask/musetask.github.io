@@ -178,3 +178,9 @@ body.detail table th:first-child{white-space:nowrap}
   display:block; margin-bottom:.3rem;
 }
 .derivation p:last-child,.prereq p:last-child{margin-bottom:0}
+
+/* std360b: 窄屏下推导页表格第一列允许换行，不再撑宽整页（宽屏保持不折行） */
+@media (max-width:720px){
+  body.detail table td:first-child,
+  body.detail table th:first-child{white-space:normal}
+}

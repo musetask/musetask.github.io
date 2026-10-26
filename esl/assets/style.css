@@ -311,3 +311,16 @@ ol.toc a:active .t{color:var(--accent)}
   figure,.figblock,.eq,.details{break-inside:avoid}
   a[href^="http"]::after{content:" (" attr(href) ")"; font-size:.85em; color:#666}
 }
+
+/* std360: 结构性触控目标 ≥44px（按 dilfish.github.io/std.html 标准补齐） */
+.bar a.nav{min-height:2.75rem}
+.bar .nav{min-width:2.75rem;min-height:2.75rem}
+.bar a.title{display:inline-flex;align-items:center;min-height:44px}
+ol.toc a{min-height:2.75rem}
+nav.jump a{min-width:2.75rem;min-height:2.75rem}
+.chapnav a{min-height:2.75rem}
+.pager a{min-height:2.75rem}
+.bar .icon{width:2.75rem}
+
+/* std360b: 顶栏主题按钮 ≥44px */
+.bar .icon{min-width:2.75rem;min-height:2.75rem}

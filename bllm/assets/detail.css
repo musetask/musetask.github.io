@@ -163,3 +163,7 @@ body.detail table{font-size:.88rem}
 }
 .derivation p:last-child,.prereq p:last-child{margin-bottom:0}
 html[data-theme="dark"] .prereq{background:#241a1c}
+
+/* std360b: 过长的行内公式在自身盒内横滑，不撑宽整页（显示公式维持块级原样） */
+.katex{display:inline-block;max-width:100%;overflow-x:auto;overflow-y:hidden}
+.katex-display>.katex{display:block;max-width:none;overflow:visible}

@@ -443,3 +443,23 @@ main{overflow-x:clip}
 @supports not (overflow: clip){main{overflow-x:hidden}}
 .eq.long .katex{font-size:.88em}
 .eq.verylong .katex{font-size:.8em}
+
+/* std360: 结构性触控目标 ≥44px（按 dilfish.github.io/std.html 标准补齐） */
+.bar a.nav{min-height:2.75rem}
+.bar .nav{min-width:2.75rem;min-height:2.75rem}
+.bar a.title{display:inline-flex;align-items:center;min-height:44px}
+ol.toc a{min-height:2.75rem}
+nav.jump a{min-width:2.75rem;min-height:2.75rem}
+.chapnav a{min-height:2.75rem}
+.pager a{min-height:2.75rem}
+.bar .icon{width:2.75rem}
+
+/* std360: 公式表在 360px 下改为固定布局并允许单元格换行，不再撑宽整页 */
+table.fx{table-layout:fixed}
+table.fx td,table.fx th{white-space:normal;overflow-wrap:anywhere}
+
+/* std360b: 顶栏主题按钮 ≥44px */
+.bar .icon{min-width:2.75rem;min-height:2.75rem}
+
+/* std360b: 原文出处胶囊链接触控高度 ≥44px */
+a.src{min-height:44px}

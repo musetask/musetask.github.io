@@ -46,3 +46,7 @@ html[data-theme="dark"] .def{background:#1e1830;border-color:#3a2d5c}
   display:block; margin-bottom:.3rem;
 }
 .further p:last-child{margin-bottom:0}
+
+/* std360: 表格包裹层自身横滑，不撑宽整页；滑杆触控高度 ≥44px */
+.tw{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
+input[type=range]{min-height:44px}

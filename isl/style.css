@@ -429,3 +429,19 @@ p.empty{color:var(--mute);font-size:.9rem;text-align:center;padding:2rem 0}
   figure.eq{overflow:visible}
   a[href^="http"]::after{content:" (" attr(href) ")";font-size:.85em;color:#666}
 }
+
+/* std360: 结构性触控目标 ≥44px（按 dilfish.github.io/std.html 标准补齐） */
+.bar a.nav{min-height:2.75rem}
+.bar .nav{min-width:2.75rem;min-height:2.75rem}
+.bar a.title{display:inline-flex;align-items:center;min-height:44px}
+ol.toc a{min-height:2.75rem}
+nav.jump a{min-width:2.75rem;min-height:2.75rem}
+.chapnav a{min-height:2.75rem}
+.pager a{min-height:2.75rem}
+
+/* std360b: 复制按钮触控高度 ≥44px */
+.copy{min-height:44px;display:inline-flex;align-items:center}
+
+/* std360b: 回到顶部按钮 44px 见方；前置知识清单链接 ≥44px */
+.totop{width:2.75rem;height:2.75rem}
+.bl a{display:inline-flex;align-items:center;min-height:44px}

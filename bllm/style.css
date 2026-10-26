@@ -118,7 +118,7 @@ p.caption{border-left:2px solid var(--rule);padding-left:.7em}
 
 /* 表格 */
 .tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:1.3em 0}
-table{border-collapse:collapse;width:100%;min-width:30rem;font-size:.9rem}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
 caption{caption-side:top;text-align:left;font-weight:700;color:var(--ink-soft);padding-bottom:.5em}
 th,td{text-align:left;vertical-align:top;padding:.5em .65em;border-bottom:1px solid var(--rule)}
 th{font:600 .76rem/1.4 var(--sans);letter-spacing:.03em;color:var(--muted);
@@ -196,3 +196,14 @@ ul.index .secs .l3{padding-left:14px;font-size:13.5px;color:var(--muted)}
   a[href^="http"]::after{content:" (" attr(href) ")";font-size:.85em;color:#666}
   .pdfpage{border:0;margin:0;padding:0;display:none}
 }
+
+/* std360: 结构性触控目标 ≥44px（按 dilfish.github.io/std.html 标准补齐） */
+.btn{min-height:44px}
+.topbar a.brand{display:inline-flex;align-items:center;min-height:44px}
+details.toc>summary{display:flex;align-items:center;min-height:44px}
+details.toc a{display:flex;align-items:center;min-height:44px}
+ul.index .row a{display:flex;align-items:center;min-height:44px}
+ul.index .secs a{display:flex;align-items:center;min-height:44px}
+
+/* std360b: 复制按钮触控高度 ≥44px */
+.copy{min-height:44px;display:inline-flex;align-items:center}

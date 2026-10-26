@@ -266,3 +266,14 @@ ul.index .count{font:12px/1.6 var(--sans);color:var(--muted);white-space:nowrap}
   .fml,.eq,figure,pre{break-inside:avoid}
   a[href^="http"]::after{content:" (" attr(hue) ")";font-size:.85em;color:#666}
 }
+
+/* std360: 结构性触控目标 ≥44px（按 dilfish.github.io/std.html 标准补齐） */
+.btn{min-height:44px}
+.topbar a.brand{display:inline-flex;align-items:center;min-height:44px}
+details.toc>summary{display:flex;align-items:center;min-height:44px}
+details.toc a{display:flex;align-items:center;min-height:44px}
+ul.index .row a{display:flex;align-items:center;min-height:44px}
+ul.index .secs a{display:flex;align-items:center;min-height:44px}
+
+/* std360b: 复制按钮触控高度 ≥44px */
+.copy{min-height:44px;display:inline-flex;align-items:center}
