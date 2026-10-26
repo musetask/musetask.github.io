@@ -2,26 +2,33 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
 <title>musetask</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { -webkit-text-size-adjust: 100%; }
   body {
     font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
     background: #f6f8fa; color: #1f2328;
-    min-height: 100vh; display: flex; align-items: center; justify-content: center;
-    padding: 24px;
+    min-height: 100vh; min-height: 100dvh;
+    display: flex; align-items: center; justify-content: center;
+    padding: max(22px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right))
+             max(22px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+    overflow-wrap: break-word;
   }
   .card {
     background: #fff; border: 1px solid #d0d7de; border-radius: 12px;
-    padding: 44px 48px; text-align: center; max-width: 620px; width: 100%;
+    padding: clamp(20px, 6vw, 44px) clamp(16px, 6vw, 48px);
+    text-align: center; max-width: 620px; width: 100%; min-width: 0;
     box-shadow: 0 1px 3px rgba(31,35,40,.08);
   }
-  h1 { font-size: 40px; margin-bottom: 12px; }
+  h1 { font-size: clamp(28px, 8vw, 40px); margin-bottom: 12px; }
   p { color: #59636e; font-size: 16px; line-height: 1.7; }
   a { color: #0969da; text-decoration: none; }
   a:hover { text-decoration: underline; }
-  .repo { margin-top: 10px; font-size: 15px; text-align: left; }
+  .repo { margin-top: 10px; font-size: 16px; text-align: left; }
+  .repo a { display: inline-flex; align-items: center; min-height: 44px; }
   .group {
     margin-top: 26px; padding-top: 14px; border-top: 1px solid #eaeef2;
     font-size: 12px; font-weight: 600; letter-spacing: .08em;
