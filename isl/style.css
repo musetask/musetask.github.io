@@ -15,7 +15,7 @@
   --mono:"SF Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,
          "Liberation Mono",monospace;
   --measure:34rem;
-  --pad:1.05rem;
+  --pad:1.125rem; /* 360px 视口下左右各留 18px，正文 324px */
   --bar:2.85rem;
 }
 html[data-theme="dark"]{

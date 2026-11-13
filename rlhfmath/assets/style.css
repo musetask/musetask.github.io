@@ -19,7 +19,7 @@
   --shadow:0 8px 24px rgba(0,0,0,.12);
   --kw:#1155cc; --st:#960000; --cm:#636466; --nu:#b41f24;
   --measure:34rem;
-  --pad:1.05rem;
+  --pad:1.125rem; /* 360px 视口下左右各留 18px，正文 324px */
   --bar:2.9rem;
 }
 html[data-theme="dark"]{
@@ -248,7 +248,7 @@ html[data-theme="dark"] figure.eq{border-color:var(--rule)}
   font:600 .7rem/1 system-ui,-apple-system,sans-serif;
   color:var(--mute); background:var(--panel);
   border:1px solid var(--rule); border-radius:6px;
-  padding:.4rem .55rem; min-height:1.9rem; cursor:pointer;
+  padding:.4rem .55rem; min-height:44px; min-width:44px; cursor:pointer;
 }
 .codeblock .copy:active{color:var(--accent)}
 .codeblock .copy.done{color:var(--accent-2); border-color:var(--accent-2)}

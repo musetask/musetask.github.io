@@ -4,7 +4,7 @@
   --rule:#dcdcdc; --page:#fbfaf7; --code-bg:#f8f6ec; --code-edge:#e6e0cc;
   --kw:#1155cc; --st:#960000; --cm:#636466; --fn:#2fb41d; --nu:#b41f24;
   --measure:34rem;        /* 正文栏宽：约 62-68 字符，中文约 34 字 */
-  --pad:1.05rem;          /* 左右安全边距 */
+  --pad:1.125rem; /* 左右安全边距：360px 视口下各留 18px，正文 324px */
   --bar:2.9rem;           /* 顶部细栏高度 */
 }
 *{box-sizing:border-box}

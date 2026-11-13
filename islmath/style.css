@@ -15,7 +15,7 @@
   --mono:"SF Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,
          "Liberation Mono",monospace;
   --measure:34rem;
-  --pad:1.05rem;
+  --pad:1.125rem; /* 360px 视口下左右各留 18px，正文 324px */
   --bar:2.85rem;
 }
 html[data-theme="dark"]{
@@ -554,7 +554,7 @@ details.chidx{
 }
 details.chidx summary{
   font:600 .84rem/1.5 var(--sans);color:var(--accent-ink);
-  cursor:pointer;list-style:none;
+  cursor:pointer;list-style:none;display:flex;align-items:center;min-height:44px;
 }
 details.chidx summary::-webkit-details-marker{display:none}
 details.chidx summary::before{content:"▸ ";color:var(--accent)}

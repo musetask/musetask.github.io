@@ -268,7 +268,7 @@ ul.index .count{font:12px/1.6 var(--sans);color:var(--muted);white-space:nowrap}
 }
 
 /* std360: 结构性触控目标 ≥44px（按 dilfish.github.io/std.html 标准补齐） */
-.btn{min-height:44px}
+.btn{min-height:44px;min-width:44px;justify-content:center}
 .topbar a.brand{display:inline-flex;align-items:center;min-height:44px}
 details.toc>summary{display:flex;align-items:center;min-height:44px}
 details.toc a{display:flex;align-items:center;min-height:44px}
@@ -276,4 +276,22 @@ ul.index .row a{display:flex;align-items:center;min-height:44px}
 ul.index .secs a{display:flex;align-items:center;min-height:44px}
 
 /* std360b: 复制按钮触控高度 ≥44px */
-.copy{min-height:44px;display:inline-flex;align-items:center}
+.copy{min-height:44px;min-width:44px;display:inline-flex;align-items:center;justify-content:center}
+
+/* std360c: 折叠栏 / 开始阅读按钮触控目标 ≥44px */
+details.cnotes>summary{display:flex;align-items:center;min-height:44px}
+.start{display:flex;align-items:center;justify-content:center;min-height:44px}
+
+/* std360c: 过长的行内公式在自身盒内横滑，不撑破页面、不被 main 的裁切切掉
+   （显示公式仍由 .eq / .katex-display 自己负责横滑） */
+.katex{display:inline-block;max-width:100%;overflow-x:auto;overflow-y:hidden;vertical-align:bottom}
+.katex-display>.katex{display:block;max-width:none;overflow:visible;vertical-align:baseline}
+
+/* std360c: 符号表在 360px 下改为固定布局并允许单元格内换行/公式自身横滑，
+   避免含长行内公式的表格超出 main 宽度被裁切 */
+@media (max-width:640px){
+  table.sym{table-layout:fixed;width:100%}
+  table.sym th:first-child,table.sym td:first-child{width:30%}
+  table.sym th:nth-child(2),table.sym td:nth-child(2){width:44%}
+  table.sym td,table.sym th{overflow-wrap:anywhere}
+}

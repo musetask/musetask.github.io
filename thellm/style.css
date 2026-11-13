@@ -231,7 +231,7 @@ ul.index>li.part .nm{font:700 15px/1.4 var(--sans);color:var(--accent)}
 }
 
 /* std360: 结构性触控目标 ≥44px（按 dilfish.github.io/std.html 标准补齐） */
-.btn{min-height:44px}
+.btn{min-height:44px;min-width:44px;justify-content:center}
 .topbar a.brand{display:inline-flex;align-items:center;min-height:44px}
 details.toc>summary{display:flex;align-items:center;min-height:44px}
 details.toc a{display:flex;align-items:center;min-height:44px}
@@ -239,4 +239,8 @@ ul.index .row a{display:flex;align-items:center;min-height:44px}
 ul.index .secs a{display:flex;align-items:center;min-height:44px}
 
 /* std360b: 复制按钮触控高度 ≥44px */
-.copy{min-height:44px;display:inline-flex;align-items:center}
+.copy{min-height:44px;min-width:44px;display:inline-flex;align-items:center;justify-content:center}
+
+/* std360c: 折叠栏 / 开始阅读按钮触控目标 ≥44px */
+details.cnotes>summary{display:flex;align-items:center;min-height:44px}
+.start{display:flex;align-items:center;justify-content:center;min-height:44px}
