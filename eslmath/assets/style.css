@@ -469,3 +469,9 @@ a.src{min-height:44px}
    （显示公式仍由 .eq .escroll / .katex-display 自己负责横滑） */
 .katex{display:inline-block;max-width:100%;overflow-x:auto;overflow-y:hidden;vertical-align:bottom}
 .katex-display>.katex{display:block;max-width:none;overflow:visible;vertical-align:baseline}
+
+/* KaTeX 的 .katex-mathml 是给屏幕阅读器的隐藏副本（1px + clip）。行内公式
+   恰好落在视口右缘时，这个 1px 绝对定位盒会把 scrollWidth 顶到 361，
+   违反「scrollWidth === 视口宽」硬性检查。挪到左侧负偏移：视觉不变
+   （本来就 clip 隐藏），且 LTR 下左侧溢出不产生滚动区域。 */
+.katex .katex-mathml{left:-9999px}
